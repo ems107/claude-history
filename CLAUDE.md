@@ -15,14 +15,16 @@ It is a standalone personal tool. It is **NOT part of the PCCOM ecosystem** (no 
 - `pnpm start` — production-ish mode: the Fastify server serves `web/dist` and the API on `http://localhost:7433`.
 - `pnpm start:bg` / `pnpm stop` — launch detached (hidden window) / kill the port-7433 listener.
 - `pnpm typecheck` — `tsc --noEmit` in all packages.
+- `pnpm package -- --version X.Y.Z` — build the distributable portable zip (`scripts/package.mjs`): esbuild-bundles the server to `server.cjs` (CJS — `main.ts` must stay free of top-level await), embeds a pinned Node runtime, and assembles the versioned layout + installer scripts into `dist/`.
 
-The server has no build step: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web.
+The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web. Releases are built by `.github/workflows/release.yml` on `v*` tag push; the **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders — always tag with `git tag -a`.
 
 ## Architecture
 
 - `shared/src/` — API contract: `types.ts` (domain), `api.ts` (endpoint response shapes).
 - `server/src/config.ts` — data root resolution: `--data-root` flag → `CLAUDE_CONFIG_DIR` env → `~/.claude`. Cache dir: `CLAUDE_HISTORY_CACHE` env → `%LOCALAPPDATA%\claude-history\cache`. Never hardcode user paths.
-- `server/src/core/` — the pipeline: `scanner` (enumerate transcript files) → `summarizer` (cheap head/tail metadata per session) → `cache` ((path,size,mtimeMs)-keyed) → `enricher` (background full parse: tokens, PR links, ancestry, search text) → `watcher` (fs.watch → SSE). `parser` builds the full conversation for the viewer on demand. `index` orchestrates everything.
+- `server/src/core/` — the pipeline: `scanner` (enumerate transcript files) → `summarizer` (cheap head/tail metadata per session) → `cache` ((path,size,mtimeMs)-keyed) → `enricher` (background full parse: tokens, PR links, ancestry, search text) → `watcher` (fs.watch → SSE). `parser` builds the full conversation for the viewer on demand. `index` orchestrates everything. `updates` handles the self-update lifecycle (GitHub release check + apply).
+- `installer/` — the scripts shipped inside the release zip (install/uninstall, hidden launcher, update helper). They MUST stay pure ASCII: Windows PowerShell 5.1 reads BOM-less `.ps1` as ANSI and a single multibyte character breaks parsing on target machines (`package.mjs` enforces this).
 - `server/src/routes/` — REST endpoints (see `shared/src/api.ts`).
 - `web/src/` — React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SSE (`EventSource`) for live invalidation.
 
@@ -59,10 +61,35 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 - `process.kill(pid, 0)` throws `EPERM` for alive-but-protected processes — treat EPERM as "alive".
 - `fs.watch` recursive works natively on Windows; no chokidar needed.
 
+## Distribution & self-update (verified on this machine)
+
+The release zip installs a portable, self-contained layout:
+
+```
+<install-root>\
+├── install.ps1 / uninstall.ps1 / launch.vbs   <- stable, never touched by updates
+├── install.json                               <- marker; updater uses it to detect installed mode
+├── update.log
+├── current  -> junction -> versions\vX.Y.Z    <- the scheduled task points THROUGH this
+└── versions\vX.Y.Z\{node\node.exe, server.cjs, web\, start-hidden.vbs, update-helper.ps1}
+```
+
+Hard-won rules — the code and scripts MUST follow them:
+
+- **Scheduled task, NOT a Windows service.** Services live in Session 0: anything they spawn (Windows Terminal, Explorer, VS Code) opens invisibly. The task (`claude-history`) runs at logon in the interactive session, so the resume/open launchers keep working.
+- **`ExecutionTimeLimit` must be `PT0S`** — the Task Scheduler default silently kills tasks after 72 hours.
+- **Ending the task only kills the wscript wrapper, not node** (the process tree is NOT terminated, verified). The server therefore runs with `--exit-with-parent`: it watches `process.ppid` every 3 s and exits when the parent dies. Never remove that flag from `start-hidden.vbs`.
+- The task action is `wscript.exe //B <root>\current\start-hidden.vbs` — wscript is the only zero-flash way to start a console app hidden at logon; the vbs waits (`bWaitOnReturn:=True`) so node stays in the task's tree.
+- Junctions (`New-Item -ItemType Junction`) need no admin; deleting one via `(Get-Item).Delete()` removes the reparse point only. The helper swaps `current` only after the old server pid is dead.
+- `tar.exe` on Windows 10+ is bsdtar and extracts zip files natively, including selective paths (`tar -xf x.zip -C dest versions/vX.Y.Z`). The GitHub runner (ubuntu) side uses adm-zip instead.
+- `update-helper.ps1` always runs from a `%TEMP%` copy (never from a folder being swapped), health-checks `/api/meta` for the new version and **rolls back** to the previous junction target on failure; it prunes `versions\` to the 3 newest.
+- Everything must be **Windows PowerShell 5.1 compatible** (target machines may lack pwsh 7): no ternaries, no `??`, `Invoke-WebRequest -UseBasicParsing`.
+- Update availability: `GET api.github.com/repos/<repo>/releases/latest` with `If-None-Match` (304s are free against the 60/h unauthenticated limit). `/releases/latest` ignores prereleases and drafts. Repo overridable via `CLAUDE_HISTORY_UPDATE_REPO` for testing.
+
 ## Hard constraints
 
 - The app **only reads** from `~/.claude` — it must never write, create, or lock anything inside it. Its own writes go exclusively to its cache dir and `userdata.json` (sibling of the cache dir; holds local title overrides, pins and the price table).
-- The app makes **exactly one outbound network call**, and only when the user clicks "Fetch current prices": `POST /api/prices/fetch` downloads Anthropic's public pricing docs as markdown (`platform.claude.com/docs/en/about-claude/pricing.md` — there is NO pricing API; the Models API has capabilities but no prices) and parses the "Model pricing" table (`server/src/core/officialPrices.ts`). It returns a preview only — nothing persists until the user saves. Never add automatic/background network calls. The parser targets docs, not an API contract: fail loudly with a clear error so the UI falls back to manual editing.
+- **Network policy.** Exactly ONE automatic/background call exists: the update-availability check (`core/updates.ts`) — a tiny conditional GET to `api.github.com/.../releases/latest` every 10 minutes. It never downloads anything. Every other outbound call is user-triggered: (a) "Fetch current prices" (`POST /api/prices/fetch` scrapes `platform.claude.com/docs/en/about-claude/pricing.md` — there is NO pricing API; preview only, nothing persists until saved; parser fails loudly so the UI falls back to manual editing), and (b) applying an update (`POST /api/update/apply` downloads the release zip + checksums.txt only after the user confirms in the popup, and verifies SHA-256 before staging). Never add any other automatic network call.
 - Session renames are LOCAL overrides only. There is NO official CLI/API to rename a stored session; the only Claude-level mechanism is `/rename` from inside the session (it appends a `custom-title` sidecar line). Appending that line ourselves was evaluated and rejected: appends can race with an active session writing the same file, and the file may not end with a newline — a nonzero corruption risk. When overridden, summaries expose `originalTitle` (what Claude Code still shows) and `titleSource: 'local'`; the UI must always surface both.
 - The server binds `127.0.0.1` only. Never `0.0.0.0`.
 - `POST /api/sessions/:id/resume` validates the id (UUID regex + membership in the index) and takes `cwd` only from the index — never from the request.
@@ -77,3 +104,5 @@ No automated test suite (personal tool). Verify against real data:
 3. Search a Spanish phrase with/without accents → same hits (diacritic-insensitive).
 4. Start/stop a real Claude Code session → LIVE badge appears/disappears.
 5. "Resume in terminal" opens Windows Terminal in the right cwd; unknown UUIDs → 4xx.
+6. Installer: `pnpm build && pnpm package -- --version 0.0.1`, extract the zip to a temp folder, run `install.ps1` (stop any dev instance first — same port), verify the task in `taskschd.msc`, `Stop-ScheduledTask` frees port 7433 within ~5 s (parent-watchdog), `launch.vbs` cold-starts it, `uninstall.ps1` removes task+shortcut and keeps `%LOCALAPPDATA%` data.
+7. Update E2E needs two published releases: install the older, wait ≤10 min (or "Check now") for the badge, apply, and check `update.log` + the versions\ pruning.
