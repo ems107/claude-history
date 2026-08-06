@@ -86,13 +86,18 @@ export interface ToolResultInfo {
   truncated: boolean;
   totalChars: number;
   isError: boolean;
-  /** Bare filename inside the session's tool-results dir, when output was offloaded to disk. */
+  /**
+   * When output was offloaded to disk: path of the .txt file relative to
+   * ~/.claude/projects (it may live under a DIFFERENT session's dir, e.g.
+   * when a subagent report quotes it). Fetch via /api/tool-results?path=.
+   */
   offloadedFile: string | null;
 }
 
 export type ContentBlock =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
+  | { kind: 'command'; text: string }
   | { kind: 'image' }
   | {
       kind: 'tool';
@@ -107,6 +112,8 @@ export type ContentBlock =
 
 export interface MessageItem {
   uuid: string;
+  /** Extra line uuids merged into this item (streamed assistant chunks). */
+  aliasUuids: string[];
   role: 'user' | 'assistant' | 'system';
   timestamp: string | null;
   model: string | null;
