@@ -1,7 +1,7 @@
 import type { SessionSummary } from '@claude-history/shared';
 
 export type SortField = 'activity' | 'created' | 'messages' | 'size';
-export type BadgeFilter = 'live' | 'pr' | 'subagents' | 'resumed' | 'bg';
+export type BadgeFilter = 'pinned' | 'live' | 'pr' | 'subagents' | 'resumed' | 'bg';
 
 export interface FilterState {
   projects: string[]; // projectKeys; empty = all
@@ -79,6 +79,8 @@ function createdMs(s: SessionSummary): number {
 
 function hasBadge(s: SessionSummary, badge: BadgeFilter): boolean {
   switch (badge) {
+    case 'pinned':
+      return s.pinned;
     case 'live':
       return s.live !== null;
     case 'pr':

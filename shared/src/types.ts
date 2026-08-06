@@ -68,6 +68,8 @@ export interface SessionSummary {
   lastPromptPreview: string | null;
   isEmpty: boolean; // throwaway stub (hidden by default)
   isBackground: boolean; // sessionKind === "bg"
+  /** Pinned locally in claude-history (userdata.json — never touches ~/.claude). */
+  pinned: boolean;
   subagentCount: number;
   enrichment: SessionEnrichment | null;
   live: LiveInfo | null;

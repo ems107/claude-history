@@ -221,6 +221,8 @@ export async function summarizeSession(
     lastPromptPreview: x.lastPrompt ? truncate(x.lastPrompt, PREVIEW_LEN) : null,
     isEmpty,
     isBackground: x.isBackground,
+    pinned: false, // applied from userdata at serve time
+
     subagentCount: scanned.subagentCount,
     enrichment: null,
     live: null,

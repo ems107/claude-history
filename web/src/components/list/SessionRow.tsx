@@ -28,11 +28,13 @@ function RowContent({
   color,
   onProjectClick,
   onStartEdit,
+  onTogglePin,
 }: {
   session: SessionSummary;
   color: string;
   onProjectClick?: (projectKey: string) => void;
   onStartEdit: () => void;
+  onTogglePin: () => void;
 }) {
   // "Prompts" = user-typed messages (from enrichment) — the same metric the
   // Prompts sort uses. Fallback: Claude Code's internal context-entry count
@@ -81,6 +83,22 @@ function RowContent({
             title="Rename locally (never writes to ~/.claude)"
           >
             ✎
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onTogglePin();
+            }}
+            className={`shrink-0 cursor-pointer rounded px-1 text-sm ${
+              session.pinned
+                ? 'text-amber-400 hover:text-amber-300'
+                : 'text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-amber-400'
+            }`}
+            title={session.pinned ? 'Unpin' : 'Pin (stored locally, filter via ★ Pinned)'}
+          >
+            {session.pinned ? '★' : '☆'}
           </button>
         </div>
         <div className="mt-1 flex items-center gap-3 text-xs text-[var(--text-dim)]">
@@ -166,6 +184,12 @@ export function SessionRow({
         onStartEdit={() => {
           setValue(session.title);
           setEditing(true);
+        }}
+        onTogglePin={() => {
+          void api.pinSession(session.id, !session.pinned).then(() => {
+            void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+            void queryClient.invalidateQueries({ queryKey: ['session', session.id] });
+          });
         }}
       />
     </Link>

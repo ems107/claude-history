@@ -33,4 +33,19 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
       return { ok: true, summary: ctx.index.get(id) };
     },
   );
+
+  // Pin/unpin a session (stored in userdata.json, never in ~/.claude).
+  app.put<{ Params: { id: string }; Body: { pinned?: unknown } }>(
+    '/api/sessions/:id/pin',
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
+      if (!ctx.index.get(id)) return reply.code(404).send({ error: 'Session not found' });
+      if (typeof request.body?.pinned !== 'boolean') {
+        return reply.code(400).send({ error: 'pinned must be a boolean' });
+      }
+      await ctx.index.setPinned(id, request.body.pinned);
+      return { ok: true, summary: ctx.index.get(id) };
+    },
+  );
 }

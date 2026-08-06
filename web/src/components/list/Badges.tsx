@@ -15,6 +15,12 @@ function Badge({ label, className, title }: { label: string; className: string; 
 export function SessionBadges({ session, omitPr = false }: { session: SessionSummary; omitPr?: boolean }) {
   const badges: ReactNode[] = [];
 
+  if (session.pinned) {
+    badges.push(
+      <Badge key="pinned" label="★" title="Pinned (local)" className="bg-amber-500/15 text-amber-400" />,
+    );
+  }
+
   if (session.live) {
     badges.push(
       <span

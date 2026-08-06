@@ -105,6 +105,7 @@ export function SessionHeader({
   const s = detail.summary;
   const e = s.enrichment;
   const [editing, setEditing] = useState(false);
+  const queryClient = useQueryClient();
   const toggleClass = (active: boolean, disabled = false) =>
     `rounded border px-2 py-0.5 text-xs ${
       disabled
@@ -143,6 +144,21 @@ export function SessionHeader({
               title="Rename locally (stored in this tool only; never writes to ~/.claude)"
             >
               ✎
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void api.pinSession(s.id, !s.pinned).then(() => {
+                  void queryClient.invalidateQueries({ queryKey: ['session', s.id] });
+                  void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+                });
+              }}
+              className={`cursor-pointer rounded px-1.5 py-0.5 text-sm ${
+                s.pinned ? 'text-amber-400 hover:text-amber-300' : 'text-[var(--text-dim)] hover:text-amber-400'
+              }`}
+              title={s.pinned ? 'Unpin' : 'Pin (stored locally)'}
+            >
+              {s.pinned ? '★' : '☆'}
             </button>
           </>
         )}

@@ -45,6 +45,8 @@ export class SessionIndex {
   private live: LiveSessionEntry[] = [];
   /** Local title renames — stored in userdata.json, NEVER written to ~/.claude. */
   private titleOverrides: Record<string, string> = {};
+  /** Pinned session ids — stored in userdata.json. */
+  private pins = new Set<string>();
   state: IndexState = 'scanning';
   cacheHits = 0;
   private enriching = false;
@@ -59,8 +61,11 @@ export class SessionIndex {
     await this.cache.init();
     const indexCache = await this.cache.loadIndex<IndexCacheFile>();
     this.history = await readHistoryData(this.config.historyFile);
-    const userdata = await readJsonFile<{ titleOverrides?: Record<string, string> }>(this.config.userdataFile);
+    const userdata = await readJsonFile<{ titleOverrides?: Record<string, string>; pins?: string[] }>(
+      this.config.userdataFile,
+    );
     this.titleOverrides = userdata?.titleOverrides ?? {};
+    this.pins = new Set(userdata?.pins ?? []);
 
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
@@ -77,6 +82,7 @@ export class SessionIndex {
           live: null,
           descendants: [],
           originalTitle: null,
+          pinned: false,
         });
         this.cacheHits++;
       } else {
@@ -167,7 +173,7 @@ export class SessionIndex {
       files[s.filePath] = {
         size: s.sizeBytes,
         mtimeMs: s.mtimeMs,
-        summary: { ...summary, enrichment: null, live: null, descendants: [], originalTitle: null },
+        summary: { ...summary, enrichment: null, live: null, descendants: [], originalTitle: null, pinned: false },
       };
     }
     this.cache.scheduleSaveIndex({ version: CACHE_VERSION, files } satisfies IndexCacheFile);
@@ -231,13 +237,33 @@ export class SessionIndex {
 
   private withOverride(s: SessionSummary): SessionSummary {
     const override = this.titleOverrides[s.id];
-    return override ? { ...s, title: override, titleSource: 'local', originalTitle: s.title } : s;
+    const pinned = this.pins.has(s.id);
+    if (!override && !pinned) return s;
+    return {
+      ...s,
+      pinned,
+      ...(override ? { title: override, titleSource: 'local' as const, originalTitle: s.title } : {}),
+    };
+  }
+
+  private async saveUserdata(): Promise<void> {
+    await writeJsonAtomic(this.config.userdataFile, {
+      titleOverrides: this.titleOverrides,
+      pins: [...this.pins],
+    });
   }
 
   async setTitleOverride(id: string, title: string | null): Promise<void> {
     if (title) this.titleOverrides[id] = title;
     else delete this.titleOverrides[id];
-    await writeJsonAtomic(this.config.userdataFile, { titleOverrides: this.titleOverrides });
+    await this.saveUserdata();
+    this.events.emit('session-updated', id);
+  }
+
+  async setPinned(id: string, pinned: boolean): Promise<void> {
+    if (pinned) this.pins.add(id);
+    else this.pins.delete(id);
+    await this.saveUserdata();
     this.events.emit('session-updated', id);
   }
 

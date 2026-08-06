@@ -4,6 +4,7 @@ import { entrypointLabel, shortModel } from '../../lib/format.ts';
 import type { BadgeFilter, FilterState } from '../../lib/filters.ts';
 
 const BADGE_OPTIONS: Array<{ id: BadgeFilter; label: string }> = [
+  { id: 'pinned', label: '★ Pinned' },
   { id: 'live', label: 'Running now' },
   { id: 'pr', label: 'Has PR' },
   { id: 'subagents', label: 'Has subagents' },

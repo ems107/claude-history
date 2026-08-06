@@ -20,6 +20,15 @@ export const api = {
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   search: (q: string, scope?: string) =>
     getJson<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}${scope ? `&in=${encodeURIComponent(scope)}` : ''}`),
+  pinSession: async (id: string, pinned: boolean) => {
+    const res = await fetch(`/api/sessions/${id}/pin`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned }),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json();
+  },
   renameSession: async (id: string, title: string) => {
     const res = await fetch(`/api/sessions/${id}/title`, {
       method: 'PUT',
