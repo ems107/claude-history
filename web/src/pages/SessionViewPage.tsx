@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
@@ -93,7 +94,12 @@ export function SessionViewPage() {
         thinkingCount={thinkingCount}
         showTokens={showTokens}
         onToggleTokens={() => setShowTokens((v) => !v)}
-        actions={<ResumeButtons session={detail.data.summary} />}
+        actions={
+          <>
+            <ExportButton detail={detail.data} />
+            <ResumeButtons session={detail.data.summary} />
+          </>
+        }
       />
       {showTokens && <TokenPanel summary={detail.data.summary} />}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
