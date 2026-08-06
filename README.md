@@ -33,6 +33,24 @@ pnpm stop       # stop whatever is listening on port 7433
 
 The app is read-only over `~/.claude` and binds to `127.0.0.1` only.
 
+## Local data & state
+
+Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\claude-history`, relocatable via `CLAUDE_HISTORY_CACHE`):
+
+```
+%LOCALAPPDATA%\claude-history\
+├── userdata.json            ← YOUR data (local title renames) — not regenerable
+└── cache\                   ← fully regenerable; safe to delete at any time
+    ├── index.json           ← list-view summaries, keyed by (path, size, mtime)
+    ├── enriched\<uuid>.json ← per-session tokens, PR links, resume ancestry
+    └── text\<uuid>.json     ← extracted text for full-text search
+```
+
+- `userdata.json` sits **next to** (not inside) the cache dir on purpose: wiping the cache never loses your renames. If you point `CLAUDE_HISTORY_CACHE` elsewhere, `userdata.json` is created next to that directory.
+- Deleting `cache\` is always safe — the next server start rebuilds it from `~/.claude` in seconds. Entries are schema-versioned and keyed by file size+mtime, so they self-invalidate when transcripts change or the format evolves.
+- Minor UI state lives in the browser, not in files: `localStorage` (thinking toggle, sidebar width) and per-tab `sessionStorage` (list filters/scroll for back-navigation). Active filters are also reflected in the URL.
+- Guarantees: the tool **never writes** into `~/.claude` (read-only consumer) nor into its own repo folder; the server's index is in-memory only and is rebuilt on every start.
+
 ## Features
 
 - Global session list across all projects with colored project tags, badges (LIVE, PR, subagents, resumed, background) and rich metadata.
