@@ -25,7 +25,9 @@ export function PricingEditor({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const [fetchResult, setFetchResult] = useState<{ changes: string[]; fetchedAt: string } | null>(null);
+  const [fetchResult, setFetchResult] = useState<{ changed: string[]; added: string[]; fetchedAt: string } | null>(
+    null,
+  );
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -40,21 +42,22 @@ export function PricingEditor({
     void api
       .fetchOfficialPrices()
       .then(({ prices: fetched, fetchedAt }) => {
-        const changes: string[] = [];
+        const changed: string[] = [];
+        const added: string[] = [];
         for (const [model, next] of Object.entries(fetched)) {
           const cur = draft[model];
           if (!cur) {
-            changes.push(`${model}: new (${next.input}/${next.output}/${next.cacheRead}/${next.cacheWrite})`);
+            added.push(`${model} (${next.input}/${next.output}/${next.cacheRead}/${next.cacheWrite})`);
             continue;
           }
           for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'] as const) {
-            if (cur[key] !== next[key]) changes.push(`${model}.${key}: ${cur[key]} → ${next[key]}`);
+            if (cur[key] !== next[key]) changed.push(`${model}.${key}: ${cur[key]} → ${next[key]}`);
           }
         }
         // Merge fetched over the draft (custom extra models are preserved).
         setDraft((prev) => ({ ...prev, ...fetched }));
-        setDirty(changes.length > 0 ? true : dirty);
-        setFetchResult({ changes, fetchedAt });
+        setDirty(changed.length + added.length > 0 ? true : dirty);
+        setFetchResult({ changed, added, fetchedAt });
       })
       .catch((e) => setFetchError(String(e instanceof Error ? e.message : e)))
       .finally(() => setFetching(false));
@@ -109,6 +112,20 @@ export function PricingEditor({
           </button>
           <button
             type="button"
+            disabled={!dirty || saving}
+            onClick={() => {
+              setDraft(prices);
+              setDirty(false);
+              setFetchResult(null);
+              setFetchError(null);
+            }}
+            className="cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40"
+            title="Discard unsaved edits and revert to the last saved table"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
             disabled={saving || (isDefault && !dirty)}
             onClick={() => persist(null)}
             className="cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40"
@@ -124,19 +141,31 @@ export function PricingEditor({
       )}
       {fetchResult && (
         <div className="mb-2 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2 py-1.5 text-xs">
-          {fetchResult.changes.length === 0 ? (
+          {fetchResult.changed.length === 0 && fetchResult.added.length === 0 ? (
             <span className="text-emerald-400">✓ Your table already matches the current official prices.</span>
           ) : (
             <>
-              <div className="mb-1 text-amber-400">
-                {fetchResult.changes.length} value{fetchResult.changes.length !== 1 ? 's' : ''} updated from
-                platform.claude.com — review below and press <b>Save</b> to keep them.
-              </div>
-              <ul className="max-h-32 list-inside list-disc overflow-y-auto font-mono text-[11px] text-[var(--text-dim)]">
-                {fetchResult.changes.map((c, i) => (
-                  <li key={i}>{c}</li>
-                ))}
-              </ul>
+              {fetchResult.changed.length > 0 && (
+                <>
+                  <div className="mb-1 text-amber-400">
+                    {fetchResult.changed.length} of your value{fetchResult.changed.length !== 1 ? 's' : ''} changed
+                    (e.g. date-dependent rates like Claude Sonnet 5's introductory pricing) — review and press{' '}
+                    <b>Save</b> to keep, or <b>Cancel</b> to discard.
+                  </div>
+                  <ul className="mb-1 max-h-32 list-inside list-disc overflow-y-auto font-mono text-[11px] text-[var(--text-dim)]">
+                    {fetchResult.changed.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {fetchResult.added.length > 0 && (
+                <div className="text-[11px] text-[var(--text-dim)]">
+                  <span className="text-sky-400">{fetchResult.added.length} model(s) added</span> that were not in
+                  your table (legacy models — they only matter if your sessions used them):{' '}
+                  <span className="font-mono">{fetchResult.added.map((a) => a.split(' ')[0]).join(', ')}</span>
+                </div>
+              )}
             </>
           )}
         </div>
