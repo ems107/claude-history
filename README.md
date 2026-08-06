@@ -13,7 +13,14 @@ Production-ish mode:
 
 ```
 pnpm build
-pnpm start    # everything on http://localhost:7433
+pnpm start    # everything on http://localhost:7433 (Ctrl+C stops it)
+```
+
+Run it detached (no terminal window):
+
+```
+pnpm start:bg   # launch hidden in the background
+pnpm stop       # stop whatever is listening on port 7433
 ```
 
 ## Configuration

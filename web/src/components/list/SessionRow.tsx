@@ -20,11 +20,18 @@ export function SessionRow({
   color: string;
   onProjectClick?: (projectKey: string) => void;
 }) {
+  // "Prompts" = user-typed messages (from enrichment) — the same metric the
+  // Prompts sort uses. Fallback: Claude Code's internal context-entry count
+  // (includes tool results and streamed chunks), shown as approximate.
   const meta: Array<string | null> = [
     entrypointLabel(session.entrypoint),
     shortModel(session.model),
     session.gitBranch ? `⎇ ${session.gitBranch}` : null,
-    session.messageCount !== null ? `${session.messageCount} msgs` : null,
+    session.enrichment
+      ? `${session.enrichment.userMessageCount} prompts`
+      : session.messageCount !== null
+        ? `~${session.messageCount} msgs`
+        : null,
     formatBytes(session.sizeBytes),
   ];
 

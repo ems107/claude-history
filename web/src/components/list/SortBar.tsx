@@ -3,7 +3,7 @@ import type { FilterState, SortField } from '../../lib/filters.ts';
 const SORT_OPTIONS: Array<[SortField, string]> = [
   ['activity', 'Last activity'],
   ['created', 'Created'],
-  ['messages', 'Messages'],
+  ['messages', 'Prompts'],
   ['size', 'Size'],
 ];
 

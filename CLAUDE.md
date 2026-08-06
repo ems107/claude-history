@@ -13,6 +13,7 @@ It is a standalone personal tool. It is **NOT part of the PCCOM ecosystem** (no 
 - `pnpm dev` — dev mode: Fastify API on `http://127.0.0.1:7433` (tsx watch) + Vite UI on `http://localhost:5173` (proxies `/api`).
 - `pnpm build` — build the web app to `web/dist`.
 - `pnpm start` — production-ish mode: the Fastify server serves `web/dist` and the API on `http://localhost:7433`.
+- `pnpm start:bg` / `pnpm stop` — launch detached (hidden window) / kill the port-7433 listener.
 - `pnpm typecheck` — `tsc --noEmit` in all packages.
 
 The server has no build step: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web.
