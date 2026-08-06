@@ -57,9 +57,13 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - Filters (project, date, source, model, badges) and sorting, all persisted in the URL; resizable filter sidebar; list state (filters + scroll) survives navigating into a session and back.
 - Full-text search over every conversation, case- and accent-insensitive, with deep-linking snippets and a scope selector (everywhere / titles / my prompts / responses).
 - Conversation viewer: markdown, collapsible tool calls, optional thinking blocks (when the transcript contains visible thinking), token stats, per-session stats (prompts / responses / tool calls / turns), subagent transcripts.
-- Local session rename (stored in this tool's `userdata.json` — never writes into `~/.claude`).
+- Local session rename and ★ pins (stored in this tool's `userdata.json` — never writes into `~/.claude`).
 - Live updates via SSE — running sessions show a pulsing LIVE badge.
-- Resume: copy the `claude --resume` command or open Windows Terminal/pwsh directly in the project.
+- Resume: copy the `claude --resume` command or open Windows Terminal/pwsh directly in the project; open the project in Explorer or VS Code.
+- Stats dashboard (`/stats`): daily activity stacked by project, model mix, per-project totals, and API-equivalent cost estimation with an editable price table.
+- Prompt library (`/prompts`): every prompt ever typed, searchable, with copy and open-session actions.
+- Export any conversation to Markdown (tool calls / thinking / system optional).
+- Resume lineage view and a per-session file-changes viewer (which files each session edited, with before/after diffs).
 
 ## Keyboard shortcuts
 
