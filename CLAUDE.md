@@ -31,6 +31,7 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 
 - Transcripts live in `~/.claude/projects/<encoded-dir>/<sessionUuid>.jsonl`, one JSON object per line. Lines can be huge (~27 KB); files can be several MB.
 - **Encoded dir names are lossy and MUST NOT be decoded** (`\ / . _ :` all collapse to `-`; drive-letter case is preserved so one real project can split across two dirs differing only in case). The real project path comes from the `cwd` field on message lines (or `history.jsonl`'s `project`). Group projects case-insensitively.
+- **Use the FIRST `cwd` of a session** (the launch directory, which is what `/resume` groups by): the `cwd` field can change mid-session when the shell cd's around, and the last one may point at a subdirectory.
 - **There are no `type:"summary"` lines** (pre-2.1 format). Titles are sidecar lines appended repeatedly over the session's life: `custom-title`, `ai-title`, `agent-name`. Always take the **last** occurrence. Title precedence: `customTitle` → `aiTitle` → `agentName` → last `last-prompt`.`lastPrompt` (pre-truncated ~200 chars) → first non-`isMeta` user message with string content → session UUID.
 - Other sidecar line types: `last-prompt`, `mode`, `permission-mode`, `bridge-session`, `queue-operation`, `file-history-snapshot` (line ~2; its `snapshot.timestamp` ≈ session start), `file-history-delta`, `pr-link` (`prNumber`/`prUrl`/`prRepository`). Sidecar lines mostly have NO timestamp.
 - Message lines (`user`/`assistant`/`system`/`attachment`) carry: `uuid`, `parentUuid`, `timestamp` (ISO-8601 UTC), `cwd`, `sessionId`, `version`, `gitBranch`, `slug`, `promptId` (groups a turn), `isMeta` (filter for previews!), `entrypoint` (`cli`/`claude-desktop`/`claude-vscode`), `sessionKind` (`"bg"` = background session). Assistant lines add `message.model`, `message.usage`, `effort`.
@@ -39,10 +40,17 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 - **Head-10 + tail-40 lines yield every list-view column** (title, dates, branch, model, entrypoint, slug, approx message count via `system` subtype `turn_duration`.`messageCount`, previews). Full parse is only needed for token totals, PR/ancestry badges, search text and the viewer.
 - **Token usage: deduplicate assistant lines by `message.id` before summing `usage`** (streamed turns repeat the same usage object across lines). Exclude model `<synthetic>`.
 - Resume ancestry: every message carries `sessionId` (file owner) and `session_id` (original producer); `distinct(session_id) − {file's UUID}` = ancestor chain (history is copied forward into the new file on resume/fork).
-- Subagents: sibling dir `<sessionUuid>/subagents/agent-<17hex>.jsonl` + `agent-<17hex>.meta.json` (`agentType`, `description`, `toolUseId`, `spawnDepth`); `toolUseId` matches the parent's Task `tool_use` block. `<sessionUuid>/tool-results/*.txt` hold offloaded large tool outputs referenced in-line as "Output saved to: <abs path>".
+- Subagents: sibling dir `<sessionUuid>/subagents/agent-<17hex>.jsonl` + `agent-<17hex>.meta.json` (`agentType`, `description`, `toolUseId`, `spawnDepth`); `toolUseId` matches the parent's Task `tool_use` block.
+- Offloaded tool outputs: `<sessionUuid>/tool-results/*.txt`. The carrying user line has the structured field `toolUseResult.persistedOutputPath` (absolute path) — use it as the primary source; the in-text form is `<persisted-output>\nOutput too large (NN KB). Full output saved to: <abs path>` (match "output saved to:" case-insensitively). A quoted reference (e.g. inside a subagent report) can point into a DIFFERENT session's dir — keep paths projects-relative and validate on serve.
 - Global extras: `~/.claude/history.jsonl` (every typed prompt: `display`, epoch-**ms** `timestamp`, real `project` path, `sessionId`) and `~/.claude/sessions/<pid>.json` (currently-running sessions: `sessionId`, `cwd`, `status` idle/busy, `pid` — verify pid liveness with `process.kill(pid, 0)` before trusting).
 - Many sessions are throwaway stubs (≤16 lines, only slash commands, no title) — flagged `isEmpty` and hidden by default.
 - Wrap EVERY `JSON.parse` of transcript lines in try/catch: lines can be corrupt/partial and active files are appended while being read.
+
+## Windows gotchas
+
+- `wt.exe` (Windows Terminal) is a Store-app execution alias (reparse point) that Node `spawn` cannot launch via PATH lookup — resolve the real path with `where wt` first, and keep the classic `cmd /c start` window as fallback (wt is not installed on every machine).
+- `process.kill(pid, 0)` throws `EPERM` for alive-but-protected processes — treat EPERM as "alive".
+- `fs.watch` recursive works natively on Windows; no chokidar needed.
 
 ## Hard constraints
 

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
@@ -46,14 +46,18 @@ export function SessionViewPage() {
     [setSearchParams],
   );
 
+  const navigate = useNavigate();
   useEffect(() => {
-    if (!agentId) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeAgent();
+      if (e.key !== 'Escape') return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      if (agentId) closeAgent();
+      else navigate(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [agentId, closeAgent]);
+  }, [agentId, closeAgent, navigate]);
 
   if (detail.isLoading) {
     return <div className="p-8 text-[var(--text-dim)]">Parsing conversation…</div>;

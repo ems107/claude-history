@@ -17,9 +17,10 @@ export function SearchBox({ value, onChange }: { value: string; onChange: (q: st
   return (
     <div className="relative max-w-md min-w-48 flex-1">
       <input
+        id="global-search"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Search all conversations…"
+        placeholder="Search all conversations…  ( / )"
         className="w-full rounded border border-[var(--border)] bg-[var(--bg-raised)] py-1 pr-7 pl-2.5 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
       />
       {text && (

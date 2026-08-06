@@ -26,4 +26,17 @@ pnpm start    # everything on http://localhost:7433
 
 The app is read-only over `~/.claude` and binds to `127.0.0.1` only.
 
+## Features
+
+- Global session list across all projects with colored project tags, badges (LIVE, PR, subagents, resumed, background) and rich metadata.
+- Filters (project, date, source, model, badges) and sorting, all persisted in the URL.
+- Full-text search over every conversation, case- and accent-insensitive, with deep-linking snippets.
+- Conversation viewer: markdown, collapsible tool calls, optional thinking blocks, token stats, subagent transcripts.
+- Live updates via SSE — running sessions show a pulsing LIVE badge.
+- Resume: copy the `claude --resume` command or open a terminal directly in the project.
+
+## Keyboard shortcuts
+
+- `/` focus search · `j`/`k` or arrows move selection · `Enter` open session · `Esc` back / close drawer.
+
 See `CLAUDE.md` for architecture and the verified Claude Code data-format rules.

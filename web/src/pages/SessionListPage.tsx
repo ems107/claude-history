@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { FilterSidebar } from '../components/list/FilterSidebar.tsx';
 import { SearchBox } from '../components/list/SearchBox.tsx';
@@ -75,6 +75,44 @@ export function SessionListPage() {
     overscan: 12,
   });
 
+  // Keyboard navigation: j/k or arrows move, Enter opens, / focuses search.
+  const navigate = useNavigate();
+  const [selected, setSelected] = useState(-1);
+  useEffect(() => setSelected(-1), [rows]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape') target.blur();
+        return;
+      }
+      if (e.key === '/') {
+        e.preventDefault();
+        document.getElementById('global-search')?.focus();
+        return;
+      }
+      if (searchActive) return;
+      if (e.key === 'j' || e.key === 'ArrowDown' || e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelected((prev) => {
+          const next = Math.min(
+            rows.length - 1,
+            Math.max(0, prev + (e.key === 'j' || e.key === 'ArrowDown' ? 1 : -1)),
+          );
+          virtualizer.scrollToIndex(next);
+          return next;
+        });
+      } else if (e.key === 'Enter') {
+        setSelected((prev) => {
+          if (prev >= 0 && rows[prev]) navigate(`/session/${rows[prev].id}`);
+          return prev;
+        });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [rows, searchActive, navigate, virtualizer]);
+
   if (sessions.isLoading) {
     return <div className="p-8 text-[var(--text-dim)]">Scanning sessions…</div>;
   }
@@ -128,7 +166,7 @@ export function SessionListPage() {
                 return (
                   <div
                     key={session.id}
-                    className="absolute top-0 left-0 w-full"
+                    className={`absolute top-0 left-0 w-full ${vi.index === selected ? 'bg-[var(--bg-hover)]' : ''}`}
                     style={{ height: vi.size, transform: `translateY(${vi.start}px)` }}
                   >
                     <SessionRow
