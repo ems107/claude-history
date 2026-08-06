@@ -1,4 +1,5 @@
 import type {
+  LineageResponse,
   MetaResponse,
   PriceTable,
   ProjectsResponse,
@@ -52,6 +53,7 @@ export const api = {
     return res.json();
   },
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
+  lineage: (id: string) => getJson<LineageResponse>(`/api/sessions/${id}/lineage`),
   subagent: (id: string, agentId: string) =>
     getJson<SubagentDetailResponse>(`/api/sessions/${id}/subagents/${agentId}`),
   toolResult: (path: string) => getJson<ToolResultFileResponse>(`/api/tool-results?path=${encodeURIComponent(path)}`),

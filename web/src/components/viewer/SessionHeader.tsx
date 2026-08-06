@@ -91,6 +91,8 @@ export function SessionHeader({
   thinkingCount,
   showTokens,
   onToggleTokens,
+  showLineage,
+  onToggleLineage,
   actions,
 }: {
   detail: SessionDetail;
@@ -100,6 +102,8 @@ export function SessionHeader({
   thinkingCount: number;
   showTokens: boolean;
   onToggleTokens: () => void;
+  showLineage: boolean;
+  onToggleLineage: () => void;
   actions?: import('react').ReactNode;
 }) {
   const s = detail.summary;
@@ -178,6 +182,16 @@ export function SessionHeader({
         <button type="button" onClick={onToggleTokens} className={toggleClass(showTokens)}>
           Tokens
         </button>
+        {detail.ancestry.resumedFrom.length + detail.ancestry.descendants.length > 0 && (
+          <button
+            type="button"
+            onClick={onToggleLineage}
+            className={toggleClass(showLineage)}
+            title="Show the full resume/fork chain of this session"
+          >
+            Lineage
+          </button>
+        )}
         {actions}
       </div>
       {s.titleSource === 'local' && s.originalTitle && (

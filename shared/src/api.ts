@@ -76,6 +76,22 @@ export interface ResumeResponse {
   command: string;
 }
 
+export interface LineageNode {
+  id: string;
+  exists: boolean;
+  title: string | null;
+  projectKey: string | null;
+  projectName: string | null;
+  createdAt: string | null;
+  lastActivityAt: string | null;
+}
+
+export interface LineageResponse {
+  nodes: LineageNode[];
+  /** from = ancestor session, to = the session it was resumed into. */
+  edges: Array<{ from: string; to: string }>;
+}
+
 // ---- SSE events on /api/events ----
 
 export type ServerEvent =

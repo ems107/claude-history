@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
+import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
@@ -18,6 +19,7 @@ export function SessionViewPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
   const [showTokens, setShowTokens] = useState(false);
+  const [showLineage, setShowLineage] = useState(false);
 
   const msg = searchParams.get('msg');
   const agentId = searchParams.get('agent');
@@ -94,6 +96,8 @@ export function SessionViewPage() {
         thinkingCount={thinkingCount}
         showTokens={showTokens}
         onToggleTokens={() => setShowTokens((v) => !v)}
+        showLineage={showLineage}
+        onToggleLineage={() => setShowLineage((v) => !v)}
         actions={
           <>
             <ExportButton detail={detail.data} />
@@ -102,6 +106,7 @@ export function SessionViewPage() {
         }
       />
       {showTokens && <TokenPanel summary={detail.data.summary} />}
+      {showLineage && <LineagePanel sessionId={id} />}
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto max-w-4xl">
           <TurnList
