@@ -1,6 +1,9 @@
 import type { UpdateLatest, UpdateStatusResponse } from '@claude-history/shared';
+import { spawn, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { APP_VERSION } from '../version.ts';
 
@@ -114,6 +117,80 @@ export class UpdateService {
       await this.check();
     }
     return this.getStatus();
+  }
+
+  /**
+   * Download, verify and stage the latest release, then hand over to
+   * update-helper.ps1 (which swaps the `current` junction and restarts the
+   * scheduled task) and exit. Only valid on an installed instance, and only
+   * after the user explicitly confirmed in the UI.
+   */
+  async apply(port: number): Promise<void> {
+    const install = this.install;
+    const latest = this.latest;
+    const assets = this.assets;
+    if (!install) throw new Error('This instance does not run from an installed release — pull and rebuild instead.');
+    if (!latest || !assets || !this.getStatus().updateAvailable) throw new Error('No update available.');
+    if (this.state !== 'idle') throw new Error(`Busy (${this.state}).`);
+
+    const tmpDir = path.join(os.tmpdir(), 'claude-history-update');
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      fs.mkdirSync(tmpDir, { recursive: true });
+
+      // 1. Download the release zip.
+      this.setState('downloading');
+      const zipPath = path.join(tmpDir, assets.zipName);
+      const zipRes = await fetch(assets.zipUrl, { headers: { 'user-agent': 'claude-history-updater' } });
+      if (!zipRes.ok) throw new Error(`Download failed: HTTP ${zipRes.status}`);
+      fs.writeFileSync(zipPath, Buffer.from(await zipRes.arrayBuffer()));
+
+      // 2. Verify against the release's checksums.txt.
+      this.setState('verifying');
+      if (!assets.checksumsUrl) throw new Error('Release has no checksums.txt — refusing to install an unverifiable download.');
+      const sumRes = await fetch(assets.checksumsUrl, { headers: { 'user-agent': 'claude-history-updater' } });
+      if (!sumRes.ok) throw new Error(`checksums.txt download failed: HTTP ${sumRes.status}`);
+      const sums = await sumRes.text();
+      const line = sums.split('\n').find((l) => l.trim().endsWith(assets.zipName));
+      const expected = line?.trim().split(/\s+/)[0]?.toLowerCase();
+      if (!expected || !/^[0-9a-f]{64}$/.test(expected)) throw new Error(`checksums.txt has no entry for ${assets.zipName}`);
+      const actual = crypto.createHash('sha256').update(fs.readFileSync(zipPath)).digest('hex');
+      if (actual !== expected) throw new Error(`SHA-256 mismatch: expected ${expected}, got ${actual}`);
+
+      // 3. Extract only versions/v<new> into the install root (tar.exe is
+      // bsdtar on Windows 10+ and reads zip files natively).
+      this.setState('staging');
+      const newDirName = latest.tag; // versions/<tag> — package.mjs names it v<version>
+      const stagedDir = path.join(install.root, 'versions', newDirName);
+      fs.rmSync(stagedDir, { recursive: true, force: true }); // leftovers from a failed attempt
+      const tar = spawnSync('tar', ['-xf', zipPath, '-C', install.root, `versions/${newDirName}`], {
+        windowsHide: true,
+        timeout: 120_000,
+      });
+      if (tar.status !== 0) throw new Error(`Extraction failed: ${tar.stderr?.toString() || `tar exited ${tar.status}`}`);
+      if (!fs.existsSync(path.join(stagedDir, 'server.cjs'))) throw new Error('Extracted version is incomplete (server.cjs missing).');
+
+      // 4. Hand over to the helper (run from %TEMP%, never from a folder
+      // being swapped) and exit so it can do the junction swap + restart.
+      const helperSrc = path.join(stagedDir, 'update-helper.ps1');
+      if (!fs.existsSync(helperSrc)) throw new Error('Extracted version has no update-helper.ps1.');
+      const helperPath = path.join(tmpDir, 'update-helper.ps1');
+      fs.copyFileSync(helperSrc, helperPath);
+      this.setState('restarting');
+      spawn(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', helperPath,
+          '-Root', install.root, '-NewVersion', newDirName, '-ServerPid', String(process.pid), '-Port', String(port)],
+        { detached: true, stdio: 'ignore', windowsHide: true },
+      ).unref();
+      setTimeout(() => {
+        console.log('[updates] handing over to update-helper — exiting');
+        process.exit(0);
+      }, 500).unref();
+    } catch (err) {
+      this.setState('idle');
+      throw err;
+    }
   }
 
   private async check(): Promise<void> {
