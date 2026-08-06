@@ -12,7 +12,7 @@ function Badge({ label, className, title }: { label: string; className: string; 
   );
 }
 
-export function SessionBadges({ session }: { session: SessionSummary }) {
+export function SessionBadges({ session, omitPr = false }: { session: SessionSummary; omitPr?: boolean }) {
   const badges: ReactNode[] = [];
 
   if (session.live) {
@@ -39,7 +39,7 @@ export function SessionBadges({ session }: { session: SessionSummary }) {
       />,
     );
   }
-  if (session.enrichment && session.enrichment.prLinks.length > 0) {
+  if (!omitPr && session.enrichment && session.enrichment.prLinks.length > 0) {
     badges.push(
       <Badge
         key="pr"

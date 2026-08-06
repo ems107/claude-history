@@ -38,8 +38,10 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
   const seenMessageIds = new Set<string>();
   const promptIds = new Set<string>();
   const searchBlocks: SearchBlock[] = [];
+  const prSeen = new Set<string>();
   let userMessageCount = 0;
   let assistantMessageCount = 0;
+  let toolUseCount = 0;
 
   for await (const line of streamLines(filePath)) {
     const o = safeParse(line);
@@ -47,9 +49,11 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
     const type = str(o.type);
 
     if (type === 'pr-link') {
+      // Sidecar lines are re-appended over the session's life — dedupe.
       const prNumber = num(o.prNumber);
       const prUrl = str(o.prUrl);
-      if (prNumber !== null && prUrl) {
+      if (prNumber !== null && prUrl && !prSeen.has(prUrl)) {
+        prSeen.add(prUrl);
         prLinks.push({ prNumber, prUrl, prRepository: str(o.prRepository) ?? '' });
       }
       continue;
@@ -81,11 +85,14 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
         }
       }
       // Streamed chunks of one message land on separate lines, each carrying
-      // distinct content blocks — collect text from every line.
+      // distinct content blocks — collect from every line (blocks never repeat).
       if (Array.isArray(o.message.content)) {
         for (const block of o.message.content) {
-          if (isRec(block) && block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+          if (!isRec(block)) continue;
+          if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
             searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.text });
+          } else if (block.type === 'tool_use') {
+            toolUseCount++;
           }
         }
       }
@@ -98,6 +105,7 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
     enrichment: {
       userMessageCount,
       assistantMessageCount,
+      toolUseCount,
       turnCount: promptIds.size,
       usage,
       usageByModel,

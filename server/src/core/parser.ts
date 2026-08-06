@@ -167,9 +167,12 @@ export async function parseTranscript(
     const type = str(o.type);
 
     if (type === 'pr-link') {
+      // Sidecar lines are re-appended over the session's life — dedupe by URL.
       const prNumber = num(o.prNumber);
       const prUrl = str(o.prUrl);
-      if (prNumber !== null && prUrl) prLinks.push({ prNumber, prUrl, prRepository: str(o.prRepository) ?? '' });
+      if (prNumber !== null && prUrl && !prLinks.some((p) => p.prUrl === prUrl)) {
+        prLinks.push({ prNumber, prUrl, prRepository: str(o.prRepository) ?? '' });
+      }
       continue;
     }
 

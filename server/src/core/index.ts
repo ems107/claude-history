@@ -7,7 +7,7 @@ import type {
   SessionSummary,
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
-import { CACHE_VERSION, DiskCache, type CacheKey } from './cache.ts';
+import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
 import { readLiveSessions } from './live.ts';
@@ -43,6 +43,8 @@ export class SessionIndex {
   private scanned = new Map<string, ScannedSession>();
   private history: HistoryData = { entries: [], sessionProject: new Map() };
   private live: LiveSessionEntry[] = [];
+  /** Local title renames — stored in userdata.json, NEVER written to ~/.claude. */
+  private titleOverrides: Record<string, string> = {};
   state: IndexState = 'scanning';
   cacheHits = 0;
   private enriching = false;
@@ -57,6 +59,8 @@ export class SessionIndex {
     await this.cache.init();
     const indexCache = await this.cache.loadIndex<IndexCacheFile>();
     this.history = await readHistoryData(this.config.historyFile);
+    const userdata = await readJsonFile<{ titleOverrides?: Record<string, string> }>(this.config.userdataFile);
+    this.titleOverrides = userdata?.titleOverrides ?? {};
 
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
@@ -218,12 +222,25 @@ export class SessionIndex {
     return this.cache.loadEntry<TextEntry>('text', id, { size: s.sizeBytes, mtimeMs: s.mtimeMs });
   }
 
+  private withOverride(s: SessionSummary): SessionSummary {
+    const override = this.titleOverrides[s.id];
+    return override ? { ...s, title: override, titleSource: 'local' } : s;
+  }
+
+  async setTitleOverride(id: string, title: string | null): Promise<void> {
+    if (title) this.titleOverrides[id] = title;
+    else delete this.titleOverrides[id];
+    await writeJsonAtomic(this.config.userdataFile, { titleOverrides: this.titleOverrides });
+    this.events.emit('session-updated', id);
+  }
+
   list(): SessionSummary[] {
-    return [...this.sessions.values()].sort((a, b) => b.mtimeMs - a.mtimeMs);
+    return [...this.sessions.values()].map((s) => this.withOverride(s)).sort((a, b) => b.mtimeMs - a.mtimeMs);
   }
 
   get(id: string): SessionSummary | undefined {
-    return this.sessions.get(id);
+    const s = this.sessions.get(id);
+    return s && this.withOverride(s);
   }
 
   getScanned(id: string): ScannedSession | undefined {

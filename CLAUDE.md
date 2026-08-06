@@ -46,6 +46,10 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 - Global extras: `~/.claude/history.jsonl` (every typed prompt: `display`, epoch-**ms** `timestamp`, real `project` path, `sessionId`) and `~/.claude/sessions/<pid>.json` (currently-running sessions: `sessionId`, `cwd`, `status` idle/busy, `pid` — verify pid liveness with `process.kill(pid, 0)` before trusting).
 - Many sessions are throwaway stubs (≤16 lines, only slash commands, no title) — flagged `isEmpty` and hidden by default.
 - Wrap EVERY `JSON.parse` of transcript lines in try/catch: lines can be corrupt/partial and active files are appended while being read.
+- `pr-link` (and every sidecar type) is re-appended per turn — always dedupe (by `prUrl`).
+- **Thinking blocks are empty in recent CC versions**: `{"type":"thinking","thinking":"","signature":"..."}` — only the signature is persisted locally. Older sessions (~2.1.200, opus) carry plaintext thinking. The UI must not assume thinking text exists.
+- `entrypoint` (`cli`/`claude-desktop`/`claude-vscode`) is a per-line field; resuming in another client creates a NEW session file, so files are uniform in practice (verified: no mixed files).
+- `turn_duration.messageCount` counts CONTEXT ENTRIES (tool results, streamed chunks…), not conversational messages — label it accordingly.
 
 ## Windows gotchas
 
@@ -55,7 +59,7 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 
 ## Hard constraints
 
-- The app **only reads** from `~/.claude` — it must never write, create, or lock anything inside it. Its own writes go exclusively to its cache dir.
+- The app **only reads** from `~/.claude` — it must never write, create, or lock anything inside it. Its own writes go exclusively to its cache dir and `userdata.json` (sibling of the cache dir; holds local title overrides). Session renames are LOCAL overrides only — Claude Code's own `/resume` keeps showing the original title.
 - The server binds `127.0.0.1` only. Never `0.0.0.0`.
 - `POST /api/sessions/:id/resume` validates the id (UUID regex + membership in the index) and takes `cwd` only from the index — never from the request.
 - The tool-results endpoint accepts a bare filename and must verify the resolved path stays inside that session's `tool-results/` dir.

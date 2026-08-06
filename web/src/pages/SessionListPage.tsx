@@ -9,23 +9,54 @@ import { SearchResults } from '../components/list/SearchResults.tsx';
 import { SessionRow } from '../components/list/SessionRow.tsx';
 import { SortBar } from '../components/list/SortBar.tsx';
 import { applyFilters, filtersToParams, parseFilters, type FilterState } from '../lib/filters.ts';
+import { saveListParams, saveListScroll, savedListScroll } from '../lib/listState.ts';
 
 const ROW_HEIGHT = 64;
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
+
+const SEARCH_SCOPES: Array<[string, string]> = [
+  ['', 'Everywhere'],
+  ['title', 'Titles'],
+  ['user', 'My prompts'],
+  ['assistant', 'Responses'],
+];
 
 export function SessionListPage() {
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [searchParams, setSearchParams] = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('sidebarWidth')) || 256);
+
+  // Remember filters/search + scroll so navigating into a session and back
+  // restores the list exactly as it was.
+  useEffect(() => saveListParams(searchParams.toString()), [searchParams]);
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = Number(localStorage.getItem('sidebarWidth')) || 256;
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.min(520, Math.max(180, startWidth + ev.clientX - startX));
+      setSidebarWidth(w);
+      localStorage.setItem('sidebarWidth', String(w));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
 
   const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
   const q = searchParams.get('q') ?? '';
   const setFilters = useCallback(
     (f: FilterState) => {
       const sp = filtersToParams(f);
-      const currentQ = new URLSearchParams(window.location.search).get('q');
-      if (currentQ) sp.set('q', currentQ);
+      const current = new URLSearchParams(window.location.search);
+      if (current.get('q')) sp.set('q', current.get('q')!);
+      if (current.get('in')) sp.set('in', current.get('in')!);
       setSearchParams(sp, { replace: true });
     },
     [setSearchParams],
@@ -45,10 +76,26 @@ export function SessionListPage() {
     [setSearchParams],
   );
 
+  const scope = searchParams.get('in') ?? '';
+  const setScope = useCallback(
+    (value: string) => {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          if (value) sp.set('in', value);
+          else sp.delete('in');
+          return sp;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
   const searchActive = q.trim().length >= 2;
   const searchQuery = useQuery({
-    queryKey: ['search', q],
-    queryFn: () => api.search(q),
+    queryKey: ['search', q, scope],
+    queryFn: () => api.search(q, scope),
     enabled: searchActive,
   });
 
@@ -74,6 +121,14 @@ export function SessionListPage() {
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
   });
+
+  // Restore the scroll offset once, when data is first available.
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    if (scrollRestored.current || !sessions.data || !parentRef.current) return;
+    scrollRestored.current = true;
+    parentRef.current.scrollTop = savedListScroll();
+  }, [sessions.data]);
 
   // Keyboard navigation: j/k or arrows move, Enter opens, / focuses search.
   const navigate = useNavigate();
@@ -123,12 +178,21 @@ export function SessionListPage() {
   return (
     <div className="flex h-full">
       {sidebarOpen && (
-        <FilterSidebar
-          sessions={sessions.data ?? []}
-          projects={projects.data ?? []}
-          filters={filters}
-          onChange={setFilters}
-        />
+        <>
+          <div style={{ width: sidebarWidth }} className="h-full shrink-0">
+            <FilterSidebar
+              sessions={sessions.data ?? []}
+              projects={projects.data ?? []}
+              filters={filters}
+              onChange={setFilters}
+            />
+          </div>
+          <div
+            className="h-full w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
+            onMouseDown={startResize}
+            title="Drag to resize"
+          />
+        </>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
         <SortBar filters={filters} onChange={setFilters} resultCount={rows.length} totalCount={sessions.data?.length ?? 0}>
@@ -141,8 +205,24 @@ export function SessionListPage() {
             ☰
           </button>
           <SearchBox value={q} onChange={setQ} />
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            title="Where to search"
+            className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)]"
+          >
+            {SEARCH_SCOPES.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
         </SortBar>
-        <div ref={parentRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          ref={parentRef}
+          onScroll={(e) => saveListScroll(e.currentTarget.scrollTop)}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
           {searchActive ? (
             searchQuery.isLoading ? (
               <div className="p-8 text-center text-[var(--text-dim)]">Searching…</div>

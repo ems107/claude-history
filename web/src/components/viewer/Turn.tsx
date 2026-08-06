@@ -1,5 +1,5 @@
 import type { MessageItem, Turn as TurnType } from '@claude-history/shared';
-import { formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { Markdown } from './Markdown.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
@@ -22,7 +22,7 @@ function UserItem({ item }: { item: MessageItem }) {
         <span>user</span>
         {item.timestamp && (
           <span className="font-normal text-[var(--text-dim)] normal-case" title={formatDateTimeFull(item.timestamp)}>
-            {relativeTime(item.timestamp)}
+            {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
           </span>
         )}
       </div>
@@ -71,7 +71,7 @@ function AssistantItem({
         {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
         {item.timestamp && (
           <span className="font-normal normal-case" title={formatDateTimeFull(item.timestamp)}>
-            {relativeTime(item.timestamp)}
+            {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
           </span>
         )}
       </div>

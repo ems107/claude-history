@@ -2,7 +2,23 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 /** Bump to invalidate every cached artifact after a schema change. */
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
+
+/** Read a JSON file, null on any failure. */
+export async function readJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    return JSON.parse(await fsp.readFile(filePath, 'utf8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Atomic JSON write (tmp + rename); throws on failure. */
+export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
+  const tmp = `${filePath}.tmp`;
+  await fsp.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
+  await fsp.rename(tmp, filePath);
+}
 
 export interface CacheKey {
   size: number;
@@ -55,15 +71,16 @@ export class DiskCache {
 
   async loadEntry<T extends CacheKey>(subdir: CacheSubdir, id: string, key: CacheKey): Promise<T | null> {
     try {
-      const raw = JSON.parse(await fsp.readFile(this.entryPath(subdir, id), 'utf8')) as T;
-      return keyMatches(raw, key) ? raw : null;
+      const raw = JSON.parse(await fsp.readFile(this.entryPath(subdir, id), 'utf8')) as T & { version?: number };
+      // Version-gate every entry so schema changes invalidate stale caches.
+      return raw.version === CACHE_VERSION && keyMatches(raw, key) ? raw : null;
     } catch {
       return null;
     }
   }
 
   async saveEntry<T extends CacheKey>(subdir: CacheSubdir, id: string, value: T): Promise<void> {
-    await this.writeAtomic(this.entryPath(subdir, id), value);
+    await this.writeAtomic(this.entryPath(subdir, id), { version: CACHE_VERSION, ...value });
   }
 
   async deleteEntry(subdir: CacheSubdir, id: string): Promise<void> {

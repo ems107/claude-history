@@ -18,7 +18,17 @@ export const api = {
   meta: () => getJson<MetaResponse>('/api/meta'),
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
-  search: (q: string) => getJson<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, scope?: string) =>
+    getJson<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}${scope ? `&in=${encodeURIComponent(scope)}` : ''}`),
+  renameSession: async (id: string, title: string) => {
+    const res = await fetch(`/api/sessions/${id}/title`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json();
+  },
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
   subagent: (id: string, agentId: string) =>
     getJson<SubagentDetailResponse>(`/api/sessions/${id}/subagents/${agentId}`),

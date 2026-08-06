@@ -65,25 +65,25 @@ export class SearchService {
     const cached = this.texts.get(id);
     if (cached && cached.sig === sig) return cached;
 
+    const s = this.index.get(id);
+    const blocks: SearchBlock[] = [];
+    // The (possibly locally-renamed) title is always searchable.
+    if (s && s.titleSource !== 'uuid') blocks.push({ uuid: null, role: 'title', text: s.title });
     const entry = await this.index.loadTextBlocks(id);
-    let blocks: SearchBlock[];
     if (entry) {
-      blocks = entry.blocks;
-    } else {
-      const s = this.index.get(id);
-      blocks = [];
-      if (s) {
-        if (s.titleSource !== 'uuid') blocks.push({ uuid: null, role: 'title', text: s.title });
-        if (s.firstPromptPreview) blocks.push({ uuid: null, role: 'user', text: s.firstPromptPreview });
-        if (s.lastPromptPreview) blocks.push({ uuid: null, role: 'user', text: s.lastPromptPreview });
-      }
+      blocks.push(...entry.blocks);
+    } else if (s) {
+      // Not enriched yet — previews only.
+      if (s.firstPromptPreview) blocks.push({ uuid: null, role: 'user', text: s.firstPromptPreview });
+      if (s.lastPromptPreview) blocks.push({ uuid: null, role: 'user', text: s.lastPromptPreview });
     }
     const st: SessionText = { sig, blocks, folded: blocks.map((b) => foldText(b.text)) };
     this.texts.set(id, st);
     return st;
   }
 
-  async search(query: string): Promise<SearchResponse> {
+  /** `roles` restricts where to look: any subset of 'title' | 'user' | 'assistant'. */
+  async search(query: string, roles?: Set<string>): Promise<SearchResponse> {
     const t0 = performance.now();
     const needle = foldText(query.trim());
     const hits: SearchHit[] = [];
@@ -97,6 +97,7 @@ export class SearchService {
       let matchCount = 0;
       const snippets: SearchSnippet[] = [];
       for (let bi = 0; bi < st.blocks.length; bi++) {
+        if (roles && !roles.has(st.blocks[bi].role)) continue;
         const foldedBlock = st.folded[bi];
         let from = 0;
         let idx: number;

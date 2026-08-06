@@ -61,12 +61,13 @@ export function SessionRow({
           <SessionBadges session={session} />
         </div>
       </div>
-      <div className="shrink-0 text-right">
-        <div className="text-sm" title={formatDateTimeFull(session.lastActivityAt ?? session.mtimeMs)}>
-          {relativeTime(session.lastActivityAt ?? session.mtimeMs)}
-        </div>
-        <div className="mt-0.5 text-xs text-[var(--text-dim)]" title="Created">
-          {formatDateTime(session.createdAt)}
+      <div
+        className="shrink-0 text-right"
+        title={`Created: ${formatDateTimeFull(session.createdAt)}\nLast activity: ${formatDateTimeFull(session.lastActivityAt ?? session.mtimeMs)}`}
+      >
+        <div className="text-sm">{relativeTime(session.lastActivityAt ?? session.mtimeMs)}</div>
+        <div className="mt-0.5 text-xs text-[var(--text-dim)]">
+          {formatDateTime(session.lastActivityAt ?? session.mtimeMs)}
         </div>
       </div>
     </Link>

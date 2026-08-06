@@ -8,6 +8,8 @@ export interface AppConfig {
   sessionsDir: string;
   historyFile: string;
   cacheDir: string;
+  /** User data that must survive cache wipes (e.g. local title overrides). */
+  userdataFile: string;
   host: string;
   port: number;
   /** Absolute path to built web assets, or null in dev (Vite serves the UI). */
@@ -60,12 +62,14 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     }
   }
 
+  const cacheDir = path.resolve(cacheBase);
   return {
     dataRoot,
     projectsDir: path.join(dataRoot, 'projects'),
     sessionsDir: path.join(dataRoot, 'sessions'),
     historyFile: path.join(dataRoot, 'history.jsonl'),
-    cacheDir: path.resolve(cacheBase),
+    cacheDir,
+    userdataFile: path.resolve(cacheDir, '..', 'userdata.json'),
     host: '127.0.0.1',
     port: Number(process.env.PORT || args.get('port') || 7433),
     staticDir,

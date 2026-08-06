@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
@@ -59,6 +59,15 @@ export function SessionViewPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [agentId, closeAgent, navigate]);
 
+  const thinkingCount = useMemo(
+    () =>
+      (detail.data?.turns ?? [])
+        .flatMap((t) => t.items)
+        .flatMap((i) => i.blocks)
+        .filter((b) => b.kind === 'thinking').length,
+    [detail.data],
+  );
+
   if (detail.isLoading) {
     return <div className="p-8 text-[var(--text-dim)]">Parsing conversation…</div>;
   }
@@ -81,6 +90,7 @@ export function SessionViewPage() {
             return !v;
           });
         }}
+        thinkingCount={thinkingCount}
         showTokens={showTokens}
         onToggleTokens={() => setShowTokens((v) => !v)}
         actions={<ResumeButtons session={detail.data.summary} />}

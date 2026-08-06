@@ -7,7 +7,9 @@ export type TitleSource =
   | 'agent-name'
   | 'last-prompt'
   | 'first-message'
-  | 'uuid';
+  | 'uuid'
+  /** Renamed locally in claude-history (override stored in userdata.json, never written to ~/.claude). */
+  | 'local';
 
 export interface UsageTotals {
   input: number;
@@ -25,6 +27,7 @@ export interface PrLink {
 export interface SessionEnrichment {
   userMessageCount: number;
   assistantMessageCount: number;
+  toolUseCount: number;
   turnCount: number;
   usage: UsageTotals;
   usageByModel: Record<string, UsageTotals>;

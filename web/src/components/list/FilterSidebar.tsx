@@ -89,8 +89,13 @@ export function FilterSidebar({
               : 'custom'
       : 'custom';
 
+  const sortedProjects = useMemo(
+    () => [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    [projects],
+  );
+
   return (
-    <aside className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)]">
+    <aside className="flex h-full w-full flex-col overflow-y-auto border-r border-[var(--border)]">
       <Section title="Projects">
         {filters.projects.length > 0 && (
           <button
@@ -101,7 +106,7 @@ export function FilterSidebar({
             Clear selection
           </button>
         )}
-        {projects.map((p) => (
+        {sortedProjects.map((p) => (
           <CheckRow
             key={p.key}
             checked={filters.projects.includes(p.key)}
