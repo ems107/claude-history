@@ -1,0 +1,74 @@
+// REST API contract shared between server and web.
+
+import type {
+  LiveInfo,
+  ProjectInfo,
+  SessionDetail,
+  SessionSummary,
+  SubagentDetail,
+} from './types.ts';
+
+export type IndexState = 'scanning' | 'enriching' | 'ready';
+
+export interface MetaResponse {
+  dataRoot: string;
+  cacheDir: string;
+  projectCount: number;
+  sessionCount: number;
+  indexState: IndexState;
+  enrichedCount: number;
+  cacheHits: number;
+  version: string;
+}
+
+export type SessionsResponse = SessionSummary[];
+export type ProjectsResponse = ProjectInfo[];
+export type SessionDetailResponse = SessionDetail;
+export type SubagentDetailResponse = SubagentDetail;
+
+export interface LiveSessionEntry extends LiveInfo {
+  sessionId: string;
+  cwd: string;
+  entrypoint: string | null;
+}
+export type LiveResponse = LiveSessionEntry[];
+
+export interface SearchSnippet {
+  uuid: string | null;
+  role: string;
+  before: string;
+  match: string;
+  after: string;
+}
+
+export interface SearchHit {
+  sessionId: string;
+  matchCount: number;
+  snippets: SearchSnippet[];
+}
+
+export interface SearchResponse {
+  hits: SearchHit[];
+  scannedSessions: number;
+  tookMs: number;
+  indexComplete: boolean;
+}
+
+export interface ToolResultFileResponse {
+  text: string;
+  sizeBytes: number;
+}
+
+export interface ResumeResponse {
+  ok: boolean;
+  method: 'wt' | 'cmd';
+  command: string;
+}
+
+// ---- SSE events on /api/events ----
+
+export type ServerEvent =
+  | { type: 'sessions-changed'; ids: string[] }
+  | { type: 'session-updated'; id: string }
+  | { type: 'live-changed' }
+  | { type: 'index-progress'; enriched: number; total: number };

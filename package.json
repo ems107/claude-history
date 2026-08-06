@@ -1,0 +1,12 @@
+{
+  "name": "claude-history",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local web browser for all Claude Code conversations across all projects",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm --filter @claude-history/web build",
+    "start": "pnpm --filter @claude-history/server start",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+/* Dark-first design. The app targets a dark UI by default. */
+:root {
+  --bg: #0f1115;
+  --bg-raised: #161a21;
+  --bg-hover: #1d232d;
+  --border: #262d38;
+  --text: #d7dde6;
+  --text-dim: #8b96a5;
+  --accent: #d97757; /* claude-ish terracotta */
+  --accent-dim: #a05a44;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a323e;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
