@@ -1,11 +1,18 @@
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
-import type { AppConfig } from './config.ts';
+import type { AppContext } from './context.ts';
+import { registerMetaRoutes } from './routes/meta.ts';
+import { registerProjectRoutes } from './routes/projects.ts';
+import { registerSessionRoutes } from './routes/sessions.ts';
 
-export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
-  const app = Fastify({ logger: { level: 'info' } });
+export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
+  const { config } = ctx;
+  const app = Fastify({ logger: { level: 'warn' } });
 
   app.get('/api/health', async () => ({ ok: true }));
+  registerMetaRoutes(app, ctx);
+  registerProjectRoutes(app, ctx);
+  registerSessionRoutes(app, ctx);
 
   if (config.staticDir) {
     await app.register(fastifyStatic, { root: config.staticDir });

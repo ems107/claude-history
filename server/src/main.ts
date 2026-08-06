@@ -1,12 +1,19 @@
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
+import { SessionIndex } from './core/index.ts';
 
 const config = loadConfig();
-const app = await buildApp(config);
+const index = new SessionIndex(config);
+
+const t0 = Date.now();
+await index.build();
+console.log(`[index] ${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`);
+
+const app = await buildApp({ config, index });
 
 try {
   await app.listen({ host: config.host, port: config.port });
-  app.log.info(`claude-history server on http://${config.host}:${config.port} (data root: ${config.dataRoot})`);
+  console.log(`claude-history on http://${config.host}:${config.port} (data root: ${config.dataRoot})`);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

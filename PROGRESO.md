@@ -4,8 +4,11 @@
 
 ## Estado de la implementación
 
-- [ ] Paso 1 — Scaffold: workspace pnpm, tipos compartidos, Fastify hello, shell Vite+Tailwind, CLAUDE.md
-- [ ] Paso 2 — jsonl/scanner/summarizer/projects/history + endpoints /api/sessions, /api/projects, /api/meta
+- [x] Paso 1 — Scaffold: workspace pnpm, tipos compartidos, Fastify hello, shell Vite+Tailwind, CLAUDE.md
+- [x] Paso 2 — jsonl/scanner/summarizer/projects/history + endpoints /api/sessions, /api/projects, /api/meta
+  - Verificado contra datos reales: 44 sesiones, 7 proyectos (dirs con distinta mayúscula fusionados), 12 stubs vacíos, índice en ~50 ms.
+  - Decisión: el proyecto de una sesión es su **primer** `cwd` (directorio de lanzamiento); el último puede haber cambiado a mitad de sesión.
+  - Colores de tag: hue FNV-1a + ángulo áureo con resolución de colisiones (separación mínima 22°).
 - [ ] Paso 3 — SessionListPage (lista virtualizada, tags, fechas, orden, ocultar-vacías)
 - [ ] Paso 4 — FilterSidebar + SortBar + estado en URL
 - [ ] Paso 5 — cache.ts + enricher.ts + badges
