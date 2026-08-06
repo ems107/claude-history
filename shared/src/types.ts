@@ -24,6 +24,12 @@ export interface PrLink {
   prRepository: string;
 }
 
+export interface DailyUsage {
+  /** User-typed prompts that day. */
+  prompts: number;
+  byModel: Record<string, UsageTotals>;
+}
+
 export interface SessionEnrichment {
   userMessageCount: number;
   assistantMessageCount: number;
@@ -31,6 +37,8 @@ export interface SessionEnrichment {
   turnCount: number;
   usage: UsageTotals;
   usageByModel: Record<string, UsageTotals>;
+  /** Per-UTC-day usage (yyyy-mm-dd) for the stats dashboard. */
+  daily: Record<string, DailyUsage>;
   models: string[];
   prLinks: PrLink[];
   resumedFrom: string[];

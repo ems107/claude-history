@@ -2,10 +2,12 @@ import { EventEmitter } from 'node:events';
 import type {
   IndexState,
   LiveSessionEntry,
+  PriceTable,
   ProjectInfo,
   SessionEnrichment,
   SessionSummary,
 } from '@claude-history/shared';
+import { DEFAULT_PRICES } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
@@ -47,6 +49,8 @@ export class SessionIndex {
   private titleOverrides: Record<string, string> = {};
   /** Pinned session ids — stored in userdata.json. */
   private pins = new Set<string>();
+  /** Custom model price table — null means "use defaults". */
+  private prices: PriceTable | null = null;
   state: IndexState = 'scanning';
   cacheHits = 0;
   private enriching = false;
@@ -61,11 +65,14 @@ export class SessionIndex {
     await this.cache.init();
     const indexCache = await this.cache.loadIndex<IndexCacheFile>();
     this.history = await readHistoryData(this.config.historyFile);
-    const userdata = await readJsonFile<{ titleOverrides?: Record<string, string>; pins?: string[] }>(
-      this.config.userdataFile,
-    );
+    const userdata = await readJsonFile<{
+      titleOverrides?: Record<string, string>;
+      pins?: string[];
+      prices?: PriceTable;
+    }>(this.config.userdataFile);
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
+    this.prices = userdata?.prices ?? null;
 
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
@@ -250,7 +257,21 @@ export class SessionIndex {
     await writeJsonAtomic(this.config.userdataFile, {
       titleOverrides: this.titleOverrides,
       pins: [...this.pins],
+      ...(this.prices ? { prices: this.prices } : {}),
     });
+  }
+
+  get priceTable(): PriceTable {
+    return this.prices ?? DEFAULT_PRICES;
+  }
+
+  get hasCustomPrices(): boolean {
+    return this.prices !== null;
+  }
+
+  async setPriceTable(prices: PriceTable | null): Promise<void> {
+    this.prices = prices;
+    await this.saveUserdata();
   }
 
   async setTitleOverride(id: string, title: string | null): Promise<void> {

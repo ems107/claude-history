@@ -2,7 +2,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 
 /** Bump to invalidate every cached artifact after a schema change. */
-export const CACHE_VERSION = 2;
+export const CACHE_VERSION = 3;
 
 /** Read a JSON file, null on any failure. */
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {

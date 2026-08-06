@@ -1,4 +1,4 @@
-import type { PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
+import type { DailyUsage, PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
 import { isRec, num, safeParse, str, streamLines } from './jsonl.ts';
 import { extractPrompt } from './summarizer.ts';
 
@@ -39,9 +39,16 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
   const promptIds = new Set<string>();
   const searchBlocks: SearchBlock[] = [];
   const prSeen = new Set<string>();
+  const daily: Record<string, DailyUsage> = {};
   let userMessageCount = 0;
   let assistantMessageCount = 0;
   let toolUseCount = 0;
+
+  const dayOf = (o: Record<string, unknown>): string | null => {
+    const ts = str(o.timestamp);
+    return ts && ts.length >= 10 ? ts.slice(0, 10) : null;
+  };
+  const dayBucket = (day: string): DailyUsage => (daily[day] ??= { prompts: 0, byModel: {} });
 
   for await (const line of streamLines(filePath)) {
     const o = safeParse(line);
@@ -69,6 +76,8 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
         const prompt = extractPrompt(o.message.content);
         if (prompt) {
           userMessageCount++;
+          const day = dayOf(o);
+          if (day) dayBucket(day).prompts++;
           searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text });
         }
       }
@@ -82,6 +91,11 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
         if (model && model !== '<synthetic>' && isRec(o.message.usage)) {
           addUsage(usage, o.message.usage);
           addUsage((usageByModel[model] ??= zeroUsage()), o.message.usage);
+          const day = dayOf(o);
+          if (day) {
+            const bucket = dayBucket(day);
+            addUsage((bucket.byModel[model] ??= zeroUsage()), o.message.usage);
+          }
         }
       }
       // Streamed chunks of one message land on separate lines, each carrying
@@ -109,6 +123,7 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
       turnCount: promptIds.size,
       usage,
       usageByModel,
+      daily,
       models: [...models].sort(),
       prLinks,
       resumedFrom: [...originSessionIds],

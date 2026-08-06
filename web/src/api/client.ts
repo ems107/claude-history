@@ -1,5 +1,6 @@
 import type {
   MetaResponse,
+  PriceTable,
   ProjectsResponse,
   PromptsResponse,
   SearchResponse,
@@ -20,6 +21,16 @@ export const api = {
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),
+  prices: () => getJson<{ prices: PriceTable; isDefault: boolean }>('/api/prices'),
+  savePrices: async (prices: PriceTable | null) => {
+    const res = await fetch('/api/prices', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prices }),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json() as Promise<{ prices: PriceTable; isDefault: boolean }>;
+  },
   search: (q: string, scope?: string) =>
     getJson<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}${scope ? `&in=${encodeURIComponent(scope)}` : ''}`),
   pinSession: async (id: string, pinned: boolean) => {

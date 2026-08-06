@@ -4,6 +4,7 @@ import type { AppContext } from './context.ts';
 import { registerEventRoutes } from './routes/events.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
+import { registerPriceRoutes } from './routes/prices.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPromptRoutes } from './routes/prompts.ts';
 import { registerResumeRoutes } from './routes/resume.ts';
@@ -25,6 +26,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerToolResultRoutes(app, ctx);
   registerLiveRoutes(app, ctx);
   registerPromptRoutes(app, ctx);
+  registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
   registerEventRoutes(app, ctx);
 
