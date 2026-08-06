@@ -9,6 +9,11 @@
     "start": "pnpm --filter @claude-history/server start",
     "start:bg": "powershell -NoProfile -Command \"Start-Process -FilePath 'pnpm' -ArgumentList 'start' -WindowStyle Hidden\"",
     "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7433 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force; Write-Host ('claude-history stopped (pid ' + $_ + ')') }\"",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "package": "node scripts/package.mjs"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.6.0",
+    "esbuild": "^0.28.1"
   }
 }
