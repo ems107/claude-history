@@ -5,8 +5,10 @@ export type BadgeFilter = 'live' | 'pr' | 'subagents' | 'resumed' | 'bg';
 
 export interface FilterState {
   projects: string[]; // projectKeys; empty = all
-  from: string | null; // yyyy-mm-dd
-  to: string | null; // yyyy-mm-dd (inclusive)
+  from: string | null; // last-activity range, yyyy-mm-dd
+  to: string | null; // last-activity range, yyyy-mm-dd (inclusive)
+  createdFrom: string | null; // created range, yyyy-mm-dd
+  createdTo: string | null; // created range, yyyy-mm-dd (inclusive)
   entrypoints: string[];
   models: string[];
   badges: BadgeFilter[];
@@ -19,6 +21,8 @@ export const DEFAULT_FILTERS: FilterState = {
   projects: [],
   from: null,
   to: null,
+  createdFrom: null,
+  createdTo: null,
   entrypoints: [],
   models: [],
   badges: [],
@@ -38,6 +42,8 @@ export function parseFilters(sp: URLSearchParams): FilterState {
     projects: csv(sp.get('projects')),
     from: sp.get('from'),
     to: sp.get('to'),
+    createdFrom: sp.get('cfrom'),
+    createdTo: sp.get('cto'),
     entrypoints: csv(sp.get('entry')),
     models: csv(sp.get('model')),
     badges: csv(sp.get('badges')) as BadgeFilter[],
@@ -52,6 +58,8 @@ export function filtersToParams(f: FilterState): URLSearchParams {
   if (f.projects.length) sp.set('projects', f.projects.join(','));
   if (f.from) sp.set('from', f.from);
   if (f.to) sp.set('to', f.to);
+  if (f.createdFrom) sp.set('cfrom', f.createdFrom);
+  if (f.createdTo) sp.set('cto', f.createdTo);
   if (f.entrypoints.length) sp.set('entry', f.entrypoints.join(','));
   if (f.models.length) sp.set('model', f.models.join(','));
   if (f.badges.length) sp.set('badges', f.badges.join(','));
@@ -90,15 +98,20 @@ export function applyFilters(sessions: SessionSummary[], f: FilterState): Sessio
   const models = f.models.length ? new Set(f.models) : null;
   const fromMs = f.from ? Date.parse(`${f.from}T00:00:00`) : null;
   const toMs = f.to ? Date.parse(`${f.to}T23:59:59.999`) : null;
+  const cFromMs = f.createdFrom ? Date.parse(`${f.createdFrom}T00:00:00`) : null;
+  const cToMs = f.createdTo ? Date.parse(`${f.createdTo}T23:59:59.999`) : null;
 
   const filtered = sessions.filter((s) => {
     if (!f.showEmpty && s.isEmpty) return false;
     if (projects && !projects.has(s.projectKey)) return false;
     if (entrypoints && !(s.entrypoint && entrypoints.has(s.entrypoint))) return false;
     if (models && !(s.model && models.has(s.model))) return false;
-    const ms = activityMs(s);
-    if (fromMs !== null && ms < fromMs) return false;
-    if (toMs !== null && createdMs(s) > toMs) return false;
+    const activity = activityMs(s);
+    if (fromMs !== null && activity < fromMs) return false;
+    if (toMs !== null && activity > toMs) return false;
+    const created = createdMs(s);
+    if (cFromMs !== null && created < cFromMs) return false;
+    if (cToMs !== null && created > cToMs) return false;
     for (const b of f.badges) if (!hasBadge(s, b)) return false;
     return true;
   });

@@ -20,34 +20,18 @@ export function relativeTime(when: string | number | null): string {
   return 'just now';
 }
 
-const dtf = new Intl.DateTimeFormat('en-GB', {
-  day: '2-digit',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-});
+const pad = (n: number) => String(n).padStart(2, '0');
 
-const dtfFull = new Intl.DateTimeFormat('en-GB', {
-  weekday: 'short',
-  year: 'numeric',
-  day: '2-digit',
-  month: 'short',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
-
+/** Absolute datetimes are always dd/MM/yyyy HH:mm:ss (local time). */
 export function formatDateTime(when: string | number | null): string {
   if (when === null) return '—';
   const ms = typeof when === 'number' ? when : Date.parse(when);
-  return Number.isNaN(ms) ? '—' : dtf.format(ms);
+  if (Number.isNaN(ms)) return '—';
+  const d = new Date(ms);
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-export function formatDateTimeFull(when: string | number | null): string {
-  if (when === null) return '—';
-  const ms = typeof when === 'number' ? when : Date.parse(when);
-  return Number.isNaN(ms) ? '—' : dtfFull.format(ms);
-}
+export const formatDateTimeFull = formatDateTime;
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

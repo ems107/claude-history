@@ -54,6 +54,34 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function DateRange({
+  from,
+  to,
+  onChange,
+}: {
+  from: string | null;
+  to: string | null;
+  onChange: (from: string | null, to: string | null) => void;
+}) {
+  return (
+    <div className="mt-2 flex items-center gap-1 text-xs text-[var(--text-dim)]">
+      <input
+        type="date"
+        value={from ?? ''}
+        onChange={(e) => onChange(e.target.value || null, to)}
+        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5"
+      />
+      <span>→</span>
+      <input
+        type="date"
+        value={to ?? ''}
+        onChange={(e) => onChange(from, e.target.value || null)}
+        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5"
+      />
+    </div>
+  );
+}
+
 export function FilterSidebar({
   sessions,
   projects,
@@ -121,7 +149,7 @@ export function FilterSidebar({
         ))}
       </Section>
 
-      <Section title="Date">
+      <Section title="Last activity">
         <div className="flex flex-wrap gap-1">
           {(
             [
@@ -145,21 +173,19 @@ export function FilterSidebar({
             </button>
           ))}
         </div>
-        <div className="mt-2 flex items-center gap-1 text-xs text-[var(--text-dim)]">
-          <input
-            type="date"
-            value={filters.from ?? ''}
-            onChange={(e) => onChange({ ...filters, from: e.target.value || null })}
-            className="min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5"
-          />
-          <span>→</span>
-          <input
-            type="date"
-            value={filters.to ?? ''}
-            onChange={(e) => onChange({ ...filters, to: e.target.value || null })}
-            className="min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5"
-          />
-        </div>
+        <DateRange
+          from={filters.from}
+          to={filters.to}
+          onChange={(from, to) => onChange({ ...filters, from, to })}
+        />
+      </Section>
+
+      <Section title="Created">
+        <DateRange
+          from={filters.createdFrom}
+          to={filters.createdTo}
+          onChange={(createdFrom, createdTo) => onChange({ ...filters, createdFrom, createdTo })}
+        />
       </Section>
 
       {counts.entry.length > 1 && (

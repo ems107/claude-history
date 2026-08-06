@@ -39,20 +39,28 @@ function whereFirst(name: string): Promise<string | null> {
 }
 
 /**
- * Windows Terminal is a Store app whose `wt.exe` is an app-execution alias
- * (reparse point) that Node's PATH lookup fails to spawn directly — resolve
- * the real path via `where`, falling back to the well-known alias location
- * (the server's inherited PATH may lack WindowsApps).
+ * Windows Terminal is a Store app reachable only through app-execution
+ * aliases under %LOCALAPPDATA%\Microsoft\WindowsApps (the packaged exe in
+ * Program Files\WindowsApps is ACL-blocked, EPERM). Alias names vary by
+ * package: `wt.exe` (standard Windows Terminal) or `wtai.exe`
+ * (Microsoft.IntelligentTerminal — the "Terminal" app on this machine; its
+ * `wtcli.exe` sibling is a HEADLESS bridge that opens no window — never use
+ * it). Both accept the classic wt CLI (`-d <dir> <command...>`). PATH lookup
+ * may miss the aliases, so check the alias dir directly too.
  */
 let wtPathPromise: Promise<string | null> | null = null;
 function findWt(): Promise<string | null> {
   wtPathPromise ??= (async () => {
-    const fromPath = await whereFirst('wt');
-    if (fromPath) return fromPath;
-    const alias = process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'wt.exe')
+    const aliasDir = process.env.LOCALAPPDATA
+      ? path.join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps')
       : null;
-    return alias && fs.existsSync(alias) ? alias : null;
+    for (const name of ['wt', 'wtai']) {
+      const fromPath = await whereFirst(name);
+      if (fromPath) return fromPath;
+      const alias = aliasDir ? path.join(aliasDir, `${name}.exe`) : null;
+      if (alias && fs.existsSync(alias)) return alias;
+    }
+    return null;
   })();
   return wtPathPromise;
 }

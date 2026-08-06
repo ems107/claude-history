@@ -53,7 +53,9 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 
 ## Windows gotchas
 
-- `wt.exe` (Windows Terminal) is a Store-app execution alias (reparse point) that Node `spawn` cannot launch via PATH lookup — resolve the real path with `where wt` first, and keep the classic `cmd /c start` window as fallback (wt is not installed on every machine).
+- `wt.exe` (Windows Terminal) is a Store-app execution alias (reparse point) that Node `spawn` cannot launch via PATH lookup — resolve the real path with `where` or check `%LOCALAPPDATA%\Microsoft\WindowsApps` directly, and keep the classic `cmd /c start` window as fallback.
+- **This machine's Terminal app is `Microsoft.IntelligentTerminal`**, which exposes aliases `wtai.exe` (windowed — accepts the classic wt CLI: `-d <dir> <command...>`) and `wtcli.exe` (a HEADLESS bridge — opens no window; never use it to launch a terminal). There is no `wt.exe`. The packaged exes under `Program Files\WindowsApps` are ACL-blocked (spawn EPERM).
+- Absolute datetimes in the UI are always `dd/MM/yyyy HH:mm:ss` (local time), usually paired with a relative time.
 - `process.kill(pid, 0)` throws `EPERM` for alive-but-protected processes — treat EPERM as "alive".
 - `fs.watch` recursive works natively on Windows; no chokidar needed.
 
