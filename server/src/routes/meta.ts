@@ -1,6 +1,7 @@
 import type { MetaResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { APP_VERSION } from '../version.ts';
 
 export function registerMetaRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/meta', async (): Promise<MetaResponse> => ({
@@ -11,6 +12,6 @@ export function registerMetaRoutes(app: FastifyInstance, ctx: AppContext): void 
     indexState: ctx.index.state,
     enrichedCount: ctx.index.enrichedCount,
     cacheHits: ctx.index.cacheHits,
-    version: '0.1.0',
+    version: APP_VERSION,
   }));
 }
