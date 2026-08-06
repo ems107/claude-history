@@ -20,7 +20,7 @@ It is a standalone personal tool. It is **NOT part of the PCCOM ecosystem** (no 
 
 The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web.
 
-**Releases are cut locally, not by CI** (there is no GitHub Actions workflow — it was removed deliberately: `pnpm release` is faster, debuggable, and unaffected by Actions outages). The **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders as markdown — never create a release tag with `git tag` without `-a`/`-F`.
+**Releases are cut locally, not by CI** (there is no GitHub Actions workflow — it was removed deliberately: `pnpm release` is faster, debuggable, and unaffected by Actions outages). The **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders as markdown — never create a release tag with `git tag` without `-a`/`-F`, and always pass **`--cleanup=verbatim`**: git otherwise strips every line starting with `#`, silently deleting markdown headings from the notes.
 
 ## Architecture
 

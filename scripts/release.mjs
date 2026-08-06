@@ -30,15 +30,19 @@ function die(msg) {
   process.exit(1);
 }
 
+// Only pnpm needs a shell on Windows (it is a .cmd); git/gh/node are real
+// executables, and spawning them without a shell avoids arg-escaping issues.
+const needsShell = (cmd) => process.platform === 'win32' && !/^(git|gh|node)$/i.test(path.basename(cmd, '.exe'));
+
 /** Run a command, inheriting stdio; abort the release if it fails. */
 function run(cmd, args, opts = {}) {
-  const res = spawnSync(cmd, args, { cwd: rootDir, stdio: 'inherit', shell: process.platform === 'win32', ...opts });
+  const res = spawnSync(cmd, args, { cwd: rootDir, stdio: 'inherit', shell: needsShell(cmd), ...opts });
   if (res.status !== 0) die(`\`${cmd} ${args.join(' ')}\` failed (exit ${res.status ?? 'signal'})`);
 }
 
 /** Run a command and capture stdout (trimmed). */
 function capture(cmd, args) {
-  const res = spawnSync(cmd, args, { cwd: rootDir, encoding: 'utf8', shell: process.platform === 'win32' });
+  const res = spawnSync(cmd, args, { cwd: rootDir, encoding: 'utf8', shell: needsShell(cmd) });
   if (res.status !== 0) die(`\`${cmd} ${args.join(' ')}\` failed: ${res.stderr?.trim() || res.stdout?.trim()}`);
   return res.stdout.trim();
 }
@@ -73,7 +77,7 @@ if (capture('git', ['ls-remote', '--tags', 'origin', tag])) die(`Tag ${tag} alre
 const behind = capture('git', ['rev-list', '--count', `HEAD..origin/${branch}`]);
 if (behind !== '0') die(`Local ${branch} is ${behind} commit(s) behind origin — pull first`);
 
-const ghAuth = spawnSync('gh', ['auth', 'status'], { encoding: 'utf8', shell: process.platform === 'win32' });
+const ghAuth = spawnSync('gh', ['auth', 'status'], { encoding: 'utf8' });
 if (ghAuth.status !== 0) die('gh is not authenticated — run `gh auth login`');
 
 // --- 2. Build -------------------------------------------------------------
@@ -94,16 +98,17 @@ if (dryRun) {
 // --- 3. Tag, push, publish ------------------------------------------------
 const notesPath = path.join(rootDir, 'dist', 'release-notes.txt');
 fs.writeFileSync(notesPath, notes, 'utf8');
-run('git', ['tag', '-a', tag, '-F', notesPath]);
+// --cleanup=verbatim: without it git strips lines starting with '#',
+// silently eating markdown headings from the release notes.
+run('git', ['tag', '-a', tag, '-F', notesPath, '--cleanup=verbatim']);
 run('git', ['push', 'origin', branch]);
 run('git', ['push', 'origin', tag]);
 
 // If publishing fails the tag is already pushed: say exactly how to recover.
-const gh = spawnSync(
-  'gh',
-  ['release', 'create', tag, zipPath, sumsPath, '--title', tag, '--notes-from-tag'],
-  { cwd: rootDir, stdio: 'inherit', shell: process.platform === 'win32' },
-);
+const gh = spawnSync('gh', ['release', 'create', tag, zipPath, sumsPath, '--title', tag, '--notes-from-tag'], {
+  cwd: rootDir,
+  stdio: 'inherit',
+});
 if (gh.status !== 0) {
   die(
     `gh release create failed. The tag ${tag} is already pushed; retry publishing with:\n` +
