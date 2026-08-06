@@ -79,6 +79,16 @@ function findShell(): Promise<string> {
  * errors stay readable. Inputs are validated by the route (UUID +
  * index-owned cwd).
  */
+/** Open Windows Explorer at the project folder. */
+export async function openInExplorer(cwd: string): Promise<void> {
+  await trySpawn('explorer.exe', [cwd]);
+}
+
+/** Open VS Code at the project folder (`code` is a .cmd shim — go through cmd). */
+export async function openInVsCode(cwd: string): Promise<void> {
+  await trySpawn('cmd', ['/c', 'code', cwd]);
+}
+
 export async function launchResume(cwd: string, sessionId: string): Promise<{ method: 'wt' | 'cmd'; command: string }> {
   const command = `claude --resume ${sessionId}`;
   const shell = await findShell();

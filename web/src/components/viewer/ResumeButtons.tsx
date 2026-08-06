@@ -35,11 +35,31 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
       });
   };
 
+  const openTarget = (target: 'explorer' | 'vscode') => {
+    void fetch(`/api/sessions/${session.id}/open?target=${target}`, { method: 'POST' });
+  };
+
   const btn =
     'cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-50';
 
   return (
     <span className="inline-flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => openTarget('explorer')}
+        className={btn}
+        title={`Open ${session.projectPath} in Explorer`}
+      >
+        📁
+      </button>
+      <button
+        type="button"
+        onClick={() => openTarget('vscode')}
+        className={btn}
+        title={`Open ${session.projectPath} in VS Code`}
+      >
+        {'{ }'}
+      </button>
       <button type="button" onClick={copy} className={btn} title={command}>
         {copied ? 'Copied ✓' : 'Copy resume cmd'}
       </button>
