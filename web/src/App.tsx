@@ -1,13 +1,6 @@
 import { Link, Route, Routes } from 'react-router';
 import { SessionListPage } from './pages/SessionListPage.tsx';
-
-function SessionViewStub() {
-  return (
-    <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
-      Conversation viewer coming soon…
-    </div>
-  );
-}
+import { SessionViewPage } from './pages/SessionViewPage.tsx';
 
 export function App() {
   return (
@@ -20,7 +13,7 @@ export function App() {
       <main className="min-h-0 flex-1">
         <Routes>
           <Route path="/" element={<SessionListPage />} />
-          <Route path="/session/:id" element={<SessionViewStub />} />
+          <Route path="/session/:id" element={<SessionViewPage />} />
         </Routes>
       </main>
     </div>

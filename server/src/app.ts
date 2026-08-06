@@ -5,6 +5,7 @@ import { registerMetaRoutes } from './routes/meta.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerSearchRoutes } from './routes/search.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
+import { registerSubagentRoutes } from './routes/subagents.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
@@ -16,6 +17,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerProjectRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
   registerSearchRoutes(app, ctx);
+  registerSubagentRoutes(app, ctx);
   registerToolResultRoutes(app, ctx);
 
   if (config.staticDir) {

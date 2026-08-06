@@ -270,7 +270,9 @@ export async function parseTranscript(
     } else if (type === 'system') {
       const subtype = str(o.subtype) ?? '';
       if (subtype === 'turn_duration') continue; // per-turn timing noise
-      const text = str(o.content);
+      const text = str(o.content)
+        ?.replace(/<\/?local-command-(?:stdout|stderr)>/g, '')
+        .trim();
       if (!text) continue;
       ensureTurn().items.push({
         uuid: makeUuid(o),

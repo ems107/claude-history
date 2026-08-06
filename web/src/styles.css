@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@plugin '@tailwindcss/typography';
 
 /* Dark-first design. The app targets a dark UI by default. */
 :root {

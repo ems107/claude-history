@@ -14,8 +14,8 @@
 - [x] Paso 5 — cache.ts + enricher.ts + badges (verificado: 44/44 enriquecidas, PR y ancestría correctos, warm boot 43/44 hits en 14 ms)
 - [x] Paso 6 — search.ts + /api/search + SearchBox (verificado: "actualización" = "actualizacion", 6 hits, 3-53 ms)
 - [x] Paso 7 — parser.ts + /api/sessions/:id (verificado: 3,5 MB en 27 ms, 71/71 tools emparejados, offloaded via toolUseResult.persistedOutputPath)
-- [ ] Paso 8 — ToolBlock + tool-results + thinking + TokenPanel
-- [ ] Paso 9 — Subagentes (endpoints + drawer + enlaces Task)
+- [x] Paso 8 — ToolBlock + tool-results + thinking + TokenPanel
+- [x] Paso 9 — Subagentes (endpoints + drawer + enlaces Task). Verificación visual con Playwright+Edge: listado y visor renderizan correctamente
 - [ ] Paso 10 — live.ts + watcher.ts + SSE + badges LIVE
 - [ ] Paso 11 — launcher.ts + resume endpoint + ResumeButtons
 - [ ] Paso 12 — Modo producción + README + pulido
