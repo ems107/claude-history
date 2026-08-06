@@ -1,8 +1,24 @@
-import { Link, Route, Routes, useNavigate } from 'react-router';
+import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
 import { useEvents } from './api/useEvents.ts';
 import { listUrl } from './lib/listState.ts';
+import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
 import { SessionViewPage } from './pages/SessionViewPage.tsx';
+
+function NavItem({ to, label }: { to: string; label: string }) {
+  return (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `rounded px-2 py-0.5 text-sm ${
+          isActive ? 'bg-[var(--bg-hover)] text-[var(--text)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+        }`
+      }
+    >
+      {label}
+    </NavLink>
+  );
+}
 
 export function App() {
   useEvents();
@@ -20,11 +36,15 @@ export function App() {
         >
           <span className="text-[var(--accent)]">claude</span> history
         </Link>
+        <nav className="ml-4 flex items-center gap-1">
+          <NavItem to="/prompts" label="Prompts" />
+        </nav>
       </header>
       <main className="min-h-0 flex-1">
         <Routes>
           <Route path="/" element={<SessionListPage />} />
           <Route path="/session/:id" element={<SessionViewPage />} />
+          <Route path="/prompts" element={<PromptsPage />} />
         </Routes>
       </main>
     </div>

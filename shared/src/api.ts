@@ -59,6 +59,17 @@ export interface ToolResultFileResponse {
   sizeBytes: number;
 }
 
+export interface PromptEntry {
+  display: string; // full typed prompt text
+  timestamp: number; // epoch ms
+  project: string; // real project path
+  projectKey: string;
+  projectName: string;
+  sessionId: string;
+  sessionExists: boolean;
+}
+export type PromptsResponse = PromptEntry[];
+
 export interface ResumeResponse {
   ok: boolean;
   method: 'wt' | 'cmd';

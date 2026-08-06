@@ -1,6 +1,7 @@
 import type {
   MetaResponse,
   ProjectsResponse,
+  PromptsResponse,
   SearchResponse,
   SessionDetailResponse,
   SessionsResponse,
@@ -18,6 +19,7 @@ export const api = {
   meta: () => getJson<MetaResponse>('/api/meta'),
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
+  prompts: () => getJson<PromptsResponse>('/api/prompts'),
   search: (q: string, scope?: string) =>
     getJson<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}${scope ? `&in=${encodeURIComponent(scope)}` : ''}`),
   pinSession: async (id: string, pinned: boolean) => {
