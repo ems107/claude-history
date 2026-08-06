@@ -34,15 +34,22 @@ function die(msg) {
 // executables, and spawning them without a shell avoids arg-escaping issues.
 const needsShell = (cmd) => process.platform === 'win32' && !/^(git|gh|node)$/i.test(path.basename(cmd, '.exe'));
 
-/** Run a command, inheriting stdio; abort the release if it fails. */
+/**
+ * Run a command, inheriting stdio; abort the release if it fails. When a
+ * shell is needed (pnpm), pass one command string: args + shell together
+ * are deprecated in Node because the shell does not escape them.
+ */
 function run(cmd, args, opts = {}) {
-  const res = spawnSync(cmd, args, { cwd: rootDir, stdio: 'inherit', shell: needsShell(cmd), ...opts });
+  const shell = needsShell(cmd);
+  const res = shell
+    ? spawnSync([cmd, ...args].join(' '), { cwd: rootDir, stdio: 'inherit', shell: true, ...opts })
+    : spawnSync(cmd, args, { cwd: rootDir, stdio: 'inherit', ...opts });
   if (res.status !== 0) die(`\`${cmd} ${args.join(' ')}\` failed (exit ${res.status ?? 'signal'})`);
 }
 
 /** Run a command and capture stdout (trimmed). */
 function capture(cmd, args) {
-  const res = spawnSync(cmd, args, { cwd: rootDir, encoding: 'utf8', shell: needsShell(cmd) });
+  const res = spawnSync(cmd, args, { cwd: rootDir, encoding: 'utf8' });
   if (res.status !== 0) die(`\`${cmd} ${args.join(' ')}\` failed: ${res.stderr?.trim() || res.stdout?.trim()}`);
   return res.stdout.trim();
 }
