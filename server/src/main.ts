@@ -1,6 +1,7 @@
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { SessionIndex } from './core/index.ts';
+import { SearchService } from './core/search.ts';
 
 const config = loadConfig();
 const index = new SessionIndex(config);
@@ -9,7 +10,8 @@ const t0 = Date.now();
 await index.build();
 console.log(`[index] ${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`);
 
-const app = await buildApp({ config, index });
+const search = new SearchService(index);
+const app = await buildApp({ config, index, search });
 
 try {
   await app.listen({ host: config.host, port: config.port });

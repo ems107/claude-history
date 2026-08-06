@@ -12,7 +12,7 @@
 - [x] Paso 3 — SessionListPage (lista virtualizada, tags, fechas, orden, ocultar-vacías)
 - [x] Paso 4 — FilterSidebar + SortBar + estado en URL
 - [x] Paso 5 — cache.ts + enricher.ts + badges (verificado: 44/44 enriquecidas, PR y ancestría correctos, warm boot 43/44 hits en 14 ms)
-- [ ] Paso 6 — search.ts + /api/search + SearchBox
+- [x] Paso 6 — search.ts + /api/search + SearchBox (verificado: "actualización" = "actualizacion", 6 hits, 3-53 ms)
 - [ ] Paso 7 — parser.ts + /api/sessions/:id + SessionViewPage
 - [ ] Paso 8 — ToolBlock + tool-results + thinking + TokenPanel
 - [ ] Paso 9 — Subagentes (endpoints + drawer + enlaces Task)

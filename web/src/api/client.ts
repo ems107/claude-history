@@ -1,4 +1,4 @@
-import type { MetaResponse, ProjectsResponse, SessionsResponse } from '@claude-history/shared';
+import type { MetaResponse, ProjectsResponse, SearchResponse, SessionsResponse } from '@claude-history/shared';
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -10,4 +10,5 @@ export const api = {
   meta: () => getJson<MetaResponse>('/api/meta'),
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
+  search: (q: string) => getJson<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}`),
 };

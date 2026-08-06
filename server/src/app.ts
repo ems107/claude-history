@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
+import { registerSearchRoutes } from './routes/search.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
@@ -13,6 +14,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerMetaRoutes(app, ctx);
   registerProjectRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
+  registerSearchRoutes(app, ctx);
 
   if (config.staticDir) {
     await app.register(fastifyStatic, { root: config.staticDir });

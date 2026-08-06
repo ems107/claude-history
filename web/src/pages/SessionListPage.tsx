@@ -4,6 +4,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { FilterSidebar } from '../components/list/FilterSidebar.tsx';
+import { SearchBox } from '../components/list/SearchBox.tsx';
+import { SearchResults } from '../components/list/SearchResults.tsx';
 import { SessionRow } from '../components/list/SessionRow.tsx';
 import { SortBar } from '../components/list/SortBar.tsx';
 import { applyFilters, filtersToParams, parseFilters, type FilterState } from '../lib/filters.ts';
@@ -18,10 +20,37 @@ export function SessionListPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
+  const q = searchParams.get('q') ?? '';
   const setFilters = useCallback(
-    (f: FilterState) => setSearchParams(filtersToParams(f), { replace: true }),
+    (f: FilterState) => {
+      const sp = filtersToParams(f);
+      const currentQ = new URLSearchParams(window.location.search).get('q');
+      if (currentQ) sp.set('q', currentQ);
+      setSearchParams(sp, { replace: true });
+    },
     [setSearchParams],
   );
+  const setQ = useCallback(
+    (value: string) => {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          if (value) sp.set('q', value);
+          else sp.delete('q');
+          return sp;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const searchActive = q.trim().length >= 2;
+  const searchQuery = useQuery({
+    queryKey: ['search', q],
+    queryFn: () => api.search(q),
+    enabled: searchActive,
+  });
 
   const colorByProject = useMemo(() => {
     const map = new Map<string, string>();
@@ -30,6 +59,8 @@ export function SessionListPage() {
   }, [projects.data]);
 
   const rows = useMemo(() => applyFilters(sessions.data ?? [], filters), [sessions.data, filters]);
+  const summaryMap = useMemo(() => new Map((sessions.data ?? []).map((s) => [s.id, s])), [sessions.data]);
+  const visibleIds = useMemo(() => new Set(rows.map((s) => s.id)), [rows]);
 
   const onProjectClick = useCallback(
     (projectKey: string) => setFilters({ ...filters, projects: [projectKey] }),
@@ -71,9 +102,24 @@ export function SessionListPage() {
           >
             ☰
           </button>
+          <SearchBox value={q} onChange={setQ} />
         </SortBar>
         <div ref={parentRef} className="min-h-0 flex-1 overflow-y-auto">
-          {rows.length === 0 ? (
+          {searchActive ? (
+            searchQuery.isLoading ? (
+              <div className="p-8 text-center text-[var(--text-dim)]">Searching…</div>
+            ) : searchQuery.isError ? (
+              <div className="p-8 text-center text-red-400">Search failed: {String(searchQuery.error)}</div>
+            ) : (
+              <SearchResults
+                response={searchQuery.data!}
+                summaries={summaryMap}
+                colorByProject={colorByProject}
+                visibleIds={visibleIds}
+                onProjectClick={onProjectClick}
+              />
+            )
+          ) : rows.length === 0 ? (
             <div className="p-8 text-center text-[var(--text-dim)]">No sessions match the current filters.</div>
           ) : (
             <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
