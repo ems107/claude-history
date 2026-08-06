@@ -4,10 +4,12 @@ import { SessionIndex } from './core/index.ts';
 import { SearchService } from './core/search.ts';
 import { UpdateService } from './core/updates.ts';
 import { Watcher } from './core/watcher.ts';
+import { installFileLogging } from './logging.ts';
 
 // No top-level await: the packaged build bundles this file to CommonJS.
 async function main(): Promise<void> {
   const config = loadConfig();
+  if (config.logFile) installFileLogging(config.logFile);
   const index = new SessionIndex(config);
 
   const t0 = Date.now();

@@ -15,8 +15,9 @@
 
 $ErrorActionPreference = 'Stop'
 $taskName = 'claude-history'
-$appUrl = 'http://localhost:7433'
-$healthUrl = 'http://127.0.0.1:7433/api/health'
+$port = 7433
+$appUrl = "http://localhost:$port"
+$metaUrl = "http://127.0.0.1:$port/api/meta"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 Write-Host "Installing claude-history from $root"
@@ -33,8 +34,20 @@ if (-not $versions) { throw "No versions\v* folder found next to install.ps1 - e
 $target = $versions[0].FullName
 Write-Host "Newest version: $($versions[0].Name)"
 
-# Stop a previously installed instance before touching the junction.
+# Stop a previously installed instance and WAIT for it to release the port.
+# Ending the task kills the wscript wrapper; the server notices its parent is
+# gone and exits within a few seconds. Starting the new one before that
+# happens makes it fail to bind and die silently, while the old instance is
+# still answering health checks - which used to look like a good install.
 try { Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop } catch {}
+$portFree = $false
+for ($i = 0; $i -lt 40; $i++) {
+  if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) { $portFree = $true; break }
+  Start-Sleep -Milliseconds 500
+}
+if (-not $portFree) {
+  throw "Port $port is still in use after 20s. Stop whatever is listening on it (another claude-history instance?) and run install.ps1 again."
+}
 
 # current -> junction -> newest version. Junctions need no admin rights.
 $current = Join-Path $root 'current'
@@ -73,20 +86,23 @@ $lnk.Description = 'claude-history - browse all your Claude Code conversations'
 $lnk.Save()
 Write-Host "Start Menu shortcut created."
 
-# Start now and open the browser.
+# Start now and confirm the version that answers is the one just installed
+# (a stale instance answering would otherwise look like success).
 Start-ScheduledTask -TaskName $taskName
-$ok = $false
-for ($i = 0; $i -lt 30; $i++) {
+$expected = $versions[0].Name.TrimStart('v')
+$serving = $null
+for ($i = 0; $i -lt 40; $i++) {
   Start-Sleep -Milliseconds 500
-  try {
-    $r = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 2
-    if ($r.StatusCode -eq 200) { $ok = $true; break }
-  } catch {}
+  try { $serving = (Invoke-RestMethod -Uri $metaUrl -TimeoutSec 2).version } catch {}
+  if ($serving -eq $expected) { break }
 }
-if ($ok) {
-  Write-Host "claude-history is running - opening $appUrl"
+if ($serving -eq $expected) {
+  Write-Host "claude-history $serving is running - opening $appUrl"
   Start-Process $appUrl
+} elseif ($serving) {
+  Write-Warning "Port $port is answering with version $serving, not the installed $expected."
+  Write-Warning "Check server.log in this folder and the task state in Task Scheduler (taskschd.msc)."
 } else {
-  Write-Warning "The server did not answer on $healthUrl after 15s."
-  Write-Warning "Check the task state in Task Scheduler (taskschd.msc) and that port 7433 is free."
+  Write-Warning "The server did not answer on $metaUrl after 20s."
+  Write-Warning "Check server.log in this folder and the task state in Task Scheduler (taskschd.msc)."
 }

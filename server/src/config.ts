@@ -20,6 +20,11 @@ export interface AppConfig {
    * "End" / Stop-ScheduledTask — the node child is NOT killed with it.
    */
   exitWithParent: boolean;
+  /**
+   * Append console output here. The installed instance runs with a hidden
+   * window, so without this its output (including crashes) is lost.
+   */
+  logFile: string | null;
 }
 
 function parseArgs(argv: string[]): Map<string, string> {
@@ -80,5 +85,6 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     port: Number(process.env.PORT || args.get('port') || 7433),
     staticDir,
     exitWithParent: args.has('exit-with-parent'),
+    logFile: args.get('log-file') ? path.resolve(args.get('log-file') as string) : null,
   };
 }

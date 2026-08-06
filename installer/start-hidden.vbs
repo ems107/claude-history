@@ -7,15 +7,20 @@
 ' scheduled task's process tree, so "End" in Task Scheduler stops the server.
 Option Explicit
 
-Dim fso, shell, here, cmd
+Dim fso, shell, here, root, cmd
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 here = fso.GetParentFolderName(WScript.ScriptFullName)
 shell.CurrentDirectory = here
 
+' Install root: the parent of `current` / `versions\vX.Y.Z`.
+root = fso.GetParentFolderName(here)
+
 ' --exit-with-parent: Task Scheduler's "End" only kills this wscript
 ' process, so the server watches it and exits when it dies.
+' --log-file: the window is hidden, so console output would be lost.
 cmd = """" & here & "\node\node.exe"" """ & here & "\server.cjs""" & _
-      " --serve-static """ & here & "\web"" --exit-with-parent"
+      " --serve-static """ & here & "\web"" --exit-with-parent" & _
+      " --log-file """ & root & "\server.log"""
 shell.Run cmd, 0, True
