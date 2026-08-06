@@ -1,9 +1,16 @@
 import { EventEmitter } from 'node:events';
-import type { IndexState, ProjectInfo, SessionEnrichment, SessionSummary } from '@claude-history/shared';
+import type {
+  IndexState,
+  LiveSessionEntry,
+  ProjectInfo,
+  SessionEnrichment,
+  SessionSummary,
+} from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
+import { readLiveSessions } from './live.ts';
 import { buildProjects } from './projects.ts';
 import { scanSessions, type ScannedSession } from './scanner.ts';
 import { summarizeSession } from './summarizer.ts';
@@ -35,13 +42,14 @@ export class SessionIndex {
   private sessions = new Map<string, SessionSummary>();
   private scanned = new Map<string, ScannedSession>();
   private history: HistoryData = { entries: [], sessionProject: new Map() };
+  private live: LiveSessionEntry[] = [];
   state: IndexState = 'scanning';
   cacheHits = 0;
-  enrichedCount = 0;
   private enriching = false;
 
   constructor(private readonly config: AppConfig) {
     this.cache = new DiskCache(config.cacheDir);
+    this.events.setMaxListeners(100); // one set of listeners per SSE client
   }
 
   async build(): Promise<void> {
@@ -73,8 +81,61 @@ export class SessionIndex {
     }
 
     this.saveIndexCache();
+    await this.refreshLive();
     this.state = 'enriching';
     void this.enrichAll();
+  }
+
+  /**
+   * Incremental rescan for watcher updates: re-summarize files whose
+   * size/mtime changed, add new ones, prune deleted ones.
+   */
+  async rescan(): Promise<void> {
+    const scanned = await scanSessions(this.config.projectsDir);
+    const seen = new Set<string>();
+    const changed: string[] = [];
+    for (const s of scanned) {
+      seen.add(s.id);
+      const prev = this.scanned.get(s.id);
+      if (prev && prev.sizeBytes === s.sizeBytes && prev.mtimeMs === s.mtimeMs && prev.subagentCount === s.subagentCount) {
+        continue;
+      }
+      await this.refreshSummary(s);
+      changed.push(s.id);
+      void this.enrichOne(s);
+    }
+    for (const id of [...this.sessions.keys()]) {
+      if (!seen.has(id)) {
+        this.sessions.delete(id);
+        this.scanned.delete(id);
+        changed.push(id);
+      }
+    }
+    if (changed.length > 0) {
+      this.applyLive();
+      this.saveIndexCache();
+      this.events.emit('sessions-changed', { ids: changed });
+    }
+  }
+
+  async refreshLive(): Promise<void> {
+    this.live = await readLiveSessions(this.config.sessionsDir);
+    this.applyLive();
+    this.events.emit('live-changed');
+  }
+
+  private applyLive(): void {
+    const byId = new Map(this.live.map((l) => [l.sessionId, l]));
+    for (const s of this.sessions.values()) {
+      const l = byId.get(s.id);
+      s.live = l
+        ? { pid: l.pid, status: l.status, name: l.name, startedAt: l.startedAt, updatedAt: l.updatedAt }
+        : null;
+    }
+  }
+
+  async reloadHistory(): Promise<void> {
+    this.history = await readHistoryData(this.config.historyFile);
   }
 
   /** Re-summarize one session file (initial build and watcher updates). */
@@ -134,7 +195,6 @@ export class SessionIndex {
         await this.cache.saveEntry('text', s.id, { ...key, blocks: data.searchBlocks } satisfies TextEntry);
       }
       summary.enrichment = enriched.enrichment;
-      this.enrichedCount++;
       this.linkAncestry(s.id, enriched.enrichment.resumedFrom);
       this.events.emit('session-updated', s.id);
     } catch (err) {
@@ -176,6 +236,16 @@ export class SessionIndex {
 
   get size(): number {
     return this.sessions.size;
+  }
+
+  get enrichedCount(): number {
+    let n = 0;
+    for (const s of this.sessions.values()) if (s.enrichment) n++;
+    return n;
+  }
+
+  get liveSessions(): LiveSessionEntry[] {
+    return this.live;
   }
 
   get historyData(): HistoryData {

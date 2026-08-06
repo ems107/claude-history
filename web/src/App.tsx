@@ -1,8 +1,10 @@
 import { Link, Route, Routes } from 'react-router';
+import { useEvents } from './api/useEvents.ts';
 import { SessionListPage } from './pages/SessionListPage.tsx';
 import { SessionViewPage } from './pages/SessionViewPage.tsx';
 
 export function App() {
+  useEvents();
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2">

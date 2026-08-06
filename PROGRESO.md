@@ -16,8 +16,8 @@
 - [x] Paso 7 — parser.ts + /api/sessions/:id (verificado: 3,5 MB en 27 ms, 71/71 tools emparejados, offloaded via toolUseResult.persistedOutputPath)
 - [x] Paso 8 — ToolBlock + tool-results + thinking + TokenPanel
 - [x] Paso 9 — Subagentes (endpoints + drawer + enlaces Task). Verificación visual con Playwright+Edge: listado y visor renderizan correctamente
-- [ ] Paso 10 — live.ts + watcher.ts + SSE + badges LIVE
-- [ ] Paso 11 — launcher.ts + resume endpoint + ResumeButtons
+- [x] Paso 10 — live.ts + watcher.ts + SSE + badges LIVE (verificado: 3 sesiones LIVE reales, SSE emite al crecer la transcripción activa)
+- [x] Paso 11 — launcher.ts + resume endpoint + ResumeButtons (verificado: 200 + ventana cmd; wt no instalado → fallback correcto; 404/409 validados)
 - [ ] Paso 12 — Modo producción + README + pulido
 - [ ] Paso 13 — Extras opcionales (a demanda)
 

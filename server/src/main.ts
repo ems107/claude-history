@@ -2,6 +2,7 @@ import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { SessionIndex } from './core/index.ts';
 import { SearchService } from './core/search.ts';
+import { Watcher } from './core/watcher.ts';
 
 const config = loadConfig();
 const index = new SessionIndex(config);
@@ -12,6 +13,9 @@ console.log(`[index] ${index.size} sessions across ${index.projects().length} pr
 
 const search = new SearchService(index);
 const app = await buildApp({ config, index, search });
+
+const watcher = new Watcher(config, index);
+watcher.start();
 
 try {
   await app.listen({ host: config.host, port: config.port });

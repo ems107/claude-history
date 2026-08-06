@@ -1,8 +1,11 @@
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
+import { registerEventRoutes } from './routes/events.ts';
+import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
+import { registerResumeRoutes } from './routes/resume.ts';
 import { registerSearchRoutes } from './routes/search.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
@@ -19,6 +22,9 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerSearchRoutes(app, ctx);
   registerSubagentRoutes(app, ctx);
   registerToolResultRoutes(app, ctx);
+  registerLiveRoutes(app, ctx);
+  registerResumeRoutes(app, ctx);
+  registerEventRoutes(app, ctx);
 
   if (config.staticDir) {
     await app.register(fastifyStatic, { root: config.staticDir });
