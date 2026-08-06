@@ -59,7 +59,8 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 
 ## Hard constraints
 
-- The app **only reads** from `~/.claude` — it must never write, create, or lock anything inside it. Its own writes go exclusively to its cache dir and `userdata.json` (sibling of the cache dir; holds local title overrides). Session renames are LOCAL overrides only — Claude Code's own `/resume` keeps showing the original title.
+- The app **only reads** from `~/.claude` — it must never write, create, or lock anything inside it. Its own writes go exclusively to its cache dir and `userdata.json` (sibling of the cache dir; holds local title overrides).
+- Session renames are LOCAL overrides only. There is NO official CLI/API to rename a stored session; the only Claude-level mechanism is `/rename` from inside the session (it appends a `custom-title` sidecar line). Appending that line ourselves was evaluated and rejected: appends can race with an active session writing the same file, and the file may not end with a newline — a nonzero corruption risk. When overridden, summaries expose `originalTitle` (what Claude Code still shows) and `titleSource: 'local'`; the UI must always surface both.
 - The server binds `127.0.0.1` only. Never `0.0.0.0`.
 - `POST /api/sessions/:id/resume` validates the id (UUID regex + membership in the index) and takes `cwd` only from the index — never from the request.
 - The tool-results endpoint accepts a bare filename and must verify the resolved path stays inside that session's `tool-results/` dir.

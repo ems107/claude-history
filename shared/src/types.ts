@@ -52,6 +52,8 @@ export interface SessionSummary {
   projectName: string; // basename of projectPath, for the tag
   title: string;
   titleSource: TitleSource;
+  /** Set only when titleSource === 'local': the title Claude Code still shows. */
+  originalTitle: string | null;
   createdAt: string | null; // ISO-8601
   lastActivityAt: string | null; // ISO-8601
   mtimeMs: number;

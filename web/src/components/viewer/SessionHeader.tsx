@@ -129,10 +129,10 @@ export function SessionHeader({
               {s.title}
               {s.titleSource === 'local' && (
                 <span
-                  className="ml-2 align-middle text-[10px] font-normal tracking-wide text-[var(--text-dim)] uppercase"
+                  className="ml-2 rounded bg-amber-500/15 px-1.5 py-px align-middle text-[10px] font-semibold tracking-wide text-amber-400 uppercase"
                   title="Renamed locally in claude-history — Claude Code still shows the original title"
                 >
-                  local rename
+                  ✎ local rename
                 </span>
               )}
             </h1>
@@ -164,6 +164,12 @@ export function SessionHeader({
         </button>
         {actions}
       </div>
+      {s.titleSource === 'local' && s.originalTitle && (
+        <div className="mt-1 text-xs text-[var(--text-dim)]">
+          <span className="opacity-60">original title (what Claude Code shows):</span>{' '}
+          <span className="italic">“{s.originalTitle}”</span>
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)]">
         <span>
           <span className="opacity-60">created</span> {formatDateTimeFull(s.createdAt)}

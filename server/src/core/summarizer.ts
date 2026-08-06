@@ -206,6 +206,7 @@ export async function summarizeSession(
     projectName,
     title,
     titleSource,
+    originalTitle: null,
     createdAt: x.firstTimestamp ?? x.snapshotTimestamp ?? null,
     lastActivityAt: x.lastTimestamp ?? x.firstTimestamp ?? null,
     mtimeMs: scanned.mtimeMs,

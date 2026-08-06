@@ -51,6 +51,14 @@ export function SessionRow({
           <span className="truncate text-sm font-medium" title={session.title}>
             {session.title}
           </span>
+          {session.titleSource === 'local' && (
+            <span
+              className="shrink-0 text-xs text-amber-400"
+              title={`Renamed locally — original title: “${session.originalTitle ?? ''}”`}
+            >
+              ✎
+            </span>
+          )}
         </div>
         <div className="mt-1 flex items-center gap-3 text-xs text-[var(--text-dim)]">
           {meta.filter(Boolean).map((m, i) => (

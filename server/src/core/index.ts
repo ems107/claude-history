@@ -69,8 +69,15 @@ export class SessionIndex {
       this.scanned.set(s.id, s);
       const cached = indexCache?.files[s.filePath];
       if (cached && cached.size === s.sizeBytes && cached.mtimeMs === s.mtimeMs) {
-        // Live/enrichment/descendants are runtime state — never trust them from cache.
-        this.sessions.set(s.id, { ...cached.summary, subagentCount: s.subagentCount, enrichment: null, live: null, descendants: [] });
+        // Live/enrichment/descendants/overrides are runtime state — never trust them from cache.
+        this.sessions.set(s.id, {
+          ...cached.summary,
+          subagentCount: s.subagentCount,
+          enrichment: null,
+          live: null,
+          descendants: [],
+          originalTitle: null,
+        });
         this.cacheHits++;
       } else {
         await this.refreshSummary(s);
@@ -160,7 +167,7 @@ export class SessionIndex {
       files[s.filePath] = {
         size: s.sizeBytes,
         mtimeMs: s.mtimeMs,
-        summary: { ...summary, enrichment: null, live: null, descendants: [] },
+        summary: { ...summary, enrichment: null, live: null, descendants: [], originalTitle: null },
       };
     }
     this.cache.scheduleSaveIndex({ version: CACHE_VERSION, files } satisfies IndexCacheFile);
@@ -224,7 +231,7 @@ export class SessionIndex {
 
   private withOverride(s: SessionSummary): SessionSummary {
     const override = this.titleOverrides[s.id];
-    return override ? { ...s, title: override, titleSource: 'local' } : s;
+    return override ? { ...s, title: override, titleSource: 'local', originalTitle: s.title } : s;
   }
 
   async setTitleOverride(id: string, title: string | null): Promise<void> {
