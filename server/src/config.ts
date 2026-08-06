@@ -14,6 +14,12 @@ export interface AppConfig {
   port: number;
   /** Absolute path to built web assets, or null in dev (Vite serves the UI). */
   staticDir: string | null;
+  /**
+   * Exit when the parent process dies. Used by the installed scheduled task:
+   * its wscript launcher is what Task Scheduler actually terminates on
+   * "End" / Stop-ScheduledTask — the node child is NOT killed with it.
+   */
+  exitWithParent: boolean;
 }
 
 function parseArgs(argv: string[]): Map<string, string> {
@@ -73,5 +79,6 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     host: '127.0.0.1',
     port: Number(process.env.PORT || args.get('port') || 7433),
     staticDir,
+    exitWithParent: args.has('exit-with-parent'),
   };
 }

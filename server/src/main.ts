@@ -19,6 +19,23 @@ async function main(): Promise<void> {
   const watcher = new Watcher(config, index);
   watcher.start();
 
+  if (config.exitWithParent) {
+    // The installed instance runs as: scheduled task -> wscript -> node.
+    // Ending the task only kills wscript, so watch it and follow. EPERM
+    // means alive-but-protected (same convention as live.ts); ESRCH = gone.
+    const parentPid = process.ppid;
+    setInterval(() => {
+      try {
+        process.kill(parentPid, 0);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'EPERM') {
+          console.log(`[main] parent process ${parentPid} is gone — exiting`);
+          process.exit(0);
+        }
+      }
+    }, 3_000).unref();
+  }
+
   try {
     await app.listen({ host: config.host, port: config.port });
     console.log(`claude-history on http://${config.host}:${config.port} (data root: ${config.dataRoot})`);

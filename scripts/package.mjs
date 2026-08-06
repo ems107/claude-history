@@ -100,6 +100,14 @@ for (const [files, target] of [
   for (const f of files) {
     const src = path.join(installerDir, f);
     if (fs.existsSync(src)) {
+      // Windows PowerShell 5.1 reads BOM-less .ps1 as ANSI, and wscript is
+      // similar with .vbs — any non-ASCII byte breaks parsing on the target
+      // machine, so enforce pure ASCII here.
+      const text = fs.readFileSync(src, 'utf8');
+      if (/[^\x00-\x7F]/.test(text)) {
+        console.error(`[package] installer/${f} contains non-ASCII characters (breaks PowerShell 5.1 / wscript)`);
+        process.exit(1);
+      }
       fs.copyFileSync(src, path.join(target, f));
     } else {
       console.warn(`[package] WARNING: installer/${f} missing — zip will not include it`);
