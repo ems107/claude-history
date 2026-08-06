@@ -1,5 +1,6 @@
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
 import { useEvents } from './api/useEvents.ts';
+import { UpdateButton } from './components/UpdateButton.tsx';
 import { listUrl } from './lib/listState.ts';
 import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
@@ -41,6 +42,7 @@ export function App() {
           <NavItem to="/prompts" label="Prompts" />
           <NavItem to="/stats" label="Stats" />
         </nav>
+        <UpdateButton />
       </header>
       <main className="min-h-0 flex-1">
         <Routes>

@@ -9,6 +9,7 @@ import type {
   SessionsResponse,
   SubagentDetailResponse,
   ToolResultFileResponse,
+  UpdateStatusResponse,
 } from '@claude-history/shared';
 
 async function getJson<T>(url: string): Promise<T> {
@@ -57,6 +58,18 @@ export const api = {
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json();
+  },
+  updateStatus: () => getJson<UpdateStatusResponse>('/api/update'),
+  updateCheck: async () => {
+    const res = await fetch('/api/update/check', { method: 'POST' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json() as Promise<UpdateStatusResponse>;
+  },
+  updateApply: async () => {
+    const res = await fetch('/api/update/apply', { method: 'POST' });
+    const body = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
   },
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
   lineage: (id: string) => getJson<LineageResponse>(`/api/sessions/${id}/lineage`),
