@@ -42,7 +42,9 @@ When a newer release exists, the ⟳ button in the header shows an amber dot. Cl
 2. extracts the new version into `versions\vX.Y.Z\` next to the current one;
 3. restarts the server through a helper that repoints the `current` junction — with **automatic rollback** to the previous version if the new one fails to start.
 
-The UI reloads itself when the new version is up. Every step is logged to `update.log` in the install folder; the 3 newest versions are kept in `versions\` so a manual rollback is always possible (repoint `current` or re-run `install.ps1`).
+The UI reloads itself when the new version is up (the whole swap takes a few seconds). Every step is logged to `update.log` in the install folder, and the server itself logs to `server.log` there; the 3 newest versions are kept in `versions\` so a manual rollback is always possible (repoint `current` or re-run `install.ps1`).
+
+> Instances **1.2.3 and older cannot update themselves** — the fix has to be in the running version. Download the latest zip and re-run `install.ps1` once; from 1.2.5 on the button handles it.
 
 ### Uninstall
 
