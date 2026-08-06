@@ -19,6 +19,8 @@ try {
 } catch {
   Write-Host "Scheduled task '$taskName' was not registered."
 }
+# One-shot updater task; normally self-removing, but clean up any leftover.
+try { Unregister-ScheduledTask -TaskName 'claude-history-update' -Confirm:$false -ErrorAction Stop } catch {}
 
 $lnkPath = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\claude-history.lnk'
 if (Test-Path $lnkPath) {

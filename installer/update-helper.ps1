@@ -1,20 +1,29 @@
-# claude-history update helper.
+# claude-history update helper. Runs from a %TEMP% copy, never from a folder
+# being swapped. Two modes:
 #
-# Launched DETACHED by the server (from a %TEMP% copy, so it never runs from
-# a folder being swapped) right before the server exits:
-#   powershell -File update-helper.ps1 -Root <install root> -NewVersion vX.Y.Z -ServerPid <pid> [-Port 7433]
+#   -Register : registers and starts a one-shot scheduled task that runs this
+#               same script in work mode, then exits. The server calls this
+#               SYNCHRONOUSLY before quitting.
+#   (default) : does the update — waits for the old server to die, points the
+#               `current` junction at the new version, restarts the app task,
+#               health-checks it and rolls back if it does not come up.
 #
-# Waits for the old server to die, points the `current` junction at the new
-# version, restarts the scheduled task and health-checks the result. If the
-# new version does not come up, rolls back to the previous one.
+# Why the detour: the server runs inside the `claude-history` scheduled task,
+# and Task Scheduler terminates that task's whole process tree when the task
+# ends. A helper spawned by the server (even detached) dies with it. Having
+# the Task Scheduler service start the helper puts it outside that tree.
+#
 # Everything is logged to <root>\update.log. PowerShell 5.1 compatible.
 
 param(
   [Parameter(Mandatory = $true)] [string]$Root,
   [Parameter(Mandatory = $true)] [string]$NewVersion,
   [Parameter(Mandatory = $true)] [int]$ServerPid,
-  [int]$Port = 7433
+  [int]$Port = 7433,
+  [switch]$Register
 )
+
+$updateTaskName = 'claude-history-update'
 
 $ErrorActionPreference = 'Stop'
 $logFile = Join-Path $Root 'update.log'
@@ -36,6 +45,38 @@ function Wait-ForVersion([string]$expected, [int]$seconds) {
     if ((Get-MetaVersion) -eq $expected) { return $true }
   }
   return $false
+}
+
+if ($Register) {
+  # Hand this same script to the Task Scheduler service so it runs outside
+  # the app task's process tree, then return control to the dying server.
+  try {
+    $psArgs = @(
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+      '-File', ('"{0}"' -f $PSCommandPath),
+      '-Root', ('"{0}"' -f $Root),
+      '-NewVersion', $NewVersion,
+      '-ServerPid', $ServerPid,
+      '-Port', $Port
+    ) -join ' '
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $psArgs
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::FromMinutes(10)) `
+      -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName $updateTaskName -Action $action -Settings $settings -Principal $principal -Force | Out-Null
+    Start-ScheduledTask -TaskName $updateTaskName
+    Log "update task registered and started for $NewVersion"
+    exit 0
+  } catch {
+    Log "FATAL registering update task: $($_.Exception.Message)"
+    exit 1
+  }
+}
+
+# The one-shot task that is running this script right now; removing it while
+# it runs is allowed and keeps Task Scheduler tidy.
+function Remove-UpdateTask {
+  try { Unregister-ScheduledTask -TaskName $updateTaskName -Confirm:$false -ErrorAction Stop } catch {}
 }
 
 try {
@@ -82,6 +123,7 @@ try {
       Log "pruning old version $($_.Name)"
       Remove-Item $_.FullName -Recurse -Force
     }
+    Remove-UpdateTask
     exit 0
   }
 
@@ -97,8 +139,10 @@ try {
   } else {
     Log "rollback: previous version did not answer either - start it manually (Task Scheduler or the Start Menu shortcut)"
   }
+  Remove-UpdateTask
   exit 1
 } catch {
   Log "FATAL: $($_.Exception.Message)"
+  Remove-UpdateTask
   exit 1
 }

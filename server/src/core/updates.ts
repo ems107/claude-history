@@ -1,5 +1,5 @@
 import type { UpdateLatest, UpdateStatusResponse } from '@claude-history/shared';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -172,17 +172,27 @@ export class UpdateService {
 
       // 4. Hand over to the helper (run from %TEMP%, never from a folder
       // being swapped) and exit so it can do the junction swap + restart.
+      //
+      // The helper CANNOT simply be spawned from here: this server runs
+      // inside the `claude-history` scheduled task, and Task Scheduler kills
+      // that task's entire process tree when the task ends — taking any
+      // child of ours with it, detached or not. So run the helper's
+      // -Register mode synchronously; it hands the real work to the Task
+      // Scheduler service, which starts it outside our tree.
       const helperSrc = path.join(stagedDir, 'update-helper.ps1');
       if (!fs.existsSync(helperSrc)) throw new Error('Extracted version has no update-helper.ps1.');
       const helperPath = path.join(tmpDir, 'update-helper.ps1');
       fs.copyFileSync(helperSrc, helperPath);
       this.setState('restarting');
-      spawn(
+      const reg = spawnSync(
         'powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', helperPath,
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', helperPath, '-Register',
           '-Root', install.root, '-NewVersion', newDirName, '-ServerPid', String(process.pid), '-Port', String(port)],
-        { detached: true, stdio: 'ignore', windowsHide: true },
-      ).unref();
+        { windowsHide: true, timeout: 60_000, encoding: 'utf8' },
+      );
+      if (reg.status !== 0) {
+        throw new Error(`Could not schedule the update helper: ${reg.stderr?.trim() || `exit ${reg.status}`}`);
+      }
       setTimeout(() => {
         console.log('[updates] handing over to update-helper — exiting');
         process.exit(0);
