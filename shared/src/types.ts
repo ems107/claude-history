@@ -151,12 +151,27 @@ export interface SubagentMeta {
   spawnDepth: number;
 }
 
+export interface FileEdit {
+  tool: string; // Edit | Write | NotebookEdit | ...
+  timestamp: string | null;
+  oldString: string | null;
+  newString: string | null; // Write stores the (truncated) file content here
+  truncated: boolean;
+}
+
+export interface FileChange {
+  path: string;
+  edits: FileEdit[];
+}
+
 export interface SessionDetail {
   summary: SessionSummary;
   turns: Turn[];
   subagents: SubagentMeta[];
   ancestry: { resumedFrom: string[]; descendants: string[] };
   prLinks: PrLink[];
+  /** Files touched by Edit/Write tool calls in THIS transcript (subagent edits live in their own transcripts). */
+  fileChanges: FileChange[];
 }
 
 export interface SubagentDetail {

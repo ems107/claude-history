@@ -2,6 +2,8 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type {
   ContentBlock,
+  FileChange,
+  FileEdit,
   MessageItem,
   PrLink,
   SessionDetail,
@@ -133,6 +135,50 @@ export interface ParsedTranscript {
   turns: Turn[];
   prLinks: PrLink[];
   originSessionIds: Set<string>;
+  fileChanges: FileChange[];
+}
+
+const MAX_EDIT_CHARS = 4000;
+
+function editString(value: unknown): { text: string | null; truncated: boolean } {
+  if (typeof value !== 'string') return { text: null, truncated: false };
+  return value.length > MAX_EDIT_CHARS
+    ? { text: value.slice(0, MAX_EDIT_CHARS), truncated: true }
+    : { text: value, truncated: false };
+}
+
+/** Record file mutations from Edit/Write/NotebookEdit (and MultiEdit) tool calls. */
+function recordFileEdits(
+  changes: Map<string, FileEdit[]>,
+  toolName: string,
+  input: Record<string, unknown>,
+  timestamp: string | null,
+): void {
+  const filePath = str(input.file_path) ?? str(input.notebook_path);
+  if (!filePath) return;
+  const list = changes.get(filePath) ?? [];
+  const push = (oldValue: unknown, newValue: unknown) => {
+    const oldS = editString(oldValue);
+    const newS = editString(newValue);
+    list.push({
+      tool: toolName,
+      timestamp,
+      oldString: oldS.text,
+      newString: newS.text,
+      truncated: oldS.truncated || newS.truncated,
+    });
+  };
+  if (toolName === 'Write') {
+    push(null, input.content);
+  } else if (Array.isArray(input.edits)) {
+    // MultiEdit-style: several {old_string, new_string} in one call
+    for (const e of input.edits) {
+      if (isRec(e)) push(e.old_string, e.new_string);
+    }
+  } else {
+    push(input.old_string, input.new_string ?? input.new_source);
+  }
+  changes.set(filePath, list);
 }
 
 /**
@@ -150,6 +196,8 @@ export async function parseTranscript(
   const originSessionIds = new Set<string>();
   const toolBlocksById = new Map<string, ToolBlock>();
   const assistantItems = new Map<string, MessageItem>();
+  const fileEdits = new Map<string, FileEdit[]>();
+  const MUTATING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
   let current: Turn | null = null;
   let fallbackId = 0;
 
@@ -267,6 +315,9 @@ export async function parseTranscript(
             };
             item.blocks.push(block);
             if (toolUseId) toolBlocksById.set(toolUseId, block);
+            if (MUTATING_TOOLS.has(toolName) && isRec(c.input)) {
+              recordFileEdits(fileEdits, toolName, c.input, str(o.timestamp));
+            }
           }
         }
       }
@@ -290,7 +341,11 @@ export async function parseTranscript(
     }
   }
 
-  return { turns, prLinks, originSessionIds };
+  const fileChanges: FileChange[] = [...fileEdits.entries()]
+    .map(([path, edits]) => ({ path, edits }))
+    .sort((a, b) => b.edits.length - a.edits.length);
+
+  return { turns, prLinks, originSessionIds, fileChanges };
 }
 
 export async function parseSession(
@@ -300,7 +355,11 @@ export async function parseSession(
 ): Promise<SessionDetail> {
   const subagents = await loadSubagents(scanned.sessionDir);
   const agentIdByToolUse = new Map(subagents.filter((a) => a.toolUseId).map((a) => [a.toolUseId, a.agentId]));
-  const { turns, prLinks, originSessionIds } = await parseTranscript(scanned.filePath, agentIdByToolUse, projectsDir);
+  const { turns, prLinks, originSessionIds, fileChanges } = await parseTranscript(
+    scanned.filePath,
+    agentIdByToolUse,
+    projectsDir,
+  );
   originSessionIds.delete(scanned.id);
   return {
     summary,
@@ -311,5 +370,6 @@ export async function parseSession(
       descendants: summary.descendants,
     },
     prLinks: prLinks.length > 0 ? prLinks : (summary.enrichment?.prLinks ?? []),
+    fileChanges,
   };
 }

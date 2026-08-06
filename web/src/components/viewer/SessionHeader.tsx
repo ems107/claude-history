@@ -93,6 +93,8 @@ export function SessionHeader({
   onToggleTokens,
   showLineage,
   onToggleLineage,
+  showFiles,
+  onToggleFiles,
   actions,
 }: {
   detail: SessionDetail;
@@ -104,6 +106,8 @@ export function SessionHeader({
   onToggleTokens: () => void;
   showLineage: boolean;
   onToggleLineage: () => void;
+  showFiles: boolean;
+  onToggleFiles: () => void;
   actions?: import('react').ReactNode;
 }) {
   const s = detail.summary;
@@ -190,6 +194,16 @@ export function SessionHeader({
             title="Show the full resume/fork chain of this session"
           >
             Lineage
+          </button>
+        )}
+        {detail.fileChanges.length > 0 && (
+          <button
+            type="button"
+            onClick={onToggleFiles}
+            className={toggleClass(showFiles)}
+            title="Files this session edited or wrote"
+          >
+            Files ({detail.fileChanges.length})
           </button>
         )}
         {actions}
