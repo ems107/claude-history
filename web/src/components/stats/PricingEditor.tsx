@@ -24,11 +24,41 @@ export function PricingEditor({
   const [draft, setDraft] = useState<PriceTable>(prices);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchResult, setFetchResult] = useState<{ changes: string[]; fetchedAt: string } | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(prices);
     setDirty(false);
   }, [prices]);
+
+  const fetchOfficial = () => {
+    setFetching(true);
+    setFetchError(null);
+    setFetchResult(null);
+    void api
+      .fetchOfficialPrices()
+      .then(({ prices: fetched, fetchedAt }) => {
+        const changes: string[] = [];
+        for (const [model, next] of Object.entries(fetched)) {
+          const cur = draft[model];
+          if (!cur) {
+            changes.push(`${model}: new (${next.input}/${next.output}/${next.cacheRead}/${next.cacheWrite})`);
+            continue;
+          }
+          for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'] as const) {
+            if (cur[key] !== next[key]) changes.push(`${model}.${key}: ${cur[key]} → ${next[key]}`);
+          }
+        }
+        // Merge fetched over the draft (custom extra models are preserved).
+        setDraft((prev) => ({ ...prev, ...fetched }));
+        setDirty(changes.length > 0 ? true : dirty);
+        setFetchResult({ changes, fetchedAt });
+      })
+      .catch((e) => setFetchError(String(e instanceof Error ? e.message : e)))
+      .finally(() => setFetching(false));
+  };
 
   const models = [...new Set([...modelsInUse, ...Object.keys(prices), ...Object.keys(DEFAULT_PRICES)])].sort();
 
@@ -62,6 +92,15 @@ export function PricingEditor({
         <span className="ml-auto inline-flex gap-1.5">
           <button
             type="button"
+            disabled={fetching}
+            onClick={fetchOfficial}
+            className="cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40"
+            title="Fetch the current official prices from platform.claude.com (the app's only network call; nothing is saved until you press Save)"
+          >
+            {fetching ? 'Fetching…' : '⟳ Fetch current prices'}
+          </button>
+          <button
+            type="button"
             disabled={!dirty || saving}
             onClick={() => persist(draft)}
             className="cursor-pointer rounded border border-[var(--accent-dim)] px-2 py-0.5 text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:cursor-default disabled:opacity-40"
@@ -78,6 +117,30 @@ export function PricingEditor({
           </button>
         </span>
       </div>
+      {fetchError && (
+        <div className="mb-2 rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-xs text-red-300">
+          {fetchError}
+        </div>
+      )}
+      {fetchResult && (
+        <div className="mb-2 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2 py-1.5 text-xs">
+          {fetchResult.changes.length === 0 ? (
+            <span className="text-emerald-400">✓ Your table already matches the current official prices.</span>
+          ) : (
+            <>
+              <div className="mb-1 text-amber-400">
+                {fetchResult.changes.length} value{fetchResult.changes.length !== 1 ? 's' : ''} updated from
+                platform.claude.com — review below and press <b>Save</b> to keep them.
+              </div>
+              <ul className="max-h-32 list-inside list-disc overflow-y-auto font-mono text-[11px] text-[var(--text-dim)]">
+                {fetchResult.changes.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
       <table className="w-full text-xs">
         <thead>
           <tr className="text-left text-[10px] tracking-wider text-[var(--text-dim)] uppercase">

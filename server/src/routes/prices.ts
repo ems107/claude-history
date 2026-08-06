@@ -1,6 +1,7 @@
 import type { ModelPrices, PriceTable } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { fetchOfficialPrices } from '../core/officialPrices.ts';
 
 function isValidPrices(value: unknown): value is ModelPrices {
   if (typeof value !== 'object' || value === null) return false;
@@ -35,5 +36,20 @@ export function registerPriceRoutes(app: FastifyInstance, ctx: AppContext): void
     }
     await ctx.index.setPriceTable(table);
     return { ok: true, prices: ctx.index.priceTable, isDefault: false };
+  });
+
+  // Fetch the current official prices from Anthropic's public pricing docs
+  // (served as markdown). Returns a PREVIEW — nothing is saved; the client
+  // reviews and persists via PUT /api/prices. This is the app's only
+  // outbound network call and it only runs when the user clicks the button.
+  app.post('/api/prices/fetch', async (_request, reply) => {
+    try {
+      return await fetchOfficialPrices();
+    } catch (err) {
+      return reply.code(502).send({
+        error: `Could not fetch official prices: ${err instanceof Error ? err.message : String(err)}. ` +
+          'The docs format may have changed — edit prices manually instead.',
+      });
+    }
   });
 }

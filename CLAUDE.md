@@ -61,7 +61,8 @@ This is the most valuable knowledge in this repo. The app reads `~/.claude`, whi
 
 ## Hard constraints
 
-- The app **only reads** from `~/.claude` — it must never write, create, or lock anything inside it. Its own writes go exclusively to its cache dir and `userdata.json` (sibling of the cache dir; holds local title overrides).
+- The app **only reads** from `~/.claude` — it must never write, create, or lock anything inside it. Its own writes go exclusively to its cache dir and `userdata.json` (sibling of the cache dir; holds local title overrides, pins and the price table).
+- The app makes **exactly one outbound network call**, and only when the user clicks "Fetch current prices": `POST /api/prices/fetch` downloads Anthropic's public pricing docs as markdown (`platform.claude.com/docs/en/about-claude/pricing.md` — there is NO pricing API; the Models API has capabilities but no prices) and parses the "Model pricing" table (`server/src/core/officialPrices.ts`). It returns a preview only — nothing persists until the user saves. Never add automatic/background network calls. The parser targets docs, not an API contract: fail loudly with a clear error so the UI falls back to manual editing.
 - Session renames are LOCAL overrides only. There is NO official CLI/API to rename a stored session; the only Claude-level mechanism is `/rename` from inside the session (it appends a `custom-title` sidecar line). Appending that line ourselves was evaluated and rejected: appends can race with an active session writing the same file, and the file may not end with a newline — a nonzero corruption risk. When overridden, summaries expose `originalTitle` (what Claude Code still shows) and `titleSource: 'local'`; the UI must always surface both.
 - The server binds `127.0.0.1` only. Never `0.0.0.0`.
 - `POST /api/sessions/:id/resume` validates the id (UUID regex + membership in the index) and takes `cwd` only from the index — never from the request.

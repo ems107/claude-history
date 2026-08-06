@@ -23,6 +23,12 @@ export const api = {
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),
   prices: () => getJson<{ prices: PriceTable; isDefault: boolean }>('/api/prices'),
+  fetchOfficialPrices: async () => {
+    const res = await fetch('/api/prices/fetch', { method: 'POST' });
+    const body = (await res.json()) as { prices?: PriceTable; source?: string; fetchedAt?: string; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body as { prices: PriceTable; source: string; fetchedAt: string };
+  },
   savePrices: async (prices: PriceTable | null) => {
     const res = await fetch('/api/prices', {
       method: 'PUT',

@@ -60,7 +60,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - Local session rename and ★ pins (stored in this tool's `userdata.json` — never writes into `~/.claude`).
 - Live updates via SSE — running sessions show a pulsing LIVE badge.
 - Resume: copy the `claude --resume` command or open Windows Terminal/pwsh directly in the project; open the project in Explorer or VS Code.
-- Stats dashboard (`/stats`): daily activity stacked by project, model mix, per-project totals, and API-equivalent cost estimation with an editable price table.
+- Stats dashboard (`/stats`): daily activity stacked by project, model mix, per-project totals, and API-equivalent cost estimation with an editable price table (one-click fetch of the current official prices from Anthropic's public docs — user-triggered, previewed before saving; the app's only network call).
 - Prompt library (`/prompts`): every prompt ever typed, searchable, with copy and open-session actions.
 - Export any conversation to Markdown (tool calls / thinking / system optional).
 - Resume lineage view and a per-session file-changes viewer (which files each session edited, with before/after diffs).
