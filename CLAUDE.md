@@ -16,8 +16,11 @@ It is a standalone personal tool. It is **NOT part of the PCCOM ecosystem** (no 
 - `pnpm start:bg` / `pnpm stop` — launch detached (hidden window) / kill the port-7433 listener.
 - `pnpm typecheck` — `tsc --noEmit` in all packages.
 - `pnpm package -- --version X.Y.Z` — build the distributable portable zip (`scripts/package.mjs`): esbuild-bundles the server to `server.cjs` (CJS — `main.ts` must stay free of top-level await), embeds a pinned Node runtime, and assembles the versioned layout + installer scripts into `dist/`.
+- `pnpm release -- --version X.Y.Z --notes-file <path>` — cut a release (`scripts/release.mjs`): state checks → typecheck → build → package → annotated tag → push → `gh release create`. `--dry-run` stops before tagging.
 
-The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web. Releases are built by `.github/workflows/release.yml` on `v*` tag push; the **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders — always tag with `git tag -a`.
+The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web.
+
+**Releases are cut locally, not by CI** (there is no GitHub Actions workflow — it was removed deliberately: `pnpm release` is faster, debuggable, and unaffected by Actions outages). The **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders as markdown — never create a release tag with `git tag` without `-a`/`-F`.
 
 ## Architecture
 

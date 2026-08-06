@@ -68,7 +68,15 @@ pnpm start    # everything on http://localhost:7433 (Ctrl+C stops it)
 
 Run it detached (no terminal window): `pnpm start:bg` / `pnpm stop`.
 
-Build the distributable zip locally: `pnpm build && pnpm package -- --version X.Y.Z` (output in `dist/`). Real releases are built by GitHub Actions when a `v*` tag is pushed; the annotated tag message becomes the release notes shown in the update popup.
+Cut a release (build + tag + push + publish, all from this machine — there is no CI):
+
+```
+pnpm release -- --version X.Y.Z --notes-file notes.md
+```
+
+It refuses to run on a dirty tree, off `main`, behind `origin`, or with the tag already taken; then typechecks, builds, packages, creates the annotated tag, pushes and publishes the GitHub release with the zip and `checksums.txt` attached. The tag message becomes the release notes shown in the update popup. Add `--dry-run` to build the artifacts without tagging or publishing.
+
+Just the zip, without releasing: `pnpm build && pnpm package -- --version X.Y.Z` (output in `dist/`).
 
 A source instance reports version `dev` and can check for updates but not apply them (there is no installed layout to swap).
 
