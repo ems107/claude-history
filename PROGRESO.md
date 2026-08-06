@@ -10,7 +10,7 @@
   - Decisión: el proyecto de una sesión es su **primer** `cwd` (directorio de lanzamiento); el último puede haber cambiado a mitad de sesión.
   - Colores de tag: hue FNV-1a + ángulo áureo con resolución de colisiones (separación mínima 22°).
 - [x] Paso 3 — SessionListPage (lista virtualizada, tags, fechas, orden, ocultar-vacías)
-- [ ] Paso 4 — FilterSidebar + SortBar + estado en URL
+- [x] Paso 4 — FilterSidebar + SortBar + estado en URL
 - [ ] Paso 5 — cache.ts + enricher.ts + badges
 - [ ] Paso 6 — search.ts + /api/search + SearchBox
 - [ ] Paso 7 — parser.ts + /api/sessions/:id + SessionViewPage
