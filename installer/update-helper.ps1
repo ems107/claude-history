@@ -4,7 +4,7 @@
 #   -Register : registers and starts a one-shot scheduled task that runs this
 #               same script in work mode, then exits. The server calls this
 #               SYNCHRONOUSLY before quitting.
-#   (default) : does the update — waits for the old server to die, points the
+#   (default) : does the update - waits for the old server to die, points the
 #               `current` junction at the new version, restarts the app task,
 #               health-checks it and rolls back if it does not come up.
 #
