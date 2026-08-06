@@ -2,6 +2,7 @@ import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { SessionIndex } from './core/index.ts';
 import { SearchService } from './core/search.ts';
+import { UpdateService } from './core/updates.ts';
 import { Watcher } from './core/watcher.ts';
 
 // No top-level await: the packaged build bundles this file to CommonJS.
@@ -14,7 +15,9 @@ async function main(): Promise<void> {
   console.log(`[index] ${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`);
 
   const search = new SearchService(index);
-  const app = await buildApp({ config, index, search });
+  const updates = new UpdateService();
+  const app = await buildApp({ config, index, search, updates });
+  updates.start();
 
   const watcher = new Watcher(config, index);
   watcher.start();

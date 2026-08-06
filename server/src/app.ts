@@ -12,6 +12,7 @@ import { registerSearchRoutes } from './routes/search.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
+import { registerUpdateRoutes } from './routes/updates.ts';
 
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const { config } = ctx;
@@ -28,6 +29,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerPromptRoutes(app, ctx);
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
+  registerUpdateRoutes(app, ctx);
   registerEventRoutes(app, ctx);
 
   if (config.staticDir) {

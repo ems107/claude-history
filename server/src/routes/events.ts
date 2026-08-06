@@ -20,11 +20,13 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onChanged = (payload: { ids: string[] }) => send({ type: 'sessions-changed', ids: payload.ids });
     const onLive = () => send({ type: 'live-changed' });
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
+    const onUpdateStatus = () => send({ type: 'update-status' });
 
     ctx.index.events.on('session-updated', onUpdated);
     ctx.index.events.on('sessions-changed', onChanged);
     ctx.index.events.on('live-changed', onLive);
     ctx.index.events.on('index-progress', onProgress);
+    ctx.updates.events.on('update-status', onUpdateStatus);
 
     const heartbeat = setInterval(() => reply.raw.write(': hb\n\n'), HEARTBEAT_MS);
 
@@ -34,6 +36,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.index.events.off('sessions-changed', onChanged);
       ctx.index.events.off('live-changed', onLive);
       ctx.index.events.off('index-progress', onProgress);
+      ctx.updates.events.off('update-status', onUpdateStatus);
     });
   });
 }

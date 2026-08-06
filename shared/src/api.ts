@@ -92,10 +92,38 @@ export interface LineageResponse {
   edges: Array<{ from: string; to: string }>;
 }
 
+// ---- Updates (GitHub releases) ----
+
+export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'staging' | 'restarting';
+
+export interface UpdateLatest {
+  /** Bare version, e.g. "1.2.0". */
+  version: string;
+  /** Release tag, e.g. "v1.2.0". */
+  tag: string;
+  /** Release notes (markdown; the annotated tag message). */
+  notes: string;
+  publishedAt: string | null;
+  /** Size of the win-x64 zip asset, if found. */
+  sizeBytes: number | null;
+}
+
+export interface UpdateStatusResponse {
+  currentVersion: string;
+  /** True when running from an installed portable layout (updates can be applied). */
+  installed: boolean;
+  updateAvailable: boolean;
+  latest: UpdateLatest | null;
+  lastCheckAt: string | null;
+  lastError: string | null;
+  state: UpdateState;
+}
+
 // ---- SSE events on /api/events ----
 
 export type ServerEvent =
   | { type: 'sessions-changed'; ids: string[] }
   | { type: 'session-updated'; id: string }
   | { type: 'live-changed' }
-  | { type: 'index-progress'; enriched: number; total: number };
+  | { type: 'index-progress'; enriched: number; total: number }
+  | { type: 'update-status' };

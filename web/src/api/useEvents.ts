@@ -34,6 +34,9 @@ export function useEvents(): void {
         case 'index-progress':
           void queryClient.invalidateQueries({ queryKey: ['meta'] });
           break;
+        case 'update-status':
+          void queryClient.invalidateQueries({ queryKey: ['update'] });
+          break;
       }
     };
     return () => es.close();
