@@ -9,7 +9,7 @@ export function registerMetaRoutes(app: FastifyInstance, ctx: AppContext): void 
     projectCount: ctx.index.projects().length,
     sessionCount: ctx.index.size,
     indexState: ctx.index.state,
-    enrichedCount: 0,
+    enrichedCount: ctx.index.enrichedCount,
     cacheHits: ctx.index.cacheHits,
     version: '0.1.0',
   }));

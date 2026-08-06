@@ -23,7 +23,7 @@ function truncate(text: string, len: number): string {
  * `<command-name>/foo</command-name>` XML; meta banners are filtered upstream
  * via isMeta. Returns null for content that is not a human-typed prompt.
  */
-function extractPrompt(content: string): { text: string; isSlashCommand: boolean } | null {
+export function extractPrompt(content: string): { text: string; isSlashCommand: boolean } | null {
   const commandMatch = /<command-name>([^<]*)<\/command-name>/.exec(content);
   if (commandMatch) {
     const args = /<command-args>([^<]*)<\/command-args>/.exec(content);
