@@ -28,6 +28,16 @@ The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@
 
 **Releases are cut locally, not by CI** (there is no GitHub Actions workflow — it was removed deliberately: `pnpm release` is faster, debuggable, and unaffected by Actions outages). The **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders as markdown — never create a release tag with `git tag` without `-a`/`-F`, and always pass **`--cleanup=verbatim`**: git otherwise strips every line starting with `#`, silently deleting markdown headings from the notes.
 
+### Choosing the version number
+
+The user asks for "a release", not for a number — **you decide it**, and you say which you picked and why when reporting.
+
+- **Patch — `1.3.X`**: small changes, visual tweaks, bug fixes. The test: the user can do the same things as before, only better.
+- **Minor — `1.X.0`**: new functionality. The test: there is something the user can now do, see or configure that did not exist before.
+- **Major — `X.0.0`**: never bumped. This is a personal tool with one installation and no API to break, so a major would signal nothing.
+- **Mixed release: the highest wins.** One new feature among five fixes is still a minor.
+- Calibration: **v1.3.2 should have been 1.4.0** — event-driven usage refresh and the per-setting default markers were new behaviour, not tweaks. When in doubt between the two, it is a minor.
+
 ### Writing release notes
 
 The notes are not a changelog nobody reads: they are what the user sees in the update popup while deciding whether to install, and the popup shows **every version between theirs and the newest**, stacked. Write them accordingly.
