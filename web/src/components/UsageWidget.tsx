@@ -12,12 +12,32 @@ function barColor(pct: number): string {
 
 function Bar({ pct, className = '' }: { pct: number; className?: string }) {
   return (
-    <span className={`inline-block overflow-hidden rounded-full bg-[var(--border)] ${className}`}>
+    <span className={`inline-block overflow-hidden rounded-sm bg-[var(--border)] ${className}`}>
       <span
-        className={`block h-full rounded-full ${barColor(pct)}`}
-        style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+        className={`block h-full rounded-sm ${barColor(pct)}`}
+        // A few percent still has to look like a bar, not a dot.
+        style={{ width: `${Math.min(100, Math.max(3, pct))}%` }}
       />
     </span>
+  );
+}
+
+/** Circular arrow: "resets in". */
+function ResetIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="h-2.5 w-2.5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M13.5 8a5.5 5.5 0 1 1-1.7-4" />
+      <path d="M13.5 1.5V4h-2.5" />
+    </svg>
   );
 }
 
@@ -71,11 +91,13 @@ export function UsageWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] px-1.5 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+        // No outer frame: the per-window chips are the only boxes, so each
+        // countdown visibly belongs to the figure it sits with.
+        className="group flex cursor-pointer items-center gap-2 text-[11px] text-[var(--text-dim)]"
         title={data.error ?? 'Claude subscription usage — click for details'}
       >
         {data.error ? (
-          <span className="text-amber-400">usage n/a</span>
+          <span className="rounded-md border border-[var(--border)] px-2 py-1 text-amber-400">usage n/a</span>
         ) : (
           <>
             {/* One pill per window, so the countdown clearly belongs to the
@@ -87,17 +109,18 @@ export function UsageWidget() {
               w ? (
                 <span
                   key={label}
-                  className="flex items-center gap-1 rounded bg-[var(--bg)]/70 px-1.5 py-0.5"
+                  className="flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-white/[0.03] px-2 py-1 group-hover:border-[var(--text-dim)]"
                   title={`${w.label} — ${Math.round(w.utilization)}% used${
                     timeUntil(w.resetsAt) ? `, resets in ${timeUntil(w.resetsAt)}` : ''
                   }`}
                 >
                   <span className="opacity-60">{label}</span>
-                  <Bar pct={w.utilization} className="h-1.5 w-9" />
-                  <span className="font-mono text-[var(--text)]">{Math.round(w.utilization)}%</span>
+                  <Bar pct={w.utilization} className="h-1.5 w-8" />
+                  <span className="font-mono font-semibold text-[var(--text)]">{Math.round(w.utilization)}%</span>
                   {/* Rounded down: "2 hr" while 2 h 45 min remain. */}
                   {timeUntil(w.resetsAt, true) && (
-                    <span className="border-l border-[var(--border)] pl-1 opacity-60">
+                    <span className="flex items-center gap-0.5 opacity-50">
+                      <ResetIcon />
                       {timeUntil(w.resetsAt, true)}
                     </span>
                   )}
