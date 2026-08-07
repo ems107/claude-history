@@ -125,7 +125,7 @@ export function UsageWidget() {
                       are needed to tie the countdown to its window.
                       Rounded down: "2 hr" while 2 h 45 min remain. */}
                   {timeUntil(w.resetsAt, true) && (
-                    <span className="flex items-center gap-[3px] text-[10px] leading-none opacity-40">
+                    <span className="flex items-center gap-[2px] text-[10px] leading-none opacity-40">
                       <ResetIcon />
                       {timeUntil(w.resetsAt, true)}
                     </span>
