@@ -102,7 +102,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 
 ```
 %LOCALAPPDATA%\claude-history\
-├── userdata.json            ← YOUR data (local title renames, pins, prices) — not regenerable
+├── userdata.json            ← YOUR data (renames, pins, prices, settings) — not regenerable
 └── cache\                   ← fully regenerable; safe to delete at any time
     ├── index.json           ← list-view summaries, keyed by (path, size, mtime)
     ├── enriched\<uuid>.json ← per-session tokens, PR links, resume ancestry
@@ -124,6 +124,9 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - Local session rename and ★ pins (stored in this tool's `userdata.json` — never writes into `~/.claude`).
 - Live updates via SSE — running sessions show a pulsing LIVE badge.
 - Resume: copy the `claude --resume` command or open Windows Terminal/pwsh directly in the project; open the project in Explorer or VS Code.
+- Subscription usage in the header: the 5-hour and weekly windows, the same figures Claude Code's `/usage` shows, read from your stored session (read-only — the token is never refreshed or modified) and refreshed at most every 5 minutes. Switchable off in Settings.
+- Settings page (`/settings`): update checking (on/off and interval), the usage widget, the resolved data paths, clear-cache, open-data-folder and stop-server.
+- Grouping headers in the list (by day or by project) and collapsed tool-call groups in the conversation viewer, so long sessions read as prompts and answers.
 - Stats dashboard (`/stats`): daily activity stacked by project, model mix, per-project totals, and API-equivalent cost estimation with an editable price table (one-click fetch of the current official prices from Anthropic's public docs — user-triggered, previewed before saving).
 - Prompt library (`/prompts`): every prompt ever typed, searchable, with copy and open-session actions.
 - Export any conversation to Markdown (tool calls / thinking / system optional).
