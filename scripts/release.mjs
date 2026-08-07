@@ -92,7 +92,7 @@ if (ghAuth.status !== 0) die('gh is not authenticated — run `gh auth login`');
 // --- 2. Build -------------------------------------------------------------
 run('pnpm', ['typecheck']);
 run('pnpm', ['build']);
-run(process.execPath, [path.join('scripts', 'package.mjs'), '--version', version], { shell: false });
+run(process.execPath, [path.join('scripts', 'package.mjs'), '--version', version, '--release'], { shell: false });
 
 const zipPath = path.join(rootDir, 'dist', `claude-history-${version}-win-x64.zip`);
 const sumsPath = path.join(rootDir, 'dist', 'checksums.txt');

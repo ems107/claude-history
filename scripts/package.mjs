@@ -28,12 +28,22 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? process.argv[i + 1] : fallback;
 }
+const flag = (name) => process.argv.includes(`--${name}`);
 
-const version = arg('version', '0.0.0-dev');
+// Only scripts/release.mjs passes --release, so a hand-run build can never
+// masquerade as a published version: it always gets a -dev suffix, which
+// sorts BELOW the real release and therefore gets superseded by it.
+const isRelease = flag('release');
+let version = arg('version', '0.0.0');
 if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
   console.error(`Invalid --version "${version}" (expected X.Y.Z)`);
+  process.exit(1);
+}
+if (!isRelease && !version.includes('-')) version = `${version}-dev`;
+if (isRelease && version.includes('-')) {
+  console.error(`Refusing to publish a prerelease version "${version}"`);
   process.exit(1);
 }
 

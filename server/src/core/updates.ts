@@ -54,16 +54,26 @@ export function detectInstall(entryPath = process.argv[1] ?? ''): InstallInfo | 
   }
 }
 
-/** Numeric semver comparison; prerelease suffixes are ignored. */
+/**
+ * Numeric semver comparison. A prerelease sorts BELOW the same numbers
+ * without one (1.3.1-dev < 1.3.1), which is what makes locally built -dev
+ * installs get superseded by the real release instead of looking equal to it.
+ */
 export function compareVersions(a: string, b: string): number {
-  const parse = (v: string) => v.replace(/^v/, '').split('-')[0].split('.').map(Number);
+  const parse = (v: string) => {
+    const [core, pre] = v.replace(/^v/, '').split('-', 2);
+    return { nums: core.split('.').map(Number), pre: pre ?? null };
+  };
   const pa = parse(a);
   const pb = parse(b);
   for (let i = 0; i < 3; i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    const d = (pa.nums[i] ?? 0) - (pb.nums[i] ?? 0);
     if (d !== 0) return d;
   }
-  return 0;
+  if (pa.pre === pb.pre) return 0;
+  if (pa.pre === null) return 1; // release beats prerelease
+  if (pb.pre === null) return -1;
+  return pa.pre < pb.pre ? -1 : 1;
 }
 
 export class UpdateService {
