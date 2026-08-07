@@ -111,7 +111,7 @@ export function SettingsPage() {
             hint="Reads the OAuth token stored by Claude Code (read-only, never refreshed or modified) and asks Anthropic for the same 5-hour and weekly figures /usage shows."
           />
           <label className="flex items-center gap-2">
-            <span>Refresh every</span>
+            <span>When idle, refresh every</span>
             <input
               type="number"
               min={15}
@@ -122,8 +122,13 @@ export function SettingsPage() {
               onChange={(e) => save({ usageIntervalSeconds: Number(e.target.value) })}
               className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
             />
-            <span>seconds (minimum 15; only while this tab is visible)</span>
+            <span>seconds (minimum 15)</span>
           </label>
+          <p className="text-[11px] leading-snug text-[var(--text-dim)]">
+            Usage is read whenever a session here changes — a new prompt, a reply, a tool call — at most once every 15
+            seconds. This interval is only the fallback for when nothing is happening locally, in case you are using
+            Claude from another device.
+          </p>
         </Section>
 
         <Section title="Server & data">

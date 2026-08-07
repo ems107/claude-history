@@ -25,7 +25,7 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
 
   app.get('/api/usage', async (): Promise<UsageResponse> => {
     if (!ctx.index.getSettings().usageWidget) {
-      return { available: false, error: null, windows: [], fetchedAt: null, subscriptionType: null };
+      return { available: false, error: null, windows: [], fetchedAt: null, subscriptionType: null, stale: false };
     }
     return ctx.usage.get();
   });

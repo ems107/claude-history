@@ -74,8 +74,14 @@ export function UsageWidget() {
   const { data } = useQuery({
     queryKey: ['usage'],
     queryFn: api.usage,
+    // Idle fallback only — session activity is what normally refreshes this
+    // (see useEvents). It still runs unfocused: the window often sits on a
+    // second monitor while Claude works, and watching the bars move there is
+    // half the point. A genuinely hidden tab gets throttled by the browser,
+    // which is fine — nobody is looking — and coming back refetches at once.
     refetchInterval: refreshMs,
-    refetchIntervalInBackground: false, // don't poll while the tab is hidden
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   // Re-render on a tick so the countdowns stay honest between refetches. While
@@ -87,6 +93,21 @@ export function UsageWidget() {
     const iv = setInterval(() => setTick((t) => t + 1), open ? 1_000 : 30_000);
     return () => clearInterval(iv);
   }, [open]);
+
+  // A window flipping to 0% is the one change no activity announces, so the
+  // idle poll would show a stale 90% for minutes after a reset. Read once,
+  // just after the soonest one is due.
+  const nextReset = data?.windows
+    .map((w) => (w.resetsAt ? Date.parse(w.resetsAt) : Number.NaN))
+    .filter((ms) => !Number.isNaN(ms) && ms > Date.now())
+    .sort((a, b) => a - b)[0];
+  useEffect(() => {
+    if (nextReset === undefined) return;
+    // setTimeout overflows past ~24.8 days and would fire immediately.
+    const delay = Math.min(nextReset + 3_000 - Date.now(), 2_147_483_647);
+    const t = setTimeout(() => void queryClient.invalidateQueries({ queryKey: ['usage'] }), Math.max(0, delay));
+    return () => clearTimeout(t);
+  }, [nextReset, queryClient]);
 
   if (!data || (!data.available && !data.error)) return null; // disabled in settings
 
@@ -101,10 +122,18 @@ export function UsageWidget() {
         // One box, and inside it each window reads "label (resets) bar pct":
         // the countdown sits next to the label it belongs to, and the
         // percentage closes the group.
-        className="flex cursor-pointer items-center gap-4 rounded border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
-        title={data.error ?? 'Claude subscription usage — click for details'}
+        className={`flex cursor-pointer items-center gap-4 rounded border px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] ${
+          data.stale ? 'border-amber-400/40' : 'border-[var(--border)]'
+        }`}
+        title={
+          data.error
+            ? data.stale
+              ? `Showing the last reading — ${data.error}`
+              : data.error
+            : 'Claude subscription usage — click for details'
+        }
       >
-        {data.error ? (
+        {data.windows.length === 0 ? (
           <span className="text-amber-400">usage n/a</span>
         ) : (
           <>
@@ -159,9 +188,10 @@ export function UsageWidget() {
                 Refresh
               </button>
             </div>
-            {data.error ? (
-              <p className="text-xs text-amber-400">{data.error}</p>
-            ) : (
+            {/* A stale response still carries figures: show the warning above
+                them rather than replacing them with it. */}
+            {data.error && <p className="mb-2 text-xs text-amber-400">{data.error}</p>}
+            {data.windows.length > 0 && (
               <div className="space-y-2.5">
                 {data.windows.map((w) => (
                   <WindowRow key={w.key} w={w} />
@@ -169,8 +199,9 @@ export function UsageWidget() {
               </div>
             )}
             <p className="mt-3 text-[10px] leading-snug text-[var(--text-dim)]">
-              Same figures as Claude Code’s /usage. Read from your stored session, never modified; refreshed every{' '}
-              {Math.round(refreshMs / 1000)}s{data.fetchedAt ? ` · last ${timeSince(data.fetchedAt)}` : ''}.
+              Same figures as Claude Code’s /usage. Read from your stored session, never modified; refreshed on session
+              activity, otherwise every {Math.round(refreshMs / 1000)}s
+              {data.fetchedAt ? ` · last ${timeSince(data.fetchedAt)}` : ''}.
             </p>
           </div>
         </>

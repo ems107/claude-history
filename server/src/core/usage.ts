@@ -65,19 +65,20 @@ export function normalizeUsage(raw: RawUsage): UsageWindow[] {
 
 export class UsageService {
   private cached: UsageResponse | null = null;
+  /** Last response that actually carried figures, kept to survive a blip. */
+  private lastGood: UsageResponse | null = null;
   private lastFetchMs = 0;
   private inFlight: Promise<UsageResponse> | null = null;
 
-  constructor(
-    private readonly dataRoot: string,
-    /** Refresh cadence from settings; never allowed below MIN_REFETCH_MS. */
-    private readonly intervalMs: () => number = () => 60_000,
-  ) {}
+  constructor(private readonly dataRoot: string) {}
 
-  /** Cached result; only calls the endpoint once per configured interval. */
+  /**
+   * Cached result. The floor is MIN_REFETCH_MS and nothing else: callers drive
+   * the cadence (session activity in the UI, plus a slow idle poll), and this
+   * only stops a burst of triggers from becoming a burst of requests.
+   */
   async get(force = false): Promise<UsageResponse> {
-    const minAge = Math.max(MIN_REFETCH_MS, this.intervalMs());
-    if (!force && this.cached && Date.now() - this.lastFetchMs < minAge) return this.cached;
+    if (!force && this.cached && Date.now() - this.lastFetchMs < MIN_REFETCH_MS) return this.cached;
     if (this.inFlight) return this.inFlight;
     this.inFlight = this.fetchUsage().finally(() => {
       this.inFlight = null;
@@ -87,7 +88,23 @@ export class UsageService {
 
   private async fetchUsage(): Promise<UsageResponse> {
     const empty = (error: string, subscriptionType: string | null = null): UsageResponse => {
-      const result: UsageResponse = { available: false, error, windows: [], fetchedAt: null, subscriptionType };
+      const result: UsageResponse = { available: false, error, windows: [], fetchedAt: null, subscriptionType, stale: false };
+      this.cached = result;
+      this.lastFetchMs = Date.now();
+      return result;
+    };
+
+    // A blip (offline, timeout, 5xx) must not blank the widget: keep the last
+    // figures and say they are old. Credential problems are NOT transient —
+    // those blank it, because the user has to act on them.
+    const transient = (error: string, subscriptionType: string | null = null): UsageResponse => {
+      if (!this.lastGood) return empty(error, subscriptionType);
+      const result: UsageResponse = {
+        ...this.lastGood,
+        error,
+        stale: true,
+        subscriptionType: subscriptionType ?? this.lastGood.subscriptionType,
+      };
       this.cached = result;
       this.lastFetchMs = Date.now();
       return result;
@@ -119,7 +136,7 @@ export class UsageService {
       if (res.status === 401) {
         return empty('Claude rejected the stored token — run Claude Code once to refresh it.', oauth.subscriptionType ?? null);
       }
-      if (!res.ok) return empty(`Usage endpoint answered HTTP ${res.status}`, oauth.subscriptionType ?? null);
+      if (!res.ok) return transient(`Usage endpoint answered HTTP ${res.status}`, oauth.subscriptionType ?? null);
       const windows = normalizeUsage((await res.json()) as RawUsage);
       const result: UsageResponse = {
         available: windows.length > 0,
@@ -127,12 +144,14 @@ export class UsageService {
         windows,
         fetchedAt: new Date().toISOString(),
         subscriptionType: oauth.subscriptionType ?? null,
+        stale: false,
       };
       this.cached = result;
+      if (windows.length > 0) this.lastGood = result;
       this.lastFetchMs = Date.now();
       return result;
     } catch (err) {
-      return empty(err instanceof Error ? err.message : String(err), oauth.subscriptionType ?? null);
+      return transient(err instanceof Error ? err.message : String(err), oauth.subscriptionType ?? null);
     }
   }
 }

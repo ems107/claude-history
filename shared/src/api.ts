@@ -135,7 +135,11 @@ export interface AppSettings {
    * Anthropic's usage endpoint.
    */
   usageWidget: boolean;
-  /** Seconds between usage refreshes (minimum 15). */
+  /**
+   * IDLE cadence for the usage widget, in seconds (minimum 15). Usage is
+   * normally refreshed by session activity; this is only the fallback for when
+   * nothing happens locally — Claude may still be used from another device.
+   */
   usageIntervalSeconds: number;
 }
 
@@ -143,9 +147,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   updateAutoCheck: true,
   updateIntervalMinutes: 10,
   usageWidget: true,
-  usageIntervalSeconds: 60,
+  usageIntervalSeconds: 300,
 };
 
+/** Hard floor between usage reads, whatever the idle cadence is set to. */
 export const MIN_USAGE_INTERVAL_SECONDS = 15;
 
 // ---- Subscription usage ----
@@ -165,6 +170,8 @@ export interface UsageResponse {
   windows: UsageWindow[];
   fetchedAt: string | null;
   subscriptionType: string | null;
+  /** These figures come from an earlier read that could not be renewed. */
+  stale: boolean;
 }
 
 // ---- SSE events on /api/events ----
