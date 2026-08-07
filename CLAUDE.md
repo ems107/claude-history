@@ -20,6 +20,10 @@ It is a standalone personal tool. It is **NOT part of the PCCOM ecosystem** (no 
 
 The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web.
 
+> **Always leave the app running after changing it.** The user browses `http://127.0.0.1:7433` and expects to find his edits there — never end a turn with that port dead or serving the old code. After any change: `pnpm build`, then leave the source server up on 7433.
+>
+> That port belongs to the installed release, started by the `claude-history` scheduled task, so the sequence is: `Stop-ScheduledTask claude-history` → wait until nothing listens on 7433 (the old process needs a moment to release it) → `pnpm start:bg` → poll `/api/meta` until it answers, and check it reports version `dev` (proof the source instance won the port, not a surviving release one). To hand the port back: `pnpm stop` then `Start-ScheduledTask claude-history`. A logon does it anyway — the detached dev process does not survive one, and the task's AtLogOn trigger fires.
+
 > **NEVER cut a release on your own initiative.** `pnpm release` publishes a public GitHub release and makes every installed instance offer the update — that is the user's call, always. Commit and push freely; tag and release ONLY when the user explicitly asks for it in that turn. "Finish this feature" is not a request to release it.
 
 **Releases are cut locally, not by CI** (there is no GitHub Actions workflow — it was removed deliberately: `pnpm release` is faster, debuggable, and unaffected by Actions outages). The **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders as markdown — never create a release tag with `git tag` without `-a`/`-F`, and always pass **`--cleanup=verbatim`**: git otherwise strips every line starting with `#`, silently deleting markdown headings from the notes.
