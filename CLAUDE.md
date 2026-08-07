@@ -36,7 +36,8 @@ The user asks for "a release", not for a number — **you decide it**, and you s
 - **Minor — `1.X.0`**: new functionality. The test: there is something the user can now do, see or configure that did not exist before.
 - **Major — `X.0.0`**: never bumped. This is a personal tool with one installation and no API to break, so a major would signal nothing.
 - **Mixed release: the highest wins.** One new feature among five fixes is still a minor.
-- Calibration: **v1.3.2 should have been 1.4.0** — event-driven usage refresh and the per-setting default markers were new behaviour, not tweaks. When in doubt between the two, it is a minor.
+- **Reworking how an existing job is done is a patch**, however much of the code is new: what counts is whether the *capability* is new, not the diff. And giving back something that was simply missing reads as a fix, not as a feature.
+- Calibration (the user's own call): **v1.3.2 was right as a patch** — the usage refresh already existed and only changed *when* it fires, and the per-setting default markers fixed there being no way back to a default. Judgement calls like that one are the user's to settle; ask if a release sits on the line.
 
 ### Writing release notes
 
