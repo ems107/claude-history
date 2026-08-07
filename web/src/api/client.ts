@@ -65,8 +65,12 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<UpdateStatusResponse>;
   },
-  updateApply: async () => {
-    const res = await fetch('/api/update/apply', { method: 'POST' });
+  updateApply: async (version?: string) => {
+    const res = await fetch('/api/update/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version }),
+    });
     const body = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;

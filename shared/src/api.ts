@@ -96,7 +96,7 @@ export interface LineageResponse {
 
 export type UpdateState = 'idle' | 'checking' | 'downloading' | 'verifying' | 'staging' | 'restarting';
 
-export interface UpdateLatest {
+export interface UpdateRelease {
   /** Bare version, e.g. "1.2.0". */
   version: string;
   /** Release tag, e.g. "v1.2.0". */
@@ -106,14 +106,17 @@ export interface UpdateLatest {
   publishedAt: string | null;
   /** Size of the win-x64 zip asset, if found. */
   sizeBytes: number | null;
+  /** False when the release ships no installable zip + checksums pair. */
+  installable: boolean;
 }
 
 export interface UpdateStatusResponse {
   currentVersion: string;
-  /** True when running from an installed portable layout (updates can be applied). */
+  /** True when running from an installed layout (updates can be applied). */
   installed: boolean;
   updateAvailable: boolean;
-  latest: UpdateLatest | null;
+  /** Every release newer than the running one, newest first. */
+  available: UpdateRelease[];
   lastCheckAt: string | null;
   lastError: string | null;
   state: UpdateState;

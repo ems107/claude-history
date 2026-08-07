@@ -1,4 +1,4 @@
-import type { UpdateLatest, UpdateStatusResponse } from '@claude-history/shared';
+import type { UpdateRelease, UpdateStatusResponse } from '@claude-history/shared';
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -28,7 +28,12 @@ export interface InstallInfo {
 interface ReleaseAssets {
   zipUrl: string;
   zipName: string;
-  checksumsUrl: string | null;
+  checksumsUrl: string;
+}
+
+interface KnownRelease {
+  info: UpdateRelease;
+  assets: ReleaseAssets | null;
 }
 
 /**
@@ -68,8 +73,8 @@ export class UpdateService {
 
   private readonly repo: string;
   private etag: string | null = null;
-  private latest: UpdateLatest | null = null;
-  private assets: ReleaseAssets | null = null;
+  /** Every published release, newest first (as returned by GitHub). */
+  private releases: KnownRelease[] = [];
   private lastCheckAt: string | null = null;
   private lastError: string | null = null;
   private state: UpdateStatusResponse['state'] = 'idle';
@@ -87,21 +92,25 @@ export class UpdateService {
   }
 
   getStatus(): UpdateStatusResponse {
+    const available = this.newerReleases();
     return {
       currentVersion: APP_VERSION,
       installed: this.install !== null,
-      updateAvailable:
-        this.latest !== null && APP_VERSION !== 'dev' && compareVersions(this.latest.version, APP_VERSION) > 0,
-      latest: this.latest,
+      updateAvailable: available.length > 0,
+      available: available.map((r) => r.info),
       lastCheckAt: this.lastCheckAt,
       lastError: this.lastError,
       state: this.state,
     };
   }
 
-  /** Latest release's downloadable assets (set after a successful check). */
-  getAssets(): ReleaseAssets | null {
-    return this.assets;
+  /**
+   * Releases newer than the running one, newest first. A dev build has no
+   * meaningful version, so it is never offered anything to install.
+   */
+  private newerReleases(): KnownRelease[] {
+    if (APP_VERSION === 'dev') return [];
+    return this.releases.filter((r) => compareVersions(r.info.version, APP_VERSION) > 0);
   }
 
   setState(state: UpdateStatusResponse['state']): void {
@@ -120,18 +129,35 @@ export class UpdateService {
   }
 
   /**
-   * Download, verify and stage the latest release, then hand over to
+   * Download, verify and stage a release, then hand over to
    * update-helper.ps1 (which swaps the `current` junction and restarts the
    * scheduled task) and exit. Only valid on an installed instance, and only
    * after the user explicitly confirmed in the UI.
+   *
+   * `targetVersion` defaults to the newest available one; it must be a
+   * release newer than the running version (this never downgrades).
    */
-  async apply(port: number): Promise<void> {
+  async apply(port: number, targetVersion?: string): Promise<void> {
     const install = this.install;
-    const latest = this.latest;
-    const assets = this.assets;
-    if (!install) throw new Error('This instance does not run from an installed release — pull and rebuild instead.');
-    if (!latest || !assets || !this.getStatus().updateAvailable) throw new Error('No update available.');
+    if (!install) {
+      throw new Error('This instance is not a managed install (source or portable) — updates cannot be applied here.');
+    }
     if (this.state !== 'idle') throw new Error(`Busy (${this.state}).`);
+
+    const candidates = this.newerReleases();
+    const chosen = targetVersion
+      ? candidates.find((r) => r.info.version === targetVersion.replace(/^v/, ''))
+      : candidates[0];
+    if (!chosen) {
+      throw new Error(
+        targetVersion
+          ? `Version ${targetVersion} is not among the available updates.`
+          : 'No update available.',
+      );
+    }
+    const latest = chosen.info;
+    const assets = chosen.assets;
+    if (!assets) throw new Error(`Release ${latest.tag} has no installable zip + checksums.txt.`);
 
     const tmpDir = path.join(os.tmpdir(), 'claude-history-update');
     try {
@@ -147,7 +173,6 @@ export class UpdateService {
 
       // 2. Verify against the release's checksums.txt.
       this.setState('verifying');
-      if (!assets.checksumsUrl) throw new Error('Release has no checksums.txt — refusing to install an unverifiable download.');
       const sumRes = await fetch(assets.checksumsUrl, { headers: { 'user-agent': 'claude-history-updater' } });
       if (!sumRes.ok) throw new Error(`checksums.txt download failed: HTTP ${sumRes.status}`);
       const sums = await sumRes.text();
@@ -207,7 +232,9 @@ export class UpdateService {
     if (this.state !== 'idle') return; // an apply (or another check) is running
     this.setState('checking');
     try {
-      const res = await fetch(`https://api.github.com/repos/${this.repo}/releases/latest`, {
+      // The full list (not /releases/latest) so the UI can show every version
+      // between the installed one and the newest, with all their notes.
+      const res = await fetch(`https://api.github.com/repos/${this.repo}/releases?per_page=50`, {
         headers: {
           accept: 'application/vnd.github+json',
           'user-agent': 'claude-history-updater',
@@ -218,25 +245,38 @@ export class UpdateService {
       if (res.status !== 304) {
         if (!res.ok) throw new Error(`GitHub API answered HTTP ${res.status}`);
         this.etag = res.headers.get('etag');
-        const rel = (await res.json()) as {
+        const list = (await res.json()) as Array<{
           tag_name?: string;
           body?: string | null;
           published_at?: string | null;
+          draft?: boolean;
+          prerelease?: boolean;
           assets?: Array<{ name: string; size: number; browser_download_url: string }>;
-        };
-        if (!rel.tag_name) throw new Error('Release response has no tag_name');
-        const zip = rel.assets?.find((a) => /^claude-history-.+-win-x64\.zip$/.test(a.name)) ?? null;
-        const checksums = rel.assets?.find((a) => a.name === 'checksums.txt') ?? null;
-        this.latest = {
-          version: rel.tag_name.replace(/^v/, ''),
-          tag: rel.tag_name,
-          notes: rel.body ?? '',
-          publishedAt: rel.published_at ?? null,
-          sizeBytes: zip?.size ?? null,
-        };
-        this.assets = zip
-          ? { zipUrl: zip.browser_download_url, zipName: zip.name, checksumsUrl: checksums?.browser_download_url ?? null }
-          : null;
+        }>;
+        if (!Array.isArray(list)) throw new Error('Unexpected releases response');
+        this.releases = list
+          .filter((rel) => rel.tag_name && !rel.draft && !rel.prerelease && /^v?\d+\.\d+\.\d+/.test(rel.tag_name))
+          .map((rel) => {
+            const tag = rel.tag_name as string;
+            const zip = rel.assets?.find((a) => /^claude-history-.+-win-x64\.zip$/.test(a.name)) ?? null;
+            const checksums = rel.assets?.find((a) => a.name === 'checksums.txt') ?? null;
+            const assets =
+              zip && checksums
+                ? { zipUrl: zip.browser_download_url, zipName: zip.name, checksumsUrl: checksums.browser_download_url }
+                : null;
+            return {
+              info: {
+                version: tag.replace(/^v/, ''),
+                tag,
+                notes: rel.body ?? '',
+                publishedAt: rel.published_at ?? null,
+                sizeBytes: zip?.size ?? null,
+                installable: assets !== null,
+              },
+              assets,
+            };
+          })
+          .sort((a, b) => compareVersions(b.info.version, a.info.version));
       }
       this.lastError = null;
     } catch (err) {
