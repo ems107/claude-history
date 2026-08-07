@@ -94,7 +94,7 @@ export function UsageWidget() {
         // One box, and inside it each window reads "label (resets) bar pct":
         // the countdown sits next to the label it belongs to, and the
         // percentage closes the group.
-        className="flex cursor-pointer items-center gap-3 rounded border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+        className="flex cursor-pointer items-center gap-4 rounded border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
         title={data.error ?? 'Claude subscription usage — click for details'}
       >
         {data.error ? (
@@ -116,11 +116,14 @@ export function UsageWidget() {
                   }`}
                 >
                   <span className="opacity-60">{label}</span>
-                  {/* Rounded down: "2 hr" while 2 h 45 min remain. */}
+                  {/* Secondary by weight, not by punctuation: the label opens
+                      the group and the percentage closes it, so no brackets
+                      are needed to tie the countdown to its window.
+                      Rounded down: "2 hr" while 2 h 45 min remain. */}
                   {timeUntil(w.resetsAt, true) && (
-                    <span className="flex items-center gap-0.5 opacity-45">
-                      (<ResetIcon />
-                      {timeUntil(w.resetsAt, true)})
+                    <span className="flex items-center gap-0.5 text-[10px] opacity-40">
+                      <ResetIcon />
+                      {timeUntil(w.resetsAt, true)}
                     </span>
                   )}
                   <Bar pct={w.utilization} className="h-1.5 w-8" />
