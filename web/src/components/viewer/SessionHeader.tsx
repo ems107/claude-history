@@ -89,6 +89,9 @@ export function SessionHeader({
   showThinking,
   onToggleThinking,
   thinkingCount,
+  expandTools,
+  onToggleTools,
+  toolCount,
   showTokens,
   onToggleTokens,
   showLineage,
@@ -102,6 +105,9 @@ export function SessionHeader({
   showThinking: boolean;
   onToggleThinking: () => void;
   thinkingCount: number;
+  expandTools: boolean;
+  onToggleTools: () => void;
+  toolCount: number;
   showTokens: boolean;
   onToggleTokens: () => void;
   showLineage: boolean;
@@ -187,6 +193,19 @@ export function SessionHeader({
           }
         >
           Thinking{thinkingCount > 0 ? ` (${thinkingCount})` : ''}
+        </button>
+        <button
+          type="button"
+          onClick={toolCount > 0 ? onToggleTools : undefined}
+          disabled={toolCount === 0}
+          className={toggleClass(expandTools, toolCount === 0)}
+          title={
+            toolCount > 0
+              ? 'Expand or collapse every group of tool calls (they start collapsed so prompts and answers read cleanly)'
+              : 'This conversation has no tool calls'
+          }
+        >
+          Tools{toolCount > 0 ? ` (${toolCount})` : ''}
         </button>
         <button type="button" onClick={onToggleTokens} className={toggleClass(showTokens)}>
           Tokens

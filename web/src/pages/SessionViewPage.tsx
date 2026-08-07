@@ -19,6 +19,7 @@ export function SessionViewPage() {
   const detail = useQuery({ queryKey: ['session', id], queryFn: () => api.session(id), enabled: !!id });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
+  const [expandTools, setExpandTools] = useState(() => localStorage.getItem('expandTools') === 'true');
   const [showTokens, setShowTokens] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
@@ -64,14 +65,13 @@ export function SessionViewPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [agentId, closeAgent, navigate]);
 
-  const thinkingCount = useMemo(
-    () =>
-      (detail.data?.turns ?? [])
-        .flatMap((t) => t.items)
-        .flatMap((i) => i.blocks)
-        .filter((b) => b.kind === 'thinking').length,
-    [detail.data],
-  );
+  const { thinkingCount, toolCount } = useMemo(() => {
+    const blocks = (detail.data?.turns ?? []).flatMap((t) => t.items).flatMap((i) => i.blocks);
+    return {
+      thinkingCount: blocks.filter((b) => b.kind === 'thinking').length,
+      toolCount: blocks.filter((b) => b.kind === 'tool').length,
+    };
+  }, [detail.data]);
 
   if (detail.isLoading) {
     return <div className="p-8 text-[var(--text-dim)]">Parsing conversation…</div>;
@@ -96,6 +96,14 @@ export function SessionViewPage() {
           });
         }}
         thinkingCount={thinkingCount}
+        expandTools={expandTools}
+        onToggleTools={() => {
+          setExpandTools((v) => {
+            localStorage.setItem('expandTools', String(!v));
+            return !v;
+          });
+        }}
+        toolCount={toolCount}
         showTokens={showTokens}
         onToggleTokens={() => setShowTokens((v) => !v)}
         showLineage={showLineage}
@@ -117,6 +125,7 @@ export function SessionViewPage() {
           <TurnList
             turns={detail.data.turns}
             showThinking={showThinking}
+            expandTools={expandTools}
             scrollToUuid={msg}
             onOpenAgent={openAgent}
           />

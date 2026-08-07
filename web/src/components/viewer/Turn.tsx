@@ -1,8 +1,11 @@
-import type { MessageItem, Turn as TurnType } from '@claude-history/shared';
+import type { ContentBlock, MessageItem, Turn as TurnType } from '@claude-history/shared';
+import { type ReactNode, useEffect, useState } from 'react';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { Markdown } from './Markdown.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
+
+type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
 function Anchors({ item }: { item: MessageItem }) {
   return (
@@ -54,39 +57,69 @@ function UserItem({ item }: { item: MessageItem }) {
   );
 }
 
-function AssistantItem({
-  item,
-  showThinking,
+/**
+ * A run of consecutive tool calls, collapsed into one line by default: a long
+ * session is mostly tool traffic, and hiding it leaves the prompts and the
+ * answers readable. Expanding shows the individual (still collapsible) calls.
+ */
+function ToolGroup({
+  blocks,
+  expandAll,
   onOpenAgent,
 }: {
-  item: MessageItem;
-  showThinking: boolean;
+  blocks: ToolContentBlock[];
+  expandAll: boolean;
   onOpenAgent?: (agentId: string) => void;
 }) {
-  return (
-    <div id={item.uuid} className="px-1 py-1">
-      <Anchors item={item} />
-      <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        <span className="text-emerald-400/80">assistant</span>
-        {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
-        {item.timestamp && (
-          <span className="font-normal normal-case" title={formatDateTimeFull(item.timestamp)}>
-            {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
-          </span>
-        )}
+  const [open, setOpen] = useState(expandAll);
+  useEffect(() => setOpen(expandAll), [expandAll]);
+
+  const names = [...new Set(blocks.map((b) => b.toolName))];
+  const errors = blocks.filter((b) => b.result?.isError).length;
+
+  if (open) {
+    return (
+      <div className="my-1.5 border-l border-[var(--border)] pl-2">
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="mb-1 cursor-pointer text-xs text-[var(--text-dim)] hover:text-[var(--text)]"
+        >
+          ▾ {blocks.length} tool call{blocks.length !== 1 ? 's' : ''} — collapse
+        </button>
+        {blocks.map((b, i) => (
+          <ToolBlock key={i} block={b} onOpenAgent={onOpenAgent} />
+        ))}
       </div>
-      {item.blocks.map((b, i) => {
-        switch (b.kind) {
-          case 'thinking':
-            return showThinking ? <ThinkingBlock key={i} text={b.text} /> : null;
-          case 'text':
-            return <Markdown key={i} text={b.text} />;
-          case 'tool':
-            return <ToolBlock key={i} block={b} onOpenAgent={onOpenAgent} />;
-          default:
-            return null;
-        }
-      })}
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className="my-1.5 flex w-full cursor-pointer items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-left text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+      title={names.join(', ')}
+    >
+      <span>▸</span>
+      <span className="font-semibold text-sky-300/80">
+        {blocks.length} tool call{blocks.length !== 1 ? 's' : ''}
+      </span>
+      <span className="min-w-0 truncate font-mono opacity-70">{names.join(', ')}</span>
+      {errors > 0 && <span className="ml-auto shrink-0 text-red-400">{errors} failed</span>}
+    </button>
+  );
+}
+
+function AssistantHeader({ item }: { item: MessageItem }) {
+  return (
+    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+      <span className="text-emerald-400/80">assistant</span>
+      {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
+      {item.timestamp && (
+        <span className="font-normal normal-case" title={formatDateTimeFull(item.timestamp)}>
+          {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
+        </span>
+      )}
     </div>
   );
 }
@@ -107,23 +140,79 @@ function SystemItem({ item }: { item: MessageItem }) {
 export function TurnView({
   turn,
   showThinking,
+  expandTools,
   onOpenAgent,
 }: {
   turn: TurnType;
   showThinking: boolean;
+  expandTools: boolean;
   onOpenAgent?: (agentId: string) => void;
 }) {
-  return (
-    <div className="space-y-1.5">
-      {turn.items.map((item) =>
-        item.role === 'user' ? (
-          <UserItem key={item.uuid} item={item} />
-        ) : item.role === 'assistant' ? (
-          <AssistantItem key={item.uuid} item={item} showThinking={showThinking} onOpenAgent={onOpenAgent} />
-        ) : (
-          <SystemItem key={item.uuid} item={item} />
-        ),
-      )}
-    </div>
-  );
+  // Tool runs are grouped across items, not just within one assistant
+  // message: a turn is usually assistant(tool) → assistant(tool) → … and the
+  // user only wants to see one collapsed line for the whole run.
+  const nodes: ReactNode[] = [];
+  let pendingTools: ToolContentBlock[] = [];
+  const flushTools = () => {
+    if (pendingTools.length === 0) return;
+    nodes.push(
+      <ToolGroup key={`tools-${nodes.length}`} blocks={pendingTools} expandAll={expandTools} onOpenAgent={onOpenAgent} />,
+    );
+    pendingTools = [];
+  };
+
+  for (const item of turn.items) {
+    if (item.role === 'user') {
+      flushTools();
+      nodes.push(<UserItem key={item.uuid} item={item} />);
+      continue;
+    }
+    if (item.role !== 'assistant') {
+      flushTools();
+      nodes.push(<SystemItem key={item.uuid} item={item} />);
+      continue;
+    }
+
+    const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
+    // An assistant message that is only tool calls contributes to the run
+    // without printing its own header.
+    if (visible.length > 0 && visible.every((b) => b.kind === 'tool')) {
+      pendingTools.push(...(visible as ToolContentBlock[]));
+      continue;
+    }
+
+    flushTools();
+    const rendered: ReactNode[] = [];
+    for (const [i, b] of visible.entries()) {
+      if (b.kind === 'tool') {
+        pendingTools.push(b);
+        continue;
+      }
+      if (pendingTools.length > 0) {
+        rendered.push(
+          <ToolGroup
+            key={`inline-tools-${i}`}
+            blocks={pendingTools}
+            expandAll={expandTools}
+            onOpenAgent={onOpenAgent}
+          />,
+        );
+        pendingTools = [];
+      }
+      if (b.kind === 'thinking') rendered.push(<ThinkingBlock key={i} text={b.text} />);
+      else if (b.kind === 'text') rendered.push(<Markdown key={i} text={b.text} />);
+    }
+    if (rendered.length > 0) {
+      nodes.push(
+        <div key={item.uuid} id={item.uuid} className="px-1 py-1">
+          <Anchors item={item} />
+          <AssistantHeader item={item} />
+          {rendered}
+        </div>,
+      );
+    }
+  }
+  flushTools();
+
+  return <div className="space-y-1.5">{nodes}</div>;
 }

@@ -5,11 +5,13 @@ import { TurnView } from './Turn.tsx';
 export function TurnList({
   turns,
   showThinking,
+  expandTools = false,
   scrollToUuid,
   onOpenAgent,
 }: {
   turns: Turn[];
   showThinking: boolean;
+  expandTools?: boolean;
   scrollToUuid?: string | null;
   onOpenAgent?: (agentId: string) => void;
 }) {
@@ -30,7 +32,13 @@ export function TurnList({
   return (
     <div className="space-y-4">
       {turns.map((turn, i) => (
-        <TurnView key={turn.promptId ?? i} turn={turn} showThinking={showThinking} onOpenAgent={onOpenAgent} />
+        <TurnView
+          key={turn.promptId ?? i}
+          turn={turn}
+          showThinking={showThinking}
+          expandTools={expandTools}
+          onOpenAgent={onOpenAgent}
+        />
       ))}
     </div>
   );
