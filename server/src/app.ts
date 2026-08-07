@@ -9,6 +9,7 @@ import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPromptRoutes } from './routes/prompts.ts';
 import { registerResumeRoutes } from './routes/resume.ts';
 import { registerSearchRoutes } from './routes/search.ts';
+import { registerSettingsRoutes } from './routes/settings.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
@@ -30,6 +31,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
+  registerSettingsRoutes(app, ctx);
   registerEventRoutes(app, ctx);
 
   if (config.staticDir) {

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type {
+  AppSettings,
   IndexState,
   LiveSessionEntry,
   PriceTable,
@@ -7,7 +8,7 @@ import type {
   SessionEnrichment,
   SessionSummary,
 } from '@claude-history/shared';
-import { DEFAULT_PRICES } from '@claude-history/shared';
+import { DEFAULT_PRICES, DEFAULT_SETTINGS } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
@@ -51,6 +52,8 @@ export class SessionIndex {
   private pins = new Set<string>();
   /** Custom model price table — null means "use defaults". */
   private prices: PriceTable | null = null;
+  /** User settings — stored in userdata.json alongside renames and pins. */
+  private settings: AppSettings = { ...DEFAULT_SETTINGS };
   state: IndexState = 'scanning';
   cacheHits = 0;
   private enriching = false;
@@ -69,10 +72,12 @@ export class SessionIndex {
       titleOverrides?: Record<string, string>;
       pins?: string[];
       prices?: PriceTable;
+      settings?: Partial<AppSettings>;
     }>(this.config.userdataFile);
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
     this.prices = userdata?.prices ?? null;
+    this.settings = { ...DEFAULT_SETTINGS, ...(userdata?.settings ?? {}) };
 
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
@@ -257,6 +262,7 @@ export class SessionIndex {
     await writeJsonAtomic(this.config.userdataFile, {
       titleOverrides: this.titleOverrides,
       pins: [...this.pins],
+      settings: this.settings,
       ...(this.prices ? { prices: this.prices } : {}),
     });
   }
@@ -267,6 +273,25 @@ export class SessionIndex {
 
   get hasCustomPrices(): boolean {
     return this.prices !== null;
+  }
+
+  getSettings(): AppSettings {
+    return this.settings;
+  }
+
+  async setSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+    this.settings = {
+      ...this.settings,
+      ...patch,
+      // Guard the poll interval: too low would hammer the GitHub API.
+      updateIntervalMinutes: Math.max(
+        5,
+        Math.round(patch.updateIntervalMinutes ?? this.settings.updateIntervalMinutes),
+      ),
+    };
+    await this.saveUserdata();
+    this.events.emit('settings-changed', this.settings);
+    return this.settings;
   }
 
   async setPriceTable(prices: PriceTable | null): Promise<void> {

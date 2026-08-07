@@ -122,6 +122,46 @@ export interface UpdateStatusResponse {
   state: UpdateState;
 }
 
+// ---- Settings (persisted in userdata.json) ----
+
+export interface AppSettings {
+  /** Poll GitHub for new releases in the background. */
+  updateAutoCheck: boolean;
+  /** Minutes between automatic update checks (minimum 5). */
+  updateIntervalMinutes: number;
+  /**
+   * Show the Claude subscription usage widget. It reads the OAuth token from
+   * ~/.claude/.credentials.json (read-only, never refreshed) and calls
+   * Anthropic's usage endpoint.
+   */
+  usageWidget: boolean;
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  updateAutoCheck: true,
+  updateIntervalMinutes: 10,
+  usageWidget: true,
+};
+
+// ---- Subscription usage ----
+
+export interface UsageWindow {
+  key: string;
+  label: string;
+  /** Percentage used, 0-100. */
+  utilization: number;
+  resetsAt: string | null;
+}
+
+export interface UsageResponse {
+  available: boolean;
+  /** Set when usage could not be read (no credentials, expired token, HTTP error). */
+  error: string | null;
+  windows: UsageWindow[];
+  fetchedAt: string | null;
+  subscriptionType: string | null;
+}
+
 // ---- SSE events on /api/events ----
 
 export type ServerEvent =

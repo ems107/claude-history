@@ -102,7 +102,7 @@ export function UpdateButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative ml-auto cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+        className="relative cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
         title={count > 0 ? `${count} new version${count !== 1 ? 's' : ''} available` : 'Check for updates'}
         aria-label="Updates"
       >

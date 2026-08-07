@@ -1,4 +1,5 @@
 import type {
+  AppSettings,
   LineageResponse,
   MetaResponse,
   PriceTable,
@@ -10,7 +11,14 @@ import type {
   SubagentDetailResponse,
   ToolResultFileResponse,
   UpdateStatusResponse,
+  UsageResponse,
 } from '@claude-history/shared';
+
+export interface SettingsResponse {
+  settings: AppSettings;
+  paths: { dataRoot: string; cacheDir: string; userdataFile: string; installRoot: string | null };
+  version: string;
+}
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -75,6 +83,29 @@ export const api = {
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
+  settings: () => getJson<SettingsResponse>('/api/settings'),
+  saveSettings: async (patch: Partial<AppSettings>) => {
+    const res = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json() as Promise<{ settings: AppSettings }>;
+  },
+  usage: () => getJson<UsageResponse>('/api/usage'),
+  usageRefresh: async () => {
+    const res = await fetch('/api/usage/refresh', { method: 'POST' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json() as Promise<UsageResponse>;
+  },
+  clearCache: async () => {
+    const res = await fetch('/api/cache/clear', { method: 'POST' });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json();
+  },
+  openDataFolder: () => fetch('/api/open-data-folder', { method: 'POST' }),
+  stopServer: () => fetch('/api/server/stop', { method: 'POST' }),
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
   lineage: (id: string) => getJson<LineageResponse>(`/api/sessions/${id}/lineage`),
   subagent: (id: string, agentId: string) =>

@@ -13,7 +13,6 @@ import { APP_VERSION } from '../version.ts';
 // unauthenticated rate limit of 60 req/h). Downloading and applying an
 // update NEVER happens without explicit user confirmation in the UI.
 const DEFAULT_REPO = 'ems107/claude-history';
-const CHECK_INTERVAL_MS = 10 * 60_000;
 const STARTUP_DELAY_MS = 30_000;
 const MANUAL_THROTTLE_MS = 10_000;
 const FETCH_TIMEOUT_MS = 15_000;
@@ -85,10 +84,21 @@ export class UpdateService {
     this.install = detectInstall();
   }
 
-  /** Schedule the automatic checks (startup + every 10 minutes). */
-  start(): void {
-    setTimeout(() => void this.check(), STARTUP_DELAY_MS).unref();
-    setInterval(() => void this.check(), CHECK_INTERVAL_MS).unref();
+  /**
+   * Schedule the automatic checks. `getSettings` is read on every tick, so
+   * toggling auto-check or the interval in the UI takes effect immediately.
+   */
+  start(getSettings: () => { updateAutoCheck: boolean; updateIntervalMinutes: number }): void {
+    let lastCheckMs = 0;
+    const tick = () => {
+      const { updateAutoCheck, updateIntervalMinutes } = getSettings();
+      if (!updateAutoCheck) return;
+      if (Date.now() - lastCheckMs < Math.max(5, updateIntervalMinutes) * 60_000) return;
+      lastCheckMs = Date.now();
+      void this.check();
+    };
+    setTimeout(tick, STARTUP_DELAY_MS).unref();
+    setInterval(tick, 60_000).unref();
   }
 
   getStatus(): UpdateStatusResponse {

@@ -3,6 +3,7 @@ import { loadConfig } from './config.ts';
 import { SessionIndex } from './core/index.ts';
 import { SearchService } from './core/search.ts';
 import { UpdateService } from './core/updates.ts';
+import { UsageService } from './core/usage.ts';
 import { Watcher } from './core/watcher.ts';
 import { installFileLogging } from './logging.ts';
 
@@ -18,8 +19,9 @@ async function main(): Promise<void> {
 
   const search = new SearchService(index);
   const updates = new UpdateService();
-  const app = await buildApp({ config, index, search, updates });
-  updates.start();
+  const usage = new UsageService(config.dataRoot);
+  const app = await buildApp({ config, index, search, updates, usage });
+  updates.start(() => index.getSettings());
 
   const watcher = new Watcher(config, index);
   watcher.start();

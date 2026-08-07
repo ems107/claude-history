@@ -3,10 +3,12 @@ import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
 import { api } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { UpdateButton } from './components/UpdateButton.tsx';
+import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
 import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
 import { SessionViewPage } from './pages/SessionViewPage.tsx';
+import { SettingsPage } from './pages/SettingsPage.tsx';
 import { StatsPage } from './pages/StatsPage.tsx';
 
 function NavItem({ to, label }: { to: string; label: string }) {
@@ -57,8 +59,12 @@ export function App() {
         <nav className="ml-4 flex items-center gap-1">
           <NavItem to="/prompts" label="Prompts" />
           <NavItem to="/stats" label="Stats" />
+          <NavItem to="/settings" label="Settings" />
         </nav>
-        <UpdateButton />
+        <span className="ml-auto flex items-center gap-2">
+          <UsageWidget />
+          <UpdateButton />
+        </span>
       </header>
       <main className="min-h-0 flex-1">
         <Routes>
@@ -66,6 +72,7 @@ export function App() {
           <Route path="/session/:id" element={<SessionViewPage />} />
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/stats" element={<StatsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
     </div>
