@@ -39,11 +39,10 @@ $source = $PSScriptRoot
 # Pick the newest versions\v* folder (numeric semver sort; prerelease
 # suffixes are ignored for ordering).
 function Get-NewestVersionDir([string]$base) {
-  # Numeric version first; between v1.3.1 and v1.3.1-dev the release wins.
+  # Local builds live in 'vdev' and rank below every real release.
   $dirs = Get-ChildItem -Path (Join-Path $base 'versions') -Directory -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -match '^v\d+\.\d+\.\d+' } |
-    Sort-Object @{ Expression = { [version](($_.Name.Substring(1)) -replace '-.*$', '') } },
-                @{ Expression = { if ($_.Name -match '-') { 0 } else { 1 } } } -Descending
+    Where-Object { $_.Name -match '^v(\d+\.\d+\.\d+|dev$)' } |
+    Sort-Object { if ($_.Name -eq 'vdev') { [version]'0.0.0' } else { [version](($_.Name.Substring(1)) -replace '-.*$', '') } } -Descending
   if (-not $dirs) { throw "No versions\v* folder found in $base - extract the full zip first." }
   return $dirs[0]
 }

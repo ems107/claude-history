@@ -43,7 +43,8 @@ interface KnownRelease {
 export function detectInstall(entryPath = process.argv[1] ?? ''): InstallInfo | null {
   try {
     const versionDir = fs.realpathSync(path.dirname(path.resolve(entryPath)));
-    if (!/^v\d+\.\d+\.\d+/.test(path.basename(versionDir))) return null;
+    // 'vdev' is a locally built install — still a managed one.
+    if (!/^v(\d+\.\d+\.\d+|dev$)/.test(path.basename(versionDir))) return null;
     const versionsDir = path.dirname(versionDir);
     if (path.basename(versionsDir).toLowerCase() !== 'versions') return null;
     const root = path.dirname(versionsDir);
@@ -125,11 +126,12 @@ export class UpdateService {
   }
 
   /**
-   * Releases newer than the running one, newest first. A dev build has no
-   * meaningful version, so it is never offered anything to install.
+   * Releases newer than the running one, newest first. A local build reports
+   * "dev", which has no position in the version order — treat every published
+   * release as newer, so a hand-built install can always move onto a real one.
    */
   private newerReleases(): KnownRelease[] {
-    if (APP_VERSION === 'dev') return [];
+    if (APP_VERSION === 'dev') return this.releases;
     return this.releases.filter((r) => compareVersions(r.info.version, APP_VERSION) > 0);
   }
 
