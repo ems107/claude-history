@@ -1,6 +1,8 @@
 // Builds the distributable portable zip for Windows x64.
 //
-// Usage:  node scripts/package.mjs --version 1.2.0
+// Usage:  node scripts/package.mjs                  (local build: <next patch>-dev)
+//         node scripts/package.mjs --version 1.2.0   (explicit; still -dev)
+//         (release.mjs adds --release for a real, unsuffixed version)
 //
 // Output layout inside the zip (see CLAUDE.md "Portable install layout"):
 //   install.ps1 / uninstall.ps1 / launch.vbs      <- installer (stable across updates)
@@ -15,6 +17,7 @@
 
 import AdmZip from 'adm-zip';
 import { build } from 'esbuild';
+import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,11 +35,28 @@ function arg(name, fallback) {
 }
 const flag = (name) => process.argv.includes(`--${name}`);
 
+/**
+ * Version of a local build, derived from git so nobody has to invent one:
+ * the newest release tag with its patch bumped, marked -dev. That places the
+ * build after the last release and before the next one — which is exactly
+ * what an unreleased working copy is.
+ */
+function devVersionFromGit() {
+  const res = spawnSync('git', ['tag', '--list', 'v[0-9]*.[0-9]*.[0-9]*', '--sort=-v:refname'], {
+    cwd: rootDir,
+    encoding: 'utf8',
+  });
+  const latest = res.status === 0 ? (res.stdout.trim().split('\n')[0] ?? '') : '';
+  const m = /^v(\d+)\.(\d+)\.(\d+)$/.exec(latest);
+  if (!m) return '0.0.1-dev';
+  return `${m[1]}.${m[2]}.${Number(m[3]) + 1}-dev`;
+}
+
 // Only scripts/release.mjs passes --release, so a hand-run build can never
 // masquerade as a published version: it always gets a -dev suffix, which
 // sorts BELOW the real release and therefore gets superseded by it.
 const isRelease = flag('release');
-let version = arg('version', '0.0.0');
+let version = arg('version', null) ?? devVersionFromGit();
 if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
   console.error(`Invalid --version "${version}" (expected X.Y.Z)`);
   process.exit(1);

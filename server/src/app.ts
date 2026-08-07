@@ -35,11 +35,24 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerEventRoutes(app, ctx);
 
   if (config.staticDir) {
-    await app.register(fastifyStatic, { root: config.staticDir });
+    await app.register(fastifyStatic, {
+      root: config.staticDir,
+      // The plugin's own cache-control would overwrite ours.
+      cacheControl: false,
+      // Asset filenames are content-hashed, so they can be cached hard; the
+      // entry document must NOT be, or a cached index.html keeps asking for
+      // the previous build's bundles (404s and a blank page after an update).
+      setHeaders(res, filePath) {
+        res.setHeader(
+          'cache-control',
+          filePath.endsWith('index.html') ? 'no-store' : 'public, max-age=31536000, immutable',
+        );
+      },
+    });
     // SPA fallback: any non-API GET serves index.html
     app.setNotFoundHandler((request, reply) => {
       if (request.method === 'GET' && !request.url.startsWith('/api/')) {
-        return reply.sendFile('index.html');
+        return reply.header('cache-control', 'no-store').sendFile('index.html');
       }
       return reply.code(404).send({ error: 'Not found' });
     });

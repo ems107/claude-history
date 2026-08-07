@@ -30,7 +30,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $taskName = 'claude-history'
 $port = 7433
-$appUrl = "http://localhost:$port"
+# 127.0.0.1, not localhost: the server binds IPv4 loopback only, and Windows
+# resolves localhost to ::1 first, which some browsers do not fall back from.
+$appUrl = "http://127.0.0.1:$port"
 $metaUrl = "http://127.0.0.1:$port/api/meta"
 $source = $PSScriptRoot
 

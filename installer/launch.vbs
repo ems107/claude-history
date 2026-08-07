@@ -2,7 +2,9 @@
 ' starting the scheduled task first if the server is not running.
 Option Explicit
 
-Const APP_URL = "http://localhost:7433"
+' 127.0.0.1, not localhost: the server binds IPv4 loopback only and Windows
+' resolves localhost to ::1 first.
+Const APP_URL = "http://127.0.0.1:7433"
 Const HEALTH_URL = "http://127.0.0.1:7433/api/health"
 Const TASK_NAME = "claude-history"
 
