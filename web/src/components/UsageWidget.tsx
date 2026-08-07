@@ -22,21 +22,25 @@ function Bar({ pct, className = '' }: { pct: number; className?: string }) {
   );
 }
 
-/** Circular arrow: "resets in". */
+/**
+ * Circular arrow: "resets in". Sized in em so it tracks the (small) text it
+ * annotates, `block` so it centres on the flex line instead of sitting on the
+ * text baseline, and thin-stroked to match the weight of 10px type.
+ */
 function ResetIcon() {
   return (
     <svg
       viewBox="0 0 16 16"
-      className="h-2.5 w-2.5"
+      className="block h-[1.1em] w-[1.1em] shrink-0"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.7"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M13.5 8a5.5 5.5 0 1 1-1.7-4" />
-      <path d="M13.5 1.5V4h-2.5" />
+      <path d="M13.7 8.7A5.7 5.7 0 1 1 12 4.2L14 6" />
+      <path d="M14 2v4h-4" />
     </svg>
   );
 }
@@ -121,7 +125,7 @@ export function UsageWidget() {
                       are needed to tie the countdown to its window.
                       Rounded down: "2 hr" while 2 h 45 min remain. */}
                   {timeUntil(w.resetsAt, true) && (
-                    <span className="flex items-center gap-0.5 text-[10px] opacity-40">
+                    <span className="flex items-center gap-1 text-[10px] leading-none opacity-40">
                       <ResetIcon />
                       {timeUntil(w.resetsAt, true)}
                     </span>
