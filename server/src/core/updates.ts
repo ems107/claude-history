@@ -16,6 +16,10 @@ const DEFAULT_REPO = 'ems107/claude-history';
 const STARTUP_DELAY_MS = 30_000;
 const MANUAL_THROTTLE_MS = 10_000;
 const FETCH_TIMEOUT_MS = 15_000;
+/** The release zip is ~35 MB; without a cap a stalled connection hangs forever. */
+const DOWNLOAD_TIMEOUT_MS = 5 * 60_000;
+/** A step that has not moved on in this long is considered dead, not busy. */
+const STUCK_STATE_MS = 6 * 60_000;
 
 export interface InstallInfo {
   /** Install root (the folder containing install.json, current\, versions\). */
@@ -88,6 +92,7 @@ export class UpdateService {
   private lastCheckAt: string | null = null;
   private lastError: string | null = null;
   private state: UpdateStatusResponse['state'] = 'idle';
+  private stateSince = 0;
   private lastManualCheck = 0;
 
   constructor() {
@@ -137,7 +142,22 @@ export class UpdateService {
 
   setState(state: UpdateStatusResponse['state']): void {
     this.state = state;
+    this.stateSince = Date.now();
     this.emit();
+  }
+
+  /**
+   * True while a step is genuinely in progress. A state that has not changed
+   * for STUCK_STATE_MS is treated as dead (a killed download, a crashed
+   * helper) and reset, so the updater can never wedge itself permanently.
+   */
+  private isBusy(): boolean {
+    if (this.state === 'idle') return false;
+    if (Date.now() - this.stateSince < STUCK_STATE_MS) return true;
+    console.warn(`[updates] resetting stuck state "${this.state}"`);
+    this.lastError = `The previous ${this.state} step timed out.`;
+    this.setState('idle');
+    return false;
   }
 
   /** Manual check from the UI; throttled so button mashing stays polite. */
@@ -164,7 +184,7 @@ export class UpdateService {
     if (!install) {
       throw new Error('This instance is not a managed install (source or portable) — updates cannot be applied here.');
     }
-    if (this.state !== 'idle') throw new Error(`Busy (${this.state}).`);
+    if (this.isBusy()) throw new Error(`Busy (${this.state}).`);
 
     const candidates = this.newerReleases();
     const chosen = targetVersion
@@ -189,13 +209,19 @@ export class UpdateService {
       // 1. Download the release zip.
       this.setState('downloading');
       const zipPath = path.join(tmpDir, assets.zipName);
-      const zipRes = await fetch(assets.zipUrl, { headers: { 'user-agent': 'claude-history-updater' } });
+      const zipRes = await fetch(assets.zipUrl, {
+        headers: { 'user-agent': 'claude-history-updater' },
+        signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+      });
       if (!zipRes.ok) throw new Error(`Download failed: HTTP ${zipRes.status}`);
       fs.writeFileSync(zipPath, Buffer.from(await zipRes.arrayBuffer()));
 
       // 2. Verify against the release's checksums.txt.
       this.setState('verifying');
-      const sumRes = await fetch(assets.checksumsUrl, { headers: { 'user-agent': 'claude-history-updater' } });
+      const sumRes = await fetch(assets.checksumsUrl, {
+        headers: { 'user-agent': 'claude-history-updater' },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       if (!sumRes.ok) throw new Error(`checksums.txt download failed: HTTP ${sumRes.status}`);
       const sums = await sumRes.text();
       const line = sums.split('\n').find((l) => l.trim().endsWith(assets.zipName));
@@ -251,7 +277,7 @@ export class UpdateService {
   }
 
   private async check(): Promise<void> {
-    if (this.state !== 'idle') return; // an apply (or another check) is running
+    if (this.isBusy()) return; // an apply (or another check) is running
     this.setState('checking');
     try {
       // The full list (not /releases/latest) so the UI can show every version
