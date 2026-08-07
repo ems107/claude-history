@@ -1,4 +1,4 @@
-import type { AppSettings } from '@claude-history/shared';
+import { type AppSettings, DEFAULT_SETTINGS } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api/client.ts';
@@ -43,6 +43,51 @@ function Toggle({
 const btn =
   'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 
+const asText = (v: boolean | number): string => (typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v));
+
+/**
+ * Shown only next to a setting that no longer holds its default, and clicking
+ * it puts the default back. It spells the default value out because that is
+ * the question the marker raises ("changed from what?"), which also saves
+ * documenting the defaults anywhere else.
+ *
+ * Must be rendered OUTSIDE the row's <label>: a button inside a label steals
+ * the click for the label's own control.
+ */
+function DefaultBadge<K extends keyof AppSettings>({
+  field,
+  value,
+  save,
+}: {
+  field: K;
+  value: AppSettings[K];
+  save: (patch: Partial<AppSettings>) => void;
+}) {
+  const fallback = DEFAULT_SETTINGS[field];
+  if (value === fallback) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => save({ [field]: fallback } as Partial<AppSettings>)}
+      title={`Changed from the default. Click to restore it (${asText(fallback)}).`}
+      className="flex shrink-0 cursor-pointer items-center gap-1.5 self-start rounded border border-transparent px-1.5 py-px text-[10px] text-[var(--text-dim)] hover:border-[var(--border)] hover:text-[var(--text)]"
+    >
+      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
+      default {asText(fallback)}
+    </button>
+  );
+}
+
+/** A setting and its "changed from default" marker, aligned on the first line. */
+function Row({ children, badge }: { children: React.ReactNode; badge: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">{children}</div>
+      {badge}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
@@ -71,25 +116,29 @@ export function SettingsPage() {
         <h1 className="text-lg font-semibold">Settings</h1>
 
         <Section title="Updates">
-          <Toggle
-            checked={s.updateAutoCheck}
-            onChange={(v) => save({ updateAutoCheck: v })}
-            label="Check for new versions automatically"
-            hint="A small request to the GitHub releases API. Updates are never downloaded or installed without your confirmation."
-          />
-          <label className="flex items-center gap-2">
-            <span>Check every</span>
-            <input
-              type="number"
-              min={5}
-              max={1440}
-              value={s.updateIntervalMinutes}
-              disabled={!s.updateAutoCheck}
-              onChange={(e) => save({ updateIntervalMinutes: Number(e.target.value) })}
-              className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+          <Row badge={<DefaultBadge field="updateAutoCheck" value={s.updateAutoCheck} save={save} />}>
+            <Toggle
+              checked={s.updateAutoCheck}
+              onChange={(v) => save({ updateAutoCheck: v })}
+              label="Check for new versions automatically"
+              hint="A small request to the GitHub releases API. Updates are never downloaded or installed without your confirmation."
             />
-            <span>minutes (minimum 5)</span>
-          </label>
+          </Row>
+          <Row badge={<DefaultBadge field="updateIntervalMinutes" value={s.updateIntervalMinutes} save={save} />}>
+            <label className="flex items-center gap-2">
+              <span>Check every</span>
+              <input
+                type="number"
+                min={5}
+                max={1440}
+                value={s.updateIntervalMinutes}
+                disabled={!s.updateAutoCheck}
+                onChange={(e) => save({ updateIntervalMinutes: Number(e.target.value) })}
+                className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+              />
+              <span>minutes (minimum 5)</span>
+            </label>
+          </Row>
           <div className="text-[var(--text-dim)]">
             Last check:{' '}
             {update.data?.lastCheckAt
@@ -104,31 +153,63 @@ export function SettingsPage() {
         </Section>
 
         <Section title="Claude usage">
-          <Toggle
-            checked={s.usageWidget}
-            onChange={(v) => save({ usageWidget: v })}
-            label="Show subscription usage in the header"
-            hint="Reads the OAuth token stored by Claude Code (read-only, never refreshed or modified) and asks Anthropic for the same 5-hour and weekly figures /usage shows."
-          />
-          <label className="flex items-center gap-2">
-            <span>When idle, refresh every</span>
-            <input
-              type="number"
-              min={15}
-              max={3600}
-              step={15}
-              value={s.usageIntervalSeconds}
-              disabled={!s.usageWidget}
-              onChange={(e) => save({ usageIntervalSeconds: Number(e.target.value) })}
-              className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+          <Row badge={<DefaultBadge field="usageWidget" value={s.usageWidget} save={save} />}>
+            <Toggle
+              checked={s.usageWidget}
+              onChange={(v) => save({ usageWidget: v })}
+              label="Show subscription usage in the header"
+              hint="Reads the OAuth token stored by Claude Code (read-only, never refreshed or modified) and asks Anthropic for the same 5-hour and weekly figures /usage shows."
             />
-            <span>seconds (minimum 15)</span>
-          </label>
-          <p className="text-[11px] leading-snug text-[var(--text-dim)]">
-            Usage is read whenever a session here changes — a new prompt, a reply, a tool call — at most once every 15
-            seconds. This interval is only the fallback for when nothing is happening locally, in case you are using
-            Claude from another device.
-          </p>
+          </Row>
+          <Row badge={<DefaultBadge field="usageIntervalSeconds" value={s.usageIntervalSeconds} save={save} />}>
+            <label className="flex items-center gap-2">
+              <span>When idle, refresh every</span>
+              <input
+                type="number"
+                min={15}
+                max={3600}
+                step={15}
+                value={s.usageIntervalSeconds}
+                disabled={!s.usageWidget}
+                onChange={(e) => save({ usageIntervalSeconds: Number(e.target.value) })}
+                className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+              />
+              <span>seconds (minimum 15)</span>
+            </label>
+          </Row>
+          {/* The interval above is the least important of the triggers, so spell
+              out the whole set — otherwise it reads like a plain poll. */}
+          <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
+            <span className="text-[var(--text)]">When the figures are re-read:</span>
+            <ul className="mt-1 ml-4 list-disc space-y-1 marker:text-[var(--text-dim)]/50">
+              <li>
+                <span className="text-[var(--text)]">Whenever a session here changes</span> — your prompt, Claude’s
+                reply, a tool call. That is when the numbers actually move, so this is the trigger that matters. A turn
+                writes many times, so reads are limited to one every 15 seconds, with one final read once the writing
+                stops.
+              </li>
+              <li>
+                <span className="text-[var(--text)]">On the interval above</span>, but only while nothing is happening
+                locally. Its one job is catching usage burnt somewhere else — another machine, the web app, your phone.
+              </li>
+              <li>
+                <span className="text-[var(--text)]">Just after a window resets</span>, because nothing here announces a
+                window dropping back to 0%.
+              </li>
+              <li>
+                <span className="text-[var(--text)]">When you come back to this window</span>. It also keeps refreshing
+                while the window sits unfocused on another monitor; a fully hidden tab is slowed down by the browser and
+                catches up as soon as you return.
+              </li>
+              <li>
+                <span className="text-[var(--text)]">On demand</span>, with the Refresh button inside the usage popover.
+              </li>
+            </ul>
+            <p className="mt-2">
+              If a read fails, the last figures stay on screen marked as old (amber border) instead of the widget going
+              blank.
+            </p>
+          </div>
         </Section>
 
         <Section title="Server & data">
