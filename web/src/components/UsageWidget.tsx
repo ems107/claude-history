@@ -2,7 +2,7 @@ import type { UsageWindow } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.ts';
-import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
+import { formatDateTime, timeSince, timeUntil } from '../lib/format.ts';
 
 function barColor(pct: number): string {
   if (pct >= 90) return 'bg-red-400';
@@ -78,12 +78,15 @@ export function UsageWidget() {
     refetchIntervalInBackground: false, // don't poll while the tab is hidden
   });
 
-  // Re-render on a slow tick so the countdowns stay honest between refetches.
+  // Re-render on a tick so the countdowns stay honest between refetches. While
+  // the popover is open it ticks every second, because the "last refreshed"
+  // line down there counts seconds; closed, a slow tick is plenty for the
+  // minute-grained countdowns in the header.
   const [, setTick] = useState(0);
   useEffect(() => {
-    const iv = setInterval(() => setTick((t) => t + 1), 30_000);
+    const iv = setInterval(() => setTick((t) => t + 1), open ? 1_000 : 30_000);
     return () => clearInterval(iv);
-  }, []);
+  }, [open]);
 
   if (!data || (!data.available && !data.error)) return null; // disabled in settings
 
@@ -167,7 +170,7 @@ export function UsageWidget() {
             )}
             <p className="mt-3 text-[10px] leading-snug text-[var(--text-dim)]">
               Same figures as Claude Code’s /usage. Read from your stored session, never modified; refreshed every{' '}
-              {Math.round(refreshMs / 1000)}s{data.fetchedAt ? ` · last ${relativeTime(data.fetchedAt)}` : ''}.
+              {Math.round(refreshMs / 1000)}s{data.fetchedAt ? ` · last ${timeSince(data.fetchedAt)}` : ''}.
             </p>
           </div>
         </>

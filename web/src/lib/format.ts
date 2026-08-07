@@ -63,6 +63,35 @@ export function timeUntil(when: string | number | null, compact = false): string
   return parts.join(' ');
 }
 
+/** Below this, elapsed time reads "just now" instead of counting seconds. */
+export const JUST_NOW_SECONDS = 5;
+
+/**
+ * Elapsed time since `when`, exact to the second: "just now" for the first few
+ * seconds, then "12 s ago", "1 min 12 s ago", "1 hr 4 min ago". Unlike
+ * `relativeTime` this is meant to be re-rendered every second, so the seconds
+ * have to be truthful — they are floored, never rounded.
+ */
+export function timeSince(when: string | number | null): string {
+  if (when === null) return '—';
+  const ms = typeof when === 'number' ? when : Date.parse(when);
+  if (Number.isNaN(ms)) return '—';
+
+  const total = Math.floor(Math.max(0, Date.now() - ms) / 1000);
+  if (total < JUST_NOW_SECONDS) return 'just now';
+
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total / 60) % 60;
+  const seconds = total % 60;
+
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} hr`);
+  if (minutes > 0) parts.push(`${minutes} min`);
+  // Seconds are the point of this format; they only become noise past an hour.
+  if (hours === 0) parts.push(`${seconds} s`);
+  return `${parts.join(' ')} ago`;
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
