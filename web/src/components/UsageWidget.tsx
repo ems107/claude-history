@@ -91,13 +91,14 @@ export function UsageWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        // No outer frame: the per-window chips are the only boxes, so each
-        // countdown visibly belongs to the figure it sits with.
-        className="group flex cursor-pointer items-center gap-2 text-[11px] text-[var(--text-dim)]"
+        // One box, and inside it each window reads "label (resets) bar pct":
+        // the countdown sits next to the label it belongs to, and the
+        // percentage closes the group.
+        className="flex cursor-pointer items-center gap-3 rounded border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
         title={data.error ?? 'Claude subscription usage — click for details'}
       >
         {data.error ? (
-          <span className="rounded-md border border-[var(--border)] px-2 py-1 text-amber-400">usage n/a</span>
+          <span className="text-amber-400">usage n/a</span>
         ) : (
           <>
             {/* One pill per window, so the countdown clearly belongs to the
@@ -109,21 +110,21 @@ export function UsageWidget() {
               w ? (
                 <span
                   key={label}
-                  className="flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-white/[0.03] px-2 py-1 group-hover:border-[var(--text-dim)]"
+                  className="flex items-center gap-1.5"
                   title={`${w.label} — ${Math.round(w.utilization)}% used${
                     timeUntil(w.resetsAt) ? `, resets in ${timeUntil(w.resetsAt)}` : ''
                   }`}
                 >
                   <span className="opacity-60">{label}</span>
-                  <Bar pct={w.utilization} className="h-1.5 w-8" />
-                  <span className="font-mono font-semibold text-[var(--text)]">{Math.round(w.utilization)}%</span>
                   {/* Rounded down: "2 hr" while 2 h 45 min remain. */}
                   {timeUntil(w.resetsAt, true) && (
-                    <span className="flex items-center gap-0.5 opacity-50">
-                      <ResetIcon />
-                      {timeUntil(w.resetsAt, true)}
+                    <span className="flex items-center gap-0.5 opacity-45">
+                      (<ResetIcon />
+                      {timeUntil(w.resetsAt, true)})
                     </span>
                   )}
+                  <Bar pct={w.utilization} className="h-1.5 w-8" />
+                  <span className="font-mono font-semibold text-[var(--text)]">{Math.round(w.utilization)}%</span>
                 </span>
               ) : null,
             )}
