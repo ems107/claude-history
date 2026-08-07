@@ -22,6 +22,16 @@ The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@
 
 **Releases are cut locally, not by CI** (there is no GitHub Actions workflow — it was removed deliberately: `pnpm release` is faster, debuggable, and unaffected by Actions outages). The **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders as markdown — never create a release tag with `git tag` without `-a`/`-F`, and always pass **`--cleanup=verbatim`**: git otherwise strips every line starting with `#`, silently deleting markdown headings from the notes.
 
+### Writing release notes
+
+The notes are not a changelog nobody reads: they are what the user sees in the update popup while deciding whether to install, and the popup shows **every version between theirs and the newest**, stacked. Write them accordingly.
+
+- **Cover the whole release.** Before writing, read `git log <previous-tag>..HEAD` and account for every user-visible change. Skip pure refactors, docs and internal tooling unless they change what the user sees or does.
+- **Group under `### Added` / `### Changed` / `### Fixed`**, only the sections that apply, `###` being the top level (the tag line above them is the title). Keep it to a handful of one-line bullets.
+- **Lead with the user-visible effect**, then the cause only if it explains something surprising: "In-app updates now actually apply" beats "fixed helper process spawning".
+- **Call out anything requiring manual action** in its own line, e.g. a version that cannot self-update and needs a manual `install.ps1` re-run.
+- English, markdown, no external links needed. Bold sparingly for the one thing that matters most in each bullet.
+
 ## Architecture
 
 - `shared/src/` — API contract: `types.ts` (domain), `api.ts` (endpoint response shapes).
@@ -76,6 +86,10 @@ The release zip installs a portable, self-contained layout:
 ├── current  -> junction -> versions\vX.Y.Z    <- the scheduled task points THROUGH this
 └── versions\vX.Y.Z\{node\node.exe, server.cjs, web\, start-hidden.vbs, update-helper.ps1}
 ```
+
+`install.ps1` **relocates** the app to `%LOCALAPPDATA%\Programs\claude-history` (overridable with `-InstallTo`), so the user can extract the zip anywhere and delete it afterwards; `-Portable` skips the whole managed install and just runs the server in the console (no task, no shortcut, no `install.json` — so the updater reports `installed: false` and refuses to apply). `Program Files` is deliberately NOT supported: self-update writes into the install folder and would need elevation on every update.
+
+The updater reads the **full releases list** (`/releases?per_page=50`, drafts and prereleases filtered out) rather than `/releases/latest`, so the popup can show every version newer than the running one with its notes; `POST /api/update/apply` takes an optional `version` and only ever accepts one newer than the running build.
 
 Hard-won rules — the code and scripts MUST follow them:
 

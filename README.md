@@ -5,7 +5,7 @@ A local web app to browse **all** your Claude Code conversations across **all** 
 ## Install (Windows, no prerequisites)
 
 1. Download `claude-history-X.Y.Z-win-x64.zip` from the [latest release](https://github.com/ems107/claude-history/releases/latest).
-2. Extract it anywhere you want the app to live (suggested: `%LOCALAPPDATA%\Programs\claude-history`).
+2. Extract it anywhere (Downloads is fine — it does not stay there).
 3. From that folder run:
 
    ```
@@ -14,9 +14,12 @@ A local web app to browse **all** your Claude Code conversations across **all** 
 
 The zip is fully self-contained (it embeds its own Node runtime) — nothing else gets installed on the machine, and no admin rights are needed. The installer:
 
+- copies the app to **`%LOCALAPPDATA%\Programs\claude-history`** (the standard per-user location; you can delete the extracted folder afterwards);
 - registers a per-user **scheduled task** named `claude-history` that starts the server (hidden, no window) every time you log into Windows;
 - creates a **Start Menu shortcut** that opens `http://localhost:7433` in your browser, first starting the server if it isn't running;
 - starts the server right away and opens the UI.
+
+Options: `-InstallTo <path>` installs somewhere else (it must be writable without admin — `Program Files` is a bad fit because self-updates write into the install folder), and `-Portable` installs nothing at all: no copy, no task, no shortcut — it just runs the server in that console window until you press Ctrl+C (in-app updates are disabled in this mode).
 
 > The `-ExecutionPolicy Bypass` is needed because the downloaded scripts carry the Mark-of-the-Web; `install.ps1` unblocks the extracted files so this is only required once.
 
@@ -36,7 +39,7 @@ Logging off stops the server with your session; the next logon starts it again a
 
 The server checks the GitHub releases feed on start and every 10 minutes — a tiny conditional GET (ETag) against `api.github.com`, and **the app's only automatic network call**. Nothing is ever downloaded or installed without your confirmation.
 
-When a newer release exists, the ⟳ button in the header shows an amber dot. Clicking it opens a popup with your version, the new version and its release notes; press **Update** to apply (or **Check now** to poll on demand). The update then:
+When newer releases exist, the upgrade button in the header shows how many. Clicking it opens a popup listing **every version newer than yours**, newest first, each with its release notes — so you see the whole set of changes, not just the last one — and you pick which to install (the newest is preselected). Press **Update** to apply, or **Check now** to poll on demand. The update then:
 
 1. downloads the release zip and **verifies its SHA-256** against the release's `checksums.txt`;
 2. extracts the new version into `versions\vX.Y.Z\` next to the current one;

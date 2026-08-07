@@ -69,7 +69,9 @@ if (notesFile) {
   notes = fs.readFileSync(notesFile, 'utf8');
 }
 if (!notes || !notes.trim()) die('Missing release notes — pass --notes-file <path> or --notes "text"');
-notes = `${tag}\n\n${notes.trim()}\n`; // first line = tag, so `gh` titles it sensibly
+// The tag message IS the release body; the title comes from --title, so do
+// not repeat the tag inside the notes (the update popup shows it already).
+notes = `${notes.trim()}\n`;
 
 console.log(`[release] preparing ${tag}${dryRun ? ' (dry run)' : ''}`);
 

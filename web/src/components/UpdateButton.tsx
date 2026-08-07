@@ -13,6 +13,11 @@ const STATE_LABEL: Record<string, string> = {
   restarting: 'Restarting…',
 };
 
+/** Releases up to 1.2.6 repeated the tag as the first line of the notes. */
+function stripLeadingTag(notes: string, tag: string): string {
+  return notes.replace(new RegExp(`^\\s*${tag}\\s*\n`), '').trimStart();
+}
+
 /** Arrow rising out of a line — "upgrade", as opposed to a refresh circle. */
 function UpgradeIcon() {
   return (
@@ -195,7 +200,7 @@ export function UpdateButton() {
                         </div>
                         {rel.notes && (
                           <div className="mt-1 pl-6 text-xs">
-                            <Markdown text={rel.notes} />
+                            <Markdown text={stripLeadingTag(rel.notes, rel.tag)} />
                           </div>
                         )}
                       </label>
