@@ -8,10 +8,11 @@ import { SearchBox } from '../components/list/SearchBox.tsx';
 import { SearchResults } from '../components/list/SearchResults.tsx';
 import { SessionRow } from '../components/list/SessionRow.tsx';
 import { SortBar } from '../components/list/SortBar.tsx';
-import { applyFilters, filtersToParams, parseFilters, type FilterState } from '../lib/filters.ts';
+import { applyFilters, buildRows, filtersToParams, parseFilters, type FilterState } from '../lib/filters.ts';
 import { saveListParams, saveListScroll, savedListScroll } from '../lib/listState.ts';
 
 const ROW_HEIGHT = 64;
+const HEADER_HEIGHT = 30;
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 
 const SEARCH_SCOPES: Array<[string, string]> = [
@@ -105,9 +106,13 @@ export function SessionListPage() {
     return map;
   }, [projects.data]);
 
-  const rows = useMemo(() => applyFilters(sessions.data ?? [], filters), [sessions.data, filters]);
+  const matching = useMemo(() => applyFilters(sessions.data ?? [], filters), [sessions.data, filters]);
+  const rows = useMemo(
+    () => buildRows(matching, filters.group, filters.sort, colorByProject),
+    [matching, filters.group, filters.sort, colorByProject],
+  );
   const summaryMap = useMemo(() => new Map((sessions.data ?? []).map((s) => [s.id, s])), [sessions.data]);
-  const visibleIds = useMemo(() => new Set(rows.map((s) => s.id)), [rows]);
+  const visibleIds = useMemo(() => new Set(matching.map((s) => s.id)), [matching]);
 
   const onProjectClick = useCallback(
     (projectKey: string) => setFilters({ ...filters, projects: [projectKey] }),
@@ -118,7 +123,7 @@ export function SessionListPage() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: (i) => (rows[i]?.kind === 'header' ? HEADER_HEIGHT : ROW_HEIGHT),
     overscan: 12,
   });
 
@@ -149,17 +154,19 @@ export function SessionListPage() {
       if (searchActive) return;
       if (e.key === 'j' || e.key === 'ArrowDown' || e.key === 'k' || e.key === 'ArrowUp') {
         e.preventDefault();
+        const step = e.key === 'j' || e.key === 'ArrowDown' ? 1 : -1;
         setSelected((prev) => {
-          const next = Math.min(
-            rows.length - 1,
-            Math.max(0, prev + (e.key === 'j' || e.key === 'ArrowDown' ? 1 : -1)),
-          );
+          // Group headers are rows too, but never selectable.
+          let next = prev + step;
+          while (next >= 0 && next < rows.length && rows[next].kind === 'header') next += step;
+          if (next < 0 || next >= rows.length) return prev;
           virtualizer.scrollToIndex(next);
           return next;
         });
       } else if (e.key === 'Enter') {
         setSelected((prev) => {
-          if (prev >= 0 && rows[prev]) navigate(`/session/${rows[prev].id}`);
+          const row = rows[prev];
+          if (row?.kind === 'session') navigate(`/session/${row.id}`);
           return prev;
         });
       }
@@ -195,7 +202,12 @@ export function SessionListPage() {
         </>
       )}
       <div className="flex min-w-0 flex-1 flex-col">
-        <SortBar filters={filters} onChange={setFilters} resultCount={rows.length} totalCount={sessions.data?.length ?? 0}>
+        <SortBar
+          filters={filters}
+          onChange={setFilters}
+          resultCount={matching.length}
+          totalCount={sessions.data?.length ?? 0}
+        >
           <button
             type="button"
             title={sidebarOpen ? 'Hide filters' : 'Show filters'}
@@ -242,18 +254,28 @@ export function SessionListPage() {
           ) : (
             <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
               {virtualizer.getVirtualItems().map((vi) => {
-                const session = rows[vi.index];
+                const row = rows[vi.index];
                 return (
                   <div
-                    key={session.id}
+                    key={row.id}
                     className={`absolute top-0 left-0 w-full ${vi.index === selected ? 'bg-[var(--bg-hover)]' : ''}`}
                     style={{ height: vi.size, transform: `translateY(${vi.start}px)` }}
                   >
-                    <SessionRow
-                      session={session}
-                      color={colorByProject.get(session.projectKey) ?? FALLBACK_COLOR}
-                      onProjectClick={onProjectClick}
-                    />
+                    {row.kind === 'header' ? (
+                      <div className="flex h-full items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-raised)] px-4 text-xs font-semibold tracking-wide text-[var(--text-dim)] uppercase">
+                        {row.color && (
+                          <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
+                        )}
+                        <span className="truncate">{row.label}</span>
+                        <span className="font-normal opacity-60">{row.count}</span>
+                      </div>
+                    ) : (
+                      <SessionRow
+                        session={row.session}
+                        color={colorByProject.get(row.session.projectKey) ?? FALLBACK_COLOR}
+                        onProjectClick={onProjectClick}
+                      />
+                    )}
                   </div>
                 );
               })}

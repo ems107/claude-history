@@ -2,6 +2,7 @@ import type { SessionSummary } from '@claude-history/shared';
 
 export type SortField = 'activity' | 'created' | 'messages' | 'size';
 export type BadgeFilter = 'pinned' | 'live' | 'pr' | 'subagents' | 'resumed' | 'bg';
+export type GroupMode = 'none' | 'day' | 'project';
 
 export interface FilterState {
   projects: string[]; // projectKeys; empty = all
@@ -15,6 +16,7 @@ export interface FilterState {
   showEmpty: boolean;
   sort: SortField;
   dir: 'asc' | 'desc';
+  group: GroupMode;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -29,6 +31,7 @@ export const DEFAULT_FILTERS: FilterState = {
   showEmpty: false,
   sort: 'activity',
   dir: 'desc',
+  group: 'none',
 };
 
 function csv(value: string | null): string[] {
@@ -38,7 +41,9 @@ function csv(value: string | null): string[] {
 export function parseFilters(sp: URLSearchParams): FilterState {
   const sort = sp.get('sort');
   const dir = sp.get('dir');
+  const group = sp.get('group');
   return {
+    group: group === 'day' || group === 'project' ? group : 'none',
     projects: csv(sp.get('projects')),
     from: sp.get('from'),
     to: sp.get('to'),
@@ -66,6 +71,7 @@ export function filtersToParams(f: FilterState): URLSearchParams {
   if (f.showEmpty) sp.set('empty', '1');
   if (f.sort !== 'activity') sp.set('sort', f.sort);
   if (f.dir !== 'desc') sp.set('dir', f.dir);
+  if (f.group !== 'none') sp.set('group', f.group);
   return sp;
 }
 
@@ -129,4 +135,74 @@ export function applyFilters(sessions: SessionSummary[], f: FilterState): Sessio
 
   const mul = f.dir === 'asc' ? 1 : -1;
   return filtered.sort((a, b) => mul * (key(a) - key(b)));
+}
+
+// ---- Grouping ----
+
+export type ListRow =
+  | { kind: 'header'; id: string; label: string; count: number; color?: string }
+  | { kind: 'session'; id: string; session: SessionSummary };
+
+const DAY_MS = 24 * 3600_000;
+
+function startOfDay(ms: number): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** "Today" / "Yesterday" / "Monday 04/08/2026" for a day bucket. */
+function dayLabel(dayMs: number): string {
+  const today = startOfDay(Date.now());
+  if (dayMs === today) return 'Today';
+  if (dayMs === today - DAY_MS) return 'Yesterday';
+  const d = new Date(dayMs);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const weekday = d.toLocaleDateString(undefined, { weekday: 'long' });
+  return `${weekday} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+/**
+ * Turn a sorted session list into rows with group headers interleaved. Day
+ * grouping follows whichever date the list is sorted by, so the headers always
+ * match the order on screen; any other sort falls back to no grouping (headers
+ * would appear out of order and mean nothing).
+ */
+export function buildRows(
+  sessions: SessionSummary[],
+  group: GroupMode,
+  sort: SortField,
+  projectColors?: Map<string, string>,
+): ListRow[] {
+  const rows: ListRow[] = [];
+  if (group === 'none' || (group === 'day' && sort !== 'activity' && sort !== 'created')) {
+    return sessions.map((s) => ({ kind: 'session', id: s.id, session: s }));
+  }
+
+  // Bucket by group key. Insertion order follows the already-sorted list, so
+  // groups come out ordered by their most relevant session and members keep
+  // the chosen sort inside. Project buckets need this because a date-sorted
+  // list interleaves projects.
+  const buckets = new Map<string, SessionSummary[]>();
+  const keyOf = (s: SessionSummary): string =>
+    group === 'project' ? s.projectKey : String(startOfDay(sort === 'created' ? createdMs(s) : activityMs(s)));
+
+  for (const s of sessions) {
+    const key = keyOf(s);
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(s);
+    else buckets.set(key, [s]);
+  }
+
+  for (const [key, members] of buckets) {
+    rows.push({
+      kind: 'header',
+      id: `h-${key}`,
+      label: group === 'project' ? members[0].projectName : dayLabel(Number(key)),
+      count: members.length,
+      color: group === 'project' ? projectColors?.get(key) : undefined,
+    });
+    for (const s of members) rows.push({ kind: 'session', id: s.id, session: s });
+  }
+  return rows;
 }
