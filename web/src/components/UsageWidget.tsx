@@ -26,9 +26,10 @@ function WindowRow({ w }: { w: UsageWindow }) {
   return (
     <div className="text-xs">
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate">{w.label}</span>
-        {left && <span className="text-[11px] text-[var(--text-dim)]">resets in {left}</span>}
-        <span className="font-mono font-semibold">{Math.round(w.utilization)}%</span>
+        {/* The label never truncates; the countdown yields space instead. */}
+        <span className="shrink-0 whitespace-nowrap">{w.label}</span>
+        {left && <span className="min-w-0 flex-1 truncate text-right text-[11px] text-[var(--text-dim)]">resets in {left}</span>}
+        <span className="ml-auto shrink-0 font-mono font-semibold">{Math.round(w.utilization)}%</span>
       </div>
       <Bar pct={w.utilization} className="mt-1 h-1.5 w-full" />
       {w.resetsAt && <div className="mt-0.5 text-[11px] text-[var(--text-dim)]/70">{formatDateTime(w.resetsAt)}</div>}
@@ -70,25 +71,35 @@ export function UsageWidget() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex cursor-pointer items-center gap-2 rounded border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+        className="flex cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] px-1.5 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
         title={data.error ?? 'Claude subscription usage — click for details'}
       >
         {data.error ? (
           <span className="text-amber-400">usage n/a</span>
         ) : (
           <>
+            {/* One pill per window, so the countdown clearly belongs to the
+                figure on its left and not to the next window's label. */}
             {[
               ['5h', five] as const,
               ['wk', week] as const,
             ].map(([label, w]) =>
               w ? (
-                <span key={label} className="flex items-center gap-1">
-                  <span className="opacity-70">{label}</span>
-                  <Bar pct={w.utilization} className="h-1.5 w-10" />
-                  <span className="font-mono">{Math.round(w.utilization)}%</span>
+                <span
+                  key={label}
+                  className="flex items-center gap-1 rounded bg-[var(--bg)]/70 px-1.5 py-0.5"
+                  title={`${w.label} — ${Math.round(w.utilization)}% used${
+                    timeUntil(w.resetsAt) ? `, resets in ${timeUntil(w.resetsAt)}` : ''
+                  }`}
+                >
+                  <span className="opacity-60">{label}</span>
+                  <Bar pct={w.utilization} className="h-1.5 w-9" />
+                  <span className="font-mono text-[var(--text)]">{Math.round(w.utilization)}%</span>
                   {/* Rounded down: "2 hr" while 2 h 45 min remain. */}
                   {timeUntil(w.resetsAt, true) && (
-                    <span className="opacity-50">· {timeUntil(w.resetsAt, true)}</span>
+                    <span className="border-l border-[var(--border)] pl-1 opacity-60">
+                      {timeUntil(w.resetsAt, true)}
+                    </span>
                   )}
                 </span>
               ) : null,
@@ -100,7 +111,7 @@ export function UsageWidget() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-1 w-72 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl">
+          <div className="absolute right-0 z-50 mt-1 w-84 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl">
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-xs font-semibold">Claude usage</h3>
               {data.subscriptionType && (
