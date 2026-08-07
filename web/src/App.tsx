@@ -35,28 +35,32 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2">
-        <Link
-          to="/"
-          onClick={(e) => {
-            e.preventDefault();
-            navigate(listUrl()); // computed at click time: restores saved filters
-          }}
-          className="text-lg font-semibold tracking-tight"
-        >
-          <span className="text-[var(--accent)]">claude</span> history
-        </Link>
-        {update && (
-          <span
-            className="font-mono text-[11px] text-[var(--text-dim)]"
-            title={
-              update.installed
-                ? `Installed version ${update.currentVersion} — updates are checked every 10 minutes`
-                : 'Running from source (dev build)'
-            }
+        {/* Title and version share a baseline, so the small version text sits
+            on the title's bottom edge instead of floating at its mid-height. */}
+        <span className="flex items-baseline gap-2">
+          <Link
+            to="/"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate(listUrl()); // computed at click time: restores saved filters
+            }}
+            className="text-lg font-semibold tracking-tight"
           >
-            {update.currentVersion === 'dev' ? 'dev' : `v${update.currentVersion}`}
-          </span>
-        )}
+            <span className="text-[var(--accent)]">claude</span> history
+          </Link>
+          {update && (
+            <span
+              className="font-mono text-[11px] text-[var(--text-dim)]"
+              title={
+                update.installed
+                  ? `Installed version ${update.currentVersion}`
+                  : 'Running from source (not an installed release)'
+              }
+            >
+              {update.currentVersion === 'dev' ? 'dev' : `v${update.currentVersion}`}
+            </span>
+          )}
+        </span>
         <nav className="ml-4 flex items-center gap-1">
           <NavItem to="/prompts" label="Prompts" />
           <NavItem to="/stats" label="Stats" />
