@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
+import { UpgradeIcon } from './icons.tsx';
 import { Markdown } from './viewer/Markdown.tsx';
 
 const STATE_LABEL: Record<string, string> = {
@@ -16,18 +17,6 @@ const STATE_LABEL: Record<string, string> = {
 /** Releases up to 1.2.6 repeated the tag as the first line of the notes. */
 function stripLeadingTag(notes: string, tag: string): string {
   return notes.replace(new RegExp(`^\\s*${tag}\\s*\n`), '').trimStart();
-}
-
-/** Arrow rising out of a line — "upgrade", as opposed to a refresh circle. */
-function UpgradeIcon() {
-  return (
-    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M8 11V2.5" />
-      <path d="M4.5 6 8 2.5 11.5 6" />
-      <path d="M3 13.5h10" />
-    </svg>
-  );
 }
 
 /**

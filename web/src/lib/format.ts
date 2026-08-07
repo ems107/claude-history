@@ -33,6 +33,36 @@ export function formatDateTime(when: string | number | null): string {
 
 export const formatDateTimeFull = formatDateTime;
 
+/**
+ * Time left until `when`, always rounded DOWN: "2 hr 37 min" promises less
+ * than is actually left, never more, which is the safe direction for a quota
+ * countdown. `compact` keeps only the largest unit ("2 hr", "5 d").
+ */
+export function timeUntil(when: string | number | null, compact = false): string | null {
+  if (when === null) return null;
+  const ms = (typeof when === 'number' ? when : Date.parse(when)) - Date.now();
+  if (Number.isNaN(ms)) return null;
+  if (ms <= 0) return 'now';
+
+  const totalMin = Math.floor(ms / 60_000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const minutes = totalMin % 60;
+
+  if (compact) {
+    if (days > 0) return `${days} d`;
+    if (hours > 0) return `${hours} hr`;
+    return `${Math.max(1, minutes)} min`;
+  }
+
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days} day${days !== 1 ? 's' : ''}`);
+  if (hours > 0) parts.push(`${hours} hr`);
+  // Minutes are noise next to a multi-day countdown only when hours are 0 too.
+  if (minutes > 0 || parts.length === 0) parts.push(`${minutes} min`);
+  return parts.join(' ');
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;

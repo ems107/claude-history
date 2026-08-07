@@ -92,7 +92,10 @@ fs.writeFileSync(path.join(verDir, 'node', 'node.exe'), nodeExe.getData());
 // 4. Installer / runtime scripts.
 const installerDir = path.join(rootDir, 'installer');
 const rootScripts = ['install.ps1', 'uninstall.ps1', 'launch.vbs'];
-const versionScripts = ['start-hidden.vbs', 'update-helper.ps1'];
+// The installer scripts also ship inside the version folder: the in-app
+// updater only extracts versions/, so update-helper.ps1 refreshes the root
+// copies from there — otherwise they would stay frozen at install time.
+const versionScripts = ['start-hidden.vbs', 'update-helper.ps1', 'install.ps1', 'uninstall.ps1', 'launch.vbs'];
 for (const [files, target] of [
   [rootScripts, stageDir],
   [versionScripts, verDir],

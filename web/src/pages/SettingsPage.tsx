@@ -50,6 +50,9 @@ export function SettingsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
+  const [uninstalling, setUninstalling] = useState(false);
+  const [wipeData, setWipeData] = useState(false);
+  const [uninstalled, setUninstalled] = useState(false);
 
   if (!data) return <div className="p-8 text-[var(--text-dim)]">Loading settings…</div>;
 
@@ -105,8 +108,22 @@ export function SettingsPage() {
             checked={s.usageWidget}
             onChange={(v) => save({ usageWidget: v })}
             label="Show subscription usage in the header"
-            hint="Reads the OAuth token stored by Claude Code (read-only, never refreshed or modified) and asks Anthropic for the same 5-hour and weekly figures /usage shows. Refreshed at most every 5 minutes."
+            hint="Reads the OAuth token stored by Claude Code (read-only, never refreshed or modified) and asks Anthropic for the same 5-hour and weekly figures /usage shows."
           />
+          <label className="flex items-center gap-2">
+            <span>Refresh every</span>
+            <input
+              type="number"
+              min={15}
+              max={3600}
+              step={15}
+              value={s.usageIntervalSeconds}
+              disabled={!s.usageWidget}
+              onChange={(e) => save({ usageIntervalSeconds: Number(e.target.value) })}
+              className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+            />
+            <span>seconds (minimum 15; only while this tab is visible)</span>
+          </label>
         </Section>
 
         <Section title="Server & data">
@@ -125,6 +142,15 @@ export function SettingsPage() {
           <div className="flex flex-wrap gap-1.5 pt-1">
             <button type="button" className={btn} onClick={() => void api.openDataFolder()}>
               Open data folder
+            </button>
+            <button
+              type="button"
+              className={btn}
+              disabled={!data.paths.installRoot}
+              title={data.paths.installRoot ?? 'Not a managed install'}
+              onClick={() => void api.openInstallFolder()}
+            >
+              Open install folder
             </button>
             <button
               type="button"
@@ -154,6 +180,15 @@ export function SettingsPage() {
             >
               {stopped ? 'Stopping…' : 'Stop server'}
             </button>
+            <button
+              type="button"
+              className={`${btn} border-red-500/40 text-red-300 hover:border-red-400`}
+              disabled={!data.paths.installRoot || stopped}
+              title={data.paths.installRoot ?? 'Not a managed install — nothing to uninstall'}
+              onClick={() => setUninstalling(true)}
+            >
+              Uninstall
+            </button>
           </div>
           {stopped && (
             <p className="text-[11px] text-amber-400">
@@ -164,6 +199,72 @@ export function SettingsPage() {
           {note && <p className="text-[11px] text-[var(--text-dim)]">{note}</p>}
         </Section>
       </div>
+
+      {uninstalling && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-32">
+          <div className="w-[520px] max-w-[92vw] rounded-lg border border-red-500/40 bg-[var(--bg-raised)] p-4 shadow-xl">
+            <h2 className="mb-2 text-sm font-semibold text-red-300">Uninstall claude-history</h2>
+            {uninstalled ? (
+              <p className="text-xs">
+                Uninstalling. The server is stopping and the app is being removed — this page will stop responding in a
+                few seconds. Nothing in <span className="font-mono">~/.claude</span> is ever touched.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs">This removes:</p>
+                <ul className="mt-1 list-inside list-disc text-xs text-[var(--text-dim)]">
+                  <li>the scheduled task that starts it at logon, and the Start Menu shortcut</li>
+                  <li>
+                    the install folder <span className="font-mono">{data.paths.installRoot}</span>
+                  </li>
+                </ul>
+                <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={wipeData}
+                    onChange={(e) => setWipeData(e.target.checked)}
+                    className="mt-0.5 accent-red-400"
+                  />
+                  <span>
+                    Also delete my data — renames, pins, prices, settings and cache
+                    <span className="block font-mono text-[11px] text-[var(--text-dim)]">
+                      {data.paths.userdataFile}
+                    </span>
+                  </span>
+                </label>
+                <p className="mt-2 text-[11px] text-[var(--text-dim)]">
+                  Your Claude conversations are never touched — this tool only ever reads them.
+                </p>
+              </>
+            )}
+            <div className="mt-4 flex justify-end gap-1.5">
+              {!uninstalled && (
+                <button
+                  type="button"
+                  className={`${btn} border-red-500/50 text-red-300 hover:border-red-400`}
+                  onClick={() => {
+                    setUninstalled(true);
+                    void api.uninstall(wipeData).catch((e) => setNote(`Uninstall failed: ${String(e)}`));
+                  }}
+                >
+                  {wipeData ? 'Uninstall and delete data' : 'Uninstall'}
+                </button>
+              )}
+              <button
+                type="button"
+                className={btn}
+                onClick={() => {
+                  setUninstalling(false);
+                  setUninstalled(false);
+                  setWipeData(false);
+                }}
+              >
+                {uninstalled ? 'Close' : 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

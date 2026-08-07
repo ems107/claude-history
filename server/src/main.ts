@@ -19,7 +19,7 @@ async function main(): Promise<void> {
 
   const search = new SearchService(index);
   const updates = new UpdateService();
-  const usage = new UsageService(config.dataRoot);
+  const usage = new UsageService(config.dataRoot, () => index.getSettings().usageIntervalSeconds * 1000);
   const app = await buildApp({ config, index, search, updates, usage });
   updates.start(() => index.getSettings());
 

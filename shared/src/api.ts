@@ -135,13 +135,18 @@ export interface AppSettings {
    * Anthropic's usage endpoint.
    */
   usageWidget: boolean;
+  /** Seconds between usage refreshes (minimum 15). */
+  usageIntervalSeconds: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   updateAutoCheck: true,
   updateIntervalMinutes: 10,
   usageWidget: true,
+  usageIntervalSeconds: 60,
 };
+
+export const MIN_USAGE_INTERVAL_SECONDS = 15;
 
 // ---- Subscription usage ----
 

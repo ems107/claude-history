@@ -20,6 +20,8 @@ It is a standalone personal tool. It is **NOT part of the PCCOM ecosystem** (no 
 
 The server has no build step in dev: TypeScript runs via `tsx`. Shared types (`@claude-history/shared`) are consumed as TS source by both server and web.
 
+> **NEVER cut a release on your own initiative.** `pnpm release` publishes a public GitHub release and makes every installed instance offer the update — that is the user's call, always. Commit and push freely; tag and release ONLY when the user explicitly asks for it in that turn. "Finish this feature" is not a request to release it.
+
 **Releases are cut locally, not by CI** (there is no GitHub Actions workflow — it was removed deliberately: `pnpm release` is faster, debuggable, and unaffected by Actions outages). The **annotated tag message becomes the release notes** (`gh release create --notes-from-tag`), which the in-app update popup renders as markdown — never create a release tag with `git tag` without `-a`/`-F`, and always pass **`--cleanup=verbatim`**: git otherwise strips every line starting with `#`, silently deleting markdown headings from the notes.
 
 ### Writing release notes
@@ -95,6 +97,7 @@ Hard-won rules — the code and scripts MUST follow them:
 
 - **Scheduled task, NOT a Windows service.** Services live in Session 0: anything they spawn (Windows Terminal, Explorer, VS Code) opens invisibly. The task (`claude-history`) runs at logon in the interactive session, so the resume/open launchers keep working.
 - **`ExecutionTimeLimit` must be `PT0S`** — the Task Scheduler default silently kills tasks after 72 hours.
+- **Every task we register needs `-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries`**, including the one-shot update/uninstall helpers. Without it a laptop on battery leaves the task `Queued` forever — it does not fail, it just never runs, and then fires unexpectedly when the machine is plugged in (this exact bug swallowed an uninstall).
 - **Ending the task only kills the wscript wrapper, not node** (the process tree is NOT terminated, verified). The server therefore runs with `--exit-with-parent`: it watches `process.ppid` every 3 s and exits when the parent dies. Never remove that flag from `start-hidden.vbs`.
 - The task action is `wscript.exe //B <root>\current\start-hidden.vbs` — wscript is the only zero-flash way to start a console app hidden at logon; the vbs waits (`bWaitOnReturn:=True`) so node stays in the task's tree.
 - Junctions (`New-Item -ItemType Junction`) need no admin; deleting one via `(Get-Item).Delete()` removes the reparse point only. The helper swaps `current` only after the old server pid is dead.

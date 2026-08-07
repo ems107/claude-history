@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
+import { GearIcon } from './components/icons.tsx';
 import { api } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { UpdateButton } from './components/UpdateButton.tsx';
@@ -59,11 +60,22 @@ export function App() {
         <nav className="ml-4 flex items-center gap-1">
           <NavItem to="/prompts" label="Prompts" />
           <NavItem to="/stats" label="Stats" />
-          <NavItem to="/settings" label="Settings" />
         </nav>
         <span className="ml-auto flex items-center gap-2">
           <UsageWidget />
           <UpdateButton />
+          <NavLink
+            to="/settings"
+            title="Settings"
+            aria-label="Settings"
+            className={({ isActive }) =>
+              `cursor-pointer rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] ${
+                isActive ? 'text-[var(--accent)]' : 'text-[var(--text-dim)]'
+              }`
+            }
+          >
+            <GearIcon />
+          </NavLink>
         </span>
       </header>
       <main className="min-h-0 flex-1">

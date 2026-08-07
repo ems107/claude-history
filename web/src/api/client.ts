@@ -105,6 +105,17 @@ export const api = {
     return res.json();
   },
   openDataFolder: () => fetch('/api/open-data-folder', { method: 'POST' }),
+  openInstallFolder: () => fetch('/api/open-install-folder', { method: 'POST' }),
+  uninstall: async (deleteData: boolean) => {
+    const res = await fetch('/api/uninstall', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deleteData }),
+    });
+    const body = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
   stopServer: () => fetch('/api/server/stop', { method: 'POST' }),
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
   lineage: (id: string) => getJson<LineageResponse>(`/api/sessions/${id}/lineage`),

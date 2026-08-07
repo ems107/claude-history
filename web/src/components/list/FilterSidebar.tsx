@@ -177,6 +177,20 @@ export function FilterSidebar({
         />
       </Section>
 
+      <Section title="Badges">
+        {BADGE_OPTIONS.map((b) => (
+          <CheckRow
+            key={b.id}
+            checked={filters.badges.includes(b.id)}
+            onChange={(on) =>
+              onChange({ ...filters, badges: toggle(filters.badges, b.id, on) as BadgeFilter[] })
+            }
+          >
+            {b.label}
+          </CheckRow>
+        ))}
+      </Section>
+
       {counts.entry.length > 1 && (
         <Section title="Source">
           {counts.entry.map(([e, n]) => (
@@ -206,20 +220,6 @@ export function FilterSidebar({
           ))}
         </Section>
       )}
-
-      <Section title="Badges">
-        {BADGE_OPTIONS.map((b) => (
-          <CheckRow
-            key={b.id}
-            checked={filters.badges.includes(b.id)}
-            onChange={(on) =>
-              onChange({ ...filters, badges: toggle(filters.badges, b.id, on) as BadgeFilter[] })
-            }
-          >
-            {b.label}
-          </CheckRow>
-        ))}
-      </Section>
 
       <Section title="Other">
         <CheckRow checked={filters.showEmpty} onChange={(on) => onChange({ ...filters, showEmpty: on })}>

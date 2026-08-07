@@ -112,6 +112,13 @@ try {
   if (Wait-ForVersion $expected 45) {
     Log "update OK - $expected is serving"
 
+    # Refresh the root-level scripts from the new version (updates only
+    # extract versions\, so these would otherwise stay at install-time).
+    foreach ($f in @('install.ps1', 'uninstall.ps1', 'launch.vbs')) {
+      $src = Join-Path $newTarget $f
+      if (Test-Path $src) { Copy-Item $src (Join-Path $Root $f) -Force -ErrorAction SilentlyContinue }
+    }
+
     # 4. Prune old version folders, keeping the 3 newest (never the active one).
     $keep = Get-ChildItem (Join-Path $Root 'versions') -Directory |
       Where-Object { $_.Name -match '^v\d+\.\d+\.\d+' } |

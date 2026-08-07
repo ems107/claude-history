@@ -8,7 +8,7 @@ import type {
   SessionEnrichment,
   SessionSummary,
 } from '@claude-history/shared';
-import { DEFAULT_PRICES, DEFAULT_SETTINGS } from '@claude-history/shared';
+import { DEFAULT_PRICES, DEFAULT_SETTINGS, MIN_USAGE_INTERVAL_SECONDS } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
@@ -287,6 +287,10 @@ export class SessionIndex {
       updateIntervalMinutes: Math.max(
         5,
         Math.round(patch.updateIntervalMinutes ?? this.settings.updateIntervalMinutes),
+      ),
+      usageIntervalSeconds: Math.max(
+        MIN_USAGE_INTERVAL_SECONDS,
+        Math.round(patch.usageIntervalSeconds ?? this.settings.usageIntervalSeconds),
       ),
     };
     await this.saveUserdata();

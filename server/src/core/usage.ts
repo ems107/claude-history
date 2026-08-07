@@ -13,8 +13,8 @@ import path from 'node:path';
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage';
 const OAUTH_BETA = 'oauth-2025-04-20';
 const FETCH_TIMEOUT_MS = 15_000;
-/** Matches Claude Code's own throttle; the endpoint is rate limited. */
-const MIN_REFETCH_MS = 5 * 60_000;
+/** Floor on how often we call the (rate-limited) endpoint, whatever the UI asks for. */
+const MIN_REFETCH_MS = 15_000;
 
 interface RawWindow {
   utilization?: number | null;
@@ -68,11 +68,16 @@ export class UsageService {
   private lastFetchMs = 0;
   private inFlight: Promise<UsageResponse> | null = null;
 
-  constructor(private readonly dataRoot: string) {}
+  constructor(
+    private readonly dataRoot: string,
+    /** Refresh cadence from settings; never allowed below MIN_REFETCH_MS. */
+    private readonly intervalMs: () => number = () => 60_000,
+  ) {}
 
-  /** Cached result; refetches at most every 5 minutes. */
+  /** Cached result; only calls the endpoint once per configured interval. */
   async get(force = false): Promise<UsageResponse> {
-    if (!force && this.cached && Date.now() - this.lastFetchMs < MIN_REFETCH_MS) return this.cached;
+    const minAge = Math.max(MIN_REFETCH_MS, this.intervalMs());
+    if (!force && this.cached && Date.now() - this.lastFetchMs < minAge) return this.cached;
     if (this.inFlight) return this.inFlight;
     this.inFlight = this.fetchUsage().finally(() => {
       this.inFlight = null;
