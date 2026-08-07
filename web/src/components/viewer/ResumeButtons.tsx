@@ -50,7 +50,7 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
         className={btn}
         title={`Open ${session.projectPath} in Explorer`}
       >
-        📁
+        📁 Open folder
       </button>
       <button
         type="button"
@@ -58,10 +58,7 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
         className={btn}
         title={`Open ${session.projectPath} in VS Code`}
       >
-        {'{ }'}
-      </button>
-      <button type="button" onClick={copy} className={btn} title={command}>
-        {copied ? 'Copied ✓' : 'Copy resume cmd'}
+        {'{ }'} Open VS Code
       </button>
       <button
         type="button"
@@ -70,7 +67,17 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
         className={state === 'error' ? `${btn} border-red-400 text-red-400` : btn}
         title={state === 'error' ? error : `Open a terminal in ${session.projectPath} and resume this session`}
       >
-        {state === 'launching' ? 'Launching…' : state === 'ok' ? 'Launched ✓' : state === 'error' ? 'Failed ✕' : '⧉ Resume in terminal'}
+        {/* Same ❯ used by the "cli" entrypoint chip elsewhere. */}
+        {state === 'launching'
+          ? 'Launching…'
+          : state === 'ok'
+            ? 'Launched ✓'
+            : state === 'error'
+              ? 'Failed ✕'
+              : '❯ Resume in terminal'}
+      </button>
+      <button type="button" onClick={copy} className={btn} title={command}>
+        {copied ? 'Copied ✓' : '📋 Copy resume cmd'}
       </button>
     </span>
   );

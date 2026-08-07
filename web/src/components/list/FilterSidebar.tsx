@@ -55,31 +55,53 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function DateRange({
+const PRESETS: Array<[string, string, number | null]> = [
+  ['all', 'All', null],
+  ['today', 'Today', 0],
+  ['7d', '7 days', 7],
+  ['30d', '30 days', 30],
+];
+
+/** Quick presets + explicit range, shared by the two date filters. */
+function DateFilter({
   from,
   to,
+  activePreset,
   onChange,
 }: {
   from: string | null;
   to: string | null;
+  activePreset: string;
   onChange: (from: string | null, to: string | null) => void;
 }) {
+  // color-scheme: dark makes the browser's native calendar icon light, which
+  // is the only way it stays visible on this theme.
+  const dateInput =
+    'min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5 [color-scheme:dark]';
   return (
-    <div className="mt-2 flex items-center gap-1 text-xs text-[var(--text-dim)]">
-      <input
-        type="date"
-        value={from ?? ''}
-        onChange={(e) => onChange(e.target.value || null, to)}
-        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5"
-      />
-      <span>→</span>
-      <input
-        type="date"
-        value={to ?? ''}
-        onChange={(e) => onChange(from, e.target.value || null)}
-        className="min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5"
-      />
-    </div>
+    <>
+      <div className="flex flex-wrap gap-1">
+        {PRESETS.map(([id, label, days]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(days === null ? null : isoDaysAgo(days), null)}
+            className={`cursor-pointer rounded border px-2 py-0.5 text-xs ${
+              activePreset === id
+                ? 'border-[var(--accent)] text-[var(--accent)]'
+                : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex items-center gap-1 text-xs text-[var(--text-dim)]">
+        <input type="date" value={from ?? ''} onChange={(e) => onChange(e.target.value || null, to)} className={dateInput} />
+        <span>→</span>
+        <input type="date" value={to ?? ''} onChange={(e) => onChange(from, e.target.value || null)} className={dateInput} />
+      </div>
+    </>
   );
 }
 
@@ -105,18 +127,14 @@ export function FilterSidebar({
     return { entry: [...entry.entries()].sort((a, b) => b[1] - a[1]), model: [...model.entries()].sort((a, b) => b[1] - a[1]) };
   }, [sessions, filters.showEmpty]);
 
-  const activePreset =
-    filters.to === null
-      ? filters.from === null
-        ? 'all'
-        : filters.from === isoDaysAgo(0)
-          ? 'today'
-          : filters.from === isoDaysAgo(7)
-            ? '7d'
-            : filters.from === isoDaysAgo(30)
-              ? '30d'
-              : 'custom'
-      : 'custom';
+  const presetOf = (from: string | null, to: string | null): string => {
+    if (to !== null) return 'custom';
+    if (from === null) return 'all';
+    if (from === isoDaysAgo(0)) return 'today';
+    if (from === isoDaysAgo(7)) return '7d';
+    if (from === isoDaysAgo(30)) return '30d';
+    return 'custom';
+  };
 
   const sortedProjects = useMemo(
     () => [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
@@ -126,15 +144,6 @@ export function FilterSidebar({
   return (
     <aside className="flex h-full w-full flex-col overflow-y-auto border-r border-[var(--border)]">
       <Section title="Projects">
-        {filters.projects.length > 0 && (
-          <button
-            type="button"
-            className="mb-1 cursor-pointer text-xs text-[var(--accent)] hover:underline"
-            onClick={() => onChange({ ...filters, projects: [] })}
-          >
-            Clear selection
-          </button>
-        )}
         {sortedProjects.map((p) => (
           <CheckRow
             key={p.key}
@@ -151,40 +160,19 @@ export function FilterSidebar({
       </Section>
 
       <Section title="Last activity">
-        <div className="flex flex-wrap gap-1">
-          {(
-            [
-              ['all', 'All', null],
-              ['today', 'Today', 0],
-              ['7d', '7 days', 7],
-              ['30d', '30 days', 30],
-            ] as Array<[string, string, number | null]>
-          ).map(([id, label, days]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onChange({ ...filters, from: days === null ? null : isoDaysAgo(days), to: null })}
-              className={`cursor-pointer rounded border px-2 py-0.5 text-xs ${
-                activePreset === id
-                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                  : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <DateRange
+        <DateFilter
           from={filters.from}
           to={filters.to}
+          activePreset={presetOf(filters.from, filters.to)}
           onChange={(from, to) => onChange({ ...filters, from, to })}
         />
       </Section>
 
       <Section title="Created">
-        <DateRange
+        <DateFilter
           from={filters.createdFrom}
           to={filters.createdTo}
+          activePreset={presetOf(filters.createdFrom, filters.createdTo)}
           onChange={(createdFrom, createdTo) => onChange({ ...filters, createdFrom, createdTo })}
         />
       </Section>

@@ -133,8 +133,11 @@ export function SessionHeader({
         {editing ? (
           <TitleEditor sessionId={s.id} title={s.title} isLocal={s.titleSource === 'local'} onDone={() => setEditing(false)} />
         ) : (
-          <>
-            <h1 className="min-w-0 flex-1 truncate text-base font-semibold" title={s.title}>
+          // Rename/pin sit next to the title and only appear on hover, as in
+          // the session list. A pinned star stays visible so the state reads
+          // at a glance.
+          <span className="group flex min-w-0 flex-1 items-center gap-1">
+            <h1 className="min-w-0 truncate text-base font-semibold" title={s.title}>
               {s.title}
               {s.titleSource === 'local' && (
                 <span
@@ -148,7 +151,7 @@ export function SessionHeader({
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="cursor-pointer rounded px-1.5 py-0.5 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+              className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-xs text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] focus-visible:opacity-100"
               title="Rename locally (stored in this tool only; never writes to ~/.claude)"
             >
               ✎
@@ -161,14 +164,16 @@ export function SessionHeader({
                   void queryClient.invalidateQueries({ queryKey: ['sessions'] });
                 });
               }}
-              className={`cursor-pointer rounded px-1.5 py-0.5 text-sm ${
-                s.pinned ? 'text-amber-400 hover:text-amber-300' : 'text-[var(--text-dim)] hover:text-amber-400'
+              className={`shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-sm focus-visible:opacity-100 ${
+                s.pinned
+                  ? 'text-amber-400 hover:text-amber-300'
+                  : 'text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-amber-400'
               }`}
               title={s.pinned ? 'Unpin' : 'Pin (stored locally)'}
             >
               {s.pinned ? '★' : '☆'}
             </button>
-          </>
+          </span>
         )}
         <button
           type="button"
