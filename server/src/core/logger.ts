@@ -124,7 +124,6 @@ function emit(record: LogRecord): void {
           lvl: 'error',
           src: 'log',
           pid: process.pid,
-          v: APP_VERSION,
           msg: `today's log passed ${Math.round(MAX_DAY_BYTES / 1024 / 1024)} MB — nothing more will be written until tomorrow`,
         } satisfies LogRecord)}\n`,
       );
@@ -142,7 +141,7 @@ function emit(record: LogRecord): void {
 }
 
 function record(src: string, lvl: LogLevel, msg: string, extra?: unknown): void {
-  const rec: LogRecord = { t: localIso(), lvl, src, pid: process.pid, v: APP_VERSION, msg };
+  const rec: LogRecord = { t: localIso(), lvl, src, pid: process.pid, msg };
   if (extra instanceof Error) rec.err = extra.stack ?? extra.message;
   else if (extra !== undefined) rec.data = extra;
   emit(rec);
@@ -232,7 +231,7 @@ export function initLogging(dir: string): void {
     try {
       fs.appendFileSync(
         logFilePath(logsDir, localDate()),
-        `${JSON.stringify({ t: localIso(), lvl: 'info', src: 'server', pid: process.pid, v: APP_VERSION, msg: `process exiting with code ${code}` } satisfies LogRecord)}\n`,
+        `${JSON.stringify({ t: localIso(), lvl: 'info', src: 'server', pid: process.pid, msg: `process exiting with code ${code}` } satisfies LogRecord)}\n`,
       );
     } catch {
       // Nothing useful left to do while exiting.

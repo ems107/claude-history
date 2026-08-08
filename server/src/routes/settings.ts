@@ -31,10 +31,10 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
     if (!ctx.index.getSettings().usageWidget) {
       return { available: false, error: null, windows: [], fetchedAt: null, subscriptionType: null, stale: false };
     }
-    return ctx.usage.get();
+    return ctx.usage.get('widget');
   });
 
-  app.post('/api/usage/refresh', async (): Promise<UsageResponse> => ctx.usage.get(true));
+  app.post('/api/usage/refresh', async (): Promise<UsageResponse> => ctx.usage.get('manual-refresh', true));
 
   // Wipe the derived cache; the index rebuilds it from ~/.claude on restart.
   // userdata.json lives outside cacheDir, so renames/pins/prices survive.

@@ -45,7 +45,6 @@ function parseLines(text: string, fallbackTime: string): { records: LogRecord[];
         lvl: 'warn',
         src: 'log',
         pid: 0,
-        v: '',
         msg: `unreadable log line: ${line.slice(0, 500)}`,
       });
     }

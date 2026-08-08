@@ -305,10 +305,10 @@ export interface LogRecord {
   /**
    * Always written. Two instances sharing a day's file is not supposed to
    * happen (one port), but if it ever does this is what makes it obvious.
+   * The version is not repeated per record — the 'started' message carries it,
+   * and this pid is what ties the rest of the lines to it.
    */
   pid: number;
-  /** Version that wrote it: 'dev' from source, else X.Y.Z. */
-  v: string;
   msg: string;
   /** Structured extra, when there is something worth reading separately. */
   data?: unknown;

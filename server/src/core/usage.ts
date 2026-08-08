@@ -75,6 +75,21 @@ export function normalizeUsage(raw: RawUsage): UsageWindow[] {
 export type ProbeFailure = 'network' | 'http' | 'auth';
 
 /**
+ * Who asked for a usage read. Recorded on every call: four unrelated mechanisms
+ * hit this endpoint, two of them in the background, and "who asked and when" is
+ * not reconstructable after the fact without saying so at the time.
+ */
+export type UsageTrigger =
+  /** The header widget in the browser (session activity, idle poll, refocus). */
+  | 'widget'
+  /** The Refresh button inside the usage popover. */
+  | 'manual-refresh'
+  /** The auto-reload scheduler asking whether the 5-hour window is free. */
+  | 'auto-reload-check'
+  /** The auto-reload reading back the new expiry after sending its prompt. */
+  | 'auto-reload-verify';
+
+/**
  * Outcome of reading the 5-hour window, with "the read failed" kept strictly
  * apart from "there is no window right now". UsageResponse conflates the two
  * (both end up as `available:false`), and the auto-reload decision hinges on
@@ -113,11 +128,27 @@ export class UsageService {
    * Cached result. The floor is MIN_REFETCH_MS and nothing else: callers drive
    * the cadence (session activity in the UI, plus a slow idle poll), and this
    * only stops a burst of triggers from becoming a burst of requests.
+   *
+   * Every call is logged with the `trigger` that caused it, because there are
+   * four unrelated reasons this endpoint gets hit and "who asked, and when" is
+   * otherwise impossible to reconstruct. A real read is `info`; being served the
+   * cache or joining a read already in flight is `debug`, since neither of those
+   * actually asked Anthropic anything.
    */
-  async get(force = false): Promise<UsageResponse> {
-    if (!force && this.cached && Date.now() - this.lastFetchMs < MIN_REFETCH_MS) return this.cached;
-    if (this.inFlight) return this.inFlight;
-    this.inFlight = this.fetchUsage().finally(() => {
+  async get(trigger: UsageTrigger, force = false): Promise<UsageResponse> {
+    const age = Date.now() - this.lastFetchMs;
+    if (!force && this.cached && age < MIN_REFETCH_MS) {
+      log.debug(`${trigger}: served the figures read ${Math.round(age / 1000)} s ago (${MIN_REFETCH_MS / 1000} s floor)`, {
+        trigger,
+        cached: true,
+      });
+      return this.cached;
+    }
+    if (this.inFlight) {
+      log.debug(`${trigger}: joined the read already in flight`, { trigger, joined: true });
+      return this.inFlight;
+    }
+    this.inFlight = this.fetchUsage(trigger).finally(() => {
       this.inFlight = null;
     });
     return this.inFlight;
@@ -128,18 +159,21 @@ export class UsageService {
    * its floor). Used by the auto-reload scheduler, which needs to tell a
    * missing window from a failed read.
    */
-  async probeFiveHour(force = false): Promise<FiveHourProbe> {
-    await this.get(force);
+  async probeFiveHour(trigger: UsageTrigger, force = false): Promise<FiveHourProbe> {
+    await this.get(trigger, force);
     return this.probe;
   }
 
-  private async fetchUsage(): Promise<UsageResponse> {
+  private async fetchUsage(trigger: UsageTrigger): Promise<UsageResponse> {
+    const startedAt = Date.now();
     // Only ever used for credential problems, which no amount of retrying fixes.
     const empty = (error: string, subscriptionType: string | null = null): UsageResponse => {
       const result: UsageResponse = { available: false, error, windows: [], fetchedAt: null, subscriptionType, stale: false };
       this.cached = result;
       this.probe = { ok: false, error, kind: 'auth' };
       this.lastFetchMs = Date.now();
+      // Credentials, not a blip: the user has to do something about it.
+      log.error(`${trigger}: cannot read Claude usage — ${error}`, { trigger, kind: 'auth' });
       return result;
     };
 
@@ -152,7 +186,11 @@ export class UsageService {
         this.cached = result;
         this.probe = { ok: false, error, kind };
         this.lastFetchMs = Date.now();
-        log.warn(`read failed (${kind}: ${error}) — and there are no earlier figures to fall back on`);
+        log.warn(`${trigger}: read failed (${kind}: ${error}) — and there are no earlier figures to fall back on`, {
+          trigger,
+          kind,
+          ms: Date.now() - startedAt,
+        });
         return result;
       }
       const result: UsageResponse = {
@@ -165,7 +203,12 @@ export class UsageService {
       // The figures are worth showing while old; they are NOT worth deciding on.
       this.probe = { ok: false, error, kind };
       this.lastFetchMs = Date.now();
-      log.warn(`read failed (${kind}: ${error}) — keeping the previous figures, marked stale`);
+      log.warn(`${trigger}: read failed (${kind}: ${error}) — keeping the previous figures, marked stale`, {
+        trigger,
+        kind,
+        stale: true,
+        ms: Date.now() - startedAt,
+      });
       return result;
     };
 
@@ -197,7 +240,6 @@ export class UsageService {
       }
       if (!res.ok) return transient(`Usage endpoint answered HTTP ${res.status}`, 'http', oauth.subscriptionType ?? null);
       const raw = (await res.json()) as RawUsage;
-      log.debug('usage read ok', { fiveHour: raw.five_hour ?? null });
       // Read off the raw payload, not the normalized windows: a window that has
       // not started comes back as `five_hour: null` or without `resets_at`, and
       // normalizeUsage drops it — indistinguishable from an error downstream.
@@ -214,6 +256,18 @@ export class UsageService {
       this.cached = result;
       if (windows.length > 0) this.lastGood = result;
       this.lastFetchMs = Date.now();
+      // The 5-hour figures go in the message itself: they are what every caller
+      // is really after, and what a later "was the window free at 03:00?" needs.
+      const five = raw.five_hour;
+      const fiveText = five
+        ? `5-hour ${five.utilization ?? 0}% ${five.resets_at ? `resets ${five.resets_at}` : '(not started)'}`
+        : '5-hour (not started)';
+      log.info(`${trigger}: read Claude usage — ${fiveText}`, {
+        trigger,
+        ms: Date.now() - startedAt,
+        fiveHour: five ?? null,
+        windows: windows.length,
+      });
       return result;
     } catch (err) {
       return transient(describeFetchError(err), 'network', oauth.subscriptionType ?? null);

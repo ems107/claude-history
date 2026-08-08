@@ -83,7 +83,7 @@ function Row({ record }: { record: LogRecord }) {
           )}
           {record.err && <pre className="overflow-x-auto rounded bg-black/30 p-2 text-red-300/80">{record.err}</pre>}
           <div className="opacity-60">
-            {formatDateTime(record.t)} · pid {record.pid} · {record.v || 'unknown version'}
+            {formatDateTime(record.t)} · pid {record.pid}
           </div>
         </div>
       )}

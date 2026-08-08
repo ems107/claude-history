@@ -233,7 +233,7 @@ export class AutoReloadService {
 
   /** Read usage, then either sleep until the window expires or reload now. */
   private async check(s: AppSettings): Promise<void> {
-    const probe = await this.usage.probeFiveHour();
+    const probe = await this.usage.probeFiveHour('auto-reload-check');
     this.lastCheckAt = Date.now();
 
     if (!probe.ok) {
@@ -319,7 +319,7 @@ export class AutoReloadService {
 
     // The reply proves Claude answered, not that a window opened. Read it back.
     await delay(VERIFY_DELAY_MS);
-    const probe = await this.usage.probeFiveHour();
+    const probe = await this.usage.probeFiveHour('auto-reload-verify');
     this.lastCheckAt = Date.now();
     if (!probe.ok) {
       // Blame the read, not the reload: the window may well have started. The
