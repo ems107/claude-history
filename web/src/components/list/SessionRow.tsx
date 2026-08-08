@@ -1,8 +1,9 @@
 import type { SessionSummary } from '@claude-history/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
+import { formatUsd, sessionCost } from '../../lib/cost.ts';
 import { entrypointLabel, formatBytes, formatDateTime, relativeTime, shortModel } from '../../lib/format.ts';
 import { SessionBadges } from './Badges.tsx';
 import { ProjectTag } from './ProjectTag.tsx';
@@ -36,6 +37,10 @@ function RowContent({
   onStartEdit: () => void;
   onTogglePin: () => void;
 }) {
+  // One shared query across every visible row: same key, one request.
+  const prices = useQuery({ queryKey: ['prices'], queryFn: api.prices });
+  const cost = sessionCost(session, prices.data?.prices ?? {});
+
   // "Prompts" = user-typed messages (from enrichment) — the same metric the
   // Prompts sort uses. Fallback: Claude Code's internal context-entry count
   // (includes tool results and streamed chunks), shown as approximate.
@@ -107,6 +112,16 @@ function RowContent({
               {m}
             </span>
           ))}
+          {/* Right after the size, and only when it can be priced: a missing
+              cost stays blank instead of claiming the session was free. */}
+          {cost !== null && (
+            <span
+              className="shrink-0"
+              title="API-equivalent value at the configured prices — not actual subscription spend (see Stats)"
+            >
+              {formatUsd(cost)}
+            </span>
+          )}
           <SessionBadges session={session} />
         </div>
       </div>

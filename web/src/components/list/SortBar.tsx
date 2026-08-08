@@ -5,6 +5,7 @@ const SORT_OPTIONS: Array<[SortField, string]> = [
   ['created', 'Created'],
   ['messages', 'Prompts'],
   ['size', 'Size'],
+  ['cost', 'Cost'],
 ];
 
 const GROUP_OPTIONS: Array<[GroupMode, string]> = [

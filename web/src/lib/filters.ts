@@ -1,6 +1,7 @@
-import type { SessionSummary } from '@claude-history/shared';
+import type { PriceTable, SessionSummary } from '@claude-history/shared';
+import { sessionCost } from './cost.ts';
 
-export type SortField = 'activity' | 'created' | 'messages' | 'size';
+export type SortField = 'activity' | 'created' | 'messages' | 'size' | 'cost';
 export type BadgeFilter = 'pinned' | 'live' | 'pr' | 'subagents' | 'resumed' | 'bg';
 export type GroupMode = 'none' | 'day' | 'project';
 
@@ -53,7 +54,7 @@ export function parseFilters(sp: URLSearchParams): FilterState {
     models: csv(sp.get('model')),
     badges: csv(sp.get('badges')) as BadgeFilter[],
     showEmpty: sp.get('empty') === '1',
-    sort: sort === 'created' || sort === 'messages' || sort === 'size' ? sort : 'activity',
+    sort: sort === 'created' || sort === 'messages' || sort === 'size' || sort === 'cost' ? sort : 'activity',
     dir: dir === 'asc' ? 'asc' : 'desc',
   };
 }
@@ -100,7 +101,7 @@ function hasBadge(s: SessionSummary, badge: BadgeFilter): boolean {
   }
 }
 
-export function applyFilters(sessions: SessionSummary[], f: FilterState): SessionSummary[] {
+export function applyFilters(sessions: SessionSummary[], f: FilterState, prices: PriceTable = {}): SessionSummary[] {
   const projects = f.projects.length ? new Set(f.projects) : null;
   const entrypoints = f.entrypoints.length ? new Set(f.entrypoints) : null;
   const models = f.models.length ? new Set(f.models) : null;
@@ -124,6 +125,8 @@ export function applyFilters(sessions: SessionSummary[], f: FilterState): Sessio
     return true;
   });
 
+  // Sessions with no known cost sort as -1, below a genuine $0, so they land
+  // at the far end descending instead of pretending to be the cheapest.
   const key: (s: SessionSummary) => number =
     f.sort === 'created'
       ? createdMs
@@ -131,7 +134,9 @@ export function applyFilters(sessions: SessionSummary[], f: FilterState): Sessio
         ? (s) => s.enrichment?.userMessageCount ?? s.messageCount ?? -1
         : f.sort === 'size'
           ? (s) => s.sizeBytes
-          : activityMs;
+          : f.sort === 'cost'
+            ? (s) => sessionCost(s, prices) ?? -1
+            : activityMs;
 
   const mul = f.dir === 'asc' ? 1 : -1;
   return filtered.sort((a, b) => mul * (key(a) - key(b)));

@@ -106,7 +106,13 @@ export function SessionListPage() {
     return map;
   }, [projects.data]);
 
-  const matching = useMemo(() => applyFilters(sessions.data ?? [], filters), [sessions.data, filters]);
+  // Same query the rows use for their own figure — sorting by cost has to see
+  // the very prices they display.
+  const prices = useQuery({ queryKey: ['prices'], queryFn: api.prices });
+  const matching = useMemo(
+    () => applyFilters(sessions.data ?? [], filters, prices.data?.prices),
+    [sessions.data, filters, prices.data],
+  );
   const rows = useMemo(
     () => buildRows(matching, filters.group, filters.sort, colorByProject),
     [matching, filters.group, filters.sort, colorByProject],
