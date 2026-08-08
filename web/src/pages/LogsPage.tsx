@@ -60,24 +60,58 @@ function Chip({
   );
 }
 
+/** Put text on the clipboard and flash a confirmation on the button that did it. */
+function useCopy(): [boolean, (text: string) => void] {
+  const [copied, setCopied] = useState(false);
+  const copy = (text: string) => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1_200);
+    });
+  };
+  return [copied, copy];
+}
+
 function Row({ record }: { record: LogRecord }) {
   const [open, setOpen] = useState(false);
+  const [copied, copy] = useCopy();
   const hasDetail = record.err !== undefined || record.data !== undefined || record.msg.length > 160;
   return (
-    <div className="border-b border-[var(--border)]/40 px-3 py-1 font-mono text-[11px] hover:bg-[var(--bg-hover)]/40">
-      <button
-        type="button"
-        onClick={() => hasDetail && setOpen(!open)}
-        className={`flex w-full items-start gap-3 text-left ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}
-      >
+    // A plain div, not a button: text inside a <button> cannot be selected, so
+    // the row being one made a log message impossible to copy by hand — which is
+    // most of what a log viewer is for.
+    <div
+      onClick={() => {
+        // Do not fight a selection the user just made in order to copy it.
+        if (window.getSelection()?.toString()) return;
+        if (hasDetail) setOpen(!open);
+      }}
+      className={`group border-b border-[var(--border)]/40 px-3 py-1 font-mono text-[11px] hover:bg-[var(--bg-hover)]/40 ${
+        hasDetail ? 'cursor-pointer' : ''
+      }`}
+    >
+      <div className="flex items-start gap-3">
         <span className="shrink-0 text-[var(--text-dim)] opacity-70">{clockTime(record.t)}</span>
         <span className={`w-10 shrink-0 uppercase ${LEVEL_STYLE[record.lvl] ?? ''}`}>{record.lvl}</span>
         <span className="w-24 shrink-0 truncate text-[var(--accent)] opacity-80">{record.src}</span>
-        <span className={`min-w-0 flex-1 ${open ? 'break-words whitespace-pre-wrap' : 'truncate'}`}>{record.msg}</span>
-        {hasDetail && <span className="shrink-0 text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>}
-      </button>
+        <span className={`min-w-0 flex-1 select-text ${open ? 'break-words whitespace-pre-wrap' : 'truncate'}`}>
+          {record.msg}
+        </span>
+        <button
+          type="button"
+          title="Copy this record as JSON"
+          onClick={(e) => {
+            e.stopPropagation();
+            copy(JSON.stringify(record, null, 2));
+          }}
+          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)]"
+        >
+          {copied ? 'copied' : 'copy'}
+        </button>
+        <span className="w-3 shrink-0 text-[var(--text-dim)]">{hasDetail ? (open ? '▾' : '▸') : ''}</span>
+      </div>
       {open && (
-        <div className="mt-1 ml-[6.5rem] space-y-1 text-[11px] text-[var(--text-dim)]">
+        <div className="mt-1 ml-[6.5rem] space-y-1 text-[11px] text-[var(--text-dim)] select-text">
           {record.data !== undefined && (
             <pre className="overflow-x-auto rounded bg-black/30 p-2">{JSON.stringify(record.data, null, 2)}</pre>
           )}
@@ -131,6 +165,7 @@ export function LogsPage() {
   const [draftQuery, setDraftQuery] = useState(query);
   const [follow, setFollow] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [copiedAll, copyAll] = useCopy();
 
   const logs = useQuery({ queryKey: ['logs'], queryFn: api.logs, refetchOnWindowFocus: true, staleTime: 0 });
   const date = params.get('date') ?? logs.data?.days[0]?.date ?? '';
@@ -344,6 +379,17 @@ export function LogsPage() {
                 />
                 follow
               </label>
+              {/* Copying the whole filtered set is the point: it is what you
+                  paste elsewhere when asking someone what went wrong. */}
+              <button
+                type="button"
+                className={btn}
+                disabled={records.length === 0}
+                title="Copy every record shown, one JSON object per line"
+                onClick={() => copyAll(records.map((r) => JSON.stringify(r)).join('\n'))}
+              >
+                {copiedAll ? 'Copied' : 'Copy shown'}
+              </button>
               <span className="ml-auto text-xs text-[var(--text-dim)]">
                 {day.data ? `${records.length} of ${day.data.total} records` : ''}
                 {day.data?.truncated && <span className="ml-2 text-amber-400">newest only</span>}

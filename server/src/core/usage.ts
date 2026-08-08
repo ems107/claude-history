@@ -1,7 +1,7 @@
 import type { UsageResponse, UsageWindow } from '@claude-history/shared';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createLogger } from './logger.ts';
+import { createLogger, localIso, localStamp } from './logger.ts';
 
 const log = createLogger('usage');
 
@@ -259,13 +259,20 @@ export class UsageService {
       // The 5-hour figures go in the message itself: they are what every caller
       // is really after, and what a later "was the window free at 03:00?" needs.
       const five = raw.five_hour;
+      const resetsAt = five?.resets_at ?? null;
       const fiveText = five
-        ? `5-hour ${five.utilization ?? 0}% ${five.resets_at ? `resets ${five.resets_at}` : '(not started)'}`
+        ? `5-hour ${five.utilization ?? 0}% ${resetsAt ? `resets ${localStamp(resetsAt)}` : '(not started)'}`
         : '5-hour (not started)';
       log.info(`${trigger}: read Claude usage — ${fiveText}`, {
         trigger,
         ms: Date.now() - startedAt,
-        fiveHour: five ?? null,
+        // Only the two fields that mean anything, with the time converted to the
+        // same local form as the record's own `t`. Anthropic sends UTC plus a
+        // few dollar fields that are always null on a subscription plan, and
+        // dumping that raw put two clocks and a lot of noise in one record.
+        fiveHour: five
+          ? { utilization: five.utilization ?? 0, resetsAt: resetsAt ? localIso(new Date(resetsAt)) : null }
+          : null,
         windows: windows.length,
       });
       return result;

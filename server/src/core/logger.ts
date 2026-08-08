@@ -53,7 +53,22 @@ function localDate(d = new Date()): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function localIso(d = new Date()): string {
+/**
+ * `dd/MM/yyyy HH:mm:ss` local — the app's convention for an absolute datetime,
+ * and what log MESSAGES must use. Anthropic's timestamps arrive in UTC, and
+ * pasting one straight into a message makes it unreadable next to the record's
+ * own local `t`: two different clocks on the same line.
+ */
+export function localStamp(when: string | number | Date): string {
+  const d = when instanceof Date ? when : new Date(typeof when === 'number' ? when : Date.parse(when));
+  if (Number.isNaN(d.getTime())) return String(when);
+  return (
+    `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
+}
+
+export function localIso(d = new Date()): string {
   const offset = -d.getTimezoneOffset();
   const sign = offset >= 0 ? '+' : '-';
   const abs = Math.abs(offset);

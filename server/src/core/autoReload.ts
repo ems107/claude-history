@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import type { AppSettings, AutoReloadRun, AutoReloadStatus } from '@claude-history/shared';
 import { validateAutoReload } from '@claude-history/shared';
 import { cleanEnv, findClaudeCli } from '../util/launcher.ts';
-import { createLogger } from './logger.ts';
+import { createLogger, localStamp } from './logger.ts';
 import type { UsageService } from './usage.ts';
 
 const log = createLogger('auto-reload');
@@ -269,7 +269,7 @@ export class AutoReloadService {
     this.resetsAt = resetsAt;
     this.nextCheckAt = resetsAt + RESET_MARGIN_MS;
     const hours = ((resetsAt - Date.now()) / 3_600_000).toFixed(1);
-    log.info(`5-hour window runs until ${new Date(resetsAt).toISOString()} (${hours} h) — sleeping`);
+    log.info(`5-hour window runs until ${localStamp(resetsAt)} (${hours} h) — sleeping`);
   }
 
   /**
