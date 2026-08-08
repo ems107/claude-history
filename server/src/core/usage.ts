@@ -1,7 +1,7 @@
 import type { UsageResponse, UsageWindow } from '@claude-history/shared';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { createLogger, localIso, localStamp } from './logger.ts';
+import { createLogger, localStamp } from './logger.ts';
 
 const log = createLogger('usage');
 
@@ -263,16 +263,15 @@ export class UsageService {
       const fiveText = five
         ? `5-hour ${five.utilization ?? 0}% ${resetsAt ? `resets ${localStamp(resetsAt)}` : '(not started)'}`
         : '5-hour (not started)';
+      // The division of labour between the two: `msg` is for reading, in the
+      // app's local convention; `data` is the evidence, kept exactly as
+      // Anthropic sent it — UTC timestamps, unused dollar fields and all. An
+      // undocumented endpoint can change shape without telling us, and a log
+      // that quietly normalised it away would hide that.
       log.info(`${trigger}: read Claude usage — ${fiveText}`, {
         trigger,
         ms: Date.now() - startedAt,
-        // Only the two fields that mean anything, with the time converted to the
-        // same local form as the record's own `t`. Anthropic sends UTC plus a
-        // few dollar fields that are always null on a subscription plan, and
-        // dumping that raw put two clocks and a lot of noise in one record.
-        fiveHour: five
-          ? { utilization: five.utilization ?? 0, resetsAt: resetsAt ? localIso(new Date(resetsAt)) : null }
-          : null,
+        fiveHour: five ?? null,
         windows: windows.length,
       });
       return result;
