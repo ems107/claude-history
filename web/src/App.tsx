@@ -6,6 +6,7 @@ import { useEvents } from './api/useEvents.ts';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
+import { LogsPage } from './pages/LogsPage.tsx';
 import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
 import { SessionViewPage } from './pages/SessionViewPage.tsx';
@@ -89,6 +90,8 @@ export function App() {
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* Diagnostics, reached from Settings — deliberately not in the nav. */}
+          <Route path="/logs" element={<LogsPage />} />
         </Routes>
       </main>
     </div>

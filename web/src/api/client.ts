@@ -3,6 +3,8 @@ import type {
   AutoReloadRun,
   AutoReloadStatus,
   LineageResponse,
+  LogDayResponse,
+  LogsResponse,
   MetaResponse,
   PriceTable,
   ProjectsResponse,
@@ -12,13 +14,20 @@ import type {
   SessionsResponse,
   SubagentDetailResponse,
   ToolResultFileResponse,
+  UpdateLogResponse,
   UpdateStatusResponse,
   UsageResponse,
 } from '@claude-history/shared';
 
 export interface SettingsResponse {
   settings: AppSettings;
-  paths: { dataRoot: string; cacheDir: string; userdataFile: string; installRoot: string | null };
+  paths: {
+    dataRoot: string;
+    cacheDir: string;
+    userdataFile: string;
+    logsDir: string;
+    installRoot: string | null;
+  };
   version: string;
 }
 
@@ -94,6 +103,22 @@ export const api = {
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<{ settings: AppSettings }>;
+  },
+  logs: () => getJson<LogsResponse>('/api/logs'),
+  logDay: (date: string, filters: { levels?: string[]; sources?: string[]; q?: string }) => {
+    const params = new URLSearchParams();
+    if (filters.levels?.length) params.set('level', filters.levels.join(','));
+    if (filters.sources?.length) params.set('src', filters.sources.join(','));
+    if (filters.q) params.set('q', filters.q);
+    const qs = params.toString();
+    return getJson<LogDayResponse>(`/api/logs/day/${date}${qs ? `?${qs}` : ''}`);
+  },
+  updateLog: () => getJson<UpdateLogResponse>('/api/logs/update-log'),
+  clearLogs: async () => {
+    const res = await fetch('/api/logs/clear', { method: 'POST' });
+    const body = (await res.json()) as { deleted?: number; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body.deleted ?? 0;
   },
   autoReload: () => getJson<AutoReloadStatus>('/api/auto-reload'),
   autoReloadRun: async () => {

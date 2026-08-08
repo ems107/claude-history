@@ -1,6 +1,7 @@
-import { type AppSettings, AUTO_RELOAD_MODELS, DEFAULT_SETTINGS } from '@claude-history/shared';
+import { type AppSettings, AUTO_RELOAD_MODELS, DEFAULT_SETTINGS, LOG_LEVEL_CHOICES } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { api } from '../api/client.ts';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
 
@@ -501,6 +502,51 @@ export function SettingsPage() {
           <AutoReloadStatusPanel />
         </Section>
 
+        <Section title="Logs">
+          <Row badge={<DefaultBadge field="logLevel" value={s.logLevel} save={save} />}>
+            <label className="flex items-center gap-2">
+              <span>Write everything from</span>
+              <select
+                value={s.logLevel}
+                onChange={(e) => save({ logLevel: e.target.value as AppSettings['logLevel'] })}
+                className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5"
+              >
+                {LOG_LEVEL_CHOICES.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+              <span>upwards</span>
+            </label>
+          </Row>
+          <Row badge={<DefaultBadge field="logRetentionDays" value={s.logRetentionDays} save={save} />}>
+            <label className="flex items-center gap-2">
+              <span>Keep</span>
+              <input
+                type="number"
+                min={1}
+                max={365}
+                value={s.logRetentionDays}
+                onChange={(e) => save({ logRetentionDays: Number(e.target.value) })}
+                className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right"
+              />
+              <span>days of daily log files</span>
+            </label>
+          </Row>
+          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
+            One file per day in <span className="font-mono">{data.paths.logsDir}</span>, written by every way of running
+            the app so the trail is never split. <span className="text-[var(--text)]">debug</span> is worth turning on
+            while chasing something — it records each decision the background jobs take, not just their outcomes.
+          </p>
+          <Link
+            to="/logs"
+            className="inline-block rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+          >
+            Open the log viewer →
+          </Link>
+        </Section>
+
         <Section title="Server & data">
           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
             <span className="opacity-60">version</span>
@@ -511,6 +557,8 @@ export function SettingsPage() {
             <span className="break-all">{data.paths.cacheDir}</span>
             <span className="opacity-60">your data</span>
             <span className="break-all">{data.paths.userdataFile}</span>
+            <span className="opacity-60">logs</span>
+            <span className="break-all">{data.paths.logsDir}</span>
             <span className="opacity-60">installed in</span>
             <span className="break-all">{data.paths.installRoot ?? 'not a managed install (source or portable)'}</span>
           </div>

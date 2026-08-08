@@ -72,6 +72,12 @@ export function useEvents(): void {
         case 'update-status':
           void queryClient.invalidateQueries({ queryKey: ['update'] });
           break;
+        // Already throttled to one per second by the server. Cheap: both
+        // queries are local reads, and the day parse is cached and incremental.
+        case 'logs-appended':
+          void queryClient.invalidateQueries({ queryKey: ['logs'] });
+          void queryClient.invalidateQueries({ queryKey: ['logDay'] });
+          break;
       }
     };
     return () => {
