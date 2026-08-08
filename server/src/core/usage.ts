@@ -1,4 +1,4 @@
-import type { UsageResponse, UsageWindow } from '@claude-history/shared';
+import type { UsageResponse, UsageTrigger, UsageWindow } from '@claude-history/shared';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createLogger, localStamp } from './logger.ts';
@@ -73,21 +73,6 @@ export function normalizeUsage(raw: RawUsage): UsageWindow[] {
  * minutes.
  */
 export type ProbeFailure = 'network' | 'http' | 'auth';
-
-/**
- * Who asked for a usage read. Recorded on every call: four unrelated mechanisms
- * hit this endpoint, two of them in the background, and "who asked and when" is
- * not reconstructable after the fact without saying so at the time.
- */
-export type UsageTrigger =
-  /** The header widget in the browser (session activity, idle poll, refocus). */
-  | 'widget'
-  /** The Refresh button inside the usage popover. */
-  | 'manual-refresh'
-  /** The auto-reload scheduler asking whether the 5-hour window is free. */
-  | 'auto-reload-check'
-  /** The auto-reload reading back the new expiry after sending its prompt. */
-  | 'auto-reload-verify';
 
 /**
  * Outcome of reading the 5-hour window, with "the read failed" kept strictly

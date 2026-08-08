@@ -2,6 +2,7 @@ import type { UsageWindow } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.ts';
+import { markUsageRead } from '../api/usageReason.ts';
 import { formatDateTime, timeSince, timeUntil } from '../lib/format.ts';
 
 function barColor(pct: number): string {
@@ -71,18 +72,34 @@ export function UsageWidget() {
   const [open, setOpen] = useState(false);
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const refreshMs = Math.max(15, settings.data?.settings.usageIntervalSeconds ?? 60) * 1000;
-  const { data } = useQuery({
-    queryKey: ['usage'],
-    queryFn: api.usage,
-    // Idle fallback only — session activity is what normally refreshes this
-    // (see useEvents). It still runs unfocused: the window often sits on a
-    // second monitor while Claude works, and watching the bars move there is
-    // half the point. A genuinely hidden tab gets throttled by the browser,
-    // which is fine — nobody is looking — and coming back refetches at once.
-    refetchInterval: refreshMs,
-    refetchIntervalInBackground: true,
-    refetchOnWindowFocus: true,
-  });
+  const { data } = useQuery({ queryKey: ['usage'], queryFn: api.usage });
+
+  /**
+   * The idle fallback poll and the refetch on returning to the tab, driven here
+   * instead of by `refetchInterval` / `refetchOnWindowFocus`. Same behaviour,
+   * but each read can now say which of the two it was — TanStack's own options
+   * fire from inside the library, where nothing can label them.
+   *
+   * The interval deliberately keeps running unfocused: the window often sits on
+   * a second monitor while Claude works, and watching the bars move there is
+   * half the point. A genuinely hidden tab gets throttled by the browser, which
+   * is fine — nobody is looking — and becoming visible again reads at once.
+   */
+  useEffect(() => {
+    const read = (trigger: 'widget-interval' | 'widget-focus') => {
+      markUsageRead(trigger);
+      void queryClient.invalidateQueries({ queryKey: ['usage'] });
+    };
+    const iv = setInterval(() => read('widget-interval'), refreshMs);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') read('widget-focus');
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refreshMs, queryClient]);
 
   // Re-render on a tick so the countdowns stay honest between refetches. While
   // the popover is open it ticks every second, because the "last refreshed"
@@ -105,7 +122,10 @@ export function UsageWidget() {
     if (nextReset === undefined) return;
     // setTimeout overflows past ~24.8 days and would fire immediately.
     const delay = Math.min(nextReset + 3_000 - Date.now(), 2_147_483_647);
-    const t = setTimeout(() => void queryClient.invalidateQueries({ queryKey: ['usage'] }), Math.max(0, delay));
+    const t = setTimeout(() => {
+      markUsageRead('widget-reset');
+      void queryClient.invalidateQueries({ queryKey: ['usage'] });
+    }, Math.max(0, delay));
     return () => clearTimeout(t);
   }, [nextReset, queryClient]);
 

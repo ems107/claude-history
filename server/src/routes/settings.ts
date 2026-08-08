@@ -1,4 +1,5 @@
-import type { AppSettings, UsageResponse } from '@claude-history/shared';
+import type { AppSettings, UsageResponse, UsageTrigger } from '@claude-history/shared';
+import { USAGE_TRIGGERS } from '@claude-history/shared';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -27,11 +28,19 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
     settings: await ctx.index.setSettings(request.body ?? {}),
   }));
 
-  app.get('/api/usage', async (): Promise<UsageResponse> => {
+  app.get<{ Querystring: { reason?: string } }>('/api/usage', async (request): Promise<UsageResponse> => {
     if (!ctx.index.getSettings().usageWidget) {
       return { available: false, error: null, windows: [], fetchedAt: null, subscriptionType: null, stale: false };
     }
-    return ctx.usage.get('widget');
+    // The browser says which of its several causes this was. Only `widget-*` is
+    // accepted from here, so the request cannot dress itself up as one of the
+    // server's own triggers.
+    const reason = request.query.reason ?? '';
+    const trigger: UsageTrigger =
+      reason.startsWith('widget') && (USAGE_TRIGGERS as readonly string[]).includes(reason)
+        ? (reason as UsageTrigger)
+        : 'widget';
+    return ctx.usage.get(trigger);
   });
 
   app.post('/api/usage/refresh', async (): Promise<UsageResponse> => ctx.usage.get('manual-refresh', true));

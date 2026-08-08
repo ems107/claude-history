@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api/client.ts';
+import { markUsageRead } from '../api/usageReason.ts';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -296,6 +297,7 @@ export function SettingsPage() {
   const save = (patch: Partial<AppSettings>) => {
     void api.saveSettings(patch).then((r) => {
       queryClient.setQueryData(['settings'], { ...data, settings: r.settings });
+      markUsageRead('widget-settings');
       void queryClient.invalidateQueries({ queryKey: ['usage'] });
       void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
       // The hidden-folder option changes what the browsing views contain.

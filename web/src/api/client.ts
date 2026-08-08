@@ -18,6 +18,7 @@ import type {
   UpdateStatusResponse,
   UsageResponse,
 } from '@claude-history/shared';
+import { takeUsageReason } from './usageReason.ts';
 
 export interface SettingsResponse {
   settings: AppSettings;
@@ -127,7 +128,10 @@ export const api = {
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body.run!;
   },
-  usage: () => getJson<UsageResponse>('/api/usage'),
+  // The reason travels with the request: the server cannot tell a read caused by
+  // Claude answering from one caused by refocusing the tab, and the difference is
+  // the whole value of the log line.
+  usage: () => getJson<UsageResponse>(`/api/usage?reason=${takeUsageReason('widget')}`),
   usageRefresh: async () => {
     const res = await fetch('/api/usage/refresh', { method: 'POST' });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);

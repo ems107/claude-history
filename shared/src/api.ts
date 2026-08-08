@@ -250,6 +250,38 @@ export interface AutoReloadStatus {
 
 // ---- Subscription usage ----
 
+/**
+ * Why a usage read happened. Recorded on every one, because six unrelated
+ * things ask for these figures and "the widget asked" says almost nothing: a
+ * read caused by Claude answering means the numbers really moved, while one
+ * caused by refocusing a tab means nothing did. The browser is the only place
+ * that knows which, so it says so in the request.
+ */
+export const USAGE_TRIGGERS = [
+  /** The header widget, cause not attributed (a retry, an unexpected refetch). */
+  'widget',
+  /** First read after the page loads. */
+  'widget-mount',
+  /** A transcript changed — the one trigger that means the figures moved. */
+  'widget-activity',
+  /** The idle fallback poll (`usageIntervalSeconds`). */
+  'widget-interval',
+  /** Came back to the tab. */
+  'widget-focus',
+  /** One-shot just after a window's `resetsAt`: nothing else announces a 0%. */
+  'widget-reset',
+  /** A settings save, which can enable or disable the widget. */
+  'widget-settings',
+  /** The Refresh button inside the usage popover. */
+  'manual-refresh',
+  /** The auto-reload asking whether the 5-hour window is free. */
+  'auto-reload-check',
+  /** The auto-reload reading back the new expiry after sending its prompt. */
+  'auto-reload-verify',
+] as const;
+
+export type UsageTrigger = (typeof USAGE_TRIGGERS)[number];
+
 export interface UsageWindow {
   key: string;
   label: string;

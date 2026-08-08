@@ -1,6 +1,7 @@
 import { MIN_USAGE_INTERVAL_SECONDS, type ServerEvent } from '@claude-history/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import { markUsageRead } from './usageReason.ts';
 
 /** Collapses the write burst of a single turn into one usage read. */
 const USAGE_DEBOUNCE_MS = 3_000;
@@ -39,6 +40,7 @@ export function useEvents(): void {
       usageTimer.current = setTimeout(() => {
         usageTimer.current = null;
         usageAskedAt.current = Date.now();
+        markUsageRead('widget-activity');
         void queryClient.invalidateQueries({ queryKey: ['usage'] });
       }, wait);
     };
