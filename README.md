@@ -45,7 +45,7 @@ When newer releases exist, the upgrade button in the header shows how many. Clic
 2. extracts the new version into `versions\vX.Y.Z\` next to the current one;
 3. restarts the server through a helper that repoints the `current` junction — with **automatic rollback** to the previous version if the new one fails to start.
 
-The UI reloads itself when the new version is up (the whole swap takes a few seconds). Every step is logged to `update.log` in the install folder, and the server itself logs to `server.log` there; the 3 newest versions are kept in `versions\` so a manual rollback is always possible (repoint `current` or re-run `install.ps1`).
+The UI reloads itself when the new version is up (the whole swap takes a few seconds). Every step is logged to `update.log` in the install folder, which you can read from **Settings → Open the log viewer → update.log**; the 3 newest versions are kept in `versions\` so a manual rollback is always possible (repoint `current` or re-run `install.ps1`).
 
 > Instances **1.2.3 and older cannot update themselves** — the fix has to be in the running version. Download the latest zip and re-run `install.ps1` once; from 1.2.5 on the button handles it.
 
@@ -103,6 +103,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 ```
 %LOCALAPPDATA%\claude-history\
 ├── userdata.json            ← YOUR data (renames, pins, prices, settings) — not regenerable
+├── logs\YYYY-MM-DD.log      ← one JSONL file per day; read them in Settings → log viewer
 └── cache\                   ← fully regenerable; safe to delete at any time
     ├── index.json           ← list-view summaries, keyed by (path, size, mtime)
     ├── enriched\<uuid>.json ← per-session tokens, PR links, resume ancestry
@@ -111,6 +112,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 
 - `userdata.json` sits **next to** (not inside) the cache dir on purpose: wiping the cache never loses your renames. If you point `CLAUDE_HISTORY_CACHE` elsewhere, `userdata.json` is created next to that directory.
 - Deleting `cache\` is always safe — the next server start rebuilds it from `~/.claude` in seconds. Entries are schema-versioned and keyed by file size+mtime, so they self-invalidate when transcripts change or the format evolves.
+- `logs\` holds one file per day, written by every way of running the app (installed, from source, portable) so the trail is never split across builds. Files older than the retention window (14 days by default) are deleted automatically, and **Settings → Logs** sets the level written and opens the viewer: filter by day, level and subsystem, search the text, and read the installer's `update.log` from the same screen.
 - Minor UI state lives in the browser, not in files: `localStorage` (thinking toggle, sidebar width) and per-tab `sessionStorage` (list filters/scroll for back-navigation). Active filters are also reflected in the URL.
 - An **installed** instance additionally keeps app files (never your data) in its install folder: `versions\` (the app versions themselves), the `current` junction, `install.json` (install marker) and `update.log`. Reinstalling or updating never touches `%LOCALAPPDATA%\claude-history`.
 - Guarantees: the tool **never writes** into `~/.claude` (read-only consumer) nor into its own repo folder; the server's index is in-memory only and is rebuilt on every start.
