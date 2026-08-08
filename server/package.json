@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts --serve-static ../web/dist",
+    "start": "tsx src/main.ts --serve-static ../web/dist --log-file server.log",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

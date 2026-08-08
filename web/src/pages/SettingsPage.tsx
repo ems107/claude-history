@@ -213,9 +213,14 @@ function AutoReloadStatusPanel() {
       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
         <span className="opacity-60">5-hour window</span>
         <span>
-          {st.resetsAt
-            ? `resets ${formatDateTime(st.resetsAt)} (${timeUntil(st.resetsAt) ?? '—'} left)`
-            : 'not started'}
+          {/* A known expiry can already be in the past — a read is due but has
+              not succeeded yet. Saying "now left" there reads like a live
+              window with no time on it, which is the opposite of the truth. */}
+          {!st.resetsAt
+            ? 'not started'
+            : Date.parse(st.resetsAt) > Date.now()
+              ? `resets ${formatDateTime(st.resetsAt)} (${timeUntil(st.resetsAt) ?? '—'} left)`
+              : `expired ${formatDateTime(st.resetsAt)} — waiting for a successful reading`}
         </span>
         <span className="opacity-60">next check</span>
         <span>

@@ -34,8 +34,22 @@ const STARTUP_DELAY_MS = 15_000;
 const RESET_MARGIN_MS = 60_000;
 /** Wait after the prompt before reading usage back, so the figures settle. */
 const VERIFY_DELAY_MS = 60_000;
-/** Backoff between failed usage reads (offline, 429, expired token). */
+/**
+ * Backoff after the endpoint answered but refused (429, 5xx) or the credentials
+ * are bad. Long on purpose: it is rate limited, and no retry fixes a bad token.
+ */
 const READ_BACKOFF_MS = [5 * 60_000, 10 * 60_000, 30 * 60_000];
+/**
+ * Backoff after a read that failed on the wire, which is a different animal:
+ * usually a laptop whose adapter has not come up yet, back in seconds. Treating
+ * it like a 429 was a real bug — it burnt the whole free-window period waiting
+ * 30 minutes while the network had been fine for 29 of them.
+ */
+const NETWORK_BACKOFF_MS = [45_000, 90_000, 3 * 60_000, 10 * 60_000, 30 * 60_000];
+/** A tick this much later than scheduled means the machine was suspended. */
+const SUSPEND_GAP_MS = TICK_MS * 3;
+/** After a resume, let the network come up before reading anything. */
+const RESUME_GRACE_MS = 30_000;
 /** Floor between two reloads. A real window lasts 5 h, so this is generous. */
 const COOLDOWN_MS = 30 * 60_000;
 /** Retry delay after a reload that ran but did not start a window. */
@@ -71,6 +85,8 @@ export class AutoReloadService {
   private cliPath: string | null | undefined;
   /** Last seen configSignature(), to spot saves that change nothing here. */
   private signature = '';
+  /** When the previous tick ran, to notice the machine having been asleep. */
+  private lastTickAt = 0;
 
   constructor(
     private readonly usage: UsageService,
@@ -79,6 +95,7 @@ export class AutoReloadService {
 
   start(events: EventEmitter): void {
     this.nextCheckAt = Date.now() + STARTUP_DELAY_MS;
+    this.lastTickAt = Date.now();
     this.signature = this.configSignature();
     void this.resolveCli();
     setInterval(() => void this.tick(), TICK_MS).unref();
@@ -178,11 +195,29 @@ export class AutoReloadService {
   }
 
   private async tick(): Promise<void> {
+    // Timers freeze while the machine sleeps, so a tick arriving far too late is
+    // how we learn it woke up. Measure before anything can return early.
+    const now = Date.now();
+    const gap = this.lastTickAt > 0 ? now - this.lastTickAt : 0;
+    this.lastTickAt = now;
+
     if (this.busy) return;
     const s = this.getSettings();
     if (!s.autoReloadEnabled || this.pausedReason) return;
     if (this.configError(s)) return;
-    if (Date.now() < this.nextCheckAt) return;
+
+    if (gap > SUSPEND_GAP_MS) {
+      // The clock jumped while the network did not: the adapter is still coming
+      // up and reading now just fails on the wire. Whatever went wrong before
+      // the nap is history, so start the ladder over.
+      this.readBackoffStep = 0;
+      this.nextCheckAt = Math.max(now, this.nextCheckAt, now + RESUME_GRACE_MS);
+      console.log(
+        `[auto-reload] back from ${Math.round(gap / 60_000)} min suspended — first check in ${RESUME_GRACE_MS / 1000} s`,
+      );
+      return;
+    }
+    if (now < this.nextCheckAt) return;
     this.busy = true;
     try {
       await this.check(s);
@@ -202,9 +237,10 @@ export class AutoReloadService {
 
     if (!probe.ok) {
       this.lastError = probe.error;
-      const wait = READ_BACKOFF_MS[Math.min(this.readBackoffStep++, READ_BACKOFF_MS.length - 1)];
+      const ladder = probe.kind === 'network' ? NETWORK_BACKOFF_MS : READ_BACKOFF_MS;
+      const wait = ladder[Math.min(this.readBackoffStep++, ladder.length - 1)];
       this.nextCheckAt = Date.now() + wait;
-      console.warn(`[auto-reload] usage read failed (${probe.error}) — retrying in ${Math.round(wait / 60_000)} min`);
+      console.warn(`[auto-reload] usage read failed (${probe.kind}: ${probe.error}) — retrying in ${Math.round(wait / 1000)} s`);
       return;
     }
     this.lastError = null;

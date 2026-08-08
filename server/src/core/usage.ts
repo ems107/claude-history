@@ -64,12 +64,36 @@ export function normalizeUsage(raw: RawUsage): UsageWindow[] {
 }
 
 /**
+ * Why a read failed. Worth distinguishing because the right wait is completely
+ * different: `network` means the wire was down (a laptop waking up is back in
+ * seconds), while `http` (429, 5xx) and `auth` want to be left alone for
+ * minutes.
+ */
+export type ProbeFailure = 'network' | 'http' | 'auth';
+
+/**
  * Outcome of reading the 5-hour window, with "the read failed" kept strictly
  * apart from "there is no window right now". UsageResponse conflates the two
  * (both end up as `available:false`), and the auto-reload decision hinges on
  * the difference: a failed read must never be taken as "window not started".
  */
-export type FiveHourProbe = { ok: true; resetsAt: string | null } | { ok: false; error: string };
+export type FiveHourProbe =
+  | { ok: true; resetsAt: string | null }
+  | { ok: false; error: string; kind: ProbeFailure };
+
+/**
+ * undici reports every connection-level failure as the bare string "fetch
+ * failed" and hides the real reason in `cause`. Unwrap it: that is the
+ * difference between a sleeping laptop (ECONNRESET), broken DNS (EAI_AGAIN) and
+ * a dead route, and without it a failing read is undiagnosable.
+ */
+function describeFetchError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  if (!(cause instanceof Error)) return err.message;
+  const code = (cause as NodeJS.ErrnoException).code;
+  return `${err.message} (${code ?? cause.message})`;
+}
 
 export class UsageService {
   private cached: UsageResponse | null = null;
@@ -78,7 +102,7 @@ export class UsageService {
   private lastFetchMs = 0;
   private inFlight: Promise<UsageResponse> | null = null;
   /** Derived from the same read as `cached` — see FiveHourProbe. */
-  private probe: FiveHourProbe = { ok: false, error: 'Usage has not been read yet.' };
+  private probe: FiveHourProbe = { ok: false, error: 'Usage has not been read yet.', kind: 'network' };
 
   constructor(private readonly dataRoot: string) {}
 
@@ -107,10 +131,11 @@ export class UsageService {
   }
 
   private async fetchUsage(): Promise<UsageResponse> {
+    // Only ever used for credential problems, which no amount of retrying fixes.
     const empty = (error: string, subscriptionType: string | null = null): UsageResponse => {
       const result: UsageResponse = { available: false, error, windows: [], fetchedAt: null, subscriptionType, stale: false };
       this.cached = result;
-      this.probe = { ok: false, error };
+      this.probe = { ok: false, error, kind: 'auth' };
       this.lastFetchMs = Date.now();
       return result;
     };
@@ -118,8 +143,14 @@ export class UsageService {
     // A blip (offline, timeout, 5xx) must not blank the widget: keep the last
     // figures and say they are old. Credential problems are NOT transient —
     // those blank it, because the user has to act on them.
-    const transient = (error: string, subscriptionType: string | null = null): UsageResponse => {
-      if (!this.lastGood) return empty(error, subscriptionType);
+    const transient = (error: string, kind: ProbeFailure, subscriptionType: string | null = null): UsageResponse => {
+      if (!this.lastGood) {
+        const result: UsageResponse = { available: false, error, windows: [], fetchedAt: null, subscriptionType, stale: false };
+        this.cached = result;
+        this.probe = { ok: false, error, kind };
+        this.lastFetchMs = Date.now();
+        return result;
+      }
       const result: UsageResponse = {
         ...this.lastGood,
         error,
@@ -128,7 +159,7 @@ export class UsageService {
       };
       this.cached = result;
       // The figures are worth showing while old; they are NOT worth deciding on.
-      this.probe = { ok: false, error };
+      this.probe = { ok: false, error, kind };
       this.lastFetchMs = Date.now();
       return result;
     };
@@ -159,7 +190,7 @@ export class UsageService {
       if (res.status === 401) {
         return empty('Claude rejected the stored token — run Claude Code once to refresh it.', oauth.subscriptionType ?? null);
       }
-      if (!res.ok) return transient(`Usage endpoint answered HTTP ${res.status}`, oauth.subscriptionType ?? null);
+      if (!res.ok) return transient(`Usage endpoint answered HTTP ${res.status}`, 'http', oauth.subscriptionType ?? null);
       const raw = (await res.json()) as RawUsage;
       // Read off the raw payload, not the normalized windows: a window that has
       // not started comes back as `five_hour: null` or without `resets_at`, and
@@ -179,7 +210,7 @@ export class UsageService {
       this.lastFetchMs = Date.now();
       return result;
     } catch (err) {
-      return transient(err instanceof Error ? err.message : String(err), oauth.subscriptionType ?? null);
+      return transient(describeFetchError(err), 'network', oauth.subscriptionType ?? null);
     }
   }
 }
