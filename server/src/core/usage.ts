@@ -63,12 +63,22 @@ export function normalizeUsage(raw: RawUsage): UsageWindow[] {
   return windows;
 }
 
+/**
+ * Outcome of reading the 5-hour window, with "the read failed" kept strictly
+ * apart from "there is no window right now". UsageResponse conflates the two
+ * (both end up as `available:false`), and the auto-reload decision hinges on
+ * the difference: a failed read must never be taken as "window not started".
+ */
+export type FiveHourProbe = { ok: true; resetsAt: string | null } | { ok: false; error: string };
+
 export class UsageService {
   private cached: UsageResponse | null = null;
   /** Last response that actually carried figures, kept to survive a blip. */
   private lastGood: UsageResponse | null = null;
   private lastFetchMs = 0;
   private inFlight: Promise<UsageResponse> | null = null;
+  /** Derived from the same read as `cached` — see FiveHourProbe. */
+  private probe: FiveHourProbe = { ok: false, error: 'Usage has not been read yet.' };
 
   constructor(private readonly dataRoot: string) {}
 
@@ -86,10 +96,21 @@ export class UsageService {
     return this.inFlight;
   }
 
+  /**
+   * The 5-hour window's expiry as of the last read (sharing `get`'s cache and
+   * its floor). Used by the auto-reload scheduler, which needs to tell a
+   * missing window from a failed read.
+   */
+  async probeFiveHour(force = false): Promise<FiveHourProbe> {
+    await this.get(force);
+    return this.probe;
+  }
+
   private async fetchUsage(): Promise<UsageResponse> {
     const empty = (error: string, subscriptionType: string | null = null): UsageResponse => {
       const result: UsageResponse = { available: false, error, windows: [], fetchedAt: null, subscriptionType, stale: false };
       this.cached = result;
+      this.probe = { ok: false, error };
       this.lastFetchMs = Date.now();
       return result;
     };
@@ -106,6 +127,8 @@ export class UsageService {
         subscriptionType: subscriptionType ?? this.lastGood.subscriptionType,
       };
       this.cached = result;
+      // The figures are worth showing while old; they are NOT worth deciding on.
+      this.probe = { ok: false, error };
       this.lastFetchMs = Date.now();
       return result;
     };
@@ -137,7 +160,12 @@ export class UsageService {
         return empty('Claude rejected the stored token — run Claude Code once to refresh it.', oauth.subscriptionType ?? null);
       }
       if (!res.ok) return transient(`Usage endpoint answered HTTP ${res.status}`, oauth.subscriptionType ?? null);
-      const windows = normalizeUsage((await res.json()) as RawUsage);
+      const raw = (await res.json()) as RawUsage;
+      // Read off the raw payload, not the normalized windows: a window that has
+      // not started comes back as `five_hour: null` or without `resets_at`, and
+      // normalizeUsage drops it — indistinguishable from an error downstream.
+      this.probe = { ok: true, resetsAt: raw.five_hour?.resets_at ?? null };
+      const windows = normalizeUsage(raw);
       const result: UsageResponse = {
         available: windows.length > 0,
         error: windows.length > 0 ? null : 'The usage response had no known limit windows.',

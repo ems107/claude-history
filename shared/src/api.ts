@@ -141,6 +141,24 @@ export interface AppSettings {
    * nothing happens locally — Claude may still be used from another device.
    */
   usageIntervalSeconds: number;
+  /**
+   * Keep the 5-hour usage window rolling: whenever the window is found NOT to
+   * have started, run one throwaway Claude Code prompt to start it, so windows
+   * follow each other instead of leaving dead hours. Driven by the server, so
+   * it works with no browser open.
+   */
+  autoReloadEnabled: boolean;
+  /** Model alias for that prompt (one of AUTO_RELOAD_MODELS). */
+  autoReloadModel: string;
+  /** The prompt itself. Anything non-empty works; it is thrown away. */
+  autoReloadMessage: string;
+  /**
+   * Folder the reload session runs in. Required — there is no sane default,
+   * and Claude Code needs a real working directory.
+   */
+  autoReloadCwd: string;
+  /** Leave that folder's sessions out of the list, the filters and the counts. */
+  autoReloadHideSessions: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -148,10 +166,78 @@ export const DEFAULT_SETTINGS: AppSettings = {
   updateIntervalMinutes: 10,
   usageWidget: true,
   usageIntervalSeconds: 300,
+  autoReloadEnabled: false,
+  autoReloadModel: 'haiku',
+  autoReloadMessage: 'Hi, Claude!',
+  autoReloadCwd: '',
+  autoReloadHideSessions: false,
 };
 
 /** Hard floor between usage reads, whatever the idle cadence is set to. */
 export const MIN_USAGE_INTERVAL_SECONDS = 15;
+
+// ---- Auto-reload of the 5-hour window ----
+
+/** Aliases `claude --model` accepts (verified against CC 2.1.224). */
+export const AUTO_RELOAD_MODELS = ['haiku', 'sonnet', 'opus', 'fable'] as const;
+
+/** Longest prompt we store; the reload message is meant to be a one-liner. */
+export const AUTO_RELOAD_MESSAGE_MAX = 500;
+
+/**
+ * Config problems detectable without touching the filesystem, shared so the
+ * server and the settings UI cannot disagree about them. Filesystem and CLI
+ * checks are added on top by the server (see AutoReloadStatus.configError).
+ */
+export function validateAutoReload(s: AppSettings): string | null {
+  if (!s.autoReloadMessage.trim()) return 'The message to send is empty.';
+  if (!(AUTO_RELOAD_MODELS as readonly string[]).includes(s.autoReloadModel)) {
+    return `Unknown model "${s.autoReloadModel}".`;
+  }
+  const cwd = s.autoReloadCwd.trim();
+  if (!cwd) return 'No folder set — the session needs a folder to run in.';
+  if (!/^([A-Za-z]:[\\/]|\\\\)/.test(cwd)) return `"${cwd}" is not an absolute path.`;
+  return null;
+}
+
+export interface AutoReloadRun {
+  at: string;
+  /** The prompt ran and Claude answered. Says nothing about the window yet. */
+  ok: boolean;
+  model: string;
+  cwd: string;
+  durationMs: number;
+  exitCode: number | null;
+  /** Start of Claude's reply, kept only so the UI can prove it answered. */
+  reply: string | null;
+  error: string | null;
+  /** A fresh 5-hour window was confirmed after the run. This is the real goal. */
+  windowStarted: boolean;
+  /** True when started from the Test button rather than by the schedule. */
+  manual: boolean;
+}
+
+export interface AutoReloadStatus {
+  enabled: boolean;
+  /** Enabled, correctly configured and not paused — i.e. it will really fire. */
+  active: boolean;
+  /** Why it cannot run despite being enabled (bad folder, empty message, no CLI). */
+  configError: string | null;
+  /** Why it stopped itself (repeated failures). Cleared by saving a setting. */
+  pausedReason: string | null;
+  /** A check or a reload is in flight right now. */
+  running: boolean;
+  /** Known expiry of the current 5-hour window; null when none is running. */
+  resetsAt: string | null;
+  /** When the server will next ask Anthropic for the figures. */
+  nextCheckAt: string | null;
+  lastCheckAt: string | null;
+  /** Last usage-read failure, if the last read failed. */
+  lastError: string | null;
+  lastRun: AutoReloadRun | null;
+  /** Resolved claude executable; null when it could not be found. */
+  cliPath: string | null;
+}
 
 // ---- Subscription usage ----
 
