@@ -18,17 +18,20 @@ function Toggle({
   onChange,
   label,
   hint,
+  disabled,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   hint?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-2">
+    <label className={`flex items-start gap-2 ${disabled ? 'opacity-40' : 'cursor-pointer'}`}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
         className="mt-0.5 accent-[var(--accent)]"
       />
@@ -63,11 +66,13 @@ function TextSetting({
   onCommit,
   placeholder,
   mono,
+  disabled,
 }: {
   value: string;
   onCommit: (v: string) => void;
   placeholder?: string;
   mono?: boolean;
+  disabled?: boolean;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
@@ -79,6 +84,7 @@ function TextSetting({
       type="text"
       value={draft}
       placeholder={placeholder}
+      disabled={disabled}
       spellCheck={false}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -267,6 +273,11 @@ export function SettingsPage() {
   };
 
   const s = data.settings;
+  // With the feature off, none of its settings do anything — including the
+  // hidden-folder one, which the server also ignores. Grey them all out rather
+  // than leave controls that look live and are not.
+  const autoReloadOff = !s.autoReloadEnabled;
+  const dimmed = autoReloadOff ? 'opacity-40' : '';
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -380,11 +391,11 @@ export function SettingsPage() {
             />
           </Row>
           <Row badge={<DefaultBadge field="autoReloadModel" value={s.autoReloadModel} save={save} />}>
-            <label className="flex items-center gap-2">
+            <label className={`flex items-center gap-2 ${dimmed}`}>
               <span>Model</span>
               <select
                 value={s.autoReloadModel}
-                disabled={!s.autoReloadEnabled}
+                disabled={autoReloadOff}
                 onChange={(e) => save({ autoReloadModel: e.target.value })}
                 className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40"
               >
@@ -398,27 +409,35 @@ export function SettingsPage() {
             </label>
           </Row>
           <Row badge={<DefaultBadge field="autoReloadMessage" value={s.autoReloadMessage} save={save} />}>
-            <label className="block">
+            <label className={`block ${dimmed}`}>
               <span className="mb-1 block">Message to send</span>
               <TextSetting
                 value={s.autoReloadMessage}
                 onCommit={(v) => save({ autoReloadMessage: v })}
                 placeholder={DEFAULT_SETTINGS.autoReloadMessage}
+                disabled={autoReloadOff}
               />
             </label>
           </Row>
           {/* No default marker here: its default is empty, and a one-click
               "restore" would quietly disable the whole feature. */}
-          <label className="block">
+          <label className={`block ${dimmed}`}>
             <span className="mb-1 block">
               Folder to run it in <span className="text-[var(--text-dim)]">(required)</span>
             </span>
-            <TextSetting value={s.autoReloadCwd} onCommit={(v) => save({ autoReloadCwd: v })} placeholder="C:\\some\\folder" mono />
+            <TextSetting
+              value={s.autoReloadCwd}
+              onCommit={(v) => save({ autoReloadCwd: v })}
+              placeholder="C:\\some\\folder"
+              mono
+              disabled={autoReloadOff}
+            />
           </label>
           <Row badge={<DefaultBadge field="autoReloadHideSessions" value={s.autoReloadHideSessions} save={save} />}>
             <Toggle
               checked={s.autoReloadHideSessions}
               onChange={(v) => save({ autoReloadHideSessions: v })}
+              disabled={autoReloadOff}
               label="Hide that folder's sessions from this app"
               hint="Everything in the folder above is left out of the session list, the project filters, the counts, search, the stats and the prompts page. Nothing is deleted: the sessions stay on disk and a direct link still opens them."
             />

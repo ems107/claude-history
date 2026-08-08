@@ -340,9 +340,13 @@ export class SessionIndex {
    * every 5 hours, and those would otherwise drown the real ones.
    */
   private hiddenProjectKey(): string | null {
-    const cwd = this.settings.autoReloadCwd.trim();
-    if (!this.settings.autoReloadHideSessions || !cwd) return null;
-    return normalizeProjectKey(cwd);
+    const { autoReloadEnabled, autoReloadHideSessions, autoReloadCwd } = this.settings;
+    // Gated on the feature being on, and not just on its own checkbox: with the
+    // feature off its whole settings block is disabled in the UI, and a greyed
+    // control that still hides sessions would be a trap. Switching the feature
+    // off therefore brings the folder's sessions back into view.
+    if (!autoReloadEnabled || !autoReloadHideSessions || !autoReloadCwd.trim()) return null;
+    return normalizeProjectKey(autoReloadCwd.trim());
   }
 
   /** True when this project is the hidden one. */
