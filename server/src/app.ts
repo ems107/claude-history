@@ -1,6 +1,7 @@
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
+import { registerAutoReloadRoutes } from './routes/autoReload.ts';
 import { registerEventRoutes } from './routes/events.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
@@ -32,6 +33,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerResumeRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
+  registerAutoReloadRoutes(app, ctx);
   registerEventRoutes(app, ctx);
 
   if (config.staticDir) {

@@ -1,5 +1,6 @@
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
+import { AutoReloadService } from './core/autoReload.ts';
 import { SessionIndex } from './core/index.ts';
 import { SearchService } from './core/search.ts';
 import { UpdateService } from './core/updates.ts';
@@ -20,8 +21,10 @@ async function main(): Promise<void> {
   const search = new SearchService(index);
   const updates = new UpdateService();
   const usage = new UsageService(config.dataRoot);
-  const app = await buildApp({ config, index, search, updates, usage });
+  const autoReload = new AutoReloadService(usage, () => index.getSettings());
+  const app = await buildApp({ config, index, search, updates, usage, autoReload });
   updates.start(() => index.getSettings());
+  autoReload.start(index.events);
 
   const watcher = new Watcher(config, index);
   watcher.start();

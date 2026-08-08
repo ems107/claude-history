@@ -9,7 +9,7 @@ import path from 'node:path';
  * transcript persistence ("Transcript saving is off"). CLAUDE_CONFIG_DIR is
  * intentionally preserved.
  */
-function cleanEnv(): NodeJS.ProcessEnv {
+export function cleanEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (/^(CLAUDECODE|CLAUDE_CODE_)/i.test(key)) continue;
@@ -63,6 +63,22 @@ function findWt(): Promise<string | null> {
     return null;
   })();
   return wtPathPromise;
+}
+
+/**
+ * Resolve the Claude Code CLI for a headless (`-p`) run. It is a real native
+ * exe — no .cmd shim — so it can be spawned directly; the official installer
+ * puts it in ~\.local\bin, but PATH wins when both exist. A miss is NOT cached:
+ * the CLI may be installed while the server is running.
+ */
+let claudeCliPath: string | null = null;
+export async function findClaudeCli(): Promise<string | null> {
+  if (claudeCliPath) return claudeCliPath;
+  const fromPath = await whereFirst('claude');
+  const home = process.env.USERPROFILE;
+  const fallback = home ? path.join(home, '.local', 'bin', 'claude.exe') : null;
+  claudeCliPath = fromPath ?? (fallback && fs.existsSync(fallback) ? fallback : null);
+  return claudeCliPath;
 }
 
 /** Prefer PowerShell 7 (pwsh) — the user's default shell — over Windows PowerShell. */

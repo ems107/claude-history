@@ -8,13 +8,19 @@ import type {
   SessionEnrichment,
   SessionSummary,
 } from '@claude-history/shared';
-import { DEFAULT_PRICES, DEFAULT_SETTINGS, MIN_USAGE_INTERVAL_SECONDS } from '@claude-history/shared';
+import {
+  AUTO_RELOAD_MESSAGE_MAX,
+  AUTO_RELOAD_MODELS,
+  DEFAULT_PRICES,
+  DEFAULT_SETTINGS,
+  MIN_USAGE_INTERVAL_SECONDS,
+} from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
 import { readLiveSessions } from './live.ts';
-import { buildProjects } from './projects.ts';
+import { buildProjects, normalizeProjectKey } from './projects.ts';
 import { scanSessions, type ScannedSession } from './scanner.ts';
 import { summarizeSession } from './summarizer.ts';
 
@@ -292,6 +298,17 @@ export class SessionIndex {
         MIN_USAGE_INTERVAL_SECONDS,
         Math.round(patch.usageIntervalSeconds ?? this.settings.usageIntervalSeconds),
       ),
+      autoReloadModel: (AUTO_RELOAD_MODELS as readonly string[]).includes(
+        patch.autoReloadModel ?? this.settings.autoReloadModel,
+      )
+        ? (patch.autoReloadModel ?? this.settings.autoReloadModel)
+        : DEFAULT_SETTINGS.autoReloadModel,
+      autoReloadMessage: (patch.autoReloadMessage ?? this.settings.autoReloadMessage).slice(
+        0,
+        AUTO_RELOAD_MESSAGE_MAX,
+      ),
+      // Windows' "Copy as path" wraps the path in quotes; keep them out of the cwd.
+      autoReloadCwd: (patch.autoReloadCwd ?? this.settings.autoReloadCwd).trim().replace(/^"(.*)"$/, '$1'),
     };
     await this.saveUserdata();
     this.events.emit('settings-changed', this.settings);
@@ -317,10 +334,40 @@ export class SessionIndex {
     this.events.emit('session-updated', id);
   }
 
-  list(): SessionSummary[] {
-    return [...this.sessions.values()].map((s) => this.withOverride(s)).sort((a, b) => b.mtimeMs - a.mtimeMs);
+  /**
+   * Project key hidden from the browsing views, or null. That is the auto-reload
+   * folder when the user asked for it: it fills up with one throwaway session
+   * every 5 hours, and those would otherwise drown the real ones.
+   */
+  private hiddenProjectKey(): string | null {
+    const cwd = this.settings.autoReloadCwd.trim();
+    if (!this.settings.autoReloadHideSessions || !cwd) return null;
+    return normalizeProjectKey(cwd);
   }
 
+  /** True when this project is the hidden one. */
+  isHiddenProject(projectKey: string): boolean {
+    return this.hiddenProjectKey() === projectKey;
+  }
+
+  /**
+   * Everything the browsing views may show. `list()` and `projects()` both go
+   * through here, so the session list, the project filters, the counts, search
+   * and the stats page can never disagree about what exists.
+   */
+  private *visible(): Generator<SessionSummary> {
+    const hidden = this.hiddenProjectKey();
+    for (const s of this.sessions.values()) {
+      if (hidden !== null && s.projectKey === hidden) continue;
+      yield s;
+    }
+  }
+
+  list(): SessionSummary[] {
+    return [...this.visible()].map((s) => this.withOverride(s)).sort((a, b) => b.mtimeMs - a.mtimeMs);
+  }
+
+  /** Unfiltered: a hidden session is still openable by direct link. */
   get(id: string): SessionSummary | undefined {
     const s = this.sessions.get(id);
     return s && this.withOverride(s);
@@ -331,7 +378,7 @@ export class SessionIndex {
   }
 
   projects(): ProjectInfo[] {
-    return buildProjects(this.sessions.values());
+    return buildProjects(this.visible());
   }
 
   get size(): number {

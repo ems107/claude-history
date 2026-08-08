@@ -17,6 +17,9 @@ export function registerPromptRoutes(app: FastifyInstance, ctx: AppContext): voi
         sessionId: e.sessionId,
         sessionExists: ctx.index.get(e.sessionId) !== undefined,
       }))
+      // A hidden project has no filter chip and no sessions anywhere else, so
+      // leaving its prompts here would strand them.
+      .filter((e) => !ctx.index.isHiddenProject(e.projectKey))
       .sort((a, b) => b.timestamp - a.timestamp);
   });
 }
