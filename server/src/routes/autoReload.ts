@@ -7,7 +7,8 @@ export function registerAutoReloadRoutes(app: FastifyInstance, ctx: AppContext):
 
   // Run the cycle once on demand. This really does send the prompt (and start
   // the window) — it is the only way to prove the folder, the CLI and the
-  // permissions actually work, so the UI asks for confirmation first.
+  // permissions actually work, so the UI asks for confirmation first. Refused
+  // whenever the feature itself could not run: switched off, or misconfigured.
   app.post('/api/auto-reload/run', async (_request, reply) => {
     try {
       return { ok: true, run: await ctx.autoReload.runNow() };

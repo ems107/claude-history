@@ -177,17 +177,23 @@ function AutoReloadStatusPanel() {
       });
   };
 
-  let tone = 'text-[var(--text-dim)]';
-  let headline = 'Off — nothing is read and nothing is sent.';
-  if (st.configError) {
+  const blocked = !st.enabled ? 'Switch the feature on first.' : st.configError;
+
+  let tone = 'text-emerald-400';
+  let headline = st.running ? 'Active — checking right now.' : 'Active.';
+  if (!st.enabled) {
+    tone = 'text-[var(--text-dim)]';
+    headline = st.configError
+      ? `Off. It will also need this fixed: ${st.configError}`
+      : 'Off — nothing is read and nothing is sent.';
+  } else if (st.configError) {
+    // Switched on but stopped: the scheduler bails out on this before every
+    // check, so say "stopped" rather than implying it is merely degraded.
     tone = 'text-amber-400';
-    headline = st.enabled ? `Switched on, but it can never fire — ${st.configError}` : `Not ready — ${st.configError}`;
+    headline = `Switched on, but stopped — ${st.configError}`;
   } else if (st.pausedReason) {
     tone = 'text-amber-400';
     headline = `${st.pausedReason}. Save any setting above to try again.`;
-  } else if (st.enabled) {
-    tone = 'text-emerald-400';
-    headline = st.running ? 'Active — checking right now.' : 'Active.';
   }
 
   const run = st.lastRun;
@@ -228,7 +234,16 @@ function AutoReloadStatusPanel() {
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <button type="button" className={btn} disabled={testing || st.running} onClick={runTest}>
+        {/* Anything that would stop the schedule stops the button: sending a
+            message the feature itself would refuse to send proves nothing.
+            A pause does not, since a successful run is what clears it. */}
+        <button
+          type="button"
+          className={btn}
+          disabled={testing || st.running || blocked !== null}
+          title={blocked ?? 'Sends the message right now, exactly as the schedule would'}
+          onClick={runTest}
+        >
           {testing ? 'Sending…' : 'Send it now'}
         </button>
         {result && <span className="text-[11px] text-[var(--text-dim)]">{result}</span>}

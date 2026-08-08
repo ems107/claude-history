@@ -157,12 +157,16 @@ export class AutoReloadService {
     };
   }
 
-  /** Run the whole cycle once, on demand, ignoring the schedule and cooldown. */
+  /**
+   * Run the whole cycle once, on demand, ignoring only the schedule and the
+   * cooldown. Everything that stops the scheduler stops this too: sending a
+   * prompt the feature itself would refuse to send proves nothing. A pause is
+   * not one of those — clearing it is exactly what a successful run does.
+   */
   async runNow(): Promise<AutoReloadRun> {
     if (this.busy) throw new Error('A check or reload is already running — try again in a moment.');
     const s = this.getSettings();
-    // Deliberately not gated on autoReloadEnabled: the point of the button is
-    // to prove the setup works before switching it on.
+    if (!s.autoReloadEnabled) throw new Error('Switch the feature on first.');
     const configError = this.configError(s);
     if (configError) throw new Error(configError);
     this.busy = true;
