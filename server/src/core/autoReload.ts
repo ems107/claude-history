@@ -4,7 +4,10 @@ import fs from 'node:fs';
 import type { AppSettings, AutoReloadRun, AutoReloadStatus } from '@claude-history/shared';
 import { validateAutoReload } from '@claude-history/shared';
 import { cleanEnv, findClaudeCli } from '../util/launcher.ts';
+import { createLogger } from './logger.ts';
 import type { UsageService } from './usage.ts';
+
+const log = createLogger('auto-reload');
 
 /**
  * Keeps the Claude subscription's 5-hour window rolling.
@@ -127,7 +130,7 @@ export class AutoReloadService {
   private async resolveCli(): Promise<string | null> {
     if (this.cliPath !== undefined) return this.cliPath;
     this.cliPath = await findClaudeCli();
-    if (!this.cliPath) console.warn('[auto-reload] the claude CLI could not be found');
+    if (!this.cliPath) log.warn('the claude CLI could not be found');
     return this.cliPath;
   }
 
@@ -212,9 +215,7 @@ export class AutoReloadService {
       // the nap is history, so start the ladder over.
       this.readBackoffStep = 0;
       this.nextCheckAt = Math.max(now, this.nextCheckAt, now + RESUME_GRACE_MS);
-      console.log(
-        `[auto-reload] back from ${Math.round(gap / 60_000)} min suspended — first check in ${RESUME_GRACE_MS / 1000} s`,
-      );
+      log.info(`back from ${Math.round(gap / 60_000)} min suspended — first check in ${RESUME_GRACE_MS / 1000} s`);
       return;
     }
     if (now < this.nextCheckAt) return;
@@ -224,7 +225,7 @@ export class AutoReloadService {
     } catch (err) {
       this.lastError = err instanceof Error ? err.message : String(err);
       this.nextCheckAt = Date.now() + RETRY_MS;
-      console.warn('[auto-reload] check failed:', err);
+      log.warn('check failed', err);
     } finally {
       this.busy = false;
     }
@@ -240,7 +241,7 @@ export class AutoReloadService {
       const ladder = probe.kind === 'network' ? NETWORK_BACKOFF_MS : READ_BACKOFF_MS;
       const wait = ladder[Math.min(this.readBackoffStep++, ladder.length - 1)];
       this.nextCheckAt = Date.now() + wait;
-      console.warn(`[auto-reload] usage read failed (${probe.kind}: ${probe.error}) — retrying in ${Math.round(wait / 1000)} s`);
+      log.warn(`usage read failed (${probe.kind}: ${probe.error}) — retrying in ${Math.round(wait / 1000)} s`);
       return;
     }
     this.lastError = null;
@@ -256,9 +257,8 @@ export class AutoReloadService {
     const sinceLastRun = Date.now() - this.lastRunAt;
     if (this.lastRunAt > 0 && sinceLastRun < COOLDOWN_MS) {
       this.nextCheckAt = this.lastRunAt + COOLDOWN_MS;
-      console.log(
-        `[auto-reload] no 5-hour window, but the last reload was ${Math.round(sinceLastRun / 60_000)} min ago — ` +
-          'waiting out the cooldown',
+      log.info(
+        `no 5-hour window, but the last reload was ${Math.round(sinceLastRun / 60_000)} min ago — waiting out the cooldown`,
       );
       return;
     }
@@ -269,7 +269,7 @@ export class AutoReloadService {
     this.resetsAt = resetsAt;
     this.nextCheckAt = resetsAt + RESET_MARGIN_MS;
     const hours = ((resetsAt - Date.now()) / 3_600_000).toFixed(1);
-    console.log(`[auto-reload] 5-hour window runs until ${new Date(resetsAt).toISOString()} (${hours} h) — sleeping`);
+    log.info(`5-hour window runs until ${new Date(resetsAt).toISOString()} (${hours} h) — sleeping`);
   }
 
   /**
@@ -295,7 +295,7 @@ export class AutoReloadService {
     };
     this.lastRun = run;
 
-    console.log(`[auto-reload] ${manual ? 'manual run' : 'no 5-hour window'} — sending "${message}" (${s.autoReloadModel}) in ${cwd}`);
+    log.info(`${manual ? 'manual run' : 'no 5-hour window'} — sending "${message}" (${s.autoReloadModel}) in ${cwd}`);
     try {
       const cli = await this.resolveCli();
       if (!cli) throw new Error('the claude CLI could not be found');
@@ -308,11 +308,11 @@ export class AutoReloadService {
         throw new Error(`claude exited with code ${result.exitCode}: ${result.stderr.trim().slice(0, 300) || 'no output'}`);
       }
       run.ok = true;
-      console.log(`[auto-reload] answered in ${run.durationMs} ms: ${run.reply ?? '(empty)'}`);
+      log.info(`answered in ${run.durationMs} ms: ${run.reply ?? '(empty)'}`);
     } catch (err) {
       run.durationMs = Date.now() - startedAt;
       run.error = err instanceof Error ? err.message : String(err);
-      console.warn(`[auto-reload] the prompt failed: ${run.error}`);
+      log.warn(`the prompt failed: ${run.error}`);
       this.countFailure(`the prompt failed (${run.error})`);
       return run;
     }
@@ -327,7 +327,7 @@ export class AutoReloadService {
       this.lastError = probe.error;
       run.error = `sent, but the usage read-back failed (${probe.error})`;
       this.nextCheckAt = Date.now() + 2 * 60_000;
-      console.warn(`[auto-reload] ${run.error}`);
+      log.warn(`${run.error}`);
       return run;
     }
     this.lastError = null;
@@ -348,11 +348,11 @@ export class AutoReloadService {
     this.failures++;
     if (this.failures >= MAX_FAILURES) {
       this.pausedReason = `Stopped after ${this.failures} failed attempts: ${reason}`;
-      console.warn(`[auto-reload] ${this.pausedReason}`);
+      log.warn(`${this.pausedReason}`);
       return;
     }
     this.nextCheckAt = Date.now() + RETRY_MS;
-    console.warn(`[auto-reload] attempt ${this.failures}/${MAX_FAILURES} failed — retrying in ${RETRY_MS / 60_000} min`);
+    log.warn(`attempt ${this.failures}/${MAX_FAILURES} failed — retrying in ${RETRY_MS / 60_000} min`);
   }
 
   /**

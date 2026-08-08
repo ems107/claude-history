@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import type { AppConfig } from '../config.ts';
 import type { SessionIndex } from './index.ts';
+import { createLogger } from './logger.ts';
 
 const POLL_FALLBACK_MS = 30_000;
+const log = createLogger('watcher');
 
 /**
  * Watches ~/.claude for changes: transcripts (projects/), live sessions
@@ -35,7 +37,7 @@ export class Watcher {
     });
 
     if (!okProjects || !okSessions) {
-      console.warn('[watcher] fs.watch unavailable, falling back to 30 s polling');
+      log.warn('fs.watch unavailable, falling back to 30 s polling');
       this.pollTimer = setInterval(() => {
         void this.index.rescan();
         void this.index.refreshLive();
@@ -55,11 +57,11 @@ export class Watcher {
       const watcher = fs.watch(dir, { recursive }, (_event, filename) => {
         onChange(filename === null ? null : filename.toString());
       });
-      watcher.on('error', (err) => console.warn(`[watcher] error on ${dir}:`, err));
+      watcher.on('error', (err) => log.warn(`error on ${dir}`, err));
       this.watchers.push(watcher);
       return true;
     } catch (err) {
-      console.warn(`[watcher] cannot watch ${dir}:`, err);
+      log.warn(`cannot watch ${dir}`, err);
       return false;
     }
   }

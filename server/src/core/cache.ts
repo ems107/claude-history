@@ -1,8 +1,11 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { createLogger } from './logger.ts';
 
 /** Bump to invalidate every cached artifact after a schema change. */
 export const CACHE_VERSION = 3;
+
+const cacheLog = createLogger('cache');
 
 /** Read a JSON file, null on any failure. */
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {
@@ -101,7 +104,7 @@ export class DiskCache {
       await fsp.writeFile(tmp, JSON.stringify(value), 'utf8');
       await fsp.rename(tmp, filePath);
     } catch (err) {
-      console.warn(`[cache] write failed: ${filePath}`, err);
+      cacheLog.warn(`write failed: ${filePath}`, err);
     }
   }
 }

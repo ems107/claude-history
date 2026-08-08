@@ -19,8 +19,9 @@ root = fso.GetParentFolderName(here)
 
 ' --exit-with-parent: Task Scheduler's "End" only kills this wscript
 ' process, so the server watches it and exits when it dies.
-' --log-file: the window is hidden, so console output would be lost.
+' Logging needs no flag: the server always writes daily files into its own
+' data folder (%LOCALAPPDATA%\claude-history\logs), which is also where the
+' log viewer in the app reads them from.
 cmd = """" & here & "\node\node.exe"" """ & here & "\server.cjs""" & _
-      " --serve-static """ & here & "\web"" --exit-with-parent" & _
-      " --log-file """ & root & "\server.log"""
+      " --serve-static """ & here & "\web"" --exit-with-parent"
 shell.Run cmd, 0, True

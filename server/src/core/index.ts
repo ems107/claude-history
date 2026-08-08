@@ -13,6 +13,8 @@ import {
   AUTO_RELOAD_MODELS,
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
+  LOG_LEVEL_CHOICES,
+  MIN_LOG_RETENTION_DAYS,
   MIN_USAGE_INTERVAL_SECONDS,
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
@@ -20,9 +22,12 @@ import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey 
 import { enrichSession, type SearchBlock } from './enricher.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
 import { readLiveSessions } from './live.ts';
+import { createLogger } from './logger.ts';
 import { buildProjects, normalizeProjectKey } from './projects.ts';
 import { scanSessions, type ScannedSession } from './scanner.ts';
 import { summarizeSession } from './summarizer.ts';
+
+const log = createLogger('index');
 
 interface IndexCacheFile {
   version: number;
@@ -179,7 +184,7 @@ export class SessionIndex {
       this.sessions.set(s.id, await summarizeSession(s, this.history.sessionProject));
       this.scanned.set(s.id, s);
     } catch (err) {
-      console.warn(`[index] failed to summarize ${s.filePath}:`, err);
+      log.warn(`failed to summarize ${s.filePath}`, err);
     }
   }
 
@@ -233,7 +238,7 @@ export class SessionIndex {
       this.linkAncestry(s.id, enriched.enrichment.resumedFrom);
       this.events.emit('session-updated', s.id);
     } catch (err) {
-      console.warn(`[index] failed to enrich ${s.filePath}:`, err);
+      log.warn(`failed to enrich ${s.filePath}`, err);
     }
   }
 
@@ -309,6 +314,13 @@ export class SessionIndex {
       ),
       // Windows' "Copy as path" wraps the path in quotes; keep them out of the cwd.
       autoReloadCwd: (patch.autoReloadCwd ?? this.settings.autoReloadCwd).trim().replace(/^"(.*)"$/, '$1'),
+      logLevel: (LOG_LEVEL_CHOICES as readonly string[]).includes(patch.logLevel ?? this.settings.logLevel)
+        ? (patch.logLevel ?? this.settings.logLevel)
+        : DEFAULT_SETTINGS.logLevel,
+      logRetentionDays: Math.max(
+        MIN_LOG_RETENTION_DAYS,
+        Math.round(patch.logRetentionDays ?? this.settings.logRetentionDays),
+      ),
     };
     await this.saveUserdata();
     this.events.emit('settings-changed', this.settings);

@@ -159,6 +159,10 @@ export interface AppSettings {
   autoReloadCwd: string;
   /** Leave that folder's sessions out of the list, the filters and the counts. */
   autoReloadHideSessions: boolean;
+  /** Lowest level actually written to the log files. */
+  logLevel: LogLevel;
+  /** Daily log files older than this are deleted (minimum 1). */
+  logRetentionDays: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -171,7 +175,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadMessage: 'Hi, Claude!',
   autoReloadCwd: '',
   autoReloadHideSessions: false,
+  logLevel: 'info',
+  logRetentionDays: 14,
 };
+
+/** Floor on log retention: keeping zero days would mean keeping nothing. */
+export const MIN_LOG_RETENTION_DAYS = 1;
 
 /** Hard floor between usage reads, whatever the idle cadence is set to. */
 export const MIN_USAGE_INTERVAL_SECONDS = 15;
@@ -260,6 +269,92 @@ export interface UsageResponse {
   stale: boolean;
 }
 
+// ---- Logs ----
+
+export const LOG_LEVELS = ['debug', 'info', 'warn', 'error', 'fatal'] as const;
+export type LogLevel = (typeof LOG_LEVELS)[number];
+
+/** Levels selectable as the write threshold — 'fatal' as a floor would mute everything. */
+export const LOG_LEVEL_CHOICES = ['debug', 'info', 'warn', 'error'] as const;
+
+/** Known subsystems. The writer accepts any string; this only feeds the UI. */
+export const LOG_SOURCES = [
+  'server',
+  'config',
+  'index',
+  'enricher',
+  'cache',
+  'watcher',
+  'usage',
+  'auto-reload',
+  'updates',
+  'http',
+  'console',
+  'log',
+] as const;
+
+/**
+ * One line of a daily log file (JSONL). Short keys: these are written by the
+ * thousand and read by a viewer, not by eye.
+ */
+export interface LogRecord {
+  /** Local ISO-8601 with offset — sortable, Date.parse-able, and readable as-is. */
+  t: string;
+  lvl: LogLevel;
+  src: string;
+  /**
+   * Always written. Two instances sharing a day's file is not supposed to
+   * happen (one port), but if it ever does this is what makes it obvious.
+   */
+  pid: number;
+  /** Version that wrote it: 'dev' from source, else X.Y.Z. */
+  v: string;
+  msg: string;
+  /** Structured extra, when there is something worth reading separately. */
+  data?: unknown;
+  /** Stack trace, when the call carried an Error. */
+  err?: string;
+}
+
+export interface LogDay {
+  /** Local date, YYYY-MM-DD — also the file name. */
+  date: string;
+  sizeBytes: number;
+}
+
+export interface LogsResponse {
+  logsDir: string;
+  /** Newest day first. */
+  days: LogDay[];
+  level: LogLevel;
+  retentionDays: number;
+  /** The installer's own update.log, only present in a managed install. */
+  updateLog: { available: boolean; path: string | null };
+}
+
+export interface LogDayResponse {
+  date: string;
+  /** Newest first, capped at LOG_PAGE_SIZE. */
+  records: LogRecord[];
+  /** Matching records before the cap. */
+  total: number;
+  truncated: boolean;
+  /** Counts for the facet chips, over everything the text search matched. */
+  levels: Record<string, number>;
+  sources: Record<string, number>;
+}
+
+export const LOG_PAGE_SIZE = 2_000;
+
+export interface UpdateLogResponse {
+  available: boolean;
+  path: string | null;
+  /** Raw text — this one is written by the PowerShell installer, not by us. */
+  text: string;
+  sizeBytes: number;
+  modifiedAt: string | null;
+}
+
 // ---- SSE events on /api/events ----
 
 export type ServerEvent =
@@ -267,4 +362,5 @@ export type ServerEvent =
   | { type: 'session-updated'; id: string }
   | { type: 'live-changed' }
   | { type: 'index-progress'; enriched: number; total: number }
-  | { type: 'update-status' };
+  | { type: 'update-status' }
+  | { type: 'logs-appended' };

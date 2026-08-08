@@ -6,6 +6,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { APP_VERSION } from '../version.ts';
+import { createLogger } from './logger.ts';
+
+const log = createLogger('updates');
 
 // Automatic update CHECK is the only background network call in the app:
 // a tiny JSON GET against the GitHub releases API, sent with If-None-Match
@@ -154,7 +157,7 @@ export class UpdateService {
   private isBusy(): boolean {
     if (this.state === 'idle') return false;
     if (Date.now() - this.stateSince < STUCK_STATE_MS) return true;
-    console.warn(`[updates] resetting stuck state "${this.state}"`);
+    log.warn(`resetting stuck state "${this.state}"`);
     this.lastError = `The previous ${this.state} step timed out.`;
     this.setState('idle');
     return false;
@@ -267,7 +270,7 @@ export class UpdateService {
         throw new Error(`Could not schedule the update helper: ${reg.stderr?.trim() || `exit ${reg.status}`}`);
       }
       setTimeout(() => {
-        console.log('[updates] handing over to update-helper — exiting');
+        log.info('handing over to update-helper — exiting');
         process.exit(0);
       }, 500).unref();
     } catch (err) {

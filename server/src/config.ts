@@ -10,6 +10,8 @@ export interface AppConfig {
   cacheDir: string;
   /** User data that must survive cache wipes (e.g. local title overrides). */
   userdataFile: string;
+  /** Daily JSONL log files. Same place for every way of running the server. */
+  logsDir: string;
   host: string;
   port: number;
   /** Absolute path to built web assets, or null in dev (Vite serves the UI). */
@@ -21,10 +23,11 @@ export interface AppConfig {
    */
   exitWithParent: boolean;
   /**
-   * Append console output here. The installed instance runs with a hidden
-   * window, so without this its output (including crashes) is lost.
+   * Problems found while reading the arguments. Collected instead of printed:
+   * config is resolved before logging is up, so a warning printed here would
+   * never reach the log files.
    */
-  logFile: string | null;
+  warnings: string[];
 }
 
 function parseArgs(argv: string[]): Map<string, string> {
@@ -62,6 +65,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
       ? path.join(process.env.LOCALAPPDATA, 'claude-history', 'cache')
       : path.join(os.homedir(), '.claude-history', 'cache'));
 
+  const warnings: string[] = [];
   let staticDir: string | null = null;
   const serveStatic = args.get('serve-static');
   if (serveStatic) {
@@ -69,7 +73,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     if (fs.existsSync(path.join(resolved, 'index.html'))) {
       staticDir = resolved;
     } else {
-      console.warn(`[config] --serve-static: no index.html under ${resolved}; run "pnpm build" first. Serving API only.`);
+      warnings.push(`--serve-static: no index.html under ${resolved}; run "pnpm build" first. Serving API only.`);
     }
   }
 
@@ -81,10 +85,11 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     historyFile: path.join(dataRoot, 'history.jsonl'),
     cacheDir,
     userdataFile: path.resolve(cacheDir, '..', 'userdata.json'),
+    logsDir: args.get('logs-dir') ? path.resolve(args.get('logs-dir') as string) : path.resolve(cacheDir, '..', 'logs'),
     host: '127.0.0.1',
     port: Number(process.env.PORT || args.get('port') || 7433),
     staticDir,
     exitWithParent: args.has('exit-with-parent'),
-    logFile: args.get('log-file') ? path.resolve(args.get('log-file') as string) : null,
+    warnings,
   };
 }

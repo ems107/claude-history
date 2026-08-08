@@ -1,6 +1,9 @@
 import type { UsageResponse, UsageWindow } from '@claude-history/shared';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createLogger } from './logger.ts';
+
+const log = createLogger('usage');
 
 // Claude subscription usage (the same numbers `/usage` shows in Claude Code):
 // GET api.anthropic.com/api/oauth/usage with the OAuth access token stored in
@@ -149,6 +152,7 @@ export class UsageService {
         this.cached = result;
         this.probe = { ok: false, error, kind };
         this.lastFetchMs = Date.now();
+        log.warn(`read failed (${kind}: ${error}) — and there are no earlier figures to fall back on`);
         return result;
       }
       const result: UsageResponse = {
@@ -161,6 +165,7 @@ export class UsageService {
       // The figures are worth showing while old; they are NOT worth deciding on.
       this.probe = { ok: false, error, kind };
       this.lastFetchMs = Date.now();
+      log.warn(`read failed (${kind}: ${error}) — keeping the previous figures, marked stale`);
       return result;
     };
 
@@ -192,6 +197,7 @@ export class UsageService {
       }
       if (!res.ok) return transient(`Usage endpoint answered HTTP ${res.status}`, 'http', oauth.subscriptionType ?? null);
       const raw = (await res.json()) as RawUsage;
+      log.debug('usage read ok', { fiveHour: raw.five_hour ?? null });
       // Read off the raw payload, not the normalized windows: a window that has
       // not started comes back as `five_hour: null` or without `resets_at`, and
       // normalizeUsage drops it — indistinguishable from an error downstream.

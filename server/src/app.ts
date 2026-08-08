@@ -1,8 +1,10 @@
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
+import { createLogger } from './core/logger.ts';
 import { registerAutoReloadRoutes } from './routes/autoReload.ts';
 import { registerEventRoutes } from './routes/events.ts';
+import { registerLogRoutes } from './routes/logs.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
 import { registerPriceRoutes } from './routes/prices.ts';
@@ -16,9 +18,47 @@ import { registerSubagentRoutes } from './routes/subagents.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
 import { registerUpdateRoutes } from './routes/updates.ts';
 
+/**
+ * Fastify logs through pino, which writes straight to file descriptor 1 and
+ * therefore bypasses `console` entirely — so before this, a 500 or a failed
+ * listen() left NOTHING in the log files, which is precisely what they exist
+ * for. Giving pino a destination that re-emits into our logger fixes that.
+ */
+function fastifyLogStream(): { write(line: string): void } {
+  const log = createLogger('http');
+  return {
+    write(line: string) {
+      try {
+        const entry = JSON.parse(line) as {
+          level?: number;
+          msg?: string;
+          err?: { stack?: string; message?: string };
+          req?: { method?: string; url?: string };
+          res?: { statusCode?: number };
+          reqId?: string;
+        };
+        const level = entry.level ?? 30;
+        const method = entry.req?.method;
+        const url = entry.req?.url;
+        const status = entry.res?.statusCode;
+        const message = [entry.msg ?? 'fastify', method && url ? `(${method} ${url})` : null, status ? `-> ${status}` : null]
+          .filter(Boolean)
+          .join(' ');
+        const extra = entry.err?.stack ? { stack: entry.err.stack, reqId: entry.reqId } : undefined;
+        if (level >= 50) log.error(message, extra);
+        else if (level >= 40) log.warn(message, extra);
+        else log.info(message, extra);
+      } catch {
+        // Not JSON (or a shape we do not know): keep the raw line rather than lose it.
+        log.warn(line.trim());
+      }
+    },
+  };
+}
+
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const { config } = ctx;
-  const app = Fastify({ logger: { level: 'warn' } });
+  const app = Fastify({ logger: { level: 'warn', stream: fastifyLogStream() } });
 
   app.get('/api/health', async () => ({ ok: true }));
   registerMetaRoutes(app, ctx);
@@ -34,6 +74,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
   registerAutoReloadRoutes(app, ctx);
+  registerLogRoutes(app, ctx);
   registerEventRoutes(app, ctx);
 
   if (config.staticDir) {

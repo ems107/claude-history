@@ -164,8 +164,8 @@ if ($serving -eq $expected) {
   Start-Process $appUrl
 } elseif ($serving) {
   Write-Warning "Port $port is answering with version $serving, not the installed $expected."
-  Write-Warning "Check server.log in this folder and the task state in Task Scheduler (taskschd.msc)."
+  Write-Warning "Check the logs in %LOCALAPPDATA%\claude-history\logs and the task state in Task Scheduler (taskschd.msc)."
 } else {
   Write-Warning "The server did not answer on $metaUrl after 20s."
-  Write-Warning "Check server.log in this folder and the task state in Task Scheduler (taskschd.msc)."
+  Write-Warning "Check the logs in %LOCALAPPDATA%\claude-history\logs and the task state in Task Scheduler (taskschd.msc)."
 }

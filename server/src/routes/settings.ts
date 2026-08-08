@@ -5,7 +5,10 @@ import os from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { createLogger } from '../core/logger.ts';
 import { APP_VERSION } from '../version.ts';
+
+const log = createLogger('server');
 
 export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/settings', async () => ({
@@ -14,6 +17,7 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       dataRoot: ctx.config.dataRoot,
       cacheDir: ctx.config.cacheDir,
       userdataFile: ctx.config.userdataFile,
+      logsDir: ctx.config.logsDir,
       installRoot: ctx.updates.install?.root ?? null,
     },
     version: APP_VERSION,
@@ -83,7 +87,7 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
     }
     void reply.send({ ok: true });
     setTimeout(() => {
-      console.log('[server] uninstall scheduled — exiting');
+      log.info('uninstall scheduled — exiting');
       process.exit(0);
     }, 400).unref();
   });
@@ -94,7 +98,7 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
   app.post('/api/server/stop', async (_request, reply) => {
     void reply.send({ ok: true });
     setTimeout(() => {
-      console.log('[server] stop requested from the UI — exiting');
+      log.info('stop requested from the UI — exiting');
       process.exit(0);
     }, 300).unref();
   });

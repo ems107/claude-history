@@ -2,21 +2,32 @@ import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { AutoReloadService } from './core/autoReload.ts';
 import { SessionIndex } from './core/index.ts';
+import { applyLogSettings, createLogger, initLogging } from './core/logger.ts';
 import { SearchService } from './core/search.ts';
 import { UpdateService } from './core/updates.ts';
 import { UsageService } from './core/usage.ts';
 import { Watcher } from './core/watcher.ts';
-import { installFileLogging } from './logging.ts';
 
 // No top-level await: the packaged build bundles this file to CommonJS.
 async function main(): Promise<void> {
   const config = loadConfig();
-  if (config.logFile) installFileLogging(config.logFile);
+  initLogging(config.logsDir);
+  const log = createLogger('server');
+  for (const warning of config.warnings) createLogger('config').warn(warning);
+
   const index = new SessionIndex(config);
 
   const t0 = Date.now();
   await index.build();
-  console.log(`[index] ${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`);
+  // Settings live in userdata.json, so the level only becomes known here; up to
+  // this point the default applies.
+  applyLogSettings(index.getSettings());
+  index.events.on('settings-changed', (settings: Parameters<typeof applyLogSettings>[0]) =>
+    applyLogSettings(settings),
+  );
+  createLogger('index').info(
+    `${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`,
+  );
 
   const search = new SearchService(index);
   const updates = new UpdateService();
@@ -39,7 +50,7 @@ async function main(): Promise<void> {
         process.kill(parentPid, 0);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'EPERM') {
-          console.log(`[main] parent process ${parentPid} is gone — exiting`);
+          log.info(`parent process ${parentPid} is gone — exiting`);
           process.exit(0);
         }
       }
@@ -48,9 +59,9 @@ async function main(): Promise<void> {
 
   try {
     await app.listen({ host: config.host, port: config.port });
-    console.log(`claude-history on http://${config.host}:${config.port} (data root: ${config.dataRoot})`);
+    log.info(`listening on http://${config.host}:${config.port} (data root: ${config.dataRoot})`);
   } catch (err) {
-    app.log.error(err);
+    log.error('could not listen — exiting', err);
     process.exit(1);
   }
 }
