@@ -1,8 +1,15 @@
 import type { ServerEvent } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { logEvents } from '../core/logger.ts';
 
 const HEARTBEAT_MS = 25_000;
+/**
+ * Log records can arrive in bursts (a startup writes several in a millisecond),
+ * and each event costs the viewer a refetch — one notice per second is plenty
+ * for a screen a person is reading.
+ */
+const LOGS_THROTTLE_MS = 1_000;
 
 export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/events', (request, reply) => {
@@ -21,17 +28,28 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onLive = () => send({ type: 'live-changed' });
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });
+    let logsTimer: NodeJS.Timeout | null = null;
+    const onLogAppended = () => {
+      if (logsTimer) return;
+      logsTimer = setTimeout(() => {
+        logsTimer = null;
+        send({ type: 'logs-appended' });
+      }, LOGS_THROTTLE_MS);
+    };
 
     ctx.index.events.on('session-updated', onUpdated);
     ctx.index.events.on('sessions-changed', onChanged);
     ctx.index.events.on('live-changed', onLive);
     ctx.index.events.on('index-progress', onProgress);
     ctx.updates.events.on('update-status', onUpdateStatus);
+    logEvents.on('appended', onLogAppended);
 
     const heartbeat = setInterval(() => reply.raw.write(': hb\n\n'), HEARTBEAT_MS);
 
     request.raw.on('close', () => {
       clearInterval(heartbeat);
+      if (logsTimer) clearTimeout(logsTimer);
+      logEvents.off('appended', onLogAppended);
       ctx.index.events.off('session-updated', onUpdated);
       ctx.index.events.off('sessions-changed', onChanged);
       ctx.index.events.off('live-changed', onLive);
