@@ -140,7 +140,17 @@ function DefaultBadge<K extends keyof AppSettings>({
  */
 function AutoReloadStatusPanel() {
   const queryClient = useQueryClient();
-  const { data: st } = useQuery({ queryKey: ['autoReload'], queryFn: api.autoReload, refetchInterval: 30_000 });
+  const { data: st } = useQuery({
+    queryKey: ['autoReload'],
+    queryFn: api.autoReload,
+    refetchInterval: 30_000,
+    // This is live state that also drives what the button below allows, and the
+    // interval does NOT run in a hidden tab. Without a focus refetch (the app
+    // turns it off globally) the panel freezes on whatever it last saw — most
+    // painfully mid-send, leaving the button stuck disabled after it finished.
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
 
@@ -246,6 +256,8 @@ function AutoReloadStatusPanel() {
         >
           {testing ? 'Sending…' : 'Send it now'}
         </button>
+        {/* A disabled button must never be a puzzle: say it here, not just on hover. */}
+        {blocked && !testing && !st.running && <span className="text-[11px] text-[var(--text-dim)]">{blocked}</span>}
         {result && <span className="text-[11px] text-[var(--text-dim)]">{result}</span>}
       </div>
     </div>
