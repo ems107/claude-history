@@ -1,5 +1,7 @@
 import type {
   AppSettings,
+  AutoReloadRun,
+  AutoReloadStatus,
   LineageResponse,
   MetaResponse,
   PriceTable,
@@ -92,6 +94,13 @@ export const api = {
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<{ settings: AppSettings }>;
+  },
+  autoReload: () => getJson<AutoReloadStatus>('/api/auto-reload'),
+  autoReloadRun: async () => {
+    const res = await fetch('/api/auto-reload/run', { method: 'POST' });
+    const body = (await res.json()) as { run?: AutoReloadRun; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body.run!;
   },
   usage: () => getJson<UsageResponse>('/api/usage'),
   usageRefresh: async () => {

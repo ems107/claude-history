@@ -1,8 +1,8 @@
-import { type AppSettings, DEFAULT_SETTINGS } from '@claude-history/shared';
+import { type AppSettings, AUTO_RELOAD_MODELS, DEFAULT_SETTINGS } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../api/client.ts';
-import { formatDateTime, relativeTime } from '../lib/format.ts';
+import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -43,7 +43,56 @@ function Toggle({
 const btn =
   'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 
-const asText = (v: boolean | number): string => (typeof v === 'boolean' ? (v ? 'on' : 'off') : String(v));
+const asText = (v: boolean | number | string): string => {
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (typeof v === 'string') return v || 'empty';
+  return String(v);
+};
+
+const inputClass =
+  'w-full rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
+
+/**
+ * A text setting. Unlike the toggles and number inputs above it does NOT save
+ * on every keystroke — that would be one request (and one userdata write) per
+ * letter typed. It commits when the field loses focus or on Enter, and Escape
+ * puts the saved value back.
+ */
+function TextSetting({
+  value,
+  onCommit,
+  placeholder,
+  mono,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  mono?: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (draft !== value) onCommit(draft);
+  };
+  return (
+    <input
+      type="text"
+      value={draft}
+      placeholder={placeholder}
+      spellCheck={false}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          commit();
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') setDraft(value);
+      }}
+      className={`${inputClass} ${mono ? 'font-mono text-[11px]' : ''}`}
+    />
+  );
+}
 
 /**
  * Shown only next to a setting that no longer holds its default, and clicking
@@ -78,6 +127,110 @@ function DefaultBadge<K extends keyof AppSettings>({
   );
 }
 
+/**
+ * What the auto-reload is actually doing. Its main job is the case the settings
+ * above cannot express: switched on, yet unable to ever fire. So it always
+ * spells out the reason rather than just showing a state.
+ */
+function AutoReloadStatusPanel() {
+  const queryClient = useQueryClient();
+  const { data: st } = useQuery({ queryKey: ['autoReload'], queryFn: api.autoReload, refetchInterval: 30_000 });
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  if (!st) return <p className="text-[var(--text-dim)]">Loading status…</p>;
+
+  const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+  const runTest = () => {
+    if (
+      !confirm(
+        'Send the message now?\n\nThis really sends it: it starts a 5-hour window and leaves a session in your history. ' +
+          'It is also the only way to prove the folder, the CLI and the permissions work.',
+      )
+    ) {
+      return;
+    }
+    setTesting(true);
+    setResult(null);
+    void api
+      .autoReloadRun()
+      .then((run) =>
+        setResult(
+          run.windowStarted
+            ? `Sent in ${seconds(run.durationMs)} — a new 5-hour window is running.`
+            : run.ok
+              ? `Sent in ${seconds(run.durationMs)}, but no new window was reported: ${run.error ?? 'unknown reason'}`
+              : `Failed: ${run.error ?? 'unknown error'}`,
+        ),
+      )
+      .catch((e: unknown) => setResult(`Failed: ${e instanceof Error ? e.message : String(e)}`))
+      .finally(() => {
+        setTesting(false);
+        void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
+        void queryClient.invalidateQueries({ queryKey: ['usage'] });
+      });
+  };
+
+  let tone = 'text-[var(--text-dim)]';
+  let headline = 'Off — nothing is read and nothing is sent.';
+  if (st.configError) {
+    tone = 'text-amber-400';
+    headline = st.enabled ? `Switched on, but it can never fire — ${st.configError}` : `Not ready — ${st.configError}`;
+  } else if (st.pausedReason) {
+    tone = 'text-amber-400';
+    headline = `${st.pausedReason}. Save any setting above to try again.`;
+  } else if (st.enabled) {
+    tone = 'text-emerald-400';
+    headline = st.running ? 'Active — checking right now.' : 'Active.';
+  }
+
+  const run = st.lastRun;
+  return (
+    <div className="space-y-2 border-t border-[var(--border)] pt-3">
+      <p className={tone}>{headline}</p>
+      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
+        <span className="opacity-60">5-hour window</span>
+        <span>
+          {st.resetsAt
+            ? `resets ${formatDateTime(st.resetsAt)} (${timeUntil(st.resetsAt) ?? '—'} left)`
+            : 'not started'}
+        </span>
+        <span className="opacity-60">next check</span>
+        <span>
+          {st.nextCheckAt ? `${formatDateTime(st.nextCheckAt)} (in ${timeUntil(st.nextCheckAt) ?? '—'})` : 'not scheduled'}
+        </span>
+        <span className="opacity-60">last check</span>
+        <span>
+          {st.lastCheckAt ? `${formatDateTime(st.lastCheckAt)} (${relativeTime(st.lastCheckAt)})` : 'never'}
+          {st.lastError && <span className="ml-2 text-amber-400">{st.lastError}</span>}
+        </span>
+        <span className="opacity-60">claude cli</span>
+        <span className="break-all">{st.cliPath ?? 'not found'}</span>
+        {run && (
+          <>
+            <span className="opacity-60">last message</span>
+            <span>
+              {formatDateTime(run.at)} ({relativeTime(run.at)}){run.manual ? ', manual' : ''} —{' '}
+              {run.windowStarted
+                ? `started a window in ${seconds(run.durationMs)}`
+                : run.ok
+                  ? `answered, no window: ${run.error ?? '—'}`
+                  : `failed: ${run.error ?? '—'}`}
+              {run.reply && <span className="block opacity-60">“{run.reply}”</span>}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 pt-1">
+        <button type="button" className={btn} disabled={testing || st.running} onClick={runTest}>
+          {testing ? 'Sending…' : 'Send it now'}
+        </button>
+        {result && <span className="text-[11px] text-[var(--text-dim)]">{result}</span>}
+      </div>
+    </div>
+  );
+}
+
 /** A setting and its "changed from default" marker, aligned on the first line. */
 function Row({ children, badge }: { children: React.ReactNode; badge: React.ReactNode }) {
   return (
@@ -105,6 +258,11 @@ export function SettingsPage() {
     void api.saveSettings(patch).then((r) => {
       queryClient.setQueryData(['settings'], { ...data, settings: r.settings });
       void queryClient.invalidateQueries({ queryKey: ['usage'] });
+      void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
+      // The hidden-folder option changes what the browsing views contain.
+      for (const key of ['sessions', 'projects', 'prompts']) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
     });
   };
 
@@ -210,6 +368,86 @@ export function SettingsPage() {
               blank.
             </p>
           </div>
+        </Section>
+
+        <Section title="Auto-start the 5-hour window">
+          <Row badge={<DefaultBadge field="autoReloadEnabled" value={s.autoReloadEnabled} save={save} />}>
+            <Toggle
+              checked={s.autoReloadEnabled}
+              onChange={(v) => save({ autoReloadEnabled: v })}
+              label="Start the 5-hour window as soon as it is free"
+              hint="A window only starts when something is sent, so an idle night leaves it unstarted and pushes the next reset into the middle of your day. This sends one throwaway message to start it right away."
+            />
+          </Row>
+          <Row badge={<DefaultBadge field="autoReloadModel" value={s.autoReloadModel} save={save} />}>
+            <label className="flex items-center gap-2">
+              <span>Model</span>
+              <select
+                value={s.autoReloadModel}
+                disabled={!s.autoReloadEnabled}
+                onChange={(e) => save({ autoReloadModel: e.target.value })}
+                className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40"
+              >
+                {AUTO_RELOAD_MODELS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[var(--text-dim)]">the cheapest one is enough — the reply is thrown away</span>
+            </label>
+          </Row>
+          <Row badge={<DefaultBadge field="autoReloadMessage" value={s.autoReloadMessage} save={save} />}>
+            <label className="block">
+              <span className="mb-1 block">Message to send</span>
+              <TextSetting
+                value={s.autoReloadMessage}
+                onCommit={(v) => save({ autoReloadMessage: v })}
+                placeholder={DEFAULT_SETTINGS.autoReloadMessage}
+              />
+            </label>
+          </Row>
+          {/* No default marker here: its default is empty, and a one-click
+              "restore" would quietly disable the whole feature. */}
+          <label className="block">
+            <span className="mb-1 block">
+              Folder to run it in <span className="text-[var(--text-dim)]">(required)</span>
+            </span>
+            <TextSetting value={s.autoReloadCwd} onCommit={(v) => save({ autoReloadCwd: v })} placeholder="C:\\some\\folder" mono />
+          </label>
+          <Row badge={<DefaultBadge field="autoReloadHideSessions" value={s.autoReloadHideSessions} save={save} />}>
+            <Toggle
+              checked={s.autoReloadHideSessions}
+              onChange={(v) => save({ autoReloadHideSessions: v })}
+              label="Hide that folder's sessions from this app"
+              hint="Everything in the folder above is left out of the session list, the project filters, the counts, search, the stats and the prompts page. Nothing is deleted: the sessions stay on disk and a direct link still opens them."
+            />
+          </Row>
+          <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
+            <span className="text-[var(--text)]">How it works:</span>
+            <ul className="mt-1 ml-4 list-disc space-y-1 marker:text-[var(--text-dim)]/50">
+              <li>
+                <span className="text-[var(--text)]">It does not poll.</span> Every reading says exactly when the window
+                expires, so it sleeps until that moment plus a minute and only then asks again — about five reads a day.
+              </li>
+              <li>
+                <span className="text-[var(--text)]">No browser needed.</span> This one runs in the server, unlike the
+                usage widget above, so it keeps working with the app closed — as long as the machine is on and you are
+                logged in.
+              </li>
+              <li>
+                <span className="text-[var(--text)]">Each message leaves a real session</span> in the folder above, and it
+                stays in your history: nothing here ever deletes anything from your Claude data. That is what the option
+                above is for.
+              </li>
+              <li>
+                <span className="text-[var(--text)]">It knows when to stop.</span> A failed reading is never mistaken for
+                a free window, there is half an hour between messages whatever happens, and after three failed attempts
+                in a row it pauses itself and says why.
+              </li>
+            </ul>
+          </div>
+          <AutoReloadStatusPanel />
         </Section>
 
         <Section title="Server & data">
