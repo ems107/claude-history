@@ -27,7 +27,13 @@ export function TurnList({
       }
     }, 100);
     return () => clearTimeout(t);
-  }, [scrollToUuid, turns]);
+    // Deliberately NOT keyed on `turns`: the deep-linked jump belongs to the
+    // link, not to the data. Re-running it on every refetch yanked a live
+    // session back to the linked message every few seconds — and it fought the
+    // follow-the-end button for control of the scroll. The turns are already
+    // rendered when this mounts, so there is nothing to wait for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollToUuid]);
 
   return (
     <div className="space-y-4">

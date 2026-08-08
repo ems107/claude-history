@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
+import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
@@ -23,6 +24,8 @@ export function SessionViewPage() {
   const [showTokens, setShowTokens] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  // Keyed on the session id: opening another one starts unfollowed.
+  const follow = useFollowBottom(id);
 
   const msg = searchParams.get('msg');
   const agentId = searchParams.get('agent');
@@ -120,19 +123,24 @@ export function SessionViewPage() {
       {showTokens && <TokenPanel summary={detail.data.summary} />}
       {showLineage && <LineagePanel sessionId={id} />}
       {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto max-w-4xl">
-          <TurnList
-            turns={detail.data.turns}
-            showThinking={showThinking}
-            expandTools={expandTools}
-            scrollToUuid={msg}
-            onOpenAgent={openAgent}
-          />
-          {detail.data.turns.length === 0 && (
-            <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
-          )}
+      {/* The pill is a sibling of the scroller, not a child: inside it, it would
+          scroll away with the conversation. */}
+      <div className="relative min-h-0 flex-1">
+        <div ref={follow.scrollRef} className="h-full overflow-y-auto px-4 py-4">
+          <div ref={follow.contentRef} className="mx-auto max-w-4xl">
+            <TurnList
+              turns={detail.data.turns}
+              showThinking={showThinking}
+              expandTools={expandTools}
+              scrollToUuid={msg}
+              onOpenAgent={openAgent}
+            />
+            {detail.data.turns.length === 0 && (
+              <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
+            )}
+          </div>
         </div>
+        {follow.scrollable && <FollowBottomButton following={follow.following} toggle={follow.toggle} />}
       </div>
       {agentId && (
         <SubagentDrawer sessionId={id} agentId={agentId} showThinking={showThinking} onClose={closeAgent} />
