@@ -110,6 +110,19 @@ export interface UpdateRelease {
   installable: boolean;
 }
 
+/**
+ * Live progress of the step in flight. Only the download reports it — the
+ * other steps are seconds long and `state` says everything about them.
+ */
+export interface UpdateProgress {
+  receivedBytes: number;
+  /** Null only if the release did not declare a size and the server sent none. */
+  totalBytes: number | null;
+  /** 1 on the first try; higher means the transfer stalled and was resumed. */
+  attempt: number;
+  bytesPerSecond: number | null;
+}
+
 export interface UpdateStatusResponse {
   currentVersion: string;
   /** True when running from an installed layout (updates can be applied). */
@@ -120,6 +133,18 @@ export interface UpdateStatusResponse {
   lastCheckAt: string | null;
   lastError: string | null;
   state: UpdateState;
+  /**
+   * The version being installed, or null when nothing is being applied.
+   * Applying is fire-and-forget — the POST that starts it answers at once —
+   * so this, `state` and `progress` are the ONLY honest way for the UI to
+   * follow it. A client-side timer cannot tell a slow download from a dead
+   * server, and one that tried reported failures that had not happened.
+   */
+  applyingVersion: string | null;
+  progress: UpdateProgress | null;
+  /** Why the last apply failed (prefixed with the step), and when. */
+  lastApplyError: string | null;
+  lastApplyErrorAt: string | null;
 }
 
 // ---- Settings (persisted in userdata.json) ----
@@ -320,6 +345,8 @@ export const LOG_SOURCES = [
   'usage',
   'auto-reload',
   'updates',
+  /** Imported from the installer's update.log so an update reads as one timeline. */
+  'update-helper',
   'http',
   'console',
   'log',

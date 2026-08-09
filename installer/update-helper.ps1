@@ -13,7 +13,11 @@
 # ends. A helper spawned by the server (even detached) dies with it. Having
 # the Task Scheduler service start the helper puts it outside that tree.
 #
-# Everything is logged to <root>\update.log. PowerShell 5.1 compatible.
+# Everything is logged to <root>\update.log, which is ALSO the second half of
+# the app's own log: the server imports these lines under the `update-helper`
+# source on its next start, so the whole update reads as one timeline in the
+# log viewer. Hence the level tag - keep the "yyyy-MM-dd HH:mm:ss  [lvl] msg"
+# shape, the importer parses it. PowerShell 5.1 compatible, pure ASCII.
 
 param(
   [Parameter(Mandatory = $true)] [string]$Root,
@@ -27,8 +31,12 @@ $updateTaskName = 'claude-history-update'
 
 $ErrorActionPreference = 'Stop'
 $logFile = Join-Path $Root 'update.log'
-function Log([string]$msg) {
-  "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg" | Add-Content -Path $logFile -Encoding ASCII
+# One record per line, always: exception messages arrive with trailing newlines
+# and .NET ones can be several lines long, which would break both a person
+# reading this and the importer that copies these lines into the app's log.
+function Log([string]$msg, [string]$level = 'info') {
+  $flat = ($msg -replace "`r?`n", ' ').Trim()
+  "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  [$level] $flat" | Add-Content -Path $logFile -Encoding ASCII
 }
 
 function Get-MetaVersion {
@@ -39,11 +47,34 @@ function Get-MetaVersion {
   }
 }
 
+# Poll /api/meta for a specific version, reporting what actually answered along
+# the way: "it did not come up" and "the old one is still serving" are
+# different failures and only the log can tell them apart afterwards.
+#
+# Bounded by the CLOCK, not by a count of iterations. Counting was wrong by a
+# factor of five: with nothing listening, each Invoke-RestMethod costs about
+# two seconds before it gives up, so a "45s" health check really took nearly
+# four minutes - four minutes with the app down before the rollback started.
 function Wait-ForVersion([string]$expected, [int]$seconds) {
-  for ($i = 0; $i -lt $seconds * 2; $i++) {
+  $started = Get-Date
+  $deadline = $started.AddSeconds($seconds)
+  $seen = @{}
+  while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 500
-    if ((Get-MetaVersion) -eq $expected) { return $true }
+    $got = Get-MetaVersion
+    if ($got -eq $expected) {
+      Log "port $Port is serving $expected after $([int]((Get-Date) - $started).TotalSeconds)s"
+      return $true
+    }
+    $key = 'nothing'
+    if ($got) { $key = $got }
+    if (-not $seen.ContainsKey($key)) {
+      $seen[$key] = $true
+      if ($got) { Log "port $Port answers with $got, waiting for $expected" }
+      else { Log "port $Port is not answering yet, waiting for $expected" }
+    }
   }
+  Log "gave up waiting for $expected on port $Port after ${seconds}s" 'warn'
   return $false
 }
 
@@ -65,10 +96,10 @@ if ($Register) {
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     Register-ScheduledTask -TaskName $updateTaskName -Action $action -Settings $settings -Principal $principal -Force | Out-Null
     Start-ScheduledTask -TaskName $updateTaskName
-    Log "update task registered and started for $NewVersion"
+    Log "task '$updateTaskName' registered and started for $NewVersion (from $PSCommandPath)"
     exit 0
   } catch {
-    Log "FATAL registering update task: $($_.Exception.Message)"
+    Log "FATAL registering task '$updateTaskName': $($_.Exception.Message)" 'error'
     exit 1
   }
 }
@@ -76,14 +107,70 @@ if ($Register) {
 # The one-shot task that is running this script right now; removing it while
 # it runs is allowed and keeps Task Scheduler tidy.
 function Remove-UpdateTask {
-  try { Unregister-ScheduledTask -TaskName $updateTaskName -Confirm:$false -ErrorAction Stop } catch {}
+  try {
+    Unregister-ScheduledTask -TaskName $updateTaskName -Confirm:$false -ErrorAction Stop
+    Log "one-shot task '$updateTaskName' unregistered"
+  } catch {
+    Log "could not unregister '$updateTaskName': $($_.Exception.Message)" 'warn'
+  }
 }
 
+# Task Scheduler ignores Start-ScheduledTask on a task that is still Running,
+# and the outgoing server keeps its task Running for a moment after node
+# exits. Starting into that window looks like success and silently leaves
+# nothing serving, so wait for Ready first.
+function Wait-ForTaskReady([string]$name, [int]$seconds) {
+  $started = Get-Date
+  $deadline = $started.AddSeconds($seconds)
+  $first = $true
+  while ($true) {
+    try {
+      $state = (Get-ScheduledTask -TaskName $name -ErrorAction Stop).State
+    } catch {
+      Log "task '$name' cannot be read: $($_.Exception.Message)" 'error'
+      return $false
+    }
+    if ($state -ne 'Running') {
+      if (-not $first) { Log "task '$name' is $state after $([int]((Get-Date) - $started).TotalSeconds)s" }
+      return $true
+    }
+    $first = $false
+    if ((Get-Date) -ge $deadline) { break }
+    Start-Sleep -Milliseconds 500
+  }
+  Log "task '$name' is still Running after ${seconds}s - starting it anyway" 'warn'
+  return $false
+}
+
+function Start-AppTask([string]$name) {
+  Wait-ForTaskReady $name 20 | Out-Null
+  try {
+    Start-ScheduledTask -TaskName $name -ErrorAction Stop
+  } catch {
+    Log "Start-ScheduledTask '$name' failed: $($_.Exception.Message)" 'error'
+    return
+  }
+  Start-Sleep -Milliseconds 500
+  try {
+    $info = Get-ScheduledTaskInfo -TaskName $name -ErrorAction Stop
+    Log "task '$name' started (state $((Get-ScheduledTask -TaskName $name).State), last result $($info.LastTaskResult))"
+  } catch {
+    Log "task '$name' started, state unreadable: $($_.Exception.Message)" 'warn'
+  }
+}
+
+$sw = [Diagnostics.Stopwatch]::StartNew()
 try {
-  Log "=== update to $NewVersion starting (old server pid $ServerPid) ==="
+  Log "=== update to $NewVersion starting (helper pid $PID, old server pid $ServerPid, port $Port) ==="
+  Log "environment: PowerShell $($PSVersionTable.PSVersion), user $env:USERNAME, root $Root, script $PSCommandPath"
 
   $taskName = 'claude-history'
-  try { $taskName = (Get-Content (Join-Path $Root 'install.json') -Raw | ConvertFrom-Json).taskName } catch {}
+  try {
+    $taskName = (Get-Content (Join-Path $Root 'install.json') -Raw | ConvertFrom-Json).taskName
+    Log "app task name from install.json: $taskName"
+  } catch {
+    Log "install.json unreadable ($($_.Exception.Message)) - assuming task '$taskName'" 'warn'
+  }
 
   # 1. Wait for the old server to exit; force-kill as a last resort.
   $deadline = (Get-Date).AddSeconds(30)
@@ -91,9 +178,11 @@ try {
     Start-Sleep -Milliseconds 500
   }
   if (Get-Process -Id $ServerPid -ErrorAction SilentlyContinue) {
-    Log "old server still alive after 30s - killing pid $ServerPid"
+    Log "old server (pid $ServerPid) still alive after 30s - killing it" 'warn'
     & taskkill /PID $ServerPid /T /F | Out-Null
     Start-Sleep -Seconds 1
+  } else {
+    Log "old server (pid $ServerPid) is gone after $([int]$sw.Elapsed.TotalSeconds)s"
   }
 
   # 2. Swap the junction (remember the old target for rollback).
@@ -104,52 +193,75 @@ try {
   if (-not (Test-Path (Join-Path $newTarget 'server.cjs'))) { throw "staged version incomplete: $newTarget" }
   (Get-Item $current).Delete()
   New-Item -ItemType Junction -Path $current -Target $newTarget | Out-Null
-  Log "junction now points at $newTarget (was $oldTarget)"
+  Log "junction 'current' now points at $newTarget (was $oldTarget)"
 
   # 3. Restart and verify the new version answers.
-  Start-ScheduledTask -TaskName $taskName
   $expected = $NewVersion.TrimStart('v')
+  Start-AppTask $taskName
   if (Wait-ForVersion $expected 45) {
-    Log "update OK - $expected is serving"
+    Log "update OK - $expected is serving after $([int]$sw.Elapsed.TotalSeconds)s"
 
     # Refresh the root-level scripts from the new version (updates only
     # extract versions\, so these would otherwise stay at install-time).
     foreach ($f in @('install.ps1', 'uninstall.ps1', 'launch.vbs')) {
       $src = Join-Path $newTarget $f
-      if (Test-Path $src) { Copy-Item $src (Join-Path $Root $f) -Force -ErrorAction SilentlyContinue }
+      if (Test-Path $src) {
+        try {
+          Copy-Item $src (Join-Path $Root $f) -Force -ErrorAction Stop
+          Log "refreshed $f from $NewVersion"
+        } catch {
+          Log "could not refresh ${f}: $($_.Exception.Message)" 'warn'
+        }
+      }
     }
 
-    # 4. Prune old version folders, keeping the 3 newest (never the active one).
-    $keep = Get-ChildItem (Join-Path $Root 'versions') -Directory |
+    # 4. Prune version folders, keeping the 3 newest releases (never the
+    # active one). Anything not named vX.Y.Z - a local vdev build, a leftover
+    # - is not a release and goes too, which is worth saying out loud.
+    $versionsDir = Join-Path $Root 'versions'
+    $keep = Get-ChildItem $versionsDir -Directory |
       Where-Object { $_.Name -match '^v\d+\.\d+\.\d+' } |
       Sort-Object { [version](($_.Name.Substring(1)) -replace '-.*$', '') } -Descending |
       Select-Object -First 3
-    Get-ChildItem (Join-Path $Root 'versions') -Directory | Where-Object {
+    Log "keeping versions: $(($keep | ForEach-Object { $_.Name }) -join ', ')"
+    Get-ChildItem $versionsDir -Directory | Where-Object {
       $_.FullName -ne $newTarget -and $keep.FullName -notcontains $_.FullName
     } | ForEach-Object {
-      Log "pruning old version $($_.Name)"
-      Remove-Item $_.FullName -Recurse -Force
+      try {
+        Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
+        Log "pruned $($_.Name)"
+      } catch {
+        Log "could not prune $($_.Name): $($_.Exception.Message)" 'warn'
+      }
     }
+    Log "=== update to $NewVersion finished OK in $([int]$sw.Elapsed.TotalSeconds)s ==="
     Remove-UpdateTask
     exit 0
   }
 
   # 5. Rollback.
-  Log "new version did not answer within 45s - rolling back to $oldTarget"
-  try { Stop-ScheduledTask -TaskName $taskName } catch {}
+  Log "$expected did not answer within 45s - rolling back to $oldTarget" 'error'
+  try {
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction Stop
+    Log "stopped task '$taskName' before rolling back"
+  } catch {
+    Log "could not stop '$taskName' before rolling back: $($_.Exception.Message)" 'warn'
+  }
   Start-Sleep -Seconds 4
   (Get-Item $current).Delete()
   New-Item -ItemType Junction -Path $current -Target $oldTarget | Out-Null
-  Start-ScheduledTask -TaskName $taskName
+  Log "junction 'current' restored to $oldTarget"
+  Start-AppTask $taskName
   if (Wait-ForVersion (Split-Path $oldTarget -Leaf).TrimStart('v') 30) {
-    Log "rollback OK - previous version is serving again"
+    Log "=== rollback OK - the previous version is serving again (update to $NewVersion FAILED) ===" 'error'
   } else {
-    Log "rollback: previous version did not answer either - start it manually (Task Scheduler or the Start Menu shortcut)"
+    Log "=== rollback FAILED - nothing is serving on port $Port. Start it from the Start Menu shortcut or Task Scheduler ('$taskName' -> Run) ===" 'error'
   }
   Remove-UpdateTask
   exit 1
 } catch {
-  Log "FATAL: $($_.Exception.Message)"
+  Log "FATAL at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)" 'error'
+  if ($_.ScriptStackTrace) { Log "stack: $($_.ScriptStackTrace -replace "`r?`n", ' | ')" 'error' }
   Remove-UpdateTask
   exit 1
 }

@@ -162,6 +162,19 @@ function record(src: string, lvl: LogLevel, msg: string, extra?: unknown): void 
   emit(rec);
 }
 
+/**
+ * Write a record whose timestamp is NOT now, for lines imported from a log we
+ * did not write (the installer's update.log). Keeping the original time is the
+ * whole point: an update has to read as one ordered timeline, not as our
+ * records plus a block of foreign ones stamped whenever we happened to import
+ * them.
+ */
+export function recordImported(src: string, lvl: LogLevel, msg: string, when: Date, extra?: unknown): void {
+  const rec: LogRecord = { t: localIso(when), lvl, src, pid: process.pid, msg };
+  if (extra !== undefined) rec.data = extra;
+  emit(rec);
+}
+
 export interface Logger {
   debug(msg: string, extra?: unknown): void;
   info(msg: string, extra?: unknown): void;

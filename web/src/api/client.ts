@@ -154,7 +154,15 @@ export const api = {
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
-  stopServer: () => fetch('/api/server/stop', { method: 'POST' }),
+  // Refused (409) while an update is being installed — stopping would abort it.
+  stopServer: async () => {
+    const res = await fetch('/api/server/stop', { method: 'POST' });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    }
+    return { ok: true };
+  },
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
   lineage: (id: string) => getJson<LineageResponse>(`/api/sessions/${id}/lineage`),
   subagent: (id: string, agentId: string) =>

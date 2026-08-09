@@ -600,7 +600,12 @@ export function SettingsPage() {
               onClick={() => {
                 if (!confirm('Stop the claude-history server? This page will stop working until you start it again from the Start Menu shortcut or Task Scheduler.')) return;
                 setStopped(true);
-                void api.stopServer();
+                // The server refuses while an update is being installed:
+                // stopping would abort the download and lose it.
+                void api.stopServer().catch((e) => {
+                  setStopped(false);
+                  setNote(String(e instanceof Error ? e.message : e));
+                });
               }}
             >
               {stopped ? 'Stopping…' : 'Stop server'}

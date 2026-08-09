@@ -4,6 +4,7 @@ import { AutoReloadService } from './core/autoReload.ts';
 import { SessionIndex } from './core/index.ts';
 import { applyLogSettings, createLogger, initLogging } from './core/logger.ts';
 import { SearchService } from './core/search.ts';
+import { startUpdateLogImport } from './core/updateLogImport.ts';
 import { UpdateService } from './core/updates.ts';
 import { UsageService } from './core/usage.ts';
 import { Watcher } from './core/watcher.ts';
@@ -31,6 +32,10 @@ async function main(): Promise<void> {
 
   const search = new SearchService(index);
   const updates = new UpdateService();
+  // If we just came back from an update, the helper wrote the half of it we
+  // could not see (junction swap, restart, health check, rollback). Copy those
+  // lines in so the whole operation is one timeline here.
+  startUpdateLogImport(updates.install?.root ?? null, config.cacheDir);
   const usage = new UsageService(config.dataRoot);
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const app = await buildApp({ config, index, search, updates, usage, autoReload });

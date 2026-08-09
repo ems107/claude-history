@@ -79,6 +79,10 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
   app.post<{ Body?: { deleteData?: boolean } }>('/api/uninstall', async (request, reply) => {
     const install = ctx.updates.install;
     if (!install) return reply.code(400).send({ error: 'This instance is not a managed install (source or portable).' });
+    if (ctx.updates.isApplying()) {
+      log.warn('uninstall refused: an update is being installed');
+      return reply.code(409).send({ error: 'An update is being installed right now. Wait for it to finish.' });
+    }
     const script = path.join(install.versionDir, 'uninstall.ps1');
     if (!fs.existsSync(script)) {
       return reply.code(500).send({ error: `uninstall.ps1 not found in ${install.versionDir}` });
@@ -104,7 +108,18 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
   // Stop the server. When installed, the scheduled task's wscript wrapper
   // exits with it, so Task Scheduler reports the task as finished and the
   // Start Menu shortcut can start it again.
+  //
+  // Refused while an update is being installed: stopping here kills the
+  // download in flight and leaves nothing behind — which is exactly how one
+  // update was lost, since the natural reaction to a slow one is to stop and
+  // restart the server.
   app.post('/api/server/stop', async (_request, reply) => {
+    if (ctx.updates.isApplying()) {
+      log.warn('stop refused: an update is being installed');
+      return reply.code(409).send({
+        error: 'An update is being installed right now — stopping the server would abort it. Wait for it to finish.',
+      });
+    }
     void reply.send({ ok: true });
     setTimeout(() => {
       log.info('stop requested from the UI — exiting');
