@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   // could not see (junction swap, restart, health check, rollback). Copy those
   // lines in so the whole operation is one timeline here.
   startUpdateLogImport(updates.install?.root ?? null, config.cacheDir);
-  const usage = new UsageService(config.dataRoot);
+  const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const app = await buildApp({ config, index, search, updates, usage, autoReload });
   updates.start(() => index.getSettings());

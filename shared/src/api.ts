@@ -167,6 +167,33 @@ export interface AppSettings {
    */
   usageIntervalSeconds: number;
   /**
+   * Floor between two REAL reads, in seconds (minimum MIN_USAGE_INTERVAL_SECONDS).
+   * Anything asking sooner is served the figures already in hand. This is the
+   * one knob that bounds how often the (rate-limited) endpoint is called, so it
+   * applies to every trigger and to the server's own readers, not just the
+   * widget. The manual Refresh button is the sole exception.
+   */
+  usageMinIntervalSeconds: number;
+  /**
+   * Coming back to the window re-reads only if the figures are older than this
+   * (seconds). Focus fires far more often than people expect — every tab
+   * switch and every unminimize — and most of those land on figures that are
+   * seconds old. 0 means "always re-read".
+   */
+  usageFocusMaxAgeSeconds: number;
+  /**
+   * Re-read when Claude answers in any session. This is the trigger that
+   * matters: an `assistant` line being appended is the only local event that
+   * means tokens were just spent.
+   */
+  usageOnActivity: boolean;
+  /** Re-read on the idle interval (`usageIntervalSeconds`). */
+  usageOnInterval: boolean;
+  /** Re-read just after a window's `resetsAt`, to catch it dropping to 0%. */
+  usageOnReset: boolean;
+  /** Re-read when this window regains focus (see `usageFocusMaxAgeSeconds`). */
+  usageOnFocus: boolean;
+  /**
    * Keep the 5-hour usage window rolling: whenever the window is found NOT to
    * have started, run one throwaway Claude Code prompt to start it, so windows
    * follow each other instead of leaving dead hours. Driven by the server, so
@@ -195,6 +222,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   updateIntervalMinutes: 10,
   usageWidget: true,
   usageIntervalSeconds: 300,
+  usageMinIntervalSeconds: 15,
+  usageFocusMaxAgeSeconds: 60,
+  usageOnActivity: true,
+  usageOnInterval: true,
+  usageOnReset: true,
+  usageOnFocus: true,
   autoReloadEnabled: false,
   autoReloadModel: 'haiku',
   autoReloadMessage: 'Hi, Claude!',
@@ -207,7 +240,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
 /** Floor on log retention: keeping zero days would mean keeping nothing. */
 export const MIN_LOG_RETENTION_DAYS = 1;
 
-/** Hard floor between usage reads, whatever the idle cadence is set to. */
+/**
+ * Hard floor between usage reads. `usageMinIntervalSeconds` is configurable
+ * above this and never below it: the endpoint is undocumented and rate limits
+ * harder than its numbers suggest (429 observed after a dozen reads in fifteen
+ * minutes), so no setting may open the tap wider than this.
+ */
 export const MIN_USAGE_INTERVAL_SECONDS = 15;
 
 // ---- Auto-reload of the 5-hour window ----
@@ -265,9 +303,22 @@ export interface AutoReloadStatus {
   resetsAt: string | null;
   /** When the server will next ask Anthropic for the figures. */
   nextCheckAt: string | null;
+  /**
+   * When the scheduler last learned the state of the window — including from a
+   * reading the widget paid for, which is the usual case while the app is open.
+   */
   lastCheckAt: string | null;
-  /** Last usage-read failure, if the last read failed. */
+  /**
+   * Last usage-read failure, from the SHARED read state: if anything has read
+   * the figures successfully since, this is null. It is not a private tally of
+   * this feature's own reads — that is how the panel used to claim the token
+   * had expired while the header widget was showing perfectly good figures.
+   */
   lastError: string | null;
+  /** When the shared figures were last read successfully, by anyone. */
+  lastReadAt: string | null;
+  /** Which trigger made the last read attempt, whoever it belonged to. */
+  lastReadTrigger: UsageTrigger | null;
   lastRun: AutoReloadRun | null;
   /** Resolved claude executable; null when it could not be found. */
   cliPath: string | null;
@@ -283,20 +334,30 @@ export interface AutoReloadStatus {
  * that knows which, so it says so in the request.
  */
 export const USAGE_TRIGGERS = [
-  /** The header widget, cause not attributed (a retry, an unexpected refetch). */
+  /**
+   * The header widget with NO cause attributed. Every known cause below is
+   * labelled at its source, so this one means the browser really could not say
+   * why — an unexpected refetch from inside TanStack, or a read that reached
+   * the server without passing through `markUsageRead`. It is logged as such,
+   * in those words: a log that guesses is worse than one that admits it.
+   */
   'widget',
-  /** First read after the page loads. */
+  /** First read after the page loads (the widget mounting). */
   'widget-mount',
-  /** A transcript changed — the one trigger that means the figures moved. */
+  /** Claude answered — an `assistant` line was appended to some transcript. */
   'widget-activity',
   /** The idle fallback poll (`usageIntervalSeconds`). */
   'widget-interval',
-  /** Came back to the tab. */
+  /** Came back to the tab (subject to `usageFocusMaxAgeSeconds`). */
   'widget-focus',
   /** One-shot just after a window's `resetsAt`: nothing else announces a 0%. */
   'widget-reset',
   /** A settings save, which can enable or disable the widget. */
   'widget-settings',
+  /** Retrying a read that failed — TanStack's `retry`, not a new cause. */
+  'widget-retry',
+  /** After the auto-reload's "Send it now": a window may have just started. */
+  'widget-auto-reload',
   /** The Refresh button inside the usage popover. */
   'manual-refresh',
   /** The auto-reload asking whether the 5-hour window is free. */
@@ -417,7 +478,14 @@ export interface UpdateLogResponse {
 // ---- SSE events on /api/events ----
 
 export type ServerEvent =
-  | { type: 'sessions-changed'; ids: string[] }
+  /**
+   * Transcripts changed on disk. `assistantIds` is the subset where the bytes
+   * appended contain a real `assistant` line — i.e. Claude answered and tokens
+   * were spent. Every other write (your prompt, a tool result, the sidecar
+   * lines re-appended each turn) moves the file without moving the figures, so
+   * only this subset is worth a usage read.
+   */
+  | { type: 'sessions-changed'; ids: string[]; assistantIds: string[] }
   | { type: 'session-updated'; id: string }
   | { type: 'live-changed' }
   | { type: 'index-progress'; enriched: number; total: number }

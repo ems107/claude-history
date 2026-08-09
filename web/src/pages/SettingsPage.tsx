@@ -1,4 +1,10 @@
-import { type AppSettings, AUTO_RELOAD_MODELS, DEFAULT_SETTINGS, LOG_LEVEL_CHOICES } from '@claude-history/shared';
+import {
+  type AppSettings,
+  AUTO_RELOAD_MODELS,
+  DEFAULT_SETTINGS,
+  LOG_LEVEL_CHOICES,
+  MIN_USAGE_INTERVAL_SECONDS,
+} from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
@@ -185,6 +191,10 @@ function AutoReloadStatusPanel() {
       .finally(() => {
         setTesting(false);
         void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
+        // A window may have just started, so this read has a real cause — and
+        // one worth naming, since an unlabelled read here is precisely the kind
+        // that used to show up in the log as a bare, unexplained 'widget'.
+        markUsageRead('widget-auto-reload');
         void queryClient.invalidateQueries({ queryKey: ['usage'] });
       });
   };
@@ -229,8 +239,18 @@ function AutoReloadStatusPanel() {
           {st.nextCheckAt ? `${formatDateTime(st.nextCheckAt)} (in ${timeUntil(st.nextCheckAt) ?? '—'})` : 'not scheduled'}
         </span>
         <span className="opacity-60">last check</span>
+        <span>{st.lastCheckAt ? `${formatDateTime(st.lastCheckAt)} (${relativeTime(st.lastCheckAt)})` : 'never'}</span>
+        {/* The figures are read once and shared, so most of the time this says
+            the widget did the asking. That is the point: this panel and the
+            header can no longer disagree about the token or the window — and
+            the error belongs here, to the reading, not to the check above. */}
+        <span className="opacity-60">shared reading</span>
         <span>
-          {st.lastCheckAt ? `${formatDateTime(st.lastCheckAt)} (${relativeTime(st.lastCheckAt)})` : 'never'}
+          {st.lastReadAt
+            ? `${formatDateTime(st.lastReadAt)} (${relativeTime(st.lastReadAt)})${
+                st.lastReadTrigger ? ` · last asked by ${st.lastReadTrigger}` : ''
+              }`
+            : 'never read'}
           {st.lastError && <span className="ml-2 text-amber-400">{st.lastError}</span>}
         </span>
         <span className="opacity-60">claude cli</span>
@@ -365,53 +385,118 @@ export function SettingsPage() {
               hint="Reads the OAuth token stored by Claude Code (read-only, never refreshed or modified) and asks Anthropic for the same 5-hour and weekly figures /usage shows."
             />
           </Row>
-          <Row badge={<DefaultBadge field="usageIntervalSeconds" value={s.usageIntervalSeconds} save={save} />}>
+          <Row badge={<DefaultBadge field="usageMinIntervalSeconds" value={s.usageMinIntervalSeconds} save={save} />}>
             <label className="flex items-center gap-2">
-              <span>When idle, refresh every</span>
+              <span>Ask Anthropic at most once every</span>
               <input
                 type="number"
-                min={15}
+                min={MIN_USAGE_INTERVAL_SECONDS}
                 max={3600}
-                step={15}
-                value={s.usageIntervalSeconds}
+                step={5}
+                value={s.usageMinIntervalSeconds}
                 disabled={!s.usageWidget}
-                onChange={(e) => save({ usageIntervalSeconds: Number(e.target.value) })}
+                onChange={(e) => save({ usageMinIntervalSeconds: Number(e.target.value) })}
                 className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
               />
-              <span>seconds (minimum 15)</span>
+              <span>seconds (minimum {MIN_USAGE_INTERVAL_SECONDS})</span>
             </label>
+            <p className="mt-0.5 text-[11px] text-[var(--text-dim)]">
+              The floor for every trigger below and for the 5-hour auto-start, which all share one reading. Anything
+              asking sooner is given the figures already in hand, at no cost. The Refresh button is the one exception.
+            </p>
           </Row>
-          {/* The interval above is the least important of the triggers, so spell
-              out the whole set — otherwise it reads like a plain poll. */}
+
+          {/* Each trigger is a switch, and the ones with a number carry it
+              inline: a cadence you cannot see next to its own switch is a
+              setting you have to go looking for. */}
+          <div className="space-y-2 border-t border-[var(--border)] pt-3">
+            <p className="text-[var(--text)]">Re-read the figures:</p>
+
+            <Row badge={<DefaultBadge field="usageOnActivity" value={s.usageOnActivity} save={save} />}>
+              <Toggle
+                checked={s.usageOnActivity}
+                onChange={(v) => save({ usageOnActivity: v })}
+                disabled={!s.usageWidget}
+                label="When Claude answers"
+                hint="The trigger that matters: an assistant reply being written is the only local event that means tokens were just spent. Your own prompts, tool results and the bookkeeping lines rewritten every turn are ignored — they move the file, not the figures."
+              />
+            </Row>
+
+            <Row badge={<DefaultBadge field="usageOnInterval" value={s.usageOnInterval} save={save} />}>
+              <Toggle
+                checked={s.usageOnInterval}
+                onChange={(v) => save({ usageOnInterval: v })}
+                disabled={!s.usageWidget}
+                label="On a fixed interval while nothing happens here"
+                hint="Its one job is catching usage burnt somewhere else — another machine, the web app, your phone."
+              />
+              {/* The badge sits outside the label on purpose: inside it, a
+                  click on "default 300" would also grab the input. */}
+              <div className="mt-1 flex items-center gap-2">
+                <label className="flex items-center gap-2">
+                  <span>every</span>
+                  <input
+                    type="number"
+                    min={MIN_USAGE_INTERVAL_SECONDS}
+                    max={3600}
+                    step={15}
+                    value={s.usageIntervalSeconds}
+                    disabled={!s.usageWidget || !s.usageOnInterval}
+                    onChange={(e) => save({ usageIntervalSeconds: Number(e.target.value) })}
+                    className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+                  />
+                  <span>seconds</span>
+                </label>
+                <DefaultBadge field="usageIntervalSeconds" value={s.usageIntervalSeconds} save={save} />
+              </div>
+            </Row>
+
+            <Row badge={<DefaultBadge field="usageOnFocus" value={s.usageOnFocus} save={save} />}>
+              <Toggle
+                checked={s.usageOnFocus}
+                onChange={(v) => save({ usageOnFocus: v })}
+                disabled={!s.usageWidget}
+                label="When you come back to this window"
+                hint="Fires on every tab switch and every unminimize, which is far more often than it sounds — hence the tolerance below."
+              />
+              <div className="mt-1 flex items-center gap-2">
+                <label className="flex items-center gap-2">
+                  <span>but only if the figures are older than</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={3600}
+                    step={15}
+                    value={s.usageFocusMaxAgeSeconds}
+                    disabled={!s.usageWidget || !s.usageOnFocus}
+                    onChange={(e) => save({ usageFocusMaxAgeSeconds: Number(e.target.value) })}
+                    className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+                  />
+                  <span>seconds (0 = always)</span>
+                </label>
+                <DefaultBadge field="usageFocusMaxAgeSeconds" value={s.usageFocusMaxAgeSeconds} save={save} />
+              </div>
+            </Row>
+
+            <Row badge={<DefaultBadge field="usageOnReset" value={s.usageOnReset} save={save} />}>
+              <Toggle
+                checked={s.usageOnReset}
+                onChange={(v) => save({ usageOnReset: v })}
+                disabled={!s.usageWidget}
+                label="Just after a window resets"
+                hint="Nothing here announces a window dropping back to 0%, so without this the widget shows the old percentage until something else asks."
+              />
+            </Row>
+          </div>
+
           <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
-            <span className="text-[var(--text)]">When the figures are re-read:</span>
-            <ul className="mt-1 ml-4 list-disc space-y-1 marker:text-[var(--text-dim)]/50">
-              <li>
-                <span className="text-[var(--text)]">Whenever a session here changes</span> — your prompt, Claude’s
-                reply, a tool call. That is when the numbers actually move, so this is the trigger that matters. A turn
-                writes many times, so reads are limited to one every 15 seconds, with one final read once the writing
-                stops.
-              </li>
-              <li>
-                <span className="text-[var(--text)]">On the interval above</span>, but only while nothing is happening
-                locally. Its one job is catching usage burnt somewhere else — another machine, the web app, your phone.
-              </li>
-              <li>
-                <span className="text-[var(--text)]">Just after a window resets</span>, because nothing here announces a
-                window dropping back to 0%.
-              </li>
-              <li>
-                <span className="text-[var(--text)]">When you come back to this window</span>. It also keeps refreshing
-                while the window sits unfocused on another monitor; a fully hidden tab is slowed down by the browser and
-                catches up as soon as you return.
-              </li>
-              <li>
-                <span className="text-[var(--text)]">On demand</span>, with the Refresh button inside the usage popover.
-              </li>
-            </ul>
+            <p>
+              <span className="text-[var(--text)]">On demand</span> always works, with the Refresh button inside the
+              usage popover — it is the only read that ignores the floor above.
+            </p>
             <p className="mt-2">
               If a read fails, the last figures stay on screen marked as old (amber border) instead of the widget going
-              blank.
+              blank. Every read is written to the log with what caused it.
             </p>
           </div>
         </Section>

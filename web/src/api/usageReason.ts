@@ -12,14 +12,37 @@ import type { UsageTrigger } from '@claude-history/shared';
  * as plain 'widget' rather than inheriting somebody else's reason, because a log
  * that guesses is worse than one that admits it does not know.
  */
-let pending: UsageTrigger | null = null;
-
-export function markUsageRead(trigger: UsageTrigger): void {
-  pending = trigger;
+export interface UsageRead {
+  trigger: UsageTrigger;
+  /** Sessions Claude answered in — 'widget-activity' only. */
+  ids?: string[];
 }
 
-export function takeUsageReason(fallback: UsageTrigger): UsageTrigger {
-  const reason = pending ?? fallback;
-  pending = null;
-  return reason;
+/**
+ * How long after a failure an unattributed read is taken to be its retry.
+ * TanStack retries within a second or two; well outside that, an unlabelled
+ * read is a genuinely unknown one and must be reported as such.
+ */
+const RETRY_WINDOW_MS = 10_000;
+
+let pending: UsageRead | null = null;
+let lastFailedAt = 0;
+
+export function markUsageRead(trigger: UsageTrigger, ids?: string[]): void {
+  pending = { trigger, ids };
+}
+
+/** Called when a read fails, so its retry is not filed as a cause of its own. */
+export function markUsageReadFailed(): void {
+  lastFailedAt = Date.now();
+}
+
+export function takeUsageRead(): UsageRead {
+  if (pending) {
+    const read = pending;
+    pending = null;
+    return read;
+  }
+  if (Date.now() - lastFailedAt < RETRY_WINDOW_MS) return { trigger: 'widget-retry' };
+  return { trigger: 'widget' };
 }

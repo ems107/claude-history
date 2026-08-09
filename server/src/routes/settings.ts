@@ -7,9 +7,43 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { createLogger } from '../core/logger.ts';
+import type { ReadCause } from '../core/usage.ts';
 import { APP_VERSION } from '../version.ts';
 
 const log = createLogger('server');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Sessions named in the log line before it turns into a count. */
+const NAMED_SESSIONS = 2;
+
+/**
+ * What to say in the log beyond the trigger's name.
+ *
+ * `widget-activity` fires because Claude answered somewhere, and "somewhere"
+ * is the part worth recording: with several sessions running at once, the line
+ * is otherwise indistinguishable from every other one. The browser sends the
+ * session ids from the SSE event and they are resolved here, validated as
+ * UUIDs and looked up in the index — an id nobody knows is simply not named.
+ *
+ * Bare `widget` gets a cause too, and it is the honest one: every other reason
+ * is labelled at its source, so this one really is "the browser did not say".
+ */
+function describeCause(ctx: AppContext, trigger: UsageTrigger, ids?: string): ReadCause | undefined {
+  if (trigger === 'widget') return { text: 'the browser did not report a cause' };
+  if (trigger !== 'widget-activity') return undefined;
+  const list = (ids ?? '').split(',').filter((id) => UUID_RE.test(id));
+  if (list.length === 0) return { text: 'Claude answered' };
+  const named = list.slice(0, NAMED_SESSIONS).map((id) => {
+    const s = ctx.index.get(id);
+    return s ? `${s.projectName} · "${s.title}"` : id.slice(0, 8);
+  });
+  const rest = list.length - named.length;
+  const where = named.join(', ') + (rest > 0 ? ` and ${rest} more` : '');
+  return {
+    text: `Claude answered in ${where}`,
+    data: { sessions: list },
+  };
+}
 
 export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/settings', async () => ({
@@ -28,7 +62,7 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
     settings: await ctx.index.setSettings(request.body ?? {}),
   }));
 
-  app.get<{ Querystring: { reason?: string } }>('/api/usage', async (request): Promise<UsageResponse> => {
+  app.get<{ Querystring: { reason?: string; ids?: string } }>('/api/usage', async (request): Promise<UsageResponse> => {
     if (!ctx.index.getSettings().usageWidget) {
       return { available: false, error: null, windows: [], fetchedAt: null, subscriptionType: null, stale: false };
     }
@@ -40,10 +74,10 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       reason.startsWith('widget') && (USAGE_TRIGGERS as readonly string[]).includes(reason)
         ? (reason as UsageTrigger)
         : 'widget';
-    return ctx.usage.get(trigger);
+    return ctx.usage.get(trigger, { cause: describeCause(ctx, trigger, request.query.ids) });
   });
 
-  app.post('/api/usage/refresh', async (): Promise<UsageResponse> => ctx.usage.get('manual-refresh', true));
+  app.post('/api/usage/refresh', async (): Promise<UsageResponse> => ctx.usage.get('manual-refresh', { force: true }));
 
   // Wipe the derived cache; the index rebuilds it from ~/.claude on restart.
   // userdata.json lives outside cacheDir, so renames/pins/prices survive.

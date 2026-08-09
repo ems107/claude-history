@@ -5,7 +5,7 @@ import type { AppSettings, AutoReloadRun, AutoReloadStatus } from '@claude-histo
 import { validateAutoReload } from '@claude-history/shared';
 import { cleanEnv, findClaudeCli } from '../util/launcher.ts';
 import { createLogger, localStamp } from './logger.ts';
-import type { UsageService } from './usage.ts';
+import type { UsageReadEvent, UsageService } from './usage.ts';
 
 const log = createLogger('auto-reload');
 
@@ -21,6 +21,12 @@ const log = createLogger('auto-reload');
  * current window expires, so it sleeps on a local clock tick until that moment
  * (plus a minute of margin) and only then asks again. A day therefore costs
  * about five reads plus one per reload.
+ *
+ * It also does not read alone. Usage lives in one place (UsageService), and
+ * this service subscribes to it: whenever anything else reads — the header
+ * widget, most of the time — the answer arrives here too and the sleep is
+ * re-planned from it, free. Its own reads are what happens when nobody else is
+ * looking, which is the case this feature exists for.
  *
  * Guards, in order of importance — the failure mode to fear here is a loop
  * spawning Claude sessions forever:
@@ -69,6 +75,20 @@ const RUN_TIMEOUT_MS = 120_000;
  */
 const MIN_CHECK_GAP_MS = 60_000;
 const REPLY_MAX = 200;
+/**
+ * How old a shared reading may be and still answer "is the window alive?".
+ * `resets_at` does not move for five hours, so ten minutes is conservative —
+ * and it only ever applies to a reading that says the window IS alive. One
+ * reporting no window is always confirmed first-hand, because acting on that
+ * spawns a Claude session.
+ */
+const REUSE_READ_MS = 10 * 60_000;
+/**
+ * The endpoint returns `resets_at` jittering by a second between reads, so
+ * "the plan changed" has to mean more than arithmetic noise: only news that
+ * buys us at least this much extra sleep is worth re-planning (and logging).
+ */
+const REPLAN_MARGIN_MS = 60_000;
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -77,7 +97,13 @@ export class AutoReloadService {
   private resetsAt: number | null = null;
   private nextCheckAt = 0;
   private lastCheckAt: number | null = null;
-  private lastError: string | null = null;
+  /**
+   * Only for the scheduler throwing where it should not. Usage-read failures
+   * are NOT kept here: they belong to the shared UsageService, and a private
+   * copy of them is exactly how this panel ended up reporting an expired token
+   * for minutes after the widget had read the figures perfectly well.
+   */
+  private lastCrash: string | null = null;
   private lastRun: AutoReloadRun | null = null;
   private lastRunAt = 0;
   private failures = 0;
@@ -102,6 +128,7 @@ export class AutoReloadService {
     this.signature = this.configSignature();
     void this.resolveCli();
     setInterval(() => void this.tick(), TICK_MS).unref();
+    this.usage.events.on('read', (e: UsageReadEvent) => this.onUsageRead(e));
     // Saving a setting is the user's way of saying "try again": it clears the
     // pause and the backoff. Only re-check straight away when it can change the
     // answer, though — every other save would spend a usage read for nothing.
@@ -119,6 +146,33 @@ export class AutoReloadService {
       this.nextCheckAt = Math.max(Date.now(), (this.lastCheckAt ?? 0) + MIN_CHECK_GAP_MS);
       void this.tick();
     });
+  }
+
+  /**
+   * Somebody else read usage. If it says the window is alive well past the
+   * moment we were going to wake up for, we have just been told the answer to
+   * the question we were going to ask — so take it and sleep longer.
+   *
+   * Deliberately one-directional: this can only postpone the next check, never
+   * bring it forward and never trigger anything. A failed read is ignored
+   * outright (a failure is not news about the window), and a reading that
+   * reports no window is left to `check()`, which will confirm it first-hand
+   * before anything gets spawned.
+   */
+  private onUsageRead(e: UsageReadEvent): void {
+    if (!e.probe.ok || !e.probe.resetsAt || this.busy) return;
+    const s = this.getSettings();
+    if (!s.autoReloadEnabled || this.pausedReason || this.configError(s)) return;
+    const resetsAt = Date.parse(e.probe.resetsAt);
+    if (!Number.isFinite(resetsAt) || resetsAt <= Date.now()) return;
+    // Keep the displayed expiry current whatever happens; only re-plan (and
+    // say so) when the news is worth more than the endpoint's own jitter.
+    this.resetsAt = resetsAt;
+    this.lastCheckAt = Date.now();
+    this.readBackoffStep = 0;
+    const planned = resetsAt + RESET_MARGIN_MS;
+    if (planned <= this.nextCheckAt + REPLAN_MARGIN_MS) return;
+    this.sleepUntilReset(resetsAt, `the ${e.trigger} read`);
   }
 
   /** Only the fields that change what a check would do. */
@@ -162,6 +216,10 @@ export class AutoReloadService {
     const configError = this.configError(s);
     const active = s.autoReloadEnabled && !configError && !this.pausedReason;
     const iso = (ms: number | null): string | null => (ms ? new Date(ms).toISOString() : null);
+    // Straight from the shared read state, so this panel says exactly what the
+    // header widget says. A read of ours that failed and was then followed by a
+    // successful one from anywhere else is not a problem worth reporting here.
+    const read = this.usage.readState();
     return {
       enabled: s.autoReloadEnabled,
       active,
@@ -171,7 +229,9 @@ export class AutoReloadService {
       resetsAt: iso(this.resetsAt),
       nextCheckAt: active ? iso(this.nextCheckAt) : null,
       lastCheckAt: iso(this.lastCheckAt),
-      lastError: this.lastError,
+      lastError: read.lastError ?? this.lastCrash,
+      lastReadAt: read.lastGoodAt,
+      lastReadTrigger: read.lastTrigger,
       lastRun: this.lastRun,
       cliPath: this.cliPath ?? null,
     };
@@ -222,8 +282,9 @@ export class AutoReloadService {
     this.busy = true;
     try {
       await this.check(s);
+      this.lastCrash = null;
     } catch (err) {
-      this.lastError = err instanceof Error ? err.message : String(err);
+      this.lastCrash = err instanceof Error ? err.message : String(err);
       this.nextCheckAt = Date.now() + RETRY_MS;
       log.warn('check failed', err);
     } finally {
@@ -233,23 +294,25 @@ export class AutoReloadService {
 
   /** Read usage, then either sleep until the window expires or reload now. */
   private async check(s: AppSettings): Promise<void> {
-    const probe = await this.usage.probeFiveHour('auto-reload-check');
+    // A reading somebody else already paid for answers this just as well, as
+    // long as it says the window is alive: `resets_at` does not move.
+    const probe = await this.usage.probeFiveHour('auto-reload-check', { reuseWindowMs: REUSE_READ_MS });
+    const age = Date.now() - probe.at;
+    const source = age > 2_000 ? `the shared reading from ${Math.round(age / 1000)} s ago` : 'its own read';
     this.lastCheckAt = Date.now();
 
     if (!probe.ok) {
-      this.lastError = probe.error;
       const ladder = probe.kind === 'network' ? NETWORK_BACKOFF_MS : READ_BACKOFF_MS;
       const wait = ladder[Math.min(this.readBackoffStep++, ladder.length - 1)];
       this.nextCheckAt = Date.now() + wait;
       log.warn(`usage read failed (${probe.kind}: ${probe.error}) — retrying in ${Math.round(wait / 1000)} s`);
       return;
     }
-    this.lastError = null;
     this.readBackoffStep = 0;
 
     const resetsAt = probe.resetsAt ? Date.parse(probe.resetsAt) : NaN;
     if (Number.isFinite(resetsAt) && resetsAt > Date.now()) {
-      this.sleepUntilReset(resetsAt);
+      this.sleepUntilReset(resetsAt, source);
       return;
     }
 
@@ -265,11 +328,12 @@ export class AutoReloadService {
     await this.reload(s, false);
   }
 
-  private sleepUntilReset(resetsAt: number): void {
+  /** `source` says where the expiry came from — our own read, or someone else's. */
+  private sleepUntilReset(resetsAt: number, source: string): void {
     this.resetsAt = resetsAt;
     this.nextCheckAt = resetsAt + RESET_MARGIN_MS;
     const hours = ((resetsAt - Date.now()) / 3_600_000).toFixed(1);
-    log.info(`5-hour window runs until ${localStamp(resetsAt)} (${hours} h) — sleeping`);
+    log.info(`5-hour window runs until ${localStamp(resetsAt)} (${hours} h) — sleeping, per ${source}`);
   }
 
   /**
@@ -318,25 +382,25 @@ export class AutoReloadService {
     }
 
     // The reply proves Claude answered, not that a window opened. Read it back.
+    // Forced: this is the one read whose whole job is to see a change, so a
+    // reading taken before the prompt is worse than useless here.
     await delay(VERIFY_DELAY_MS);
-    const probe = await this.usage.probeFiveHour('auto-reload-verify');
+    const probe = await this.usage.probeFiveHour('auto-reload-verify', { force: true });
     this.lastCheckAt = Date.now();
     if (!probe.ok) {
       // Blame the read, not the reload: the window may well have started. The
       // cooldown keeps this from turning into a stream of prompts.
-      this.lastError = probe.error;
       run.error = `sent, but the usage read-back failed (${probe.error})`;
       this.nextCheckAt = Date.now() + 2 * 60_000;
       log.warn(`${run.error}`);
       return run;
     }
-    this.lastError = null;
     const resetsAt = probe.resetsAt ? Date.parse(probe.resetsAt) : NaN;
     if (Number.isFinite(resetsAt) && resetsAt > Date.now()) {
       run.windowStarted = true;
       this.failures = 0;
       this.pausedReason = null;
-      this.sleepUntilReset(resetsAt);
+      this.sleepUntilReset(resetsAt, 'the read-back after the prompt');
       return run;
     }
     run.error = 'the prompt ran but Anthropic still reports no 5-hour window';

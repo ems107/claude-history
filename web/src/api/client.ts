@@ -18,7 +18,10 @@ import type {
   UpdateStatusResponse,
   UsageResponse,
 } from '@claude-history/shared';
-import { takeUsageReason } from './usageReason.ts';
+import { markUsageReadFailed, takeUsageRead } from './usageReason.ts';
+
+/** Enough to name what moved without turning the URL into a list of UUIDs. */
+const IDS_PER_READ = 4;
 
 export interface SettingsResponse {
   settings: AppSettings;
@@ -130,8 +133,20 @@ export const api = {
   },
   // The reason travels with the request: the server cannot tell a read caused by
   // Claude answering from one caused by refocusing the tab, and the difference is
-  // the whole value of the log line.
-  usage: () => getJson<UsageResponse>(`/api/usage?reason=${takeUsageReason('widget')}`),
+  // the whole value of the log line. Activity reads carry the sessions that
+  // moved, too — with several running at once, "Claude answered" alone does not
+  // say where. A failure is reported back so its retry is logged as a retry.
+  usage: async () => {
+    const read = takeUsageRead();
+    const params = new URLSearchParams({ reason: read.trigger });
+    if (read.ids?.length) params.set('ids', read.ids.slice(0, IDS_PER_READ).join(','));
+    try {
+      return await getJson<UsageResponse>(`/api/usage?${params.toString()}`);
+    } catch (err) {
+      markUsageReadFailed();
+      throw err;
+    }
+  },
   usageRefresh: async () => {
     const res = await fetch('/api/usage/refresh', { method: 'POST' });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);

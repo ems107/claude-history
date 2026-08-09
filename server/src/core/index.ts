@@ -20,6 +20,7 @@ import {
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
+import { appendedText, safeParse, str } from './jsonl.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
 import { readLiveSessions } from './live.ts';
 import { createLogger } from './logger.ts';
@@ -28,6 +29,46 @@ import { scanSessions, type ScannedSession } from './scanner.ts';
 import { summarizeSession } from './summarizer.ts';
 
 const log = createLogger('index');
+
+/**
+ * A whole number at or above `min`, falling back to the stored value. The
+ * fallback matters: settings arrive from a JSON body, where a cleared number
+ * input is NaN — and a NaN floor compares false against everything, quietly
+ * turning "at most one read every N seconds" into "read every time".
+ */
+function clampInt(patched: number | undefined, current: number, min: number): number {
+  const value = Math.round(patched ?? current);
+  if (!Number.isFinite(value)) return Math.max(min, Number.isFinite(current) ? current : min);
+  return Math.max(min, value);
+}
+
+/**
+ * Did Claude answer in this session since the last scan?
+ *
+ * Reads only the bytes appended and looks for a real `assistant` line. The
+ * substring is checked first because it settles the common case (a sidecar
+ * rewrite) without parsing anything; it is not trusted on its own, since a
+ * tool result quoting a transcript carries the same text — this app's own
+ * sessions are full of them.
+ */
+async function hasAssistantWrite(s: ScannedSession, previousBytes: number): Promise<boolean> {
+  // Shrunk or rewritten: there is no delta to read, so fall back to counting
+  // it. Rare, and erring towards one extra read beats missing real spend.
+  if (s.sizeBytes < previousBytes) return true;
+  if (s.sizeBytes === previousBytes) return false;
+  try {
+    const text = await appendedText(s.filePath, previousBytes);
+    if (!text.includes('"type":"assistant"')) return false;
+    for (const line of text.split('\n')) {
+      const rec = safeParse(line);
+      if (rec && str(rec.type) === 'assistant') return true;
+    }
+    return false;
+  } catch {
+    // The file went away or is locked mid-write; the next scan will tell.
+    return false;
+  }
+}
 
 interface IndexCacheFile {
   version: number;
@@ -129,17 +170,29 @@ export class SessionIndex {
   /**
    * Incremental rescan for watcher updates: re-summarize files whose
    * size/mtime changed, add new ones, prune deleted ones.
+   *
+   * Also classifies each change: `assistantIds` are the sessions where the
+   * bytes appended contain a real `assistant` line, i.e. Claude answered. Only
+   * those mean tokens were spent — a typed prompt, a tool result and the
+   * sidecar lines rewritten every turn all move the file without moving the
+   * subscription figures, and reading usage for them was pure noise.
    */
   async rescan(): Promise<void> {
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
     const changed: string[] = [];
+    const assistantIds: string[] = [];
     for (const s of scanned) {
       seen.add(s.id);
       const prev = this.scanned.get(s.id);
       if (prev && prev.sizeBytes === s.sizeBytes && prev.mtimeMs === s.mtimeMs && prev.subagentCount === s.subagentCount) {
         continue;
       }
+      // Classify before refreshSummary records the new size — the previous one
+      // is where the delta starts. A file we have never seen is deliberately
+      // not counted: a new session's first write is its header and prompt, and
+      // a resumed one is copied history whose tokens were spent long ago.
+      if (prev && (await hasAssistantWrite(s, prev.sizeBytes))) assistantIds.push(s.id);
       await this.refreshSummary(s);
       changed.push(s.id);
       void this.enrichOne(s);
@@ -154,7 +207,7 @@ export class SessionIndex {
     if (changed.length > 0) {
       this.applyLive();
       this.saveIndexCache();
-      this.events.emit('sessions-changed', { ids: changed });
+      this.events.emit('sessions-changed', { ids: changed, assistantIds });
     }
   }
 
@@ -299,10 +352,16 @@ export class SessionIndex {
         5,
         Math.round(patch.updateIntervalMinutes ?? this.settings.updateIntervalMinutes),
       ),
-      usageIntervalSeconds: Math.max(
+      usageIntervalSeconds: clampInt(patch.usageIntervalSeconds, this.settings.usageIntervalSeconds, MIN_USAGE_INTERVAL_SECONDS),
+      // The floor between real reads. Never below the hard one: this is the
+      // only thing standing between a burst of triggers and a 429.
+      usageMinIntervalSeconds: clampInt(
+        patch.usageMinIntervalSeconds,
+        this.settings.usageMinIntervalSeconds,
         MIN_USAGE_INTERVAL_SECONDS,
-        Math.round(patch.usageIntervalSeconds ?? this.settings.usageIntervalSeconds),
       ),
+      // 0 is meaningful here: "always re-read when the window regains focus".
+      usageFocusMaxAgeSeconds: clampInt(patch.usageFocusMaxAgeSeconds, this.settings.usageFocusMaxAgeSeconds, 0),
       autoReloadModel: (AUTO_RELOAD_MODELS as readonly string[]).includes(
         patch.autoReloadModel ?? this.settings.autoReloadModel,
       )

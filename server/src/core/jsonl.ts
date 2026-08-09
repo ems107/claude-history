@@ -78,6 +78,55 @@ export async function tailLines(filePath: string, n: number): Promise<string[]> 
   }
 }
 
+/** How far back to look for the newline that starts a straddled line. */
+const ALIGN_LOOKBACK = 64 * 1024;
+
+/**
+ * The text appended to a file since it was `from` bytes long — how a change is
+ * classified without re-reading the file. Capped at `cap` (the tail of the
+ * delta, which is the recent end) because a session that grew by megabytes
+ * between two scans is not worth reading in full to answer a yes/no question.
+ *
+ * The start is pulled back to a line boundary. Transcripts are appended while
+ * we watch them, so a scan can land mid-line — and a delta beginning inside a
+ * line hides what that line was, since the `type` is at its start. The price is
+ * re-reading one line we may already have seen, which is exactly the right
+ * trade when the alternative is silently missing it. The END can still be
+ * partial, so callers must parse defensively (`safeParse` rejects fragments).
+ */
+export async function appendedText(filePath: string, from: number, cap = 512 * 1024): Promise<string> {
+  const fh = await fsp.open(filePath, 'r');
+  try {
+    const { size } = await fh.stat();
+    let start = Math.max(0, Math.min(from, size));
+    // One byte settles the common case: whole lines are appended, so `from`
+    // usually sits right after a newline and no look-back is needed at all.
+    if (start > 0) {
+      const prev = Buffer.alloc(1);
+      await fh.read(prev, 0, 1, start - 1);
+      if (prev[0] !== 0x0a) {
+        const back = Math.max(0, start - ALIGN_LOOKBACK);
+        const probe = Buffer.alloc(start - back);
+        await fh.read(probe, 0, probe.length, back);
+        const nl = probe.lastIndexOf(0x0a);
+        // No newline within the look-back: one line longer than that is not
+        // worth chasing further, so take the delta as it is.
+        if (nl >= 0) start = back + nl + 1;
+      }
+    }
+    // Past the cap, keep the recent end: "did Claude just answer?" is a
+    // question about the last thing written, not the first.
+    start = Math.max(start, size - cap);
+    const len = Math.max(0, size - start);
+    if (len === 0) return '';
+    const buf = Buffer.alloc(len);
+    await fh.read(buf, 0, len, start);
+    return buf.toString('utf8');
+  } finally {
+    await fh.close();
+  }
+}
+
 /** Stream every line of the file (for full parses). */
 export async function* streamLines(filePath: string): AsyncGenerator<string> {
   const stream = fs.createReadStream(filePath, { encoding: 'utf8' });

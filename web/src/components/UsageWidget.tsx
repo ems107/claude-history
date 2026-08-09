@@ -1,8 +1,10 @@
-import type { UsageWindow } from '@claude-history/shared';
+import type { AppSettings, UsageResponse, UsageWindow } from '@claude-history/shared';
+import { MIN_USAGE_INTERVAL_SECONDS } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
+import { readUsageSettings } from '../api/usageSettings.ts';
 import { formatDateTime, timeSince, timeUntil } from '../lib/format.ts';
 
 function barColor(pct: number): string {
@@ -63,6 +65,22 @@ function WindowRow({ w }: { w: UsageWindow }) {
 }
 
 /**
+ * What will actually refresh these figures, given which triggers are switched
+ * on. Spelled out rather than assumed: with every switch off, the only thing
+ * that moves them is the button right above this line, and a widget quietly
+ * showing figures from an hour ago would be worse than no widget.
+ */
+function cadenceText(s: AppSettings | undefined): string {
+  if (!s) return 'refreshed automatically';
+  const parts: string[] = [];
+  if (s.usageOnActivity) parts.push('when Claude answers');
+  if (s.usageOnInterval) parts.push(`every ${s.usageIntervalSeconds}s while idle`);
+  if (s.usageOnFocus) parts.push('when you come back to this window');
+  if (s.usageOnReset) parts.push('just after a reset');
+  return parts.length > 0 ? `refreshed ${parts.join(', ')}` : 'refreshed only with the button above';
+}
+
+/**
  * Claude subscription usage in the header: the 5-hour window and the weekly
  * one, same numbers as Claude Code's /usage. Read-only — the server reads the
  * stored OAuth token and never refreshes it.
@@ -71,7 +89,18 @@ export function UsageWidget() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
-  const refreshMs = Math.max(15, settings.data?.settings.usageIntervalSeconds ?? 60) * 1000;
+  const s = settings.data?.settings;
+  const refreshMs = Math.max(MIN_USAGE_INTERVAL_SECONDS, s?.usageIntervalSeconds ?? 60) * 1000;
+
+  // The first read has a cause like every other one. Marked here, before the
+  // query below can fire, and only when there is nothing cached yet — a
+  // remount that reuses the cached figures reads nothing, and a mount label
+  // left pending would end up on somebody else's read.
+  const mountMarked = useRef(false);
+  if (!mountMarked.current) {
+    mountMarked.current = true;
+    if (!queryClient.getQueryData(['usage'])) markUsageRead('widget-mount');
+  }
   const { data } = useQuery({ queryKey: ['usage'], queryFn: api.usage });
 
   /**
@@ -84,15 +113,29 @@ export function UsageWidget() {
    * a second monitor while Claude works, and watching the bars move there is
    * half the point. A genuinely hidden tab gets throttled by the browser, which
    * is fine — nobody is looking — and becoming visible again reads at once.
+   *
+   * Both are switchable off, and both read their settings when they fire
+   * rather than closing over them, so a toggle takes effect immediately.
    */
   useEffect(() => {
     const read = (trigger: 'widget-interval' | 'widget-focus') => {
       markUsageRead(trigger);
       void queryClient.invalidateQueries({ queryKey: ['usage'] });
     };
-    const iv = setInterval(() => read('widget-interval'), refreshMs);
+    const iv = setInterval(() => {
+      if (readUsageSettings(queryClient).usageOnInterval) read('widget-interval');
+    }, refreshMs);
     const onVisible = () => {
-      if (document.visibilityState === 'visible') read('widget-focus');
+      if (document.visibilityState !== 'visible') return;
+      const current = readUsageSettings(queryClient);
+      if (!current.usageOnFocus) return;
+      // Focus fires far more often than people expect — every tab switch, every
+      // unminimize — and usually onto figures that are seconds old. Ask only
+      // when they have actually aged past the configured tolerance.
+      const fetchedAt = queryClient.getQueryData<UsageResponse>(['usage'])?.fetchedAt;
+      const age = fetchedAt ? Date.now() - Date.parse(fetchedAt) : Number.POSITIVE_INFINITY;
+      if (age < current.usageFocusMaxAgeSeconds * 1_000) return;
+      read('widget-focus');
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
@@ -123,6 +166,7 @@ export function UsageWidget() {
     // setTimeout overflows past ~24.8 days and would fire immediately.
     const delay = Math.min(nextReset + 3_000 - Date.now(), 2_147_483_647);
     const t = setTimeout(() => {
+      if (!readUsageSettings(queryClient).usageOnReset) return;
       markUsageRead('widget-reset');
       void queryClient.invalidateQueries({ queryKey: ['usage'] });
     }, Math.max(0, delay));
@@ -219,8 +263,7 @@ export function UsageWidget() {
               </div>
             )}
             <p className="mt-3 text-[10px] leading-snug text-[var(--text-dim)]">
-              Same figures as Claude Code’s /usage. Read from your stored session, never modified; refreshed on session
-              activity, otherwise every {Math.round(refreshMs / 1000)}s
+              Same figures as Claude Code’s /usage. Read from your stored session, never modified; {cadenceText(s)}
               {data.fetchedAt ? ` · last ${timeSince(data.fetchedAt)}` : ''}.
             </p>
           </div>
