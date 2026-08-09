@@ -32,8 +32,13 @@ const log = createLogger('auto-reload');
  * spawning Claude sessions forever:
  *   - a failed/stale usage read is never read as "no window" (see FiveHourProbe)
  *   - one check or reload at a time (`busy`)
- *   - COOLDOWN_MS between two reloads, whatever else happens
+ *   - COOLDOWN_MS between two reloads, whatever else happens (`waitOutCooldown`,
+ *     which every path ending in a prompt goes through)
  *   - MAX_FAILURES verified failures in a row and it stops itself
+ *
+ * The one failure it answers by acting rather than waiting is a stale stored
+ * token: only running Claude Code refreshes it, so waiting guarantees the same
+ * failure next time. See `check()`.
  */
 
 const TICK_MS = 30_000;
@@ -251,7 +256,7 @@ export class AutoReloadService {
     if (configError) throw new Error(configError);
     this.busy = true;
     try {
-      return await this.reload(s, true);
+      return await this.reload(s, true, 'manual run');
     } finally {
       this.busy = false;
     }
@@ -302,6 +307,23 @@ export class AutoReloadService {
     this.lastCheckAt = Date.now();
 
     if (!probe.ok) {
+      /**
+       * A stale token is the one failure that waiting cannot fix, and the one
+       * this feature is uniquely able to fix: the token is refreshed by
+       * running Claude Code, which is precisely the thing it exists to do.
+       * Backing off here was absurd — five minutes later the token is just as
+       * expired, and the fix was sitting behind the wait the whole time.
+       *
+       * Only `auth-stale` (a token that exists and has gone bad). With no
+       * credentials at all there is nothing to refresh: `claude -p` would only
+       * fail, so that one really does wait for a person.
+       */
+      if (probe.kind === 'auth-stale') {
+        if (this.waitOutCooldown('the stored token is stale')) return;
+        // The error itself is on the `usage` line just above, verbatim.
+        await this.reload(s, false, 'the stored token is stale, and running Claude Code is what refreshes it');
+        return;
+      }
       const ladder = probe.kind === 'network' ? NETWORK_BACKOFF_MS : READ_BACKOFF_MS;
       const wait = ladder[Math.min(this.readBackoffStep++, ladder.length - 1)];
       this.nextCheckAt = Date.now() + wait;
@@ -324,15 +346,21 @@ export class AutoReloadService {
     }
 
     this.resetsAt = null;
-    const sinceLastRun = Date.now() - this.lastRunAt;
-    if (this.lastRunAt > 0 && sinceLastRun < COOLDOWN_MS) {
-      this.nextCheckAt = this.lastRunAt + COOLDOWN_MS;
-      log.info(
-        `no 5-hour window, but the last reload was ${Math.round(sinceLastRun / 60_000)} min ago — waiting out the cooldown`,
-      );
-      return;
-    }
-    await this.reload(s, false);
+    if (this.waitOutCooldown('no 5-hour window')) return;
+    await this.reload(s, false, 'no 5-hour window');
+  }
+
+  /**
+   * The floor between two prompts, whatever the reason for sending one. Every
+   * path that ends in `reload()` goes through here: the anti-loop guarantee is
+   * that no reason, however good, can send two messages within COOLDOWN_MS.
+   */
+  private waitOutCooldown(why: string): boolean {
+    const since = Date.now() - this.lastRunAt;
+    if (this.lastRunAt === 0 || since >= COOLDOWN_MS) return false;
+    this.nextCheckAt = this.lastRunAt + COOLDOWN_MS;
+    log.info(`${why}, but the last reload was ${Math.round(since / 60_000)} min ago — waiting out the cooldown`);
+    return true;
   }
 
   /** `source` says where the expiry came from — our own read, or someone else's. */
@@ -345,9 +373,11 @@ export class AutoReloadService {
 
   /**
    * Send the prompt, then read usage back to learn the new expiry. The caller
-   * owns the `busy` mutex.
+   * owns the `busy` mutex, and passes the `reason` it decided to send — there
+   * are three now, and a line that always said "no 5-hour window" would be
+   * wrong two thirds of the time.
    */
-  private async reload(s: AppSettings, manual: boolean): Promise<AutoReloadRun> {
+  private async reload(s: AppSettings, manual: boolean, reason: string): Promise<AutoReloadRun> {
     const startedAt = Date.now();
     this.lastRunAt = startedAt;
     const cwd = s.autoReloadCwd.trim();
@@ -366,7 +396,7 @@ export class AutoReloadService {
     };
     this.lastRun = run;
 
-    log.info(`${manual ? 'manual run' : 'no 5-hour window'} — sending "${message}" (${s.autoReloadModel}) in ${cwd}`);
+    log.info(`${reason} — sending "${message}" (${s.autoReloadModel}) in ${cwd}`);
     try {
       const cli = await this.resolveCli();
       if (!cli) throw new Error('the claude CLI could not be found');
@@ -395,8 +425,18 @@ export class AutoReloadService {
     const probe = await this.usage.probeFiveHour('auto-reload-verify', { force: true });
     this.lastCheckAt = Date.now();
     if (!probe.ok) {
-      // Blame the read, not the reload: the window may well have started. The
-      // cooldown keeps this from turning into a stream of prompts.
+      // A token still stale after Claude Code has just run is not a blip: the
+      // one thing that refreshes it has happened and it did not take, so
+      // sending again would be repeating something that demonstrably does not
+      // work. Count it, and let MAX_FAILURES stop this by itself.
+      if (probe.kind === 'auth-stale') {
+        run.error = `sent, but the stored token is still stale afterwards (${probe.error})`;
+        this.countFailure(run.error);
+        log.warn(`${run.error}`);
+        return run;
+      }
+      // Otherwise blame the read, not the reload: the window may well have
+      // started. The cooldown keeps this from turning into a stream of prompts.
       run.error = `sent, but the usage read-back failed (${probe.error})`;
       this.nextCheckAt = Date.now() + 2 * 60_000;
       log.warn(`${run.error}`);

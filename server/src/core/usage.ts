@@ -73,7 +73,19 @@ export function normalizeUsage(raw: RawUsage): UsageWindow[] {
  * seconds), while `http` (429, 5xx) and `auth` want to be left alone for
  * minutes.
  */
-export type ProbeFailure = 'network' | 'http' | 'auth';
+/**
+ * Why a read failed. Worth distinguishing because the right response is
+ * completely different for each, and two of them are not waits at all:
+ *
+ *   - `network`: the wire was down. A laptop waking up is back in seconds.
+ *   - `http`: 429 or 5xx. Leave it alone for minutes (see the 429 cooldown).
+ *   - `auth-missing`: no credentials, or none with a token. Nothing automatic
+ *     fixes this — somebody has to sign in.
+ *   - `auth-stale`: there IS a token and it is expired or rejected. Waiting
+ *     makes this strictly worse, because the only thing that refreshes it is
+ *     Claude Code being run — which is exactly what the auto-reload does.
+ */
+export type ProbeFailure = 'network' | 'http' | 'auth-missing' | 'auth-stale';
 
 /**
  * Outcome of reading the 5-hour window, with "the read failed" kept strictly
@@ -275,14 +287,17 @@ export class UsageService {
       this.events.emit('read', { trigger, probe: this.probe });
     };
 
-    // Only ever used for credential problems, which no amount of retrying fixes.
-    const empty = (error: string, subscriptionType: string | null = null): UsageResponse => {
+    // Credential problems, which no amount of retrying fixes — but `auth-stale`
+    // is fixed by USING Claude Code, so the kind is carried through: it is what
+    // lets the auto-reload answer a dead token by doing its job instead of
+    // waiting out a backoff that could never change the outcome.
+    const empty = (error: string, kind: ProbeFailure, subscriptionType: string | null = null): UsageResponse => {
       const result: UsageResponse = { available: false, error, windows: [], fetchedAt: null, subscriptionType, stale: false };
       this.cached = result;
-      this.probe = { ok: false, error, kind: 'auth', at: Date.now() };
-      // Credentials, not a blip: the user has to do something about it.
-      log.error(`${label}: cannot read Claude usage — ${error}`, { trigger, kind: 'auth', ...cause?.data });
-      record(error, 'auth');
+      this.probe = { ok: false, error, kind, at: Date.now() };
+      // Credentials, not a blip: something has to happen before this works.
+      log.error(`${label}: cannot read Claude usage — ${error}`, { trigger, kind, ...cause?.data });
+      record(error, kind);
       return result;
     };
 
@@ -330,11 +345,17 @@ export class UsageService {
       const text = await fs.readFile(path.join(this.dataRoot, '.credentials.json'), 'utf8');
       oauth = (JSON.parse(text) as { claudeAiOauth?: typeof oauth }).claudeAiOauth ?? {};
     } catch {
-      return empty('No Claude credentials found — sign in with Claude Code first.');
+      return empty('No Claude credentials found — sign in with Claude Code first.', 'auth-missing');
     }
-    if (!oauth.accessToken) return empty('The credentials file has no OAuth access token.');
+    if (!oauth.accessToken) return empty('The credentials file has no OAuth access token.', 'auth-missing');
     if (typeof oauth.expiresAt === 'number' && Date.now() >= oauth.expiresAt) {
-      return empty('The stored Claude token has expired — run Claude Code once to refresh it.', oauth.subscriptionType ?? null);
+      // A token that exists and has gone stale: running Claude Code rotates it
+      // in place, so this one is fixable without the user lifting a finger.
+      return empty(
+        'The stored Claude token has expired — run Claude Code once to refresh it.',
+        'auth-stale',
+        oauth.subscriptionType ?? null,
+      );
     }
 
     try {
@@ -348,7 +369,11 @@ export class UsageService {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (res.status === 401) {
-        return empty('Claude rejected the stored token — run Claude Code once to refresh it.', oauth.subscriptionType ?? null);
+        return empty(
+          'Claude rejected the stored token — run Claude Code once to refresh it.',
+          'auth-stale',
+          oauth.subscriptionType ?? null,
+        );
       }
       if (res.status === 429) {
         // Stop asking, for everyone. Recorded before `transient` logs, so the
