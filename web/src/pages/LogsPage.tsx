@@ -72,10 +72,12 @@ function useCopy(): [boolean, (text: string) => void] {
   return [copied, copy];
 }
 
-function Row({ record }: { record: LogRecord }) {
+function Row({ record, showPid }: { record: LogRecord; showPid: boolean }) {
   const [open, setOpen] = useState(false);
   const [copied, copy] = useCopy();
   const hasDetail = record.err !== undefined || record.data !== undefined || record.msg.length > 160;
+  // Keep the expanded detail lined up with the message, whichever columns are on.
+  const detailIndent = showPid ? 'ml-[10.25rem]' : 'ml-[6.5rem]';
   return (
     // A plain div, not a button: text inside a <button> cannot be selected, so
     // the row being one made a log message impossible to copy by hand — which is
@@ -94,6 +96,7 @@ function Row({ record }: { record: LogRecord }) {
         <span className="shrink-0 text-[var(--text-dim)] opacity-70">{clockTime(record.t)}</span>
         <span className={`w-10 shrink-0 uppercase ${LEVEL_STYLE[record.lvl] ?? ''}`}>{record.lvl}</span>
         <span className="w-24 shrink-0 truncate text-[var(--accent)] opacity-80">{record.src}</span>
+        {showPid && <span className="w-12 shrink-0 text-right text-[var(--text-dim)] opacity-70">{record.pid}</span>}
         <span className={`min-w-0 flex-1 select-text ${open ? 'break-words whitespace-pre-wrap' : 'truncate'}`}>
           {record.msg}
         </span>
@@ -111,7 +114,7 @@ function Row({ record }: { record: LogRecord }) {
         <span className="w-3 shrink-0 text-[var(--text-dim)]">{hasDetail ? (open ? '▾' : '▸') : ''}</span>
       </div>
       {open && (
-        <div className="mt-1 ml-[6.5rem] space-y-1 text-[11px] text-[var(--text-dim)] select-text">
+        <div className={`mt-1 ${detailIndent} space-y-1 text-[11px] text-[var(--text-dim)] select-text`}>
           {record.data !== undefined && (
             <pre className="overflow-x-auto rounded bg-black/30 p-2">{JSON.stringify(record.data, null, 2)}</pre>
           )}
@@ -164,6 +167,9 @@ export function LogsPage() {
   const query = params.get('q') ?? '';
   const [draftQuery, setDraftQuery] = useState(query);
   const [follow, setFollow] = useState(true);
+  // Off by default — the pid only matters when you suspect two instances are
+  // writing the same day's file — and remembered, like the viewer's toggles.
+  const [showPid, setShowPid] = useState(() => localStorage.getItem('logsShowPid') === 'true');
   const [busy, setBusy] = useState(false);
   const [copiedAll, copyAll] = useCopy();
 
@@ -379,6 +385,18 @@ export function LogsPage() {
                 />
                 follow
               </label>
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-dim)]" title="Show the pid that wrote each record">
+                <input
+                  type="checkbox"
+                  checked={showPid}
+                  onChange={(e) => {
+                    setShowPid(e.target.checked);
+                    localStorage.setItem('logsShowPid', String(e.target.checked));
+                  }}
+                  className="accent-[var(--accent)]"
+                />
+                pid
+              </label>
               {/* Copying the whole filtered set is the point: it is what you
                   paste elsewhere when asking someone what went wrong. */}
               <button
@@ -404,7 +422,7 @@ export function LogsPage() {
                 </p>
               )}
               {records.map((r, i) => (
-                <Row key={`${r.t}#${i}`} record={r} />
+                <Row key={`${r.t}#${i}`} record={r} showPid={showPid} />
               ))}
             </div>
           </>
