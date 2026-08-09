@@ -175,6 +175,16 @@ export interface AppSettings {
    */
   usageMinIntervalSeconds: number;
   /**
+   * How long to stop asking after Anthropic answers HTTP 429, in seconds
+   * (minimum MIN_USAGE_RATE_LIMIT_SECONDS). A 429 is the endpoint saying in so
+   * many words that we asked too often, and the normal floor is far too short
+   * an answer to that — so it takes over from the floor entirely, for every
+   * trigger and both readers. The manual Refresh button still gets through:
+   * asking for it explicitly is a deliberate act, and the cost of it failing
+   * is one more 429.
+   */
+  usageRateLimitBackoffSeconds: number;
+  /**
    * Coming back to the window re-reads only if the figures are older than this
    * (seconds). Focus fires far more often than people expect — every tab
    * switch and every unminimize — and most of those land on figures that are
@@ -222,7 +232,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   updateIntervalMinutes: 10,
   usageWidget: true,
   usageIntervalSeconds: 300,
-  usageMinIntervalSeconds: 15,
+  usageMinIntervalSeconds: 60,
+  usageRateLimitBackoffSeconds: 300,
   usageFocusMaxAgeSeconds: 60,
   usageOnActivity: true,
   usageOnInterval: true,
@@ -247,6 +258,12 @@ export const MIN_LOG_RETENTION_DAYS = 1;
  * minutes), so no setting may open the tap wider than this.
  */
 export const MIN_USAGE_INTERVAL_SECONDS = 15;
+
+/**
+ * Hard floor on the 429 cooldown. Backing off for less than a minute after
+ * being told outright that we ask too much is not backing off at all.
+ */
+export const MIN_USAGE_RATE_LIMIT_SECONDS = 60;
 
 // ---- Auto-reload of the 5-hour window ----
 
@@ -356,6 +373,8 @@ export const USAGE_TRIGGERS = [
   'widget-settings',
   /** Retrying a read that failed — TanStack's `retry`, not a new cause. */
   'widget-retry',
+  /** The browser regained its network connection. */
+  'widget-reconnect',
   /** After the auto-reload's "Send it now": a window may have just started. */
   'widget-auto-reload',
   /** The Refresh button inside the usage popover. */

@@ -1,5 +1,5 @@
 import type { AppSettings, UsageResponse, UsageTrigger, UsageWindow } from '@claude-history/shared';
-import { MIN_USAGE_INTERVAL_SECONDS } from '@claude-history/shared';
+import { MIN_USAGE_INTERVAL_SECONDS, MIN_USAGE_RATE_LIMIT_SECONDS } from '@claude-history/shared';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -147,6 +147,8 @@ export class UsageService {
   private lastError: string | null = null;
   private lastErrorKind: ProbeFailure | null = null;
   private inFlight: Promise<UsageResponse> | null = null;
+  /** Set by a 429: nothing but a manual refresh asks again until then. */
+  private rateLimitedUntil = 0;
   /** Derived from the same read as `cached` — see FiveHourProbe. */
   private probe: FiveHourProbe = { ok: false, error: 'Usage has not been read yet.', kind: 'network', at: 0 };
 
@@ -163,6 +165,13 @@ export class UsageService {
     const configured = this.getSettings().usageMinIntervalSeconds;
     const seconds = Number.isFinite(configured) ? configured : MIN_USAGE_INTERVAL_SECONDS;
     return Math.max(MIN_USAGE_INTERVAL_SECONDS, Math.round(seconds)) * 1000;
+  }
+
+  /** The configured 429 cooldown, never below the hard one. */
+  private rateLimitBackoffMs(): number {
+    const configured = this.getSettings().usageRateLimitBackoffSeconds;
+    const seconds = Number.isFinite(configured) ? configured : MIN_USAGE_RATE_LIMIT_SECONDS;
+    return Math.max(MIN_USAGE_RATE_LIMIT_SECONDS, Math.round(seconds)) * 1000;
   }
 
   readState(): UsageReadState {
@@ -189,6 +198,19 @@ export class UsageService {
     const label = opts.cause ? `${trigger} (${opts.cause.text})` : trigger;
     const age = Date.now() - this.lastFetchMs;
     const floor = this.floorMs();
+    // A 429 takes over from the floor: the endpoint has just said we ask too
+    // much, and answering that by asking again a minute later is not an answer.
+    if (!opts.force && this.cached && Date.now() < this.rateLimitedUntil) {
+      const left = Math.round((this.rateLimitedUntil - Date.now()) / 1000);
+      log.debug(`${label}: rate limited, ${left} s of the cooldown left — nothing was asked`, {
+        trigger,
+        cached: true,
+        rateLimited: true,
+        cooldownLeftMs: this.rateLimitedUntil - Date.now(),
+        ...opts.cause?.data,
+      });
+      return this.cached;
+    }
     if (!opts.force && this.cached && age < floor) {
       log.debug(`${label}: reused the figures read ${Math.round(age / 1000)} s ago (${floor / 1000} s floor) — nothing was asked`, {
         trigger,
@@ -328,6 +350,18 @@ export class UsageService {
       if (res.status === 401) {
         return empty('Claude rejected the stored token — run Claude Code once to refresh it.', oauth.subscriptionType ?? null);
       }
+      if (res.status === 429) {
+        // Stop asking, for everyone. Recorded before `transient` logs, so the
+        // failure line and this one read in the order they happened.
+        const backoff = this.rateLimitBackoffMs();
+        this.rateLimitedUntil = Date.now() + backoff;
+        log.warn(`${label}: rate limited by Anthropic — no read until ${localStamp(this.rateLimitedUntil)} (${backoff / 1000} s)`, {
+          trigger,
+          rateLimited: true,
+          backoffMs: backoff,
+        });
+        return transient('Usage endpoint answered HTTP 429 (rate limited)', 'http', oauth.subscriptionType ?? null);
+      }
       if (!res.ok) return transient(`Usage endpoint answered HTTP ${res.status}`, 'http', oauth.subscriptionType ?? null);
       const raw = (await res.json()) as RawUsage;
       // Read off the raw payload, not the normalized windows: a window that has
@@ -344,6 +378,9 @@ export class UsageService {
         stale: false,
       };
       this.cached = result;
+      // It answered, so whatever it was annoyed about is over — a manual
+      // Refresh getting through is exactly how a user finds that out.
+      this.rateLimitedUntil = 0;
       if (windows.length > 0) {
         this.lastGood = result;
         this.lastGoodAt = Date.now();

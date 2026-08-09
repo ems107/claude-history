@@ -101,7 +101,10 @@ export function UsageWidget() {
     mountMarked.current = true;
     if (!queryClient.getQueryData(['usage'])) markUsageRead('widget-mount');
   }
-  const { data } = useQuery({ queryKey: ['usage'], queryFn: api.usage });
+  // refetchOnReconnect is on by default and fires from inside TanStack, where
+  // nothing can label it — the last way a read could reach the log with no
+  // cause attached. Driven below instead, like the interval and the focus.
+  const { data } = useQuery({ queryKey: ['usage'], queryFn: api.usage, refetchOnReconnect: false });
 
   /**
    * The idle fallback poll and the refetch on returning to the tab, driven here
@@ -118,13 +121,17 @@ export function UsageWidget() {
    * rather than closing over them, so a toggle takes effect immediately.
    */
   useEffect(() => {
-    const read = (trigger: 'widget-interval' | 'widget-focus') => {
+    const read = (trigger: 'widget-interval' | 'widget-focus' | 'widget-reconnect') => {
       markUsageRead(trigger);
       void queryClient.invalidateQueries({ queryKey: ['usage'] });
     };
     const iv = setInterval(() => {
       if (readUsageSettings(queryClient).usageOnInterval) read('widget-interval');
     }, refreshMs);
+    // Coming back from being offline: the figures are as old as the outage,
+    // and this is the one trigger with no switch — you cannot have asked for
+    // stale figures by losing your connection.
+    const onOnline = () => read('widget-reconnect');
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
       const current = readUsageSettings(queryClient);
@@ -138,9 +145,11 @@ export function UsageWidget() {
       read('widget-focus');
     };
     document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', onOnline);
     return () => {
       clearInterval(iv);
       document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', onOnline);
     };
   }, [refreshMs, queryClient]);
 

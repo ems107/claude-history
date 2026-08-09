@@ -305,7 +305,14 @@ export class AutoReloadService {
       const ladder = probe.kind === 'network' ? NETWORK_BACKOFF_MS : READ_BACKOFF_MS;
       const wait = ladder[Math.min(this.readBackoffStep++, ladder.length - 1)];
       this.nextCheckAt = Date.now() + wait;
-      log.warn(`usage read failed (${probe.kind}: ${probe.error}) — retrying in ${Math.round(wait / 1000)} s`);
+      // Nothing may have been asked at all: a 429 cooldown answers everyone
+      // from the shared state. Saying "read failed" then would invent a
+      // request that never left the machine.
+      const what =
+        age > 2_000
+          ? `no read was made (the shared state still holds a failure from ${Math.round(age / 1000)} s ago: ${probe.kind}: ${probe.error})`
+          : `usage read failed (${probe.kind}: ${probe.error})`;
+      log.warn(`${what} — retrying in ${Math.round(wait / 1000)} s`);
       return;
     }
     this.readBackoffStep = 0;

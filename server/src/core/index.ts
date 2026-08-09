@@ -16,6 +16,7 @@ import {
   LOG_LEVEL_CHOICES,
   MIN_LOG_RETENTION_DAYS,
   MIN_USAGE_INTERVAL_SECONDS,
+  MIN_USAGE_RATE_LIMIT_SECONDS,
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
@@ -359,6 +360,13 @@ export class SessionIndex {
         patch.usageMinIntervalSeconds,
         this.settings.usageMinIntervalSeconds,
         MIN_USAGE_INTERVAL_SECONDS,
+      ),
+      // How long a 429 silences every reader. Its own floor, well above the
+      // read floor: a shorter answer to "you ask too much" is not an answer.
+      usageRateLimitBackoffSeconds: clampInt(
+        patch.usageRateLimitBackoffSeconds,
+        this.settings.usageRateLimitBackoffSeconds,
+        MIN_USAGE_RATE_LIMIT_SECONDS,
       ),
       // 0 is meaningful here: "always re-read when the window regains focus".
       usageFocusMaxAgeSeconds: clampInt(patch.usageFocusMaxAgeSeconds, this.settings.usageFocusMaxAgeSeconds, 0),

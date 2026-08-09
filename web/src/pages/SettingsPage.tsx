@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   LOG_LEVEL_CHOICES,
   MIN_USAGE_INTERVAL_SECONDS,
+  MIN_USAGE_RATE_LIMIT_SECONDS,
 } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -406,6 +407,31 @@ export function SettingsPage() {
             </p>
           </Row>
 
+          <Row
+            badge={
+              <DefaultBadge field="usageRateLimitBackoffSeconds" value={s.usageRateLimitBackoffSeconds} save={save} />
+            }
+          >
+            <label className="flex items-center gap-2">
+              <span>After a rate limit (HTTP 429), wait</span>
+              <input
+                type="number"
+                min={MIN_USAGE_RATE_LIMIT_SECONDS}
+                max={7200}
+                step={60}
+                value={s.usageRateLimitBackoffSeconds}
+                disabled={!s.usageWidget}
+                onChange={(e) => save({ usageRateLimitBackoffSeconds: Number(e.target.value) })}
+                className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+              />
+              <span>seconds (minimum {MIN_USAGE_RATE_LIMIT_SECONDS})</span>
+            </label>
+            <p className="mt-0.5 text-[11px] text-[var(--text-dim)]">
+              A 429 is Anthropic saying outright that we ask too often, so it replaces the floor above for as long as it
+              lasts and silences every trigger — again, except Refresh. The last figures stay on screen meanwhile.
+            </p>
+          </Row>
+
           {/* Each trigger is a switch, and the ones with a number carry it
               inline: a cadence you cannot see next to its own switch is a
               setting you have to go looking for. */}
@@ -491,8 +517,13 @@ export function SettingsPage() {
 
           <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
             <p>
+              Two more read on their own and have no switch, because neither can be an unwanted read:{' '}
+              <span className="text-[var(--text)]">opening the page</span>, and{' '}
+              <span className="text-[var(--text)]">getting your connection back</span> after being offline.
+            </p>
+            <p className="mt-2">
               <span className="text-[var(--text)]">On demand</span> always works, with the Refresh button inside the
-              usage popover — it is the only read that ignores the floor above.
+              usage popover — the only read that ignores both waits above, always asking Anthropic.
             </p>
             <p className="mt-2">
               If a read fails, the last figures stay on screen marked as old (amber border) instead of the widget going
