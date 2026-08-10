@@ -1,7 +1,10 @@
 import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
+import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { ContextPill } from './ContextPill.tsx';
+import { CompactBoundaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
 import { CostPill } from './CostPill.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -26,6 +29,8 @@ interface CostContext {
   prices: PriceTable;
   cumulative: Map<string, number>;
   sessionTotal: number | null;
+  /** Context window per request, keyed by the assistant item's uuid. */
+  context: Map<string, ContextPoint>;
 }
 
 function Anchors({ item }: { item: MessageItem }) {
@@ -190,12 +195,32 @@ function AssistantHeader({ item, costs }: { item: MessageItem; costs: CostContex
           sessionTotal={costs.sessionTotal}
         />
       )}
+      <ContextPill point={costs.context.get(item.uuid)} />
     </div>
   );
 }
 
 function SystemItem({ item }: { item: MessageItem }) {
-  const text = item.blocks[0]?.kind === 'text' ? item.blocks[0].text : '';
+  // Two system lines are worth more than their text: a /context run and a
+  // compaction boundary each get their own panel.
+  const first = item.blocks[0];
+  if (first?.kind === 'context') {
+    return (
+      <div id={item.uuid}>
+        <Anchors item={item} />
+        <ContextSnapshotPanel snapshot={first.snapshot} />
+      </div>
+    );
+  }
+  if (first?.kind === 'compact') {
+    return (
+      <div id={item.uuid}>
+        <Anchors item={item} />
+        <CompactBoundaryPanel boundary={first.boundary} />
+      </div>
+    );
+  }
+  const text = first?.kind === 'text' ? first.text : '';
   return (
     <div id={item.uuid} className="px-2 py-0.5 text-xs text-[var(--text-dim)]/70">
       <Anchors item={item} />
@@ -214,6 +239,7 @@ export function TurnView({
   onOpenAgent,
   costs,
   turnCost,
+  turnContext,
 }: {
   turn: TurnType;
   showThinking: boolean;
@@ -222,6 +248,8 @@ export function TurnView({
   costs: CostContext;
   /** Every assistant message of the turn, priced — including the ones that render no header. */
   turnCost: CostEntry[];
+  /** The turn's requests, for the context badge. */
+  turnContext: ContextTurn | null;
 }) {
   // Tool runs are grouped across items, not just within one assistant
   // message: a turn is usually assistant(tool) → assistant(tool) → … and the
@@ -244,15 +272,20 @@ export function TurnView({
 
   const lastTurnUuid = turnCost.length > 0 ? turnCost[turnCost.length - 1].uuid : null;
   const turnBadge =
-    turnCost.length > 0 ? (
-      <CostPill
-        entries={turnCost}
-        prices={costs.prices}
-        cumulative={lastTurnUuid ? costs.cumulative.get(lastTurnUuid) : undefined}
-        sessionTotal={costs.sessionTotal}
-        label="turn"
-        variant="badge"
-      />
+    turnCost.length > 0 || turnContext ? (
+      <span className="inline-flex items-center gap-1.5">
+        {turnCost.length > 0 && (
+          <CostPill
+            entries={turnCost}
+            prices={costs.prices}
+            cumulative={lastTurnUuid ? costs.cumulative.get(lastTurnUuid) : undefined}
+            sessionTotal={costs.sessionTotal}
+            label="turn"
+            variant="badge"
+          />
+        )}
+        {turnContext && <ContextPill turn={turnContext} variant="badge" />}
+      </span>
     ) : null;
   // The badge belongs on the prompt that paid for it. A turn with no user
   // message (a session whose transcript opens with assistant lines) gets its

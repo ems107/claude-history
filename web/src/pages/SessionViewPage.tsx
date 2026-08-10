@@ -120,7 +120,7 @@ export function SessionViewPage() {
           </>
         }
       />
-      {showTokens && <TokenPanel summary={detail.data.summary} />}
+      {showTokens && <TokenPanel summary={detail.data.summary} turns={detail.data.turns} />}
       {showLineage && <LineagePanel sessionId={id} />}
       {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
       {/* The pill is a sibling of the scroller, not a child: inside it, it would

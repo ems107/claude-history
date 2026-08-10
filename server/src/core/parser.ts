@@ -13,6 +13,7 @@ import type {
   ToolResultInfo,
   Turn,
 } from '@claude-history/shared';
+import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
 import { extractPrompt } from './summarizer.ts';
@@ -248,7 +249,30 @@ export async function parseTranscript(
     if (originId) originSessionIds.add(originId);
 
     if (type === 'user') {
-      if (o.isMeta === true || !isRec(o.message)) continue;
+      if (!isRec(o.message)) continue;
+      // `/context` is re-injected as an isMeta line: the only record of the
+      // window size and of the per-category split. Every other isMeta line is
+      // still noise.
+      if (o.isMeta === true) {
+        const meta = str(o.message.content);
+        const snapshot = meta ? parseContextSnapshot(meta) : null;
+        if (snapshot) {
+          ensureTurn().items.push({
+            uuid: makeUuid(o),
+            aliasUuids: [],
+            role: 'system',
+            timestamp: str(o.timestamp),
+            endTimestamp: str(o.timestamp),
+            model: null,
+            isMeta: false,
+            systemSubtype: 'context',
+            usage: null,
+            effort: null,
+            blocks: [{ kind: 'context', snapshot }],
+          });
+        }
+        continue;
+      }
       const content = o.message.content;
 
       if (typeof content === 'string') {
@@ -369,10 +393,45 @@ export async function parseTranscript(
     } else if (type === 'system') {
       const subtype = str(o.subtype) ?? '';
       if (subtype === 'turn_duration') continue; // per-turn timing noise
+      if (subtype === 'compact_boundary') {
+        // The one place a compaction is stated outright, with what it cost:
+        // everything else can only be inferred from the context dropping.
+        const meta = isRec(o.compactMetadata) ? o.compactMetadata : {};
+        const preserved = isRec(meta.preservedMessages) ? meta.preservedMessages : null;
+        ensureTurn().items.push({
+          uuid: makeUuid(o),
+          aliasUuids: [],
+          role: 'system',
+          timestamp: str(o.timestamp),
+          endTimestamp: str(o.timestamp),
+          model: null,
+          isMeta: false,
+          systemSubtype: subtype,
+          usage: null,
+          effort: null,
+          blocks: [
+            {
+              kind: 'compact',
+              boundary: {
+                trigger: str(meta.trigger),
+                preTokens: num(meta.preTokens),
+                postTokens: num(meta.postTokens),
+                droppedTokens: num(meta.cumulativeDroppedTokens),
+                durationMs: num(meta.durationMs),
+                preservedMessages: Array.isArray(preserved?.uuids) ? preserved.uuids.length : null,
+              },
+            },
+          ],
+        });
+        continue;
+      }
       const text = str(o.content)
         ?.replace(/<\/?local-command-(?:stdout|stderr)>/g, '')
         .trim();
       if (!text) continue;
+      // The same figures arrive twice: this ANSI grid and the markdown line the
+      // snapshot is parsed from. Escape codes are all the viewer could show.
+      if (isContextUsageAnsi(text)) continue;
       ensureTurn().items.push({
         uuid: makeUuid(o),
         aliasUuids: [],

@@ -2,6 +2,7 @@ import type { PriceTable, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { api } from '../../api/client.ts';
+import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
 import { TurnView } from './Turn.tsx';
 
@@ -28,9 +29,11 @@ export function TurnList({
   // enrichment: both dedupe assistant lines by message.id, so they agree, and
   // this one also works for a subagent transcript, which is enriched nowhere.
   const index = useMemo(() => buildCostIndex(turns, prices), [turns, prices]);
+  // The context chain needs no prices, so it is built once per conversation.
+  const contextIndex = useMemo(() => buildContextIndex(turns), [turns]);
   const costs = useMemo(
-    () => ({ prices, cumulative: index.cumulative, sessionTotal: index.total }),
-    [prices, index],
+    () => ({ prices, cumulative: index.cumulative, sessionTotal: index.total, context: contextIndex.byUuid }),
+    [prices, index, contextIndex],
   );
 
   useEffect(() => {
@@ -64,6 +67,7 @@ export function TurnList({
           onOpenAgent={onOpenAgent}
           costs={costs}
           turnCost={index.perTurn[i] ?? []}
+          turnContext={contextIndex.perTurn[i] ?? null}
         />
       ))}
     </div>

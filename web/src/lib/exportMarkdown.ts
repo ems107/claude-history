@@ -43,7 +43,30 @@ export function buildMarkdown(detail: SessionDetail, opts: ExportOptions): strin
     for (const item of turn.items) {
       if (item.role === 'system') {
         if (!opts.includeSystem) continue;
-        const text = item.blocks[0]?.kind === 'text' ? item.blocks[0].text : '';
+        const first = item.blocks[0];
+        // A /context run and a compaction carry figures, not text — one line each
+        // rather than the empty quote they used to export as.
+        if (first?.kind === 'context') {
+          const s = first.snapshot;
+          const window = s.limitTokens === null ? '' : ` of ${s.limitTokens.toLocaleString()}`;
+          const pct = s.reportedPct === null ? '' : ` (${s.reportedPct}%)`;
+          out.push(
+            `> ⚙️ **/context:** ${s.reportedTokens?.toLocaleString() ?? '—'}${window} tokens${pct} — ` +
+              s.categories.map((c) => `${c.label} ${c.tokens.toLocaleString()}`).join(' · '),
+            '',
+          );
+          continue;
+        }
+        if (first?.kind === 'compact') {
+          const b = first.boundary;
+          out.push(
+            `> ⚙️ **Conversation compacted**${b.trigger ? ` (${b.trigger})` : ''}: ` +
+              `${b.preTokens?.toLocaleString() ?? '—'} → ${b.postTokens?.toLocaleString() ?? '—'} tokens`,
+            '',
+          );
+          continue;
+        }
+        const text = first?.kind === 'text' ? first.text : '';
         out.push(`> ⚙️ **${item.systemSubtype ?? 'system'}:** ${text.replace(/\n/g, ' ').slice(0, 500)}`, '');
         continue;
       }

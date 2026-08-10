@@ -1,9 +1,12 @@
-import type { ModelPrices, SessionSummary, UsageTotals } from '@claude-history/shared';
+import type { ModelPrices, SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
 import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { api } from '../../api/client.ts';
+import { buildContextIndex } from '../../lib/context.ts';
 import { computeCost, formatUsd } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
+import { ContextCurve } from './ContextCurve.tsx';
 
 function fmt(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
@@ -24,8 +27,9 @@ function Row({ label, usage, prices }: { label: string; usage: UsageTotals; pric
   );
 }
 
-export function TokenPanel({ summary }: { summary: SessionSummary }) {
+export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns: Turn[] }) {
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
+  const contextIndex = useMemo(() => buildContextIndex(turns), [turns]);
   const e = summary.enrichment;
   if (!e) {
     return <div className="p-3 text-xs text-[var(--text-dim)]">Token stats not indexed yet.</div>;
@@ -89,6 +93,9 @@ export function TokenPanel({ summary }: { summary: SessionSummary }) {
       </table>
       <div className="mt-1 text-[10px] text-[var(--text-dim)] opacity-70">
         ≈ cost is API-equivalent value at the prices configured in Stats — not actual subscription spend.
+      </div>
+      <div className="mt-3 border-t border-[var(--border)] pt-2">
+        <ContextCurve index={contextIndex} />
       </div>
     </div>
   );

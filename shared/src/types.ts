@@ -35,6 +35,50 @@ export interface MessageUsage extends UsageTotals {
   cacheCreate5m: number;
 }
 
+/**
+ * One row of the `/context` breakdown. `deferred` rows (deferred MCP and system
+ * tools) are counted by /context but are NOT in the context: subtracting them
+ * from the category sum gives the reported total, exactly, in all four snapshots
+ * on this machine (22.8k / 22.7k / 18.7k / 25.5k of discrepancy, each equal to
+ * its two deferred rows).
+ */
+export interface ContextCategory {
+  label: string;
+  tokens: number;
+  /** As /context computed it, against the real window — never derived here. */
+  pct: number;
+  deferred: boolean;
+}
+
+/**
+ * A `/context` run, recovered from the transcript: Claude Code re-injects its
+ * own output as an isMeta user line in clean markdown. It is the ONLY place the
+ * window size and the `[1m]` model marker are recorded, and the only place the
+ * per-category split exists — nothing else lets it be reconstructed, because the
+ * fixed overhead grows during a session as deferred tools and skills load.
+ */
+export interface ContextSnapshot {
+  model: string | null;
+  reportedTokens: number | null;
+  limitTokens: number | null;
+  /** As printed by /context ("47"), not computed by us. */
+  reportedPct: number | null;
+  categories: ContextCategory[];
+  mcpTools: Array<{ tool: string; server: string; tokens: number }>;
+}
+
+/** A `system`/`compact_boundary` line: the conversation was compacted here. */
+export interface CompactBoundary {
+  /** "manual" (/compact) or "auto" (the autocompact threshold). */
+  trigger: string | null;
+  preTokens: number | null;
+  postTokens: number | null;
+  /** cumulativeDroppedTokens — across the whole session, not just this boundary. */
+  droppedTokens: number | null;
+  durationMs: number | null;
+  preservedMessages: number | null;
+}
+
 export interface PrLink {
   prNumber: number;
   prUrl: string;
@@ -144,6 +188,10 @@ export type ContentBlock =
    * is the one case where the viewer may say the image is unavailable.
    */
   | { kind: 'image'; mediaType: string | null; data: string | null }
+  /** The output of a `/context` run, parsed. */
+  | { kind: 'context'; snapshot: ContextSnapshot }
+  /** A compaction boundary, with what it dropped. */
+  | { kind: 'compact'; boundary: CompactBoundary }
   | {
       kind: 'tool';
       toolName: string;
