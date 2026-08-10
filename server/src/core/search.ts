@@ -8,14 +8,20 @@ const SNIPPET_BEFORE = 60; // folded chars of context before the match
 const SNIPPET_AFTER = 90;
 
 const WHITESPACE = /\s/;
+/** Nonspacing marks: the diacritics themselves, once NFD has split them off. */
+const DIACRITIC = /\p{Mn}/u;
 
 /**
  * The single folding loop, shared so the mapped and unmapped variants cannot
- * drift: each code point becomes the lowercased base letter of its NFD
- * decomposition ("Código" → "codigo"), and every run of whitespace collapses
- * to one space. One folded char per code point or per run, and `map` (when
- * given) receives the original index of each — for a run, of its first
- * character — so snippet offsets map back.
+ * drift. Each code point becomes the lowercased base letter of its NFD
+ * decomposition ("Código" → "codigo"); a code point that IS a diacritic emits
+ * nothing, so text already decomposed ("o" + U+0301, which is what a paste
+ * from macOS carries) folds exactly like its composed form; and every run of
+ * whitespace collapses to one space.
+ *
+ * So a folded char stands for one code point, one whitespace run, or a base
+ * letter with its marks — and `map` (when given) receives the original index
+ * of each, that of its first character, which is how snippet offsets map back.
  */
 function foldInto(text: string, map: number[] | null): string {
   let out = '';
@@ -28,7 +34,7 @@ function foldInto(text: string, map: number[] | null): string {
         out += ' ';
         map?.push(i);
       }
-    } else {
+    } else if (!DIACRITIC.test(ch)) {
       inRun = false;
       out += ch.normalize('NFD').charAt(0).toLowerCase();
       map?.push(i);
@@ -110,6 +116,18 @@ export class SearchService {
     const needle = foldText(query.trim());
     const hits: SearchHit[] = [];
     let scannedSessions = 0;
+    const respond = (): SearchResponse => ({
+      hits,
+      scannedSessions,
+      tookMs: Math.round(performance.now() - t0),
+      indexComplete: this.index.state === 'ready',
+    });
+
+    // Folding drops diacritics and collapses whitespace, so a query made of
+    // nothing but those folds to the empty string — which indexOf finds at
+    // every position without ever advancing the scan. An endless loop, not an
+    // empty result, so it is answered before the scan and not inside it.
+    if (!needle) return respond();
 
     for (const s of this.index.list()) {
       const st = await this.ensureSession(s.id);
@@ -140,12 +158,7 @@ export class SearchService {
       }
     }
 
-    return {
-      hits,
-      scannedSessions,
-      tookMs: Math.round(performance.now() - t0),
-      indexComplete: this.index.state === 'ready',
-    };
+    return respond();
   }
 
   private buildSnippet(
