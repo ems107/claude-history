@@ -67,17 +67,20 @@ function WindowRow({ w }: { w: UsageWindow }) {
 /**
  * What will actually refresh these figures, given which triggers are switched
  * on. Spelled out rather than assumed: with every switch off, the only thing
- * that moves them is the button right above this line, and a widget quietly
- * showing figures from an hour ago would be worse than no widget.
+ * that moves them is the Refresh button, and a widget quietly showing figures
+ * from an hour ago would be worse than no widget.
+ *
+ * Kept to a list of short fragments — this is the only body text in the
+ * popover, and it used to be long enough that nobody read any of it.
  */
 function cadenceText(s: AppSettings | undefined): string {
-  if (!s) return 'refreshed automatically';
+  if (!s) return 'Refreshes automatically';
   const parts: string[] = [];
   if (s.usageOnActivity) parts.push('when Claude answers');
-  if (s.usageOnInterval) parts.push(`every ${s.usageIntervalSeconds}s while idle`);
-  if (s.usageOnFocus) parts.push('when you come back to this window');
-  if (s.usageOnReset) parts.push('just after a reset');
-  return parts.length > 0 ? `refreshed ${parts.join(', ')}` : 'refreshed only with the button above';
+  if (s.usageOnInterval) parts.push(`every ${s.usageIntervalSeconds} s idle`);
+  if (s.usageOnFocus) parts.push('on window focus');
+  if (s.usageOnReset) parts.push('after a reset');
+  return parts.length > 0 ? `Refreshes ${parts.join(' · ')}` : 'Refreshes only with the button above';
 }
 
 /**
@@ -154,8 +157,8 @@ export function UsageWidget() {
   }, [refreshMs, queryClient]);
 
   // Re-render on a tick so the countdowns stay honest between refetches. While
-  // the popover is open it ticks every second, because the "last refreshed"
-  // line down there counts seconds; closed, a slow tick is plenty for the
+  // the popover is open it ticks every second, because the age next to the
+  // Refresh button counts seconds; closed, a slow tick is plenty for the
   // minute-grained countdowns in the header.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -249,14 +252,34 @@ export function UsageWidget() {
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute right-0 z-50 mt-1 w-84 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl">
             <div className="mb-2 flex items-center gap-2">
-              <h3 className="text-xs font-semibold">Claude usage</h3>
+              {/* The provenance ("same figures as /usage, read-only") is a
+                  tooltip, not a paragraph: it answers a question asked once. */}
+              <h3
+                className="text-xs font-semibold"
+                title="Same figures as Claude Code’s /usage — read from your stored session, never modified"
+              >
+                Claude usage
+              </h3>
               {data.subscriptionType && (
                 <span className="rounded bg-zinc-500/15 px-1.5 py-px text-[10px] uppercase">{data.subscriptionType}</span>
+              )}
+              {/* How old the figures are belongs next to the only button that
+                  can change that, where it is read rather than buried at the
+                  end of the footer line. */}
+              {data.fetchedAt && (
+                <span
+                  className={`ml-auto shrink-0 text-[10px] ${data.stale ? 'text-amber-400' : 'text-[var(--text-dim)]'}`}
+                  title={`Last read ${formatDateTime(data.fetchedAt)}`}
+                >
+                  {timeSince(data.fetchedAt)}
+                </span>
               )}
               <button
                 type="button"
                 onClick={() => void api.usageRefresh().then((u) => queryClient.setQueryData(['usage'], u))}
-                className="ml-auto cursor-pointer rounded border border-[var(--border)] px-1.5 py-px text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+                className={`shrink-0 cursor-pointer rounded border border-[var(--border)] px-1.5 py-px text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] ${
+                  data.fetchedAt ? '' : 'ml-auto'
+                }`}
               >
                 Refresh
               </button>
@@ -271,10 +294,7 @@ export function UsageWidget() {
                 ))}
               </div>
             )}
-            <p className="mt-3 text-[10px] leading-snug text-[var(--text-dim)]">
-              Same figures as Claude Code’s /usage. Read from your stored session, never modified; {cadenceText(s)}
-              {data.fetchedAt ? ` · last ${timeSince(data.fetchedAt)}` : ''}.
-            </p>
+            <p className="mt-3 text-[10px] leading-snug text-[var(--text-dim)]/70">{cadenceText(s)}</p>
           </div>
         </>
       )}
