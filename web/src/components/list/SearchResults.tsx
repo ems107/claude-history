@@ -21,6 +21,7 @@ export function SearchResults({
   visibleIds,
   onProjectClick,
   onDeepSearch,
+  onDeepCancel,
   deepPending,
   deepError,
 }: {
@@ -32,6 +33,7 @@ export function SearchResults({
   onProjectClick?: (projectKey: string) => void;
   /** Absent once the scan has run for this exact query. */
   onDeepSearch?: () => void;
+  onDeepCancel?: () => void;
   deepPending?: boolean;
   deepError?: string;
 }) {
@@ -63,7 +65,19 @@ export function SearchResults({
             {deep.stoppedEarly && <span className="text-amber-400"> — stopped early, so this is partial</span>}
           </span>
         ) : deepPending ? (
-          <span className="text-[var(--accent)]">· reading the transcripts…</span>
+          <>
+            <span className="text-[var(--accent)]">· reading the transcripts…</span>
+            {onDeepCancel && (
+              <button
+                type="button"
+                onClick={onDeepCancel}
+                title="Stops the scan where it is and goes back to the plain results"
+                className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+              >
+                Cancel
+              </button>
+            )}
+          </>
         ) : (
           onDeepSearch &&
           !nothingToLookFor && (

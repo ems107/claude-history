@@ -1,4 +1,12 @@
-import type { DeepScanInfo, SearchHit, SearchQueryEcho, SearchResponse, SearchSnippet } from '@claude-history/shared';
+import {
+  foldText,
+  foldWithMap,
+  type DeepScanInfo,
+  type SearchHit,
+  type SearchQueryEcho,
+  type SearchResponse,
+  type SearchSnippet,
+} from '@claude-history/shared';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { AppConfig } from '../config.ts';
@@ -9,8 +17,6 @@ import { createLogger } from './logger.ts';
 import type { SearchService } from './search.ts';
 import {
   buildSnippet,
-  foldText,
-  foldWithMap,
   occurrences,
   parseTerms,
   type SearchOptions,

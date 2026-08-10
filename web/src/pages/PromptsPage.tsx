@@ -1,9 +1,9 @@
+import { foldText } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api/client.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
-import { foldText } from '../lib/fold.ts';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';

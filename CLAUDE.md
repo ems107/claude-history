@@ -53,7 +53,7 @@ The notes are not a changelog nobody reads: they are what the user sees in the u
 
 ## Architecture
 
-- `shared/src/` — API contract: `types.ts` (domain), `api.ts` (endpoint response shapes).
+- `shared/src/` — what both sides must agree on: `types.ts` (domain), `api.ts` (endpoint response shapes), `prices.ts`, and `fold.ts` — the search fold lives here because a hand-kept copy in the web app drifted from the server's within an hour of being written.
 - `server/src/config.ts` — data root resolution: `--data-root` flag → `CLAUDE_CONFIG_DIR` env → `~/.claude`. Cache dir: `CLAUDE_HISTORY_CACHE` env → `%LOCALAPPDATA%\claude-history\cache`. Logs dir: `--logs-dir` → sibling `logs\`. Never hardcode user paths. Argument problems go into `config.warnings` instead of being printed: config is resolved before logging exists, so a `console.warn` here would never reach the log files.
 - `server/src/core/` — the pipeline: `scanner` (enumerate transcript files) → `summarizer` (cheap head/tail metadata per session) → `cache` ((path,size,mtimeMs)-keyed) → `enricher` (background full parse: tokens, PR links, ancestry, search text) → `watcher` (fs.watch → SSE). `parser` builds the full conversation for the viewer on demand. `index` orchestrates everything. `updates` handles the self-update lifecycle (GitHub release check + apply). `usage` reads the subscription figures and `autoReload` is the only other thing that runs on a schedule of its own (see Hard constraints). `logger` writes the daily log files and `logReader` parses them back for the viewer (see Logging). `searchText` holds the text primitives, `search` the indexed corpus and `deepSearch` the on-demand scan (see Search).
 - `installer/` — the scripts shipped inside the release zip (install/uninstall, hidden launcher, update helper). They MUST stay pure ASCII: Windows PowerShell 5.1 reads BOM-less `.ps1` as ANSI and a single multibyte character breaks parsing on target machines (`package.mjs` enforces this).
@@ -90,7 +90,9 @@ more text**, with 129 MB of it inside a single session. So:
   `BUDGET_MS` and `MAX_HITS` set `stoppedEarly`, which the results header shows:
   a partial answer must never read as a complete one.
 
-Folding (`searchText.ts`) is case-, diacritic- AND whitespace-insensitive, and
+Folding (`shared/src/fold.ts`, imported by both sides — there is exactly one
+`normalize('NFD')` in the repo and it must stay that way) is case-, diacritic-
+AND whitespace-insensitive, and
 each of those was bought with a bug:
 
 - **Whitespace runs collapse to one space**, needle and haystack alike. Snippets

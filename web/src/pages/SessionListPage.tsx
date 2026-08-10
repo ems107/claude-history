@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
@@ -24,6 +24,7 @@ const HEADER_HEIGHT = 30;
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 
 export function SessionListPage() {
+  const queryClient = useQueryClient();
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [searchParams, setSearchParams] = useSearchParams();
@@ -300,6 +301,12 @@ export function SessionListPage() {
                         else setDeepAskedFor(askedFor);
                       }
                 }
+                onDeepCancel={() => {
+                  // Aborts the fetch, which is what the server watches to stop
+                  // reading; forgetting the signature puts the offer back.
+                  void queryClient.cancelQueries({ queryKey: ['search-deep', askedFor] });
+                  setDeepAskedFor(null);
+                }}
                 deepPending={deepAsked && deepQuery.isFetching}
                 deepError={deepAsked && deepQuery.isError ? String(deepQuery.error) : undefined}
               />
