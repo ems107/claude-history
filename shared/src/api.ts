@@ -63,12 +63,23 @@ export interface SearchQueryEcho {
   wholeWord: boolean;
 }
 
+/** What the on-demand scan of tool calls and output actually got through. */
+export interface DeepScanInfo {
+  sessionsRead: number;
+  /** Characters of transcript read — near enough to bytes for this corpus. */
+  bytesRead: number;
+  /** Cancelled, out of time or capped — the results are a partial answer. */
+  stoppedEarly: boolean;
+}
+
 export interface SearchResponse {
   hits: SearchHit[];
   scannedSessions: number;
   tookMs: number;
   indexComplete: boolean;
   query: SearchQueryEcho;
+  /** Present only when the request asked for tool calls and output. */
+  deep?: DeepScanInfo;
 }
 
 export interface ToolResultFileResponse {

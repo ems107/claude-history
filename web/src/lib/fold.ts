@@ -3,7 +3,7 @@ const DIACRITIC = /\p{Mn}/u;
 
 /**
  * Case-, diacritic- and whitespace-insensitive folding (mirror of the server's
- * search fold in core/search.ts — keep both in step). Runs of whitespace
+ * search fold in core/searchText.ts — keep both in step). Runs of whitespace
  * collapse to one space so a phrase stays findable across the line break it was
  * pasted with, and a code point that is itself a diacritic emits nothing so
  * already-decomposed text folds like its composed form.

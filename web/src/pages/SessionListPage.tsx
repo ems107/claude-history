@@ -108,6 +108,13 @@ export function SessionListPage() {
     enabled: searchActive,
   });
 
+  // A deep scan belongs to one exact question, and the querystring is the whole
+  // of it — query, tuning and filters alike. Change any of them and the deep
+  // result steps aside for the plain one, offer included.
+  const askedFor = searchParams.toString();
+  const [deepAskedFor, setDeepAskedFor] = useState<string | null>(null);
+  const deepAsked = deepAskedFor === askedFor;
+
   const colorByProject = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of projects.data ?? []) map.set(p.key, p.color);
@@ -127,6 +134,21 @@ export function SessionListPage() {
   );
   const summaryMap = useMemo(() => new Map((sessions.data ?? []).map((s) => [s.id, s])), [sessions.data]);
   const visibleIds = useMemo(() => new Set(matching.map((s) => s.id)), [matching]);
+
+  const deepQuery = useQuery({
+    queryKey: ['search-deep', askedFor],
+    // Only the sessions the filters left standing: the scan reads transcripts,
+    // and reading the ones already hidden would be seconds spent on nothing.
+    queryFn: ({ signal }) => api.deepSearch(q, tuning, [...visibleIds], signal),
+    enabled: searchActive && deepAsked,
+    // Four seconds of transcript reading must never happen behind the user's
+    // back, so nothing but the button may set it off.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
+  const deepResponse = deepAsked ? deepQuery.data : undefined;
 
   const onProjectClick = useCallback(
     (projectKey: string) => setFilters({ ...filters, projects: [projectKey] }),
@@ -262,11 +284,24 @@ export function SessionListPage() {
               <div className="p-8 text-center text-red-400">Search failed: {String(searchQuery.error)}</div>
             ) : (
               <SearchResults
-                response={searchQuery.data!}
+                response={deepResponse ?? searchQuery.data!}
                 summaries={summaryMap}
                 colorByProject={colorByProject}
                 visibleIds={visibleIds}
                 onProjectClick={onProjectClick}
+                onDeepSearch={
+                  deepResponse
+                    ? undefined
+                    : () => {
+                        // Asking again after a failure leaves the signature
+                        // unchanged, so the state alone would refetch nothing and
+                        // the button would sit there doing exactly that.
+                        if (deepAsked) void deepQuery.refetch();
+                        else setDeepAskedFor(askedFor);
+                      }
+                }
+                deepPending={deepAsked && deepQuery.isFetching}
+                deepError={deepAsked && deepQuery.isError ? String(deepQuery.error) : undefined}
               />
             )
           ) : rows.length === 0 ? (

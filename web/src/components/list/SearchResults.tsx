@@ -20,6 +20,9 @@ export function SearchResults({
   colorByProject,
   visibleIds,
   onProjectClick,
+  onDeepSearch,
+  deepPending,
+  deepError,
 }: {
   response: SearchResponse;
   summaries: Map<string, SessionSummary>;
@@ -27,19 +30,55 @@ export function SearchResults({
   /** Sessions surviving the active sidebar filters; hits outside are hidden. */
   visibleIds: Set<string>;
   onProjectClick?: (projectKey: string) => void;
+  /** Absent once the scan has run for this exact query. */
+  onDeepSearch?: () => void;
+  deepPending?: boolean;
+  deepError?: string;
 }) {
   const hits = response.hits.filter((h) => visibleIds.has(h.sessionId) && summaries.has(h.sessionId));
   const totalMatches = hits.reduce((acc, h) => acc + h.matchCount, 0);
   const description = describeQuery(response.query);
   const nothingToLookFor = response.query.terms.length === 0;
+  const deep = response.deep;
 
   return (
     <div>
-      <div className="border-b border-[var(--border)] px-4 py-1.5 text-xs text-[var(--text-dim)]">
-        {description && <span className="mr-2 text-[var(--text)]">{description}</span>}
-        {totalMatches} matches in {hits.length} sessions · {response.tookMs} ms
+      <div className="flex flex-wrap items-center gap-x-2 border-b border-[var(--border)] px-4 py-1.5 text-xs text-[var(--text-dim)]">
+        {description && <span className="text-[var(--text)]">{description}</span>}
+        <span>
+          {totalMatches} matches in {hits.length} sessions · {response.tookMs} ms
+        </span>
         {!response.indexComplete && (
-          <span className="ml-2 text-amber-400">(index still building — partial results)</span>
+          <span className="text-amber-400">(index still building — partial results)</span>
+        )}
+        {/*
+          The offer belongs here rather than in the options panel: the moment you
+          wonder whether something is in the tool output is the moment you are
+          looking at a count that disappointed you.
+        */}
+        {deep ? (
+          <span>
+            · tool calls and output included, {deep.sessionsRead} transcripts read (
+            {(deep.bytesRead / 1048576).toFixed(0)} MB)
+            {deep.stoppedEarly && <span className="text-amber-400"> — stopped early, so this is partial</span>}
+          </span>
+        ) : deepPending ? (
+          <span className="text-[var(--accent)]">· reading the transcripts…</span>
+        ) : (
+          onDeepSearch &&
+          !nothingToLookFor && (
+            <>
+              <button
+                type="button"
+                onClick={onDeepSearch}
+                title="Streams the transcripts to search tool calls, tool output and subagents. A few seconds."
+                className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+              >
+                {deepError ? 'Try the tool output again' : 'Search tool output too'}
+              </button>
+              {deepError && <span className="text-red-400">{deepError}</span>}
+            </>
+          )
         )}
       </div>
       {hits.length === 0 && (

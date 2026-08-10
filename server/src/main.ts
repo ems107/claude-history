@@ -3,6 +3,7 @@ import { loadConfig } from './config.ts';
 import { AutoReloadService } from './core/autoReload.ts';
 import { SessionIndex } from './core/index.ts';
 import { applyLogSettings, createLogger, initLogging } from './core/logger.ts';
+import { DeepSearchService } from './core/deepSearch.ts';
 import { SearchService } from './core/search.ts';
 import { startUpdateLogImport } from './core/updateLogImport.ts';
 import { UpdateService } from './core/updates.ts';
@@ -31,6 +32,7 @@ async function main(): Promise<void> {
   );
 
   const search = new SearchService(index);
+  const deepSearch = new DeepSearchService(config, index, search);
   const updates = new UpdateService();
   // If we just came back from an update, the helper wrote the half of it we
   // could not see (junction swap, restart, health check, rollback). Copy those
@@ -38,7 +40,7 @@ async function main(): Promise<void> {
   startUpdateLogImport(updates.install?.root ?? null, config.cacheDir);
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
-  const app = await buildApp({ config, index, search, updates, usage, autoReload });
+  const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
 

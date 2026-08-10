@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { LogDay, LogDayResponse, LogRecord } from '@claude-history/shared';
 import { logFilePath } from './logger.ts';
-import { foldText } from './search.ts';
+import { foldText } from './searchText.ts';
 
 /** YYYY-MM-DD, validated before any path is built from it. */
 export const LOG_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

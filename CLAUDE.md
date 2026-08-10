@@ -55,10 +55,72 @@ The notes are not a changelog nobody reads: they are what the user sees in the u
 
 - `shared/src/` — API contract: `types.ts` (domain), `api.ts` (endpoint response shapes).
 - `server/src/config.ts` — data root resolution: `--data-root` flag → `CLAUDE_CONFIG_DIR` env → `~/.claude`. Cache dir: `CLAUDE_HISTORY_CACHE` env → `%LOCALAPPDATA%\claude-history\cache`. Logs dir: `--logs-dir` → sibling `logs\`. Never hardcode user paths. Argument problems go into `config.warnings` instead of being printed: config is resolved before logging exists, so a `console.warn` here would never reach the log files.
-- `server/src/core/` — the pipeline: `scanner` (enumerate transcript files) → `summarizer` (cheap head/tail metadata per session) → `cache` ((path,size,mtimeMs)-keyed) → `enricher` (background full parse: tokens, PR links, ancestry, search text) → `watcher` (fs.watch → SSE). `parser` builds the full conversation for the viewer on demand. `index` orchestrates everything. `updates` handles the self-update lifecycle (GitHub release check + apply). `usage` reads the subscription figures and `autoReload` is the only other thing that runs on a schedule of its own (see Hard constraints). `logger` writes the daily log files and `logReader` parses them back for the viewer (see Logging).
+- `server/src/core/` — the pipeline: `scanner` (enumerate transcript files) → `summarizer` (cheap head/tail metadata per session) → `cache` ((path,size,mtimeMs)-keyed) → `enricher` (background full parse: tokens, PR links, ancestry, search text) → `watcher` (fs.watch → SSE). `parser` builds the full conversation for the viewer on demand. `index` orchestrates everything. `updates` handles the self-update lifecycle (GitHub release check + apply). `usage` reads the subscription figures and `autoReload` is the only other thing that runs on a schedule of its own (see Hard constraints). `logger` writes the daily log files and `logReader` parses them back for the viewer (see Logging). `searchText` holds the text primitives, `search` the indexed corpus and `deepSearch` the on-demand scan (see Search).
 - `installer/` — the scripts shipped inside the release zip (install/uninstall, hidden launcher, update helper). They MUST stay pure ASCII: Windows PowerShell 5.1 reads BOM-less `.ps1` as ANSI and a single multibyte character breaks parsing on target machines (`package.mjs` enforces this).
 - `server/src/routes/` — REST endpoints (see `shared/src/api.ts`).
 - `web/src/` — React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SSE (`EventSource`) for live invalidation.
+
+## Search
+
+Two corpora, and the split is the whole design. Measured on this machine: the
+indexed text (titles, typed prompts, assistant prose) is **0.8% of the bytes** in
+`~/.claude/projects`, while `tool_result` output alone is **34% — forty-two times
+more text**, with 129 MB of it inside a single session. So:
+
+- **Tool calls and output are NEVER indexed.** Doing it would take the cache from
+  6.5 MB to ~250 MB, hold the folded copy in memory for the process's life and
+  force a re-enrich of 470 MB. They are read on demand instead (`deepSearch`),
+  streamed chunk by chunk and never accumulated: the whole corpus costs ~4 s and
+  no memory that outlives the request. `POST /api/search/deep` only ever runs
+  from the button — never on a keystroke, never on a refocus (that query sets
+  `staleTime: Infinity` and switches both refetch triggers off).
+- **The deep scan re-matches the indexed text too**, rather than merging two
+  result sets: only that way can "all words anywhere in the session" pair a word
+  from a prompt with one that exists solely in a tool result. It is a superset of
+  the plain search by construction, snippet budget included (6 a session against
+  3, so pressing the button never shows less than not pressing it).
+- It also reads what nothing else can: the outputs offloaded to `tool-results/`
+  (path validated against `projectsDir` first — it comes out of a transcript, not
+  from us) and **every subagent transcript**, 54 MB that no search could reach.
+  Subagent snippets carry `uuid: null` on purpose: the viewer knows only the
+  parent transcript, so an anchor there would resolve nowhere.
+- It is **cancellable and bounded**, and says so. The abort signal comes from the
+  RESPONSE closing unfinished (`reply.raw`), not from the request — the body
+  arrived long before and its close event says nothing about who is listening.
+  `BUDGET_MS` and `MAX_HITS` set `stoppedEarly`, which the results header shows:
+  a partial answer must never read as a complete one.
+
+Folding (`searchText.ts`) is case-, diacritic- AND whitespace-insensitive, and
+each of those was bought with a bug:
+
+- **Whitespace runs collapse to one space**, needle and haystack alike. Snippets
+  are rendered through `oneLine()`, so without it the text shown and the text
+  searched differ — a phrase pasted from a wrapped log could not be found while
+  the snippet displayed it intact.
+- **A code point that IS a diacritic emits nothing**, so text already in NFD (a
+  paste from macOS) folds like its composed form. Nonspacing marks only: a
+  spacing mark is a letter component, not an accent.
+- That makes an **empty needle** reachable (a query of nothing but accents), and
+  `indexOf('')` matches at every position without advancing — answered before the
+  scan, never inside it.
+- The fold walks **UTF-16 units with a latin-1 lookup table**, 100 MB/s against
+  13 for `normalize()` per character. It is the same function that fills the table
+  and handles everything above it, so the paths cannot disagree. `map` keeps one
+  entry per emitted unit — that of the run's or the character's first index — and
+  snippet offsets depend on it, so nothing may emit without pushing.
+- A phrase is **the one-term case**, which is why a single scan serves both modes
+  and quotes need no second code path. In phrase mode quotes are therefore
+  literal characters, which is why the panel only offers them for loose searches.
+- Blocks are **deduplicated by uuid+text** on load: some transcripts re-append a
+  line they already wrote, verbatim (57 of 246 messages in one session), which
+  doubled every count. Identical text under a different uuid is a real repetition
+  and stays.
+
+The advanced panel's tuning lives in the **URL only** — no settings, no
+persistence. `saveListParams` (sessionStorage) carries it there and back from a
+session, and opening the app fresh starts plain. Whatever is off its default
+**counts on the collapsed button**: a panel nobody can see must never change
+results in silence.
 
 ## Logging
 
@@ -190,4 +252,14 @@ No automated test suite (personal tool). Verify against real data:
 6. Installer: `pnpm build && pnpm package -- --version 0.0.1`, extract the zip to a temp folder, run `install.ps1` (stop any dev instance first — same port), verify the task in `taskschd.msc`, `Stop-ScheduledTask` frees port 7433 within ~5 s (parent-watchdog), `launch.vbs` cold-starts it, `uninstall.ps1` removes task+shortcut and keeps `%LOCALAPPDATA%` data.
 7. Update E2E needs two published releases: install the older, wait ≤10 min (or "Check now") for the badge, apply, and check `update.log` + the versions\ pruning. Afterwards the daily log must tell the WHOLE story on its own — filter it by `updates,update-helper` and you should be able to read the click, every download attempt, the checksum, the tar exit code, the helper registration, the junction swap, the health check and the result, in order and with no gap where the server exited. The parts that need no release: the resumable download against a local HTTP server that drops the first attempt mid-body (it must resume with `Range` and end byte-identical), and `updateLogImport` against a hand-written `update.log` (levels, original timestamps, and a second pass importing nothing).
 8. Auto-reload: point it at a throwaway folder and drive the config errors through `PUT /api/settings` (missing folder, a file instead of a folder, relative path, empty message, unknown model → each must come back in `configError`). "Send it now" must answer in a few seconds and log the reply, then flip to "started a window" on its own about a minute later without touching the page; the useful part cannot be scheduled, so read the log viewer (source `auto-reload`) afterwards. Press it twice in a row: the second press must be refused *with the reason next to the button* ("a message is being sent right now"), and pressing it again straight after the first one finished must go through — no wait may ever leave it disabled and silent. Every refusal is logged too, so `"Send it now" refused` answers "I pressed it and nothing happened". The no-floor rule is checkable without waiting five hours: press "Send it now" while a window is running, and the log must read `the window was already running, so a reload is still due at its expiry` (panel: *not* "started a window") and `nextCheckAt` must land on that expiry + 1 min — never on the send + 30 min. Toggle `autoReloadHideSessions` against a folder that HAS sessions and watch `/api/sessions`, `/api/projects`, `/api/prompts` and `/api/search` all drop together and come back.
-9. Logs: `/api/logs/day/<today>` with `level=`, `src=` and `q=` must each narrow the total; `2026-8-1` and a traversal attempt must both 400. Drop a hand-written `YYYY-MM-DD.log` older than the window in the logs dir, save any setting, and it must be pruned. "Delete all logs" must remove today's file too (a `cleared N log files` record recreates it immediately). Fastify wiring cannot be checked without a 500 — add a throwing route temporarily, confirm an `http` error record with the stack, and remove it.
+9. Search: `is invalid according` must find a phrase that sits across a newline in
+   a pasted log, and the same query in NFD must match as in NFC. `is invalid` in
+   words mode drops from 31 sessions to 12 with **Whole words only** (`is` inside
+   `asistente`); a query of only accents or of single letters must answer 0 in ~0 ms
+   and never spin. Deep search: a string that exists only in a `tool_use` input
+   (`old_string`) gives 0 normally and ~35 sessions in ~4 s deep, one only in tool
+   output (`TS2339`) gives 0 then 1, and a prose word plus a tool-only word in
+   session scope gives 0 then a hit — that pairing is the reason the scan re-matches
+   the indexed text. Cancel it mid-scan (`curl --max-time 1`) and the log must read
+   `deep search cancelled` with the bytes it got through, not the full corpus.
+10. Logs: `/api/logs/day/<today>` with `level=`, `src=` and `q=` must each narrow the total; `2026-8-1` and a traversal attempt must both 400. Drop a hand-written `YYYY-MM-DD.log` older than the window in the logs dir, save any setting, and it must be pruned. "Delete all logs" must remove today's file too (a `cleared N log files` record recreates it immediately). Fastify wiring cannot be checked without a 500 — add a throwing route temporarily, confirm an `http` error record with the stack, and remove it.

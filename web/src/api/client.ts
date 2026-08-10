@@ -68,6 +68,23 @@ export const api = {
     if (tuning) applyTuning(params, tuning);
     return getJson<SearchResponse>(`/api/search?${params}`);
   },
+  /**
+   * Reads the transcripts for tool calls and output — seconds, not milliseconds,
+   * so it only ever runs when asked. `signal` is what stops the scan server-side
+   * when the query changes under it.
+   */
+  deepSearch: async (q: string, tuning: SearchTuning, sessionIds: string[], signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    applyTuning(params, tuning);
+    const res = await fetch('/api/search/deep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q, ...Object.fromEntries(params), sessionIds }),
+      signal,
+    });
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json() as Promise<SearchResponse>;
+  },
   pinSession: async (id: string, pinned: boolean) => {
     const res = await fetch(`/api/sessions/${id}/pin`, {
       method: 'PUT',
