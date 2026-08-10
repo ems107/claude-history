@@ -302,6 +302,13 @@ export interface AutoReloadRun {
   error: string | null;
   /** A fresh 5-hour window was confirmed after the run. This is the real goal. */
   windowStarted: boolean;
+  /**
+   * When the read-back that checks `windowStarted` happened. Null means it is
+   * still pending: the prompt answers in seconds but the figures need a minute
+   * to settle, so until this is set `windowStarted: false` means "not yet
+   * known", not "no window". The run is handed to the UI before this exists.
+   */
+  verifiedAt: string | null;
   /** True when started from the Test button rather than by the schedule. */
   manual: boolean;
 }
@@ -314,8 +321,23 @@ export interface AutoReloadStatus {
   configError: string | null;
   /** Why it stopped itself (repeated failures). Cleared by saving a setting. */
   pausedReason: string | null;
-  /** A check or a reload is in flight right now. */
+  /** A scheduled check is in flight right now. Never blocks a manual send. */
   running: boolean;
+  /** A prompt is being sent right now — seconds, not minutes. */
+  sending: boolean;
+  /** A send has happened and its read-back is still pending (about a minute). */
+  verifying: boolean;
+  /**
+   * Why "Send it now" would be refused right now, null when it would go
+   * through. The server computes it once and both consumers use it: the POST
+   * refuses with this exact string, and the button is disabled by it and shows
+   * it. That is the point of it living here — a button disabled by one thing
+   * while explaining another is how it came to be disabled with no reason at
+   * all. It only ever holds a validation failure or a send genuinely in flight:
+   * the cooldowns and backoffs exist to stop an automatic loop, and have no
+   * business stopping a person who is asking.
+   */
+  runBlockedReason: string | null;
   /** Known expiry of the current 5-hour window; null when none is running. */
   resetsAt: string | null;
   /** When the server will next ask Anthropic for the figures. */

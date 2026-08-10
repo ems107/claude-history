@@ -152,7 +152,9 @@ function AutoReloadStatusPanel() {
   const { data: st } = useQuery({
     queryKey: ['autoReload'],
     queryFn: api.autoReload,
-    refetchInterval: 30_000,
+    // Faster while something is in flight: a send lasts seconds and its
+    // read-back about a minute, and both end by changing this very state.
+    refetchInterval: (query) => (query.state.data?.sending || query.state.data?.verifying ? 3_000 : 30_000),
     // This is live state that also drives what the button below allows, and the
     // interval does NOT run in a hidden tab. Without a focus refetch (the app
     // turns it off globally) the panel freezes on whatever it last saw — most
@@ -181,11 +183,12 @@ function AutoReloadStatusPanel() {
       .autoReloadRun()
       .then((run) =>
         setResult(
-          run.windowStarted
-            ? `Sent in ${seconds(run.durationMs)} — a new 5-hour window is running.`
-            : run.ok
-              ? `Sent in ${seconds(run.durationMs)}, but no new window was reported: ${run.error ?? 'unknown reason'}`
-              : `Failed: ${run.error ?? 'unknown error'}`,
+          // The answer comes back as soon as Claude has answered, which is what
+          // the button is really testing. Whether a window opened is read back a
+          // minute later, in the background, and lands in "last message" above.
+          run.ok
+            ? `Sent in ${seconds(run.durationMs)} — reading the window back in a minute; the result appears above.`
+            : `Failed: ${run.error ?? 'unknown error'}`,
         ),
       )
       .catch((e: unknown) => setResult(`Failed: ${e instanceof Error ? e.message : String(e)}`))
@@ -200,10 +203,16 @@ function AutoReloadStatusPanel() {
       });
   };
 
-  const blocked = !st.enabled ? 'Switch the feature on first.' : st.configError;
+  // The server decides this, and it is the same string it would refuse the
+  // request with — so the button's disabled state and its explanation cannot
+  // disagree. Anything transient in here clears itself in seconds.
+  const blocked = st.runBlockedReason;
 
   let tone = 'text-emerald-400';
-  let headline = st.running ? 'Active — checking right now.' : 'Active.';
+  let headline = 'Active.';
+  if (st.sending) headline = 'Active — sending a message right now.';
+  else if (st.verifying) headline = 'Active — sent; reading the window back.';
+  else if (st.running) headline = 'Active — checking right now.';
   if (!st.enabled) {
     tone = 'text-[var(--text-dim)]';
     headline = st.configError
@@ -261,31 +270,41 @@ function AutoReloadStatusPanel() {
             <span className="opacity-60">last message</span>
             <span>
               {formatDateTime(run.at)} ({relativeTime(run.at)}){run.manual ? ', manual' : ''} —{' '}
+              {/* Until the read-back has happened, `windowStarted: false` means
+                  "not known yet" — saying "no window" there would be a verdict
+                  on something nobody has looked at. */}
               {run.windowStarted
                 ? `started a window in ${seconds(run.durationMs)}`
-                : run.ok
-                  ? `answered, no window: ${run.error ?? '—'}`
-                  : `failed: ${run.error ?? '—'}`}
+                : !run.verifiedAt
+                  ? `answered in ${seconds(run.durationMs)} — reading the window back`
+                  : run.ok
+                    ? `answered, no window: ${run.error ?? '—'}`
+                    : `failed: ${run.error ?? '—'}`}
               {run.reply && <span className="block opacity-60">“{run.reply}”</span>}
             </span>
           </>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        {/* Anything that would stop the schedule stops the button: sending a
-            message the feature itself would refuse to send proves nothing.
-            A pause does not, since a successful run is what clears it. */}
+        {/* Two states only: our own request in flight (the label says so), or
+            `blocked`, which always carries its reason. Nothing else may disable
+            this — no cooldown, no backoff, no scheduled check — because every
+            one of those waits guards the automatic side, and this button is the
+            user asking. A pause does not block it either: a successful run is
+            what clears one. */}
         <button
           type="button"
           className={btn}
-          disabled={testing || st.running || blocked !== null}
+          disabled={testing || blocked !== null}
           title={blocked ?? 'Sends the message right now, exactly as the schedule would'}
           onClick={runTest}
         >
           {testing ? 'Sending…' : 'Send it now'}
         </button>
-        {/* A disabled button must never be a puzzle: say it here, not just on hover. */}
-        {blocked && !testing && !st.running && <span className="text-[11px] text-[var(--text-dim)]">{blocked}</span>}
+        {/* A disabled button must never be a puzzle: say it here, not just on
+            hover. Tied to the same value that disables it, so there is no way to
+            end up dead and silent. */}
+        {blocked && !testing && <span className="text-[11px] text-[var(--text-dim)]">{blocked}</span>}
         {result && <span className="text-[11px] text-[var(--text-dim)]">{result}</span>}
       </div>
     </div>

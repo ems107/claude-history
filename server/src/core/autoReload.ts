@@ -31,10 +31,17 @@ const log = createLogger('auto-reload');
  * Guards, in order of importance — the failure mode to fear here is a loop
  * spawning Claude sessions forever:
  *   - a failed/stale usage read is never read as "no window" (see FiveHourProbe)
- *   - one check or reload at a time (`busy`)
- *   - COOLDOWN_MS between two reloads, whatever else happens (`waitOutCooldown`,
- *     which every path ending in a prompt goes through)
+ *   - one check or reload at a time (`busy`), and never two prompts at once
+ *     (`sending`)
+ *   - COOLDOWN_MS between two SCHEDULED reloads, whatever else happens
+ *     (`waitOutCooldown`, which every automatic path ending in a prompt goes
+ *     through)
  *   - MAX_FAILURES verified failures in a row and it stops itself
+ *
+ * Every one of those guards exists to tame the schedule, so none of them may
+ * stand in the way of the user pressing "Send it now": that button is refused
+ * only by the validations and by a prompt genuinely in flight (a few seconds).
+ * See `runBlockedReason()`, which is also the text the UI shows.
  *
  * The one failure it answers by acting rather than waiting is a stale stored
  * token: only running Claude Code refreshes it, so waiting guarantees the same
@@ -114,6 +121,20 @@ export class AutoReloadService {
   private failures = 0;
   private pausedReason: string | null = null;
   private busy = false;
+  /**
+   * A `claude -p` process is in flight. Deliberately separate from `busy`: that
+   * one is the scheduler's mutex, while this covers only the send itself — a
+   * few seconds. Two prompts at once is the single thing that must never
+   * happen, so this is the only state that can refuse a manual send.
+   */
+  private sending = false;
+  /**
+   * How many read-backs are pending (each happens VERIFY_DELAY_MS after its
+   * send). A count rather than a flag because two can overlap — a manual send
+   * right after a scheduled one — and the first to finish must not report the
+   * second as done.
+   */
+  private verifyPending = 0;
   private readBackoffStep = 0;
   /** Resolved once; undefined until then, null when the CLI is missing. */
   private cliPath: string | null | undefined;
@@ -216,6 +237,28 @@ export class AutoReloadService {
     return null;
   }
 
+  /**
+   * Why "Send it now" would be refused, or null when it would go through.
+   *
+   * One method, two consumers: `runNow()` refuses with exactly this string, and
+   * the UI both disables the button and shows it. They cannot drift apart, and
+   * that is the whole point — the button used to be disabled by `running` while
+   * the only text it could show came from `configError`, so a scheduled check
+   * left it dead and silent for a minute at a time.
+   *
+   * What is NOT in here matters as much: no cooldown, no backoff, no schedule,
+   * no pause. Those exist to keep the automatic side from looping, and a person
+   * asking for one message is not a loop. The only transient entry is a prompt
+   * already in flight, which clears itself in seconds.
+   */
+  runBlockedReason(s: AppSettings = this.getSettings()): string | null {
+    if (!s.autoReloadEnabled) return 'Switch the feature on first.';
+    const configError = this.configError(s);
+    if (configError) return configError;
+    if (this.sending) return 'A message is being sent right now — it takes a few seconds.';
+    return null;
+  }
+
   status(): AutoReloadStatus {
     const s = this.getSettings();
     const configError = this.configError(s);
@@ -231,6 +274,9 @@ export class AutoReloadService {
       configError,
       pausedReason: this.pausedReason,
       running: this.busy,
+      sending: this.sending,
+      verifying: this.verifyPending > 0,
+      runBlockedReason: this.runBlockedReason(s),
       resetsAt: iso(this.resetsAt),
       nextCheckAt: active ? iso(this.nextCheckAt) : null,
       lastCheckAt: iso(this.lastCheckAt),
@@ -243,23 +289,31 @@ export class AutoReloadService {
   }
 
   /**
-   * Run the whole cycle once, on demand, ignoring only the schedule and the
-   * cooldown. Everything that stops the scheduler stops this too: sending a
-   * prompt the feature itself would refuse to send proves nothing. A pause is
-   * not one of those — clearing it is exactly what a successful run does.
+   * Send the message now, because the user asked. Refused only by
+   * `runBlockedReason()` — a configuration that could not work, or a prompt
+   * already on its way out. Nothing about the schedule applies: not the
+   * cooldown, not a backoff, not a check sleeping until the window expires, and
+   * not a pause (a successful run is what clears one).
+   *
+   * It does NOT take the scheduler's `busy` mutex either, so a check running at
+   * that moment cannot make the button dead. Overlapping is safe: the send
+   * stamps `lastRunAt` before spawning, which puts the scheduler's own send
+   * behind the cooldown, and `sending` stops the two ever overlapping anyway.
+   *
+   * Answers as soon as Claude has answered — a few seconds. The read-back that
+   * confirms the window is a minute later and finishes in the background, on
+   * `lastRun`, where the panel picks it up.
    */
   async runNow(): Promise<AutoReloadRun> {
-    if (this.busy) throw new Error('A check or reload is already running — try again in a moment.');
     const s = this.getSettings();
-    if (!s.autoReloadEnabled) throw new Error('Switch the feature on first.');
-    const configError = this.configError(s);
-    if (configError) throw new Error(configError);
-    this.busy = true;
-    try {
-      return await this.reload(s, true, 'manual run');
-    } finally {
-      this.busy = false;
+    const blocked = this.runBlockedReason(s);
+    if (blocked) {
+      // Nothing else records a refusal, and "I pressed it and nothing
+      // happened" has to be answerable from the log alone.
+      log.warn(`"Send it now" refused: ${blocked}`);
+      throw new Error(blocked);
     }
+    return await this.reload(s, true, 'manual run');
   }
 
   private async tick(): Promise<void> {
@@ -319,6 +373,7 @@ export class AutoReloadService {
        * fail, so that one really does wait for a person.
        */
       if (probe.kind === 'auth-stale') {
+        if (this.sendInFlight('the stored token is stale')) return;
         if (this.waitOutCooldown('the stored token is stale')) return;
         // The error itself is on the `usage` line just above, verbatim.
         await this.reload(s, false, 'the stored token is stale, and running Claude Code is what refreshes it');
@@ -346,14 +401,30 @@ export class AutoReloadService {
     }
 
     this.resetsAt = null;
+    if (this.sendInFlight('no 5-hour window')) return;
     if (this.waitOutCooldown('no 5-hour window')) return;
     await this.reload(s, false, 'no 5-hour window');
   }
 
   /**
-   * The floor between two prompts, whatever the reason for sending one. Every
-   * path that ends in `reload()` goes through here: the anti-loop guarantee is
-   * that no reason, however good, can send two messages within COOLDOWN_MS.
+   * Stand down when a prompt is already on its way out. Only reachable when the
+   * user pressed "Send it now" a fraction of a second before this check reached
+   * its decision — that message does the same job, so wait for its read-back
+   * rather than sending a second one.
+   */
+  private sendInFlight(why: string): boolean {
+    if (!this.sending) return false;
+    this.nextCheckAt = Date.now() + VERIFY_DELAY_MS + RESET_MARGIN_MS;
+    log.info(`${why}, but a message is already being sent — leaving it to that one`);
+    return true;
+  }
+
+  /**
+   * The floor between two SCHEDULED prompts, whatever the reason for sending
+   * one. Every automatic path that ends in `reload()` goes through here: the
+   * anti-loop guarantee is that no reason, however good, makes the scheduler
+   * send two messages within COOLDOWN_MS. A manual send is not bound by it —
+   * see `runNow()`.
    */
   private waitOutCooldown(why: string): boolean {
     const since = Date.now() - this.lastRunAt;
@@ -372,12 +443,22 @@ export class AutoReloadService {
   }
 
   /**
-   * Send the prompt, then read usage back to learn the new expiry. The caller
-   * owns the `busy` mutex, and passes the `reason` it decided to send — there
-   * are three now, and a line that always said "no 5-hour window" would be
-   * wrong two thirds of the time.
+   * Send the prompt and hand the run back the moment Claude has answered. The
+   * caller passes the `reason` it decided to send — there are three now, and a
+   * line that always said "no 5-hour window" would be wrong two thirds of the
+   * time.
+   *
+   * The read-back that confirms a window opened is a minute away and nobody
+   * needs to be held up by it, so it runs detached in `verify()` and finishes
+   * on the same `AutoReloadRun` object. Awaiting it here is what made "Send it
+   * now" sit at "Sending…" for over a minute and kept the button dead for as
+   * long: a response nobody waits for reads as a hang, and the useful part
+   * (Claude answered, in 5 s, with this) was already known.
    */
   private async reload(s: AppSettings, manual: boolean, reason: string): Promise<AutoReloadRun> {
+    // Belt and braces: every caller checks first, and this is the invariant.
+    if (this.sending) throw new Error('A message is being sent right now — it takes a few seconds.');
+    this.sending = true;
     const startedAt = Date.now();
     this.lastRunAt = startedAt;
     const cwd = s.autoReloadCwd.trim();
@@ -392,6 +473,7 @@ export class AutoReloadService {
       reply: null,
       error: null,
       windowStarted: false,
+      verifiedAt: null,
       manual,
     };
     this.lastRun = run;
@@ -413,46 +495,78 @@ export class AutoReloadService {
     } catch (err) {
       run.durationMs = Date.now() - startedAt;
       run.error = err instanceof Error ? err.message : String(err);
+      run.verifiedAt = new Date().toISOString();
       log.warn(`the prompt failed: ${run.error}`);
       this.countFailure(`the prompt failed (${run.error})`);
       return run;
+    } finally {
+      this.sending = false;
     }
 
-    // The reply proves Claude answered, not that a window opened. Read it back.
-    // Forced: this is the one read whose whole job is to see a change, so a
-    // reading taken before the prompt is worse than useless here.
-    await delay(VERIFY_DELAY_MS);
-    const probe = await this.usage.probeFiveHour('auto-reload-verify', { force: true });
-    this.lastCheckAt = Date.now();
-    if (!probe.ok) {
-      // A token still stale after Claude Code has just run is not a blip: the
-      // one thing that refreshes it has happened and it did not take, so
-      // sending again would be repeating something that demonstrably does not
-      // work. Count it, and let MAX_FAILURES stop this by itself.
-      if (probe.kind === 'auth-stale') {
-        run.error = `sent, but the stored token is still stale afterwards (${probe.error})`;
-        this.countFailure(run.error);
-        log.warn(`${run.error}`);
-        return run;
-      }
-      // Otherwise blame the read, not the reload: the window may well have
-      // started. The cooldown keeps this from turning into a stream of prompts.
-      run.error = `sent, but the usage read-back failed (${probe.error})`;
-      this.nextCheckAt = Date.now() + 2 * 60_000;
-      log.warn(`${run.error}`);
-      return run;
-    }
-    const resetsAt = probe.resetsAt ? Date.parse(probe.resetsAt) : NaN;
-    if (Number.isFinite(resetsAt) && resetsAt > Date.now()) {
-      run.windowStarted = true;
-      this.failures = 0;
-      this.pausedReason = null;
-      this.sleepUntilReset(resetsAt, 'the read-back after the prompt');
-      return run;
-    }
-    run.error = 'the prompt ran but Anthropic still reports no 5-hour window';
-    this.countFailure(run.error);
+    // Sleep past the read-back, so a tick cannot spend a read on figures we are
+    // about to ask for anyway. The verify itself moves this to where it belongs.
+    this.verifyPending++;
+    this.nextCheckAt = Date.now() + VERIFY_DELAY_MS + RESET_MARGIN_MS;
+    void this.verify(run);
     return run;
+  }
+
+  /**
+   * The reply proves Claude answered, not that a window opened — so read the
+   * figures back and finish the run's story on the object the UI is already
+   * holding (`lastRun`). Detached on purpose: nothing is waiting for this, and
+   * the wait before it is a full minute.
+   *
+   * A run superseded by a later one is still updated here; it simply is no
+   * longer `lastRun`, so nobody looks at it.
+   */
+  private async verify(run: AutoReloadRun): Promise<void> {
+    try {
+      // A minute for the figures to settle. Forced: this is the one read whose
+      // whole job is to see a change, so a reading taken before the prompt is
+      // worse than useless here.
+      await delay(VERIFY_DELAY_MS);
+      const probe = await this.usage.probeFiveHour('auto-reload-verify', { force: true });
+      this.lastCheckAt = Date.now();
+      run.verifiedAt = new Date().toISOString();
+      if (!probe.ok) {
+        // A token still stale after Claude Code has just run is not a blip: the
+        // one thing that refreshes it has happened and it did not take, so
+        // sending again would be repeating something that demonstrably does not
+        // work. Count it, and let MAX_FAILURES stop this by itself.
+        if (probe.kind === 'auth-stale') {
+          run.error = `sent, but the stored token is still stale afterwards (${probe.error})`;
+          this.countFailure(run.error);
+          log.warn(`${run.error}`);
+          return;
+        }
+        // Otherwise blame the read, not the reload: the window may well have
+        // started. The cooldown keeps this from turning into a stream of prompts.
+        run.error = `sent, but the usage read-back failed (${probe.error})`;
+        this.nextCheckAt = Date.now() + 2 * 60_000;
+        log.warn(`${run.error}`);
+        return;
+      }
+      const resetsAt = probe.resetsAt ? Date.parse(probe.resetsAt) : NaN;
+      if (Number.isFinite(resetsAt) && resetsAt > Date.now()) {
+        run.windowStarted = true;
+        this.failures = 0;
+        this.pausedReason = null;
+        this.sleepUntilReset(resetsAt, 'the read-back after the prompt');
+        return;
+      }
+      run.error = 'the prompt ran but Anthropic still reports no 5-hour window';
+      this.countFailure(run.error);
+    } catch (err) {
+      // Nothing is awaiting this, so an exception here would otherwise vanish
+      // and leave the run frozen at "waiting to read the window back" forever.
+      run.verifiedAt = new Date().toISOString();
+      run.error = `sent, but the read-back threw: ${err instanceof Error ? err.message : String(err)}`;
+      this.nextCheckAt = Date.now() + 2 * 60_000;
+      log.warn('the read-back after the prompt failed', err);
+    } finally {
+      this.verifyPending--;
+    }
   }
 
   private countFailure(reason: string): void {

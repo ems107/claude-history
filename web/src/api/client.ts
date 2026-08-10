@@ -126,7 +126,23 @@ export const api = {
   },
   autoReload: () => getJson<AutoReloadStatus>('/api/auto-reload'),
   autoReloadRun: async () => {
-    const res = await fetch('/api/auto-reload/run', { method: 'POST' });
+    /**
+     * A deadline is allowed here, unlike on an update, because it mirrors a
+     * promise the server makes rather than guessing at one: it answers as soon
+     * as `claude -p` has answered, and it kills that process itself at 120 s. So
+     * past this point the answer is lost, not late — and the message says so
+     * without claiming the send failed, because the panel above (which polls
+     * the server's own record of the run) is the one that knows.
+     */
+    let res: Response;
+    try {
+      res = await fetch('/api/auto-reload/run', { method: 'POST', signal: AbortSignal.timeout(150_000) });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'TimeoutError') {
+        throw new Error('the server never answered — the message may still have been sent, see “last message” above and the log');
+      }
+      throw err;
+    }
     const body = (await res.json()) as { run?: AutoReloadRun; error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body.run!;
