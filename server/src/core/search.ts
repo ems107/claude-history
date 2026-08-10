@@ -7,29 +7,51 @@ const MAX_SNIPPETS_PER_SESSION = 3;
 const SNIPPET_BEFORE = 60; // folded chars of context before the match
 const SNIPPET_AFTER = 90;
 
+const WHITESPACE = /\s/;
+
 /**
- * Case- and diacritic-insensitive folding: each code point becomes the
- * lowercased base letter of its NFD decomposition ("Código" → "codigo").
- * One folded char per code point, so offsets map back via foldWithMap.
+ * The single folding loop, shared so the mapped and unmapped variants cannot
+ * drift: each code point becomes the lowercased base letter of its NFD
+ * decomposition ("Código" → "codigo"), and every run of whitespace collapses
+ * to one space. One folded char per code point or per run, and `map` (when
+ * given) receives the original index of each — for a run, of its first
+ * character — so snippet offsets map back.
  */
-export function foldText(text: string): string {
+function foldInto(text: string, map: number[] | null): string {
   let out = '';
+  let i = 0;
+  let inRun = false;
   for (const ch of text) {
-    out += ch.normalize('NFD').charAt(0).toLowerCase();
+    if (WHITESPACE.test(ch)) {
+      if (!inRun) {
+        inRun = true;
+        out += ' ';
+        map?.push(i);
+      }
+    } else {
+      inRun = false;
+      out += ch.normalize('NFD').charAt(0).toLowerCase();
+      map?.push(i);
+    }
+    i += ch.length;
   }
   return out;
 }
 
+/**
+ * Folds haystack and needle alike, which is why collapsing whitespace matters:
+ * pasted logs, XML and stack traces wrap, so a searched phrase must not depend
+ * on where the line happened to break ("is invalid according" sat across a
+ * newline and could not be found). Snippets are rendered through oneLine()
+ * regardless — without this, the text shown and the text searched differ.
+ */
+export function foldText(text: string): string {
+  return foldInto(text, null);
+}
+
 function foldWithMap(text: string): { folded: string; map: number[] } {
-  let folded = '';
   const map: number[] = [];
-  let i = 0;
-  for (const ch of text) {
-    folded += ch.normalize('NFD').charAt(0).toLowerCase();
-    map.push(i);
-    i += ch.length;
-  }
-  return { folded, map };
+  return { folded: foldInto(text, map), map };
 }
 
 function oneLine(text: string): string {
