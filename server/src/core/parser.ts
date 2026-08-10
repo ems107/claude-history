@@ -256,7 +256,14 @@ export async function parseTranscript(
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             userBlocks.push({ kind: 'text', text: c.text });
           } else if (c.type === 'image') {
-            userBlocks.push({ kind: 'image' });
+            const source = isRec(c.source) ? c.source : null;
+            userBlocks.push({
+              kind: 'image',
+              mediaType: source ? str(source.media_type) : null,
+              // Only a base64 source carries the bytes; anything else is a
+              // reference we have no way to resolve from a transcript line.
+              data: source && source.type === 'base64' ? str(source.data) : null,
+            });
           }
         }
         if (userBlocks.length > 0) {

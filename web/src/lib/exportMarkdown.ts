@@ -5,6 +5,8 @@ export interface ExportOptions {
   includeTools: boolean;
   includeThinking: boolean;
   includeSystem: boolean;
+  /** Embed attachments as data URIs — self-contained, but one long line each. */
+  includeImages: boolean;
 }
 
 /** Fence arbitrary content safely: use more backticks than the content contains. */
@@ -90,7 +92,13 @@ export function buildMarkdown(detail: SessionDetail, opts: ExportOptions): strin
           }
           case 'image':
             writeHeader();
-            out.push('*🖼 image attachment (not stored in transcript)*', '');
+            if (!block.data) {
+              out.push('*🖼 image attachment (no image data in the transcript)*', '');
+            } else if (opts.includeImages) {
+              out.push(`![Attachment](data:${block.mediaType ?? 'image/png'};base64,${block.data})`, '');
+            } else {
+              out.push('*🖼 image attachment (not included in this export)*', '');
+            }
             break;
         }
       }

@@ -1,6 +1,7 @@
 import type { ContentBlock, MessageItem, Turn as TurnType } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { ImageBlock } from './ImageBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
@@ -38,11 +39,7 @@ function UserItem({ item }: { item: MessageItem }) {
           );
         }
         if (b.kind === 'image') {
-          return (
-            <div key={i} className="my-1 rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)]">
-              🖼 image attachment (not stored in transcript)
-            </div>
-          );
+          return <ImageBlock key={i} block={b} />;
         }
         if (b.kind === 'text') {
           return (

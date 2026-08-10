@@ -4,7 +4,12 @@ import { downloadMarkdown, type ExportOptions } from '../../lib/exportMarkdown.t
 
 export function ExportButton({ detail }: { detail: SessionDetail }) {
   const [open, setOpen] = useState(false);
-  const [opts, setOpts] = useState<ExportOptions>({ includeTools: true, includeThinking: false, includeSystem: false });
+  const [opts, setOpts] = useState<ExportOptions>({
+    includeTools: true,
+    includeThinking: false,
+    includeSystem: false,
+    includeImages: true,
+  });
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,6 +48,7 @@ export function ExportButton({ detail }: { detail: SessionDetail }) {
           {check('includeTools', 'Include tool calls')}
           {check('includeThinking', 'Include thinking')}
           {check('includeSystem', 'Include system messages')}
+          {check('includeImages', 'Embed images')}
           <button
             type="button"
             onClick={() => {

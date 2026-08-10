@@ -113,7 +113,20 @@ export type ContentBlock =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
   | { kind: 'command'; text: string }
-  | { kind: 'image' }
+  /**
+   * An image attached to a prompt. The transcript stores it inline as base64
+   * (`source.type: 'base64'` is the only form seen), so it rides along in the
+   * response instead of sitting behind an endpoint: every attachment on this
+   * machine adds up to 1.6 MB, the heaviest session to 0.43 MB.
+   *
+   * Screenshots returned by TOOLS are a different problem with the same shape —
+   * 519 of them, 116 MB inside ONE session — and are deliberately NOT carried
+   * here, for the reason tool output is not indexed either.
+   *
+   * `data` is null only when the line held something we cannot decode, and that
+   * is the one case where the viewer may say the image is unavailable.
+   */
+  | { kind: 'image'; mediaType: string | null; data: string | null }
   | {
       kind: 'tool';
       toolName: string;
