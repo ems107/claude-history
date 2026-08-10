@@ -8,18 +8,38 @@ import type { SearchMode, SearchWordScope } from '@claude-history/shared';
  * rather than a setting to remember having changed.
  */
 export interface SearchTuning {
+  /** Which roles to look in; '' is everywhere. Not to be confused with `scope`, */
+  where: string;
   mode: SearchMode;
+  /** which is where the words of a loose search have to meet. */
   scope: SearchWordScope;
   wholeWord: boolean;
 }
 
-export const DEFAULT_TUNING: SearchTuning = { mode: 'phrase', scope: 'message', wholeWord: false };
+/** The one place that knows what a plain search is. */
+export const DEFAULT_TUNING: SearchTuning = {
+  where: '',
+  mode: 'phrase',
+  scope: 'message',
+  wholeWord: false,
+};
+
+export const WHERE_OPTIONS: Array<[string, string]> = [
+  ['', 'Everywhere'],
+  ['title', 'Titles'],
+  ['user', 'My prompts'],
+  ['assistant', 'Responses'],
+];
 
 /** Every param the search owns, so filter changes stop wiping them. */
 export const SEARCH_PARAMS = ['q', 'in', 'mode', 'co', 'w'];
 
 export function parseTuning(params: URLSearchParams): SearchTuning {
+  const where = params.get('in') ?? '';
   return {
+    // Anything the panel cannot produce degrades to everywhere, the same way the
+    // route treats a value it does not know.
+    where: WHERE_OPTIONS.some(([value]) => value === where) ? where : '',
     mode: params.get('mode') === 'words' ? 'words' : 'phrase',
     scope: params.get('co') === 'session' ? 'session' : 'message',
     wholeWord: params.get('w') === '1',
@@ -28,6 +48,8 @@ export function parseTuning(params: URLSearchParams): SearchTuning {
 
 /** Only what differs from the default is written, so a plain search keeps a plain URL. */
 export function applyTuning(params: URLSearchParams, tuning: SearchTuning): void {
+  if (tuning.where) params.set('in', tuning.where);
+  else params.delete('in');
   if (tuning.mode === 'words') params.set('mode', 'words');
   else params.delete('mode');
   if (tuning.mode === 'words' && tuning.scope === 'session') params.set('co', 'session');
@@ -38,9 +60,9 @@ export function applyTuning(params: URLSearchParams, tuning: SearchTuning): void
 
 /**
  * How many options are away from their default — what the collapsed panel shows,
- * so a tuning left on can never change results without saying so. The scope is
- * part of the match choice, not a count of its own.
+ * so a tuning left on can never change results without saying so. The message
+ * or session scope is part of the match choice, not a count of its own.
  */
 export function tuningChanges(tuning: SearchTuning): number {
-  return (tuning.mode === 'phrase' ? 0 : 1) + (tuning.wholeWord ? 1 : 0);
+  return (tuning.where ? 1 : 0) + (tuning.mode === 'phrase' ? 0 : 1) + (tuning.wholeWord ? 1 : 0);
 }

@@ -63,9 +63,8 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<{ prices: PriceTable; isDefault: boolean }>;
   },
-  search: (q: string, scope?: string, tuning?: SearchTuning) => {
+  search: (q: string, tuning?: SearchTuning) => {
     const params = new URLSearchParams({ q });
-    if (scope) params.set('in', scope);
     if (tuning) applyTuning(params, tuning);
     return getJson<SearchResponse>(`/api/search?${params}`);
   },

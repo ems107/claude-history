@@ -1,4 +1,9 @@
-import { DEFAULT_TUNING, type SearchTuning, tuningChanges } from '../../lib/searchTuning.ts';
+import {
+  DEFAULT_TUNING,
+  type SearchTuning,
+  tuningChanges,
+  WHERE_OPTIONS,
+} from '../../lib/searchTuning.ts';
 
 /**
  * The match rule is one choice of three rather than a mode toggle plus a scope
@@ -58,6 +63,24 @@ export function SearchOptions({
               />
               <span>{option.label}</span>
               <span className="text-[var(--text-dim)]">— {option.hint}</span>
+            </label>
+          ))}
+        </div>
+        <div>
+          <div className="mb-1 text-[var(--text-dim)]">Where</div>
+          {WHERE_OPTIONS.map(([value, label]) => (
+            <label
+              key={value}
+              className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5 select-none hover:bg-[var(--bg-hover)]"
+            >
+              <input
+                type="radio"
+                name="search-where"
+                checked={tuning.where === value}
+                onChange={() => onChange({ ...tuning, where: value })}
+                className="accent-[var(--accent)]"
+              />
+              <span>{label}</span>
             </label>
           ))}
         </div>

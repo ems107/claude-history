@@ -23,13 +23,6 @@ const ROW_HEIGHT = 64;
 const HEADER_HEIGHT = 30;
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 
-const SEARCH_SCOPES: Array<[string, string]> = [
-  ['', 'Everywhere'],
-  ['title', 'Titles'],
-  ['user', 'My prompts'],
-  ['assistant', 'Responses'],
-];
-
 export function SessionListPage() {
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
@@ -89,22 +82,6 @@ export function SessionListPage() {
     [setSearchParams],
   );
 
-  const scope = searchParams.get('in') ?? '';
-  const setScope = useCallback(
-    (value: string) => {
-      setSearchParams(
-        (prev) => {
-          const sp = new URLSearchParams(prev);
-          if (value) sp.set('in', value);
-          else sp.delete('in');
-          return sp;
-        },
-        { replace: true },
-      );
-    },
-    [setSearchParams],
-  );
-
   const tuning = useMemo(() => parseTuning(searchParams), [searchParams]);
   const setTuning = useCallback(
     (value: SearchTuning) => {
@@ -126,8 +103,8 @@ export function SessionListPage() {
 
   const searchActive = q.trim().length >= 2;
   const searchQuery = useQuery({
-    queryKey: ['search', q, scope, tuning.mode, tuning.scope, tuning.wholeWord],
-    queryFn: () => api.search(q, scope, tuning),
+    queryKey: ['search', q, tuning.where, tuning.mode, tuning.scope, tuning.wholeWord],
+    queryFn: () => api.search(q, tuning),
     enabled: searchActive,
   });
 
@@ -254,18 +231,6 @@ export function SessionListPage() {
             ☰
           </button>
           <SearchBox value={q} onChange={setQ} />
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-            title="Where to search"
-            className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)]"
-          >
-            {SEARCH_SCOPES.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
             onClick={() => setOptionsOpen((v) => !v)}
