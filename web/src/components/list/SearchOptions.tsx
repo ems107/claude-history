@@ -65,6 +65,28 @@ export function SearchOptions({
               <span className="text-[var(--text-dim)]">— {option.hint}</span>
             </label>
           ))}
+          {/*
+            Only the loose modes split the query into terms, so only they can be
+            told to keep some of them together. In Phrase mode the quotes would
+            be searched for as characters, which is the opposite of what this
+            says — hence shown here, under the modes it belongs to, and only
+            while one of them is on.
+          */}
+          {tuning.mode === 'words' && (
+            <div className="pl-6 text-[var(--text-dim)]">
+              Quote to keep words together: <code>&quot;exact phrase&quot; word</code>
+            </div>
+          )}
+          <label className="mt-1.5 flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5 select-none hover:bg-[var(--bg-hover)]">
+            <input
+              type="checkbox"
+              checked={tuning.wholeWord}
+              onChange={(e) => onChange({ ...tuning, wholeWord: e.target.checked })}
+              className="accent-[var(--accent)]"
+            />
+            <span>Whole words only</span>
+            <span className="text-[var(--text-dim)]">— “log” matches log, but not dialog</span>
+          </label>
         </div>
         <div>
           <div className="mb-1 text-[var(--text-dim)]">Where</div>
@@ -83,22 +105,6 @@ export function SearchOptions({
               <span>{label}</span>
             </label>
           ))}
-        </div>
-        <div>
-          <div className="mb-1 text-[var(--text-dim)]">Terms</div>
-          <label className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5 select-none hover:bg-[var(--bg-hover)]">
-            <input
-              type="checkbox"
-              checked={tuning.wholeWord}
-              onChange={(e) => onChange({ ...tuning, wholeWord: e.target.checked })}
-              className="accent-[var(--accent)]"
-            />
-            <span>Whole words only</span>
-            <span className="text-[var(--text-dim)]">— “log” matches log, but not dialog</span>
-          </label>
-          <div className="px-1 py-0.5 text-[var(--text-dim)]">
-            Quote to keep words together: <code>&quot;exact phrase&quot; word</code>
-          </div>
         </div>
       </div>
       {tuningChanges(tuning) > 0 && (
