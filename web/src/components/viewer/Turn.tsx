@@ -1,12 +1,32 @@
-import type { ContentBlock, MessageItem, Turn as TurnType } from '@claude-history/shared';
+import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
+import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { CostPill } from './CostPill.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
+
+/**
+ * A tool call plus the assistant message that made it. `costOwner` is false when
+ * that message prints its own header: its cost is shown there, and counting it
+ * again on the tool run would double it.
+ */
+interface PendingTool {
+  block: ToolContentBlock;
+  item: MessageItem;
+  costOwner: boolean;
+}
+
+/** What every cost pill in a turn needs to place its number in the session. */
+interface CostContext {
+  prices: PriceTable;
+  cumulative: Map<string, number>;
+  sessionTotal: number | null;
+}
 
 function Anchors({ item }: { item: MessageItem }) {
   return (
@@ -18,7 +38,7 @@ function Anchors({ item }: { item: MessageItem }) {
   );
 }
 
-function UserItem({ item }: { item: MessageItem }) {
+function UserItem({ item, badge }: { item: MessageItem; badge?: ReactNode }) {
   return (
     <div id={item.uuid} className="rounded-lg border-l-2 border-[var(--accent)] bg-[var(--bg-raised)] px-3 py-2">
       <Anchors item={item} />
@@ -29,6 +49,7 @@ function UserItem({ item }: { item: MessageItem }) {
             {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
           </span>
         )}
+        {badge && <span className="ml-auto">{badge}</span>}
       </div>
       {item.blocks.map((b, i) => {
         if (b.kind === 'command') {
@@ -60,54 +81,98 @@ function UserItem({ item }: { item: MessageItem }) {
  * answers readable. Expanding shows the individual (still collapsible) calls.
  */
 function ToolGroup({
-  blocks,
+  tools,
   expandAll,
   onOpenAgent,
+  costs,
 }: {
-  blocks: ToolContentBlock[];
+  tools: PendingTool[];
   expandAll: boolean;
   onOpenAgent?: (agentId: string) => void;
+  costs: CostContext;
 }) {
   const [open, setOpen] = useState(expandAll);
   useEffect(() => setOpen(expandAll), [expandAll]);
 
+  const blocks = tools.map((t) => t.block);
   const names = [...new Set(blocks.map((b) => b.toolName))];
   const errors = blocks.filter((b) => b.result?.isError).length;
+  const owners = tools.filter((t) => t.costOwner).map((t) => t.item);
+  const entries = costEntries(owners, costs.prices);
+  const lastUuid = entries.length > 0 ? entries[entries.length - 1].uuid : null;
+  const runPill = (
+    <CostPill
+      entries={entries}
+      prices={costs.prices}
+      cumulative={lastUuid ? costs.cumulative.get(lastUuid) : undefined}
+      sessionTotal={costs.sessionTotal}
+    />
+  );
 
   if (open) {
+    // Expanded, the pill moves onto the FIRST call of each message: that is the
+    // granularity the transcript actually bills at, and a pill per call would
+    // repeat one message's cost across several of them.
+    let previousOwner: string | null = null;
     return (
       <div className="my-1.5 border-l border-[var(--border)] pl-2">
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="mb-1 cursor-pointer text-xs text-[var(--text-dim)] hover:text-[var(--text)]"
-        >
-          ▾ {blocks.length} tool call{blocks.length !== 1 ? 's' : ''} — collapse
-        </button>
-        {blocks.map((b, i) => (
-          <ToolBlock key={i} block={b} onOpenAgent={onOpenAgent} />
-        ))}
+        <div className="mb-1 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="cursor-pointer text-xs text-[var(--text-dim)] hover:text-[var(--text)]"
+          >
+            ▾ {blocks.length} tool call{blocks.length !== 1 ? 's' : ''} — collapse
+          </button>
+          <span className="ml-auto">{runPill}</span>
+        </div>
+        {tools.map((t, i) => {
+          const first = t.costOwner && t.item.uuid !== previousOwner;
+          if (t.costOwner) previousOwner = t.item.uuid;
+          const entry = first ? costEntry(t.item, costs.prices) : null;
+          return (
+            <ToolBlock
+              key={i}
+              block={t.block}
+              onOpenAgent={onOpenAgent}
+              costBadge={
+                entry ? (
+                  <CostPill
+                    entries={[entry]}
+                    prices={costs.prices}
+                    cumulative={costs.cumulative.get(entry.uuid)}
+                    sessionTotal={costs.sessionTotal}
+                  />
+                ) : null
+              }
+            />
+          );
+        })}
       </div>
     );
   }
   return (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      className="my-1.5 flex w-full cursor-pointer items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-left text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
-      title={names.join(', ')}
-    >
-      <span>▸</span>
-      <span className="font-semibold text-sky-300/80">
-        {blocks.length} tool call{blocks.length !== 1 ? 's' : ''}
-      </span>
-      <span className="min-w-0 truncate font-mono opacity-70">{names.join(', ')}</span>
-      {errors > 0 && <span className="ml-auto shrink-0 text-red-400">{errors} failed</span>}
-    </button>
+    <div className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]">
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+        title={names.join(', ')}
+      >
+        <span>▸</span>
+        <span className="shrink-0 font-semibold text-sky-300/80">
+          {blocks.length} tool call{blocks.length !== 1 ? 's' : ''}
+        </span>
+        <span className="min-w-0 truncate font-mono opacity-70">{names.join(', ')}</span>
+      </button>
+      {errors > 0 && <span className="shrink-0 text-red-400">{errors} failed</span>}
+      {runPill}
+    </div>
   );
 }
 
-function AssistantHeader({ item }: { item: MessageItem }) {
+function AssistantHeader({ item, costs }: { item: MessageItem; costs: CostContext }) {
+  const entry = costEntry(item, costs.prices);
   return (
     <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
       <span className="text-emerald-400/80">assistant</span>
@@ -116,6 +181,14 @@ function AssistantHeader({ item }: { item: MessageItem }) {
         <span className="font-normal normal-case" title={formatDateTimeFull(item.timestamp)}>
           {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
         </span>
+      )}
+      {entry && (
+        <CostPill
+          entries={[entry]}
+          prices={costs.prices}
+          cumulative={costs.cumulative.get(entry.uuid)}
+          sessionTotal={costs.sessionTotal}
+        />
       )}
     </div>
   );
@@ -139,29 +212,58 @@ export function TurnView({
   showThinking,
   expandTools,
   onOpenAgent,
+  costs,
+  turnCost,
 }: {
   turn: TurnType;
   showThinking: boolean;
   expandTools: boolean;
   onOpenAgent?: (agentId: string) => void;
+  costs: CostContext;
+  /** Every assistant message of the turn, priced — including the ones that render no header. */
+  turnCost: CostEntry[];
 }) {
   // Tool runs are grouped across items, not just within one assistant
   // message: a turn is usually assistant(tool) → assistant(tool) → … and the
   // user only wants to see one collapsed line for the whole run.
   const nodes: ReactNode[] = [];
-  let pendingTools: ToolContentBlock[] = [];
+  let pendingTools: PendingTool[] = [];
   const flushTools = () => {
     if (pendingTools.length === 0) return;
     nodes.push(
-      <ToolGroup key={`tools-${nodes.length}`} blocks={pendingTools} expandAll={expandTools} onOpenAgent={onOpenAgent} />,
+      <ToolGroup
+        key={`tools-${nodes.length}`}
+        tools={pendingTools}
+        expandAll={expandTools}
+        onOpenAgent={onOpenAgent}
+        costs={costs}
+      />,
     );
     pendingTools = [];
   };
 
+  const lastTurnUuid = turnCost.length > 0 ? turnCost[turnCost.length - 1].uuid : null;
+  const turnBadge =
+    turnCost.length > 0 ? (
+      <CostPill
+        entries={turnCost}
+        prices={costs.prices}
+        cumulative={lastTurnUuid ? costs.cumulative.get(lastTurnUuid) : undefined}
+        sessionTotal={costs.sessionTotal}
+        label="turn"
+        variant="badge"
+      />
+    ) : null;
+  // The badge belongs on the prompt that paid for it. A turn with no user
+  // message (a session whose transcript opens with assistant lines) gets its
+  // own line instead, so no turn is ever left without its total.
+  let badgePlaced = false;
+
   for (const item of turn.items) {
     if (item.role === 'user') {
       flushTools();
-      nodes.push(<UserItem key={item.uuid} item={item} />);
+      nodes.push(<UserItem key={item.uuid} item={item} badge={badgePlaced ? undefined : turnBadge} />);
+      badgePlaced = true;
       continue;
     }
     if (item.role !== 'assistant') {
@@ -172,9 +274,9 @@ export function TurnView({
 
     const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
     // An assistant message that is only tool calls contributes to the run
-    // without printing its own header.
+    // without printing its own header — so the run carries its cost.
     if (visible.length > 0 && visible.every((b) => b.kind === 'tool')) {
-      pendingTools.push(...(visible as ToolContentBlock[]));
+      pendingTools.push(...(visible as ToolContentBlock[]).map((block) => ({ block, item, costOwner: true })));
       continue;
     }
 
@@ -182,16 +284,17 @@ export function TurnView({
     const rendered: ReactNode[] = [];
     for (const [i, b] of visible.entries()) {
       if (b.kind === 'tool') {
-        pendingTools.push(b);
+        pendingTools.push({ block: b, item, costOwner: false });
         continue;
       }
       if (pendingTools.length > 0) {
         rendered.push(
           <ToolGroup
             key={`inline-tools-${i}`}
-            blocks={pendingTools}
+            tools={pendingTools}
             expandAll={expandTools}
             onOpenAgent={onOpenAgent}
+            costs={costs}
           />,
         );
         pendingTools = [];
@@ -203,7 +306,7 @@ export function TurnView({
       nodes.push(
         <div key={item.uuid} id={item.uuid} className="px-1 py-1">
           <Anchors item={item} />
-          <AssistantHeader item={item} />
+          <AssistantHeader item={item} costs={costs} />
           {rendered}
         </div>,
       );
@@ -211,5 +314,10 @@ export function TurnView({
   }
   flushTools();
 
-  return <div className="space-y-1.5">{nodes}</div>;
+  return (
+    <div className="space-y-1.5">
+      {!badgePlaced && turnBadge && <div className="flex justify-end">{turnBadge}</div>}
+      {nodes}
+    </div>
+  );
 }

@@ -1,4 +1,5 @@
 import type { SessionSummary } from '@claude-history/shared';
+import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -106,7 +107,7 @@ export function StatsPage() {
         c.prompts += du.prompts;
         p.lastMs = Math.max(p.lastMs, s.mtimeMs);
         for (const [model, u] of Object.entries(du.byModel)) {
-          const cost = computeCost(u, prices[model]) ?? 0;
+          const cost = computeCost(u, resolvePrices(model, prices)) ?? 0;
           totals.output += u.output;
           totals.cost += cost;
           p.output += u.output;

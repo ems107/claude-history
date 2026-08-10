@@ -5,6 +5,7 @@ import type {
   FileChange,
   FileEdit,
   MessageItem,
+  MessageUsage,
   PrLink,
   SessionDetail,
   SessionSummary,
@@ -46,6 +47,25 @@ export async function loadSubagents(sessionDir: string | null): Promise<Subagent
     }
   }
   return metas;
+}
+
+/**
+ * The billed tokens of one assistant message. Read from the FIRST line carrying
+ * a given `message.id`, exactly as the enricher totals them: the streamed
+ * chunks repeat the same usage object, so anything else would multiply it. Keep
+ * the two in step — the per-message costs shown in the viewer only reconcile
+ * with the session total because both dedupe the same way.
+ */
+function toMessageUsage(usage: Record<string, unknown>): MessageUsage {
+  const cacheCreation = isRec(usage.cache_creation) ? usage.cache_creation : null;
+  return {
+    input: num(usage.input_tokens) ?? 0,
+    output: num(usage.output_tokens) ?? 0,
+    cacheRead: num(usage.cache_read_input_tokens) ?? 0,
+    cacheCreate: num(usage.cache_creation_input_tokens) ?? 0,
+    cacheCreate1h: cacheCreation ? (num(cacheCreation.ephemeral_1h_input_tokens) ?? 0) : 0,
+    cacheCreate5m: cacheCreation ? (num(cacheCreation.ephemeral_5m_input_tokens) ?? 0) : 0,
+  };
 }
 
 function extractResultText(content: unknown): string {
@@ -239,9 +259,12 @@ export async function parseTranscript(
           aliasUuids: [],
           role: 'user',
           timestamp: str(o.timestamp),
+          endTimestamp: str(o.timestamp),
           model: null,
           isMeta: false,
           systemSubtype: null,
+          usage: null,
+          effort: null,
           blocks: [prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text }],
         });
       } else if (Array.isArray(content)) {
@@ -272,9 +295,12 @@ export async function parseTranscript(
             aliasUuids: [],
             role: 'user',
             timestamp: str(o.timestamp),
+            endTimestamp: str(o.timestamp),
             model: null,
             isMeta: false,
             systemSubtype: null,
+            usage: null,
+            effort: null,
             blocks: userBlocks,
           });
         }
@@ -285,14 +311,24 @@ export async function parseTranscript(
       let item = assistantItems.get(messageId);
       if (!item) {
         const model = str(o.message.model);
+        const synthetic = model === '<synthetic>';
         item = {
           uuid: makeUuid(o),
           aliasUuids: [],
           role: 'assistant',
           timestamp: str(o.timestamp),
-          model: model === '<synthetic>' ? null : model,
+          endTimestamp: str(o.timestamp),
+          model: synthetic ? null : model,
           isMeta: false,
           systemSubtype: null,
+          // A synthetic message was not produced by a model and is excluded from
+          // every total; an id-less line has no dedupe key, so counting it could
+          // multiply a streamed message across its chunks.
+          usage:
+            !synthetic && model && str(o.message.id) && isRec(o.message.usage)
+              ? toMessageUsage(o.message.usage)
+              : null,
+          effort: str(o.effort),
           blocks: [],
         };
         assistantItems.set(messageId, item);
@@ -300,6 +336,8 @@ export async function parseTranscript(
       } else {
         const u = str(o.uuid);
         if (u) item.aliasUuids.push(u);
+        // Chunks arrive in order, so the newest line is the end of the answer.
+        item.endTimestamp = str(o.timestamp) ?? item.endTimestamp;
       }
       if (Array.isArray(o.message.content)) {
         for (const c of o.message.content) {
@@ -340,9 +378,12 @@ export async function parseTranscript(
         aliasUuids: [],
         role: 'system',
         timestamp: str(o.timestamp),
+        endTimestamp: str(o.timestamp),
         model: null,
         isMeta: o.isMeta === true,
         systemSubtype: subtype,
+        usage: null,
+        effort: null,
         blocks: [{ kind: 'text', text }],
       });
     }

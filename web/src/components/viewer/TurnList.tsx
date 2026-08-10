@@ -1,6 +1,12 @@
-import type { Turn } from '@claude-history/shared';
-import { useEffect } from 'react';
+import type { PriceTable, Turn } from '@claude-history/shared';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
+import { api } from '../../api/client.ts';
+import { buildCostIndex } from '../../lib/cost.ts';
 import { TurnView } from './Turn.tsx';
+
+/** Stable identity, so the cost index is not rebuilt on every render before the prices arrive. */
+const NO_PRICES: PriceTable = {};
 
 export function TurnList({
   turns,
@@ -15,6 +21,18 @@ export function TurnList({
   scrollToUuid?: string | null;
   onOpenAgent?: (agentId: string) => void;
 }) {
+  // The same cached query the token panel uses — no extra request.
+  const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
+  const prices = pricesQ.data?.prices ?? NO_PRICES;
+  // The total comes from the turns themselves rather than from the session
+  // enrichment: both dedupe assistant lines by message.id, so they agree, and
+  // this one also works for a subagent transcript, which is enriched nowhere.
+  const index = useMemo(() => buildCostIndex(turns, prices), [turns, prices]);
+  const costs = useMemo(
+    () => ({ prices, cumulative: index.cumulative, sessionTotal: index.total }),
+    [prices, index],
+  );
+
   useEffect(() => {
     if (!scrollToUuid) return;
     // Let the DOM settle before scrolling to the deep-linked message.
@@ -44,6 +62,8 @@ export function TurnList({
           showThinking={showThinking}
           expandTools={expandTools}
           onOpenAgent={onOpenAgent}
+          costs={costs}
+          turnCost={index.perTurn[i] ?? []}
         />
       ))}
     </div>

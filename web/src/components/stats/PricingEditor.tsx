@@ -1,7 +1,7 @@
 import type { PriceTable } from '@claude-history/shared';
-import { DEFAULT_PRICES } from '@claude-history/shared';
+import { DEFAULT_PRICES, cacheWrite5mRate, priceKey } from '@claude-history/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client.ts';
 
 const COLS: Array<[keyof PriceTable[string], string]> = [
@@ -9,7 +9,10 @@ const COLS: Array<[keyof PriceTable[string], string]> = [
   ['output', 'Output'],
   ['cacheRead', 'Cache read'],
   ['cacheWrite', 'Cache write (1h)'],
+  ['cacheWrite5m', 'Cache write (5m)'],
 ];
+
+const NO_PRICE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite5m: 0 };
 
 export function PricingEditor({
   prices,
@@ -50,8 +53,12 @@ export function PricingEditor({
             added.push(`${model} (${next.input}/${next.output}/${next.cacheRead}/${next.cacheWrite})`);
             continue;
           }
-          for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'] as const) {
-            if (cur[key] !== next[key]) changed.push(`${model}.${key}: ${cur[key]} → ${next[key]}`);
+          for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'cacheWrite5m'] as const) {
+            // A table saved before the 5m rate existed has no value to compare —
+            // adopting the official one is not a change the user needs listed.
+            if (next[key] !== undefined && cur[key] !== undefined && cur[key] !== next[key]) {
+              changed.push(`${model}.${key}: ${cur[key]} → ${next[key]}`);
+            }
           }
         }
         // Merge fetched over the draft (custom extra models are preserved).
@@ -63,12 +70,20 @@ export function PricingEditor({
       .finally(() => setFetching(false));
   };
 
-  const models = [...new Set([...modelsInUse, ...Object.keys(prices), ...Object.keys(DEFAULT_PRICES)])].sort();
+  // A model id your sessions used can be a dated snapshot of a family row
+  // (claude-haiku-4-5-20251001 → claude-haiku-4-5). Show and mark the row that
+  // actually prices it: listing the dated id instead left a model in use with no
+  // row at all, and its cost silently counted as $0 everywhere.
+  const inUse = useMemo(
+    () => new Set(modelsInUse.map((m) => priceKey(m, draft) ?? priceKey(m, DEFAULT_PRICES) ?? m)),
+    [modelsInUse, draft],
+  );
+  const models = [...new Set([...inUse, ...Object.keys(prices), ...Object.keys(DEFAULT_PRICES)])].sort();
 
   const setCell = (model: string, key: keyof PriceTable[string], value: number) => {
     setDraft((prev) => ({
       ...prev,
-      [model]: { ...(prev[model] ?? DEFAULT_PRICES[model] ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), [key]: value },
+      [model]: { ...(prev[model] ?? DEFAULT_PRICES[model] ?? NO_PRICE), [key]: value },
     }));
     setDirty(true);
   };
@@ -183,18 +198,26 @@ export function PricingEditor({
         </thead>
         <tbody>
           {models.map((model) => {
-            const row = draft[model] ?? DEFAULT_PRICES[model];
+            const known = draft[model] ?? DEFAULT_PRICES[model];
+            // An unpriced model that is in use still gets a row — that is the
+            // only way to give it a price. Costs read "—" until it has one.
+            const row = known ?? (inUse.has(model) ? NO_PRICE : null);
             if (!row) return null;
             return (
               <tr key={model} className="border-t border-[var(--border)]">
-                <td className={`py-1 pr-2 font-mono ${modelsInUse.includes(model) ? '' : 'opacity-50'}`}>{model}</td>
+                <td
+                  className={`py-1 pr-2 font-mono ${known ? '' : 'text-amber-400'} ${inUse.has(model) ? '' : 'opacity-50'}`}
+                  title={known ? undefined : 'Used by your sessions but not priced — its cost reads “—” until you fill this in'}
+                >
+                  {model}
+                </td>
                 {COLS.map(([key]) => (
                   <td key={key} className="px-2 py-0.5 text-right">
                     <input
                       type="number"
                       min={0}
                       step={0.01}
-                      value={row[key]}
+                      value={key === 'cacheWrite5m' ? cacheWrite5mRate(row) : (row[key] ?? 0)}
                       onChange={(e) => setCell(model, key, Number(e.target.value))}
                       className="w-20 rounded border border-[var(--border)] bg-transparent px-1 py-0.5 text-right focus:border-[var(--accent-dim)] focus:outline-none"
                     />
@@ -207,8 +230,9 @@ export function PricingEditor({
       </table>
       <p className="mt-2 text-[11px] text-[var(--text-dim)]">
         Costs shown across the app are <b>API-equivalent value</b> (what this usage would cost at Anthropic API list
-        prices) — on a subscription this is not actual spend. Cache write defaults to the 1-hour-TTL rate used by
-        Claude Code.
+        prices) — on a subscription this is not actual spend. Claude Code writes caches at both TTLs: <b>1h</b> in a
+        session, <b>5m</b> in a subagent, and each message is priced at the one it actually used. Session and daily
+        totals only ever see 1h writes.
       </p>
     </div>
   );

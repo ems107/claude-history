@@ -78,6 +78,10 @@ export function parsePricingMarkdown(markdown: string, now = new Date()): PriceT
   if (cInput < 0 || cWrite1h < 0 || cRead < 0 || cOutput < 0) {
     throw new Error('Pricing table columns changed — expected Base Input / 1h Cache Writes / Cache Hits / Output');
   }
+  // Subagents write 5-minute caches, so this column is a real rate and not a
+  // curiosity — but it stays optional: if the docs drop it, the 1.25x-input
+  // fallback covers it and the four essential columns above still fail loudly.
+  const cWrite5m = col('5m cache');
 
   const table: PriceTable = {};
   for (const line of tableLines.slice(1)) {
@@ -94,6 +98,8 @@ export function parsePricingMarkdown(markdown: string, now = new Date()): PriceT
       cacheWrite: parseMoney(cells[cWrite1h]) ?? -1,
     };
     if (Object.values(prices).some((v) => v < 0)) continue; // unparseable row — skip
+    const write5m = cWrite5m >= 0 && cells.length > cWrite5m ? parseMoney(cells[cWrite5m]) : null;
+    if (write5m !== null && write5m >= 0) prices.cacheWrite5m = write5m;
     table[id] = prices; // later valid rows for the same id overwrite earlier ones
   }
 

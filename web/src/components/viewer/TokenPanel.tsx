@@ -1,4 +1,5 @@
 import type { ModelPrices, SessionSummary, UsageTotals } from '@claude-history/shared';
+import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client.ts';
 import { computeCost, formatUsd } from '../../lib/cost.ts';
@@ -31,7 +32,10 @@ export function TokenPanel({ summary }: { summary: SessionSummary }) {
   }
   const priceTable = pricesQ.data?.prices ?? {};
   const models = Object.entries(e.usageByModel);
-  const totalCost = models.reduce((acc, [model, usage]) => acc + (computeCost(usage, priceTable[model]) ?? 0), 0);
+  const totalCost = models.reduce(
+    (acc, [model, usage]) => acc + (computeCost(usage, resolvePrices(model, priceTable)) ?? 0),
+    0,
+  );
   const duration =
     summary.createdAt && summary.lastActivityAt
       ? Math.round((Date.parse(summary.lastActivityAt) - Date.parse(summary.createdAt)) / 60_000)
@@ -69,7 +73,7 @@ export function TokenPanel({ summary }: { summary: SessionSummary }) {
         </thead>
         <tbody>
           {models.map(([model, usage]) => (
-            <Row key={model} label={shortModel(model) ?? model} usage={usage} prices={priceTable[model]} />
+            <Row key={model} label={shortModel(model) ?? model} usage={usage} prices={resolvePrices(model, priceTable)} />
           ))}
           {models.length > 1 && (
             <tr className="border-t border-[var(--border)] font-semibold">

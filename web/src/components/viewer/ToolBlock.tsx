@@ -1,5 +1,5 @@
 import type { ContentBlock } from '@claude-history/shared';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes } from '../../lib/format.ts';
 
@@ -35,9 +35,12 @@ function OffloadedResult({ path, sizeBytes }: { path: string; sizeBytes: number 
 export function ToolBlock({
   block,
   onOpenAgent,
+  costBadge,
 }: {
   block: ToolContentBlock;
   onOpenAgent?: (agentId: string) => void;
+  /** Set on the first call of each assistant message — what that message was billed. */
+  costBadge?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const result = block.result;
@@ -56,6 +59,7 @@ export function ToolBlock({
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
           <span className="truncate font-mono text-[var(--text-dim)]">{block.inputSummary}</span>
         </button>
+        {costBadge}
         {block.agentId && onOpenAgent && (
           <button
             type="button"

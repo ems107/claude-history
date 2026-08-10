@@ -18,6 +18,23 @@ export interface UsageTotals {
   cacheCreate: number;
 }
 
+/**
+ * What one assistant message was billed. `message.usage` sits on EVERY
+ * assistant line (verified: 3156/3156 across 60 transcripts) and the streamed
+ * chunks of a message repeat it verbatim (0 disagreements), so this is the
+ * value of the first line carrying a given `message.id` — the same dedupe the
+ * enricher does, which is what makes the per-message costs add up to the
+ * session total exactly.
+ */
+export interface MessageUsage extends UsageTotals {
+  /**
+   * `cache_creation` split by TTL. Claude Code writes 1-hour caches — 100% of
+   * this corpus — which is why the default cache-write price is the 1h rate.
+   */
+  cacheCreate1h: number;
+  cacheCreate5m: number;
+}
+
 export interface PrLink {
   prNumber: number;
   prUrl: string;
@@ -144,10 +161,20 @@ export interface MessageItem {
   aliasUuids: string[];
   role: 'user' | 'assistant' | 'system';
   timestamp: string | null;
+  /**
+   * Timestamp of the LAST streamed chunk of this message (equal to `timestamp`
+   * when it was written in one line) — the two together are how long the answer
+   * took.
+   */
+  endTimestamp: string | null;
   model: string | null;
   isMeta: boolean;
   /** system messages only */
   systemSubtype: string | null;
+  /** Assistant only: tokens billed for this message; null for `<synthetic>` and for every other role. */
+  usage: MessageUsage | null;
+  /** Assistant only: the reasoning effort recorded on the line (`effort`), e.g. "xhigh". */
+  effort: string | null;
   blocks: ContentBlock[];
 }
 

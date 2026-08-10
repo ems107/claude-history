@@ -6,9 +6,11 @@ import { fetchOfficialPrices } from '../core/officialPrices.ts';
 function isValidPrices(value: unknown): value is ModelPrices {
   if (typeof value !== 'object' || value === null) return false;
   const p = value as Record<string, unknown>;
-  return (['input', 'output', 'cacheRead', 'cacheWrite'] as const).every(
-    (k) => typeof p[k] === 'number' && Number.isFinite(p[k]) && (p[k] as number) >= 0,
-  );
+  const positive = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  // cacheWrite5m is optional: tables saved before it existed must still load,
+  // and the rate is derived from the input one when it is missing.
+  if (p.cacheWrite5m !== undefined && !positive(p.cacheWrite5m)) return false;
+  return (['input', 'output', 'cacheRead', 'cacheWrite'] as const).every((k) => positive(p[k]));
 }
 
 export function registerPriceRoutes(app: FastifyInstance, ctx: AppContext): void {
