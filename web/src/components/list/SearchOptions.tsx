@@ -71,10 +71,10 @@ export function SearchOptions({
               className="accent-[var(--accent)]"
             />
             <span>Whole words only</span>
-            <span className="text-[var(--text-dim)]">— so “is” stops matching “invalid”</span>
+            <span className="text-[var(--text-dim)]">— “log” matches log, but not dialog</span>
           </label>
           <div className="px-1 py-0.5 text-[var(--text-dim)]">
-            Quote a group of words to keep them together: <code>&quot;is invalid&quot; NIFType</code>
+            Quote to keep words together: <code>&quot;exact phrase&quot; word</code>
           </div>
         </div>
       </div>
