@@ -274,7 +274,12 @@ function AutoReloadStatusPanel() {
                   "not known yet" — saying "no window" there would be a verdict
                   on something nobody has looked at. */}
               {run.windowStarted
-                ? `started a window in ${seconds(run.durationMs)}`
+                ? run.windowAlreadyRunning
+                  ? // It answered and the token is fresh, but the window it found
+                    // predates it: claiming it started one would be a lie, and the
+                    // reload that window's expiry is owed is still to come.
+                    `answered in ${seconds(run.durationMs)} — a window was already running, so a reload is still due at its expiry`
+                  : `started a window in ${seconds(run.durationMs)}`
                 : !run.verifiedAt
                   ? `answered in ${seconds(run.durationMs)} — reading the window back`
                   : run.ok

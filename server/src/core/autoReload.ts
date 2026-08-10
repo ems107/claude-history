@@ -33,10 +33,14 @@ const log = createLogger('auto-reload');
  *   - a failed/stale usage read is never read as "no window" (see FiveHourProbe)
  *   - one check or reload at a time (`busy`), and never two prompts at once
  *     (`sending`)
- *   - COOLDOWN_MS between two SCHEDULED reloads, whatever else happens
- *     (`waitOutCooldown`, which every automatic path ending in a prompt goes
- *     through)
+ *   - MAX_SENDS_PER_HOUR automatic sends in a rolling hour and it stops itself
+ *     — the outright bound on sessions spawned, and the one guard that costs a
+ *     legitimate send nothing, since it acts on sends already made
  *   - MAX_FAILURES verified failures in a row and it stops itself
+ *   - COOLDOWN_MS between two sends made blind, i.e. without a `resets_at` to
+ *     go on (`waitOutCooldown`). A firm expiry outranks it: when a successful
+ *     read says the window ends at a given moment, the send belongs at that
+ *     moment and nothing may push it later.
  *
  * Every one of those guards exists to tame the schedule, so none of them may
  * stand in the way of the user pressing "Send it now": that button is refused
@@ -71,8 +75,45 @@ const NETWORK_BACKOFF_MS = [45_000, 90_000, 3 * 60_000, 10 * 60_000, 30 * 60_000
 const SUSPEND_GAP_MS = TICK_MS * 3;
 /** After a resume, let the network come up before reading anything. */
 const RESUME_GRACE_MS = 30_000;
-/** Floor between two reloads. A real window lasts 5 h, so this is generous. */
+/**
+ * Floor between two sends made WITHOUT a firm expiry to go on — in practice the
+ * stale-token path, which is error territory: we cannot read the figures, so we
+ * are acting on the absence of information and a repeat within half an hour
+ * would be repeating a guess.
+ *
+ * It deliberately does NOT apply once a successful read has given us a real
+ * `resets_at`: that date is first-hand evidence of when the window ends, and
+ * every minute spent waiting past it is a minute of the next window thrown
+ * away. The case is not hypothetical — a stale token discovered five minutes
+ * before a window expires used to push the reload out by twenty-five, and the
+ * whole point of the feature is to keep those boundaries where they belong. A
+ * firm date wins; MAX_SENDS_PER_HOUR is what bounds the damage if the dates
+ * themselves ever stop making sense.
+ */
 const COOLDOWN_MS = 30 * 60_000;
+/**
+ * The bound on how many sessions this can ever spawn, and the reason no floor
+ * is needed between two sends that a real expiry asked for. Four an hour is out
+ * of reach for anything legitimate: a real window lasts five hours, so even a
+ * stale token followed minutes later by the window's expiry is two. Reaching it
+ * means the readings have stopped adding up, which no wait fixes — so it stops
+ * instead, and says so. Manual sends are not counted: a person pressing a
+ * button is not a loop.
+ *
+ * Unlike a floor, this never delays anything. It acts on evidence already in
+ * hand rather than on suspicion about the next send.
+ */
+const MAX_SENDS_PER_HOUR = 4;
+const SEND_WINDOW_MS = 60 * 60_000;
+/**
+ * How long a 5-hour window lasts, used for one thing only: telling a window our
+ * prompt opened from one that was already running when it ran. If our message
+ * started it, the expiry lands about five hours out; four minutes out means it
+ * predates us. The slack covers our own seconds plus a window another device
+ * may have opened moments earlier, which is not worth splitting hairs over.
+ */
+const WINDOW_MS = 5 * 60 * 60_000;
+const WINDOW_SLACK_MS = 15 * 60_000;
 /** Retry delay after a reload that ran but did not start a window. */
 const RETRY_MS = 15 * 60_000;
 /** Verified failures in a row before the service pauses itself. */
@@ -118,6 +159,8 @@ export class AutoReloadService {
   private lastCrash: string | null = null;
   private lastRun: AutoReloadRun | null = null;
   private lastRunAt = 0;
+  /** When each automatic send happened, pruned to the last hour. See `tooManySends`. */
+  private autoSends: number[] = [];
   private failures = 0;
   private pausedReason: string | null = null;
   private busy = false;
@@ -163,6 +206,9 @@ export class AutoReloadService {
       this.pausedReason = null;
       this.failures = 0;
       this.readBackoffStep = 0;
+      // Forget the sends the breaker counted, or clearing its pause would be
+      // theatre: the next send would trip it again on the same four.
+      this.autoSends = [];
       const signature = this.configSignature();
       if (signature === this.signature && !wasBlocked) return;
       this.signature = signature;
@@ -374,7 +420,11 @@ export class AutoReloadService {
        */
       if (probe.kind === 'auth-stale') {
         if (this.sendInFlight('the stored token is stale')) return;
+        // Blind: with no reading there is no expiry to go on, so this is the one
+        // send the cooldown still governs. Checked before the breaker, which
+        // must only ever fire on a send we were really about to make.
         if (this.waitOutCooldown('the stored token is stale')) return;
+        if (this.tooManySends('the stored token is stale')) return;
         // The error itself is on the `usage` line just above, verbatim.
         await this.reload(s, false, 'the stored token is stale, and running Claude Code is what refreshes it');
         return;
@@ -400,10 +450,49 @@ export class AutoReloadService {
       return;
     }
 
+    /**
+     * A successful read that reports no window is the clearest signal this
+     * feature gets, and it is exactly what it exists to answer — so it sends,
+     * with no cooldown in the way. That wait used to sit here too, and it cost
+     * whole slices of window: sending five minutes before an expiry we could
+     * not see (a stale token) left the real reload waiting out the remaining
+     * twenty-five, and everything after it shifted by as much. The date the
+     * endpoint gave us is what scheduled this check; second-guessing it now
+     * would throw away the one piece of firm evidence we have.
+     *
+     * What still bounds this: nothing sends on a failed or stale reading, a run
+     * that leaves the window unstarted is counted as a failure (three and it
+     * pauses), and `tooManySends` caps the sessions outright.
+     */
     this.resetsAt = null;
     if (this.sendInFlight('no 5-hour window')) return;
-    if (this.waitOutCooldown('no 5-hour window')) return;
+    if (this.tooManySends('no 5-hour window')) return;
     await this.reload(s, false, 'no 5-hour window');
+  }
+
+  /**
+   * Stop for good when the automatic sends have become absurd. This is what
+   * replaces a floor between sends: a floor delays on suspicion, before there is
+   * anything to go on, while this looks at what has actually been sent and only
+   * intervenes once the answer is beyond argument. Legitimate operation cannot
+   * approach it — a window lasts five hours.
+   *
+   * The case it exists for is the one nothing else sees: sends that look fine
+   * (a live window is read back each time) and yet achieve nothing, so
+   * `MAX_FAILURES` never counts a thing. Pausing is right there, because if the
+   * readings have stopped making sense, no amount of waiting will fix them and a
+   * person should look.
+   */
+  private tooManySends(why: string): boolean {
+    const now = Date.now();
+    this.autoSends = this.autoSends.filter((at) => now - at < SEND_WINDOW_MS);
+    if (this.autoSends.length < MAX_SENDS_PER_HOUR) return false;
+    const first = Math.round((now - Math.min(...this.autoSends)) / 60_000);
+    this.pausedReason =
+      `Stopped: ${this.autoSends.length} messages sent in the last ${first} min and the 5-hour window still is not settling ` +
+      `(${why} again). Save any auto-reload setting to try again.`;
+    log.warn(this.pausedReason);
+    return true;
   }
 
   /**
@@ -420,11 +509,15 @@ export class AutoReloadService {
   }
 
   /**
-   * The floor between two SCHEDULED prompts, whatever the reason for sending
-   * one. Every automatic path that ends in `reload()` goes through here: the
-   * anti-loop guarantee is that no reason, however good, makes the scheduler
-   * send two messages within COOLDOWN_MS. A manual send is not bound by it —
-   * see `runNow()`.
+   * The floor between two prompts sent BLIND — with no `resets_at` to act on,
+   * which today means the stale-token path. There, half an hour is the right
+   * answer: we are working from the absence of information, and repeating that
+   * guess sooner learns nothing.
+   *
+   * It no longer governs the "no window" path. A successful read hands us the
+   * expiry, the expiry is what schedules the check, and a wait that overrides it
+   * spends real window time to protect against nothing (see the note in
+   * `check()`). Nor does it bind a manual send — see `runNow()`.
    */
   private waitOutCooldown(why: string): boolean {
     const since = Date.now() - this.lastRunAt;
@@ -461,6 +554,9 @@ export class AutoReloadService {
     this.sending = true;
     const startedAt = Date.now();
     this.lastRunAt = startedAt;
+    // Only the automatic ones: the breaker is about the schedule losing its
+    // grip, and a person pressing the button is not that.
+    if (!manual) this.autoSends.push(startedAt);
     const cwd = s.autoReloadCwd.trim();
     const message = s.autoReloadMessage.trim();
     const run: AutoReloadRun = {
@@ -473,6 +569,7 @@ export class AutoReloadService {
       reply: null,
       error: null,
       windowStarted: false,
+      windowAlreadyRunning: false,
       verifiedAt: null,
       manual,
     };
@@ -550,9 +647,20 @@ export class AutoReloadService {
       const resetsAt = probe.resetsAt ? Date.parse(probe.resetsAt) : NaN;
       if (Number.isFinite(resetsAt) && resetsAt > Date.now()) {
         run.windowStarted = true;
+        // Five hours out means our prompt opened it; four minutes out means it
+        // was already running and this run refreshed a token, nothing more. Both
+        // count as success, but only one of them started anything — and the
+        // second leaves a reload owed at that expiry, which is why no wait may
+        // come between here and it.
+        run.windowAlreadyRunning = resetsAt < Date.parse(run.at) + WINDOW_MS - WINDOW_SLACK_MS;
         this.failures = 0;
         this.pausedReason = null;
-        this.sleepUntilReset(resetsAt, 'the read-back after the prompt');
+        this.sleepUntilReset(
+          resetsAt,
+          run.windowAlreadyRunning
+            ? 'the read-back after the prompt — the window was already running, so a reload is still due at its expiry'
+            : 'the read-back after the prompt',
+        );
         return;
       }
       run.error = 'the prompt ran but Anthropic still reports no 5-hour window';

@@ -300,8 +300,17 @@ export interface AutoReloadRun {
   /** Start of Claude's reply, kept only so the UI can prove it answered. */
   reply: string | null;
   error: string | null;
-  /** A fresh 5-hour window was confirmed after the run. This is the real goal. */
+  /** A live 5-hour window was confirmed after the run. This is the real goal. */
   windowStarted: boolean;
+  /**
+   * The window found afterwards had begun BEFORE this run, so the run did not
+   * open it — the usual case for a send triggered by a stale token, which
+   * refreshes the token while a window happens to be running already. It
+   * matters because the reload that window's expiry is owed is still pending:
+   * saying "started a window" there would be a plain lie, and it is also why no
+   * cooldown may stand between this run and that expiry.
+   */
+  windowAlreadyRunning: boolean;
   /**
    * When the read-back that checks `windowStarted` happened. Null means it is
    * still pending: the prompt answers in seconds but the figures need a minute
