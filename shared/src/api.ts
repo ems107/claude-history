@@ -33,12 +33,20 @@ export interface LiveSessionEntry extends LiveInfo {
 }
 export type LiveResponse = LiveSessionEntry[];
 
+/** 'phrase' is one implicit quoted term; 'words' splits on spaces, quotes kept. */
+export type SearchMode = 'phrase' | 'words';
+/** Where all the words must meet: one message, or anywhere in the session. */
+export type SearchWordScope = 'message' | 'session';
+
+/**
+ * A snippet is a run of alternating parts so every term in view can be marked:
+ * one line may well contain several of them, and a single `match` could only
+ * ever tell the truth about one.
+ */
 export interface SearchSnippet {
   uuid: string | null;
   role: string;
-  before: string;
-  match: string;
-  after: string;
+  parts: { text: string; hit?: true }[];
 }
 
 export interface SearchHit {
@@ -47,11 +55,20 @@ export interface SearchHit {
   snippets: SearchSnippet[];
 }
 
+/** The query as the server understood it, so the results can say what they did. */
+export interface SearchQueryEcho {
+  terms: string[];
+  mode: SearchMode;
+  scope: SearchWordScope;
+  wholeWord: boolean;
+}
+
 export interface SearchResponse {
   hits: SearchHit[];
   scannedSessions: number;
   tookMs: number;
   indexComplete: boolean;
+  query: SearchQueryEcho;
 }
 
 export interface ToolResultFileResponse {

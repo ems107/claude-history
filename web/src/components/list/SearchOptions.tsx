@@ -1,0 +1,92 @@
+import { DEFAULT_TUNING, type SearchTuning, tuningChanges } from '../../lib/searchTuning.ts';
+
+/**
+ * The match rule is one choice of three rather than a mode toggle plus a scope
+ * toggle: the scope only means anything for several words, and a visible control
+ * that does nothing in the current mode is its own kind of lie.
+ */
+const MATCH_OPTIONS: Array<{ id: string; label: string; hint: string; tuning: Partial<SearchTuning> }> = [
+  {
+    id: 'phrase',
+    label: 'Phrase',
+    hint: 'the words in this exact order',
+    tuning: { mode: 'phrase' },
+  },
+  {
+    id: 'message',
+    label: 'All words, in the same message',
+    hint: 'any order, but they must meet in one message',
+    tuning: { mode: 'words', scope: 'message' },
+  },
+  {
+    id: 'session',
+    label: 'All words, anywhere in the session',
+    hint: 'a wider net — they may sit turns apart',
+    tuning: { mode: 'words', scope: 'session' },
+  },
+];
+
+function currentChoice(tuning: SearchTuning): string {
+  if (tuning.mode === 'phrase') return 'phrase';
+  return tuning.scope === 'session' ? 'session' : 'message';
+}
+
+export function SearchOptions({
+  tuning,
+  onChange,
+}: {
+  tuning: SearchTuning;
+  onChange: (tuning: SearchTuning) => void;
+}) {
+  const choice = currentChoice(tuning);
+  return (
+    <div className="border-b border-[var(--border)] bg-[var(--bg-raised)]/40 px-4 py-2.5 text-xs">
+      <div className="flex flex-wrap items-start gap-x-10 gap-y-2">
+        <div>
+          <div className="mb-1 text-[var(--text-dim)]">Match</div>
+          {MATCH_OPTIONS.map((option) => (
+            <label
+              key={option.id}
+              className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5 select-none hover:bg-[var(--bg-hover)]"
+            >
+              <input
+                type="radio"
+                name="search-match"
+                checked={choice === option.id}
+                onChange={() => onChange({ ...tuning, ...option.tuning })}
+                className="accent-[var(--accent)]"
+              />
+              <span>{option.label}</span>
+              <span className="text-[var(--text-dim)]">— {option.hint}</span>
+            </label>
+          ))}
+        </div>
+        <div>
+          <div className="mb-1 text-[var(--text-dim)]">Terms</div>
+          <label className="flex cursor-pointer items-baseline gap-2 rounded px-1 py-0.5 select-none hover:bg-[var(--bg-hover)]">
+            <input
+              type="checkbox"
+              checked={tuning.wholeWord}
+              onChange={(e) => onChange({ ...tuning, wholeWord: e.target.checked })}
+              className="accent-[var(--accent)]"
+            />
+            <span>Whole words only</span>
+            <span className="text-[var(--text-dim)]">— so “is” stops matching “invalid”</span>
+          </label>
+          <div className="px-1 py-0.5 text-[var(--text-dim)]">
+            Quote a group of words to keep them together: <code>&quot;is invalid&quot; NIFType</code>
+          </div>
+        </div>
+      </div>
+      {tuningChanges(tuning) > 0 && (
+        <button
+          type="button"
+          onClick={() => onChange(DEFAULT_TUNING)}
+          className="mt-1.5 cursor-pointer text-[var(--text-dim)] underline decoration-dotted hover:text-[var(--text)]"
+        >
+          Back to a plain search
+        </button>
+      )}
+    </div>
+  );
+}

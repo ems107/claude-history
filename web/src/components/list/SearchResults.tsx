@@ -1,6 +1,18 @@
-import type { SearchResponse, SessionSummary } from '@claude-history/shared';
+import type { SearchQueryEcho, SearchResponse, SessionSummary } from '@claude-history/shared';
 import { Link } from 'react-router';
 import { SessionRow } from './SessionRow.tsx';
+
+/**
+ * What the server actually looked for. With several terms and a scope, "0
+ * matches" on its own leaves the reason to guesswork — and a term dropped for
+ * being one character long would otherwise vanish without a word.
+ */
+function describeQuery(query: SearchQueryEcho): string | null {
+  if (query.mode === 'phrase') return query.wholeWord ? 'whole words' : null;
+  const where = query.scope === 'session' ? 'anywhere in the session' : 'in the same message';
+  const words = `${query.terms.length} ${query.terms.length === 1 ? 'term' : 'words'}, all ${where}`;
+  return query.wholeWord ? `${words} · whole words` : words;
+}
 
 export function SearchResults({
   response,
@@ -18,14 +30,23 @@ export function SearchResults({
 }) {
   const hits = response.hits.filter((h) => visibleIds.has(h.sessionId) && summaries.has(h.sessionId));
   const totalMatches = hits.reduce((acc, h) => acc + h.matchCount, 0);
+  const description = describeQuery(response.query);
+  const nothingToLookFor = response.query.terms.length === 0;
 
   return (
     <div>
       <div className="border-b border-[var(--border)] px-4 py-1.5 text-xs text-[var(--text-dim)]">
+        {description && <span className="mr-2 text-[var(--text)]">{description}</span>}
         {totalMatches} matches in {hits.length} sessions · {response.tookMs} ms
-        {!response.indexComplete && <span className="ml-2 text-amber-400">(index still building — partial results)</span>}
+        {!response.indexComplete && (
+          <span className="ml-2 text-amber-400">(index still building — partial results)</span>
+        )}
       </div>
-      {hits.length === 0 && <div className="p-8 text-center text-[var(--text-dim)]">No matches.</div>}
+      {hits.length === 0 && (
+        <div className="p-8 text-center text-[var(--text-dim)]">
+          {nothingToLookFor ? 'Nothing to look for — a term needs at least two characters.' : 'No matches.'}
+        </div>
+      )}
       {hits.map((hit) => {
         const session = summaries.get(hit.sessionId)!;
         return (
@@ -47,9 +68,15 @@ export function SearchResults({
                   <span className="mr-2 inline-block w-14 shrink-0 text-right font-semibold text-[var(--text-dim)]/70 uppercase">
                     {sn.role}
                   </span>
-                  {sn.before}
-                  <mark className="rounded-sm bg-[var(--accent)]/30 px-0.5 text-[var(--text)]">{sn.match}</mark>
-                  {sn.after}
+                  {sn.parts.map((part, pi) =>
+                    part.hit ? (
+                      <mark key={pi} className="rounded-sm bg-[var(--accent)]/30 px-0.5 text-[var(--text)]">
+                        {part.text}
+                      </mark>
+                    ) : (
+                      <span key={pi}>{part.text}</span>
+                    ),
+                  )}
                 </Link>
               ))}
               {hit.matchCount > hit.snippets.length && (

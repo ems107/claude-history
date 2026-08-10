@@ -5,11 +5,19 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { FilterSidebar } from '../components/list/FilterSidebar.tsx';
 import { SearchBox } from '../components/list/SearchBox.tsx';
+import { SearchOptions } from '../components/list/SearchOptions.tsx';
 import { SearchResults } from '../components/list/SearchResults.tsx';
 import { SessionRow } from '../components/list/SessionRow.tsx';
 import { SortBar } from '../components/list/SortBar.tsx';
 import { applyFilters, buildRows, filtersToParams, parseFilters, type FilterState } from '../lib/filters.ts';
 import { saveListParams, saveListScroll, savedListScroll } from '../lib/listState.ts';
+import {
+  applyTuning,
+  parseTuning,
+  SEARCH_PARAMS,
+  type SearchTuning,
+  tuningChanges,
+} from '../lib/searchTuning.ts';
 
 const ROW_HEIGHT = 64;
 const HEADER_HEIGHT = 30;
@@ -56,8 +64,12 @@ export function SessionListPage() {
     (f: FilterState) => {
       const sp = filtersToParams(f);
       const current = new URLSearchParams(window.location.search);
-      if (current.get('q')) sp.set('q', current.get('q')!);
-      if (current.get('in')) sp.set('in', current.get('in')!);
+      // Filters are rebuilt from scratch, so everything the search owns has to
+      // be carried across or changing a filter would quietly reset the search.
+      for (const key of SEARCH_PARAMS) {
+        const value = current.get(key);
+        if (value) sp.set(key, value);
+      }
       setSearchParams(sp, { replace: true });
     },
     [setSearchParams],
@@ -93,10 +105,29 @@ export function SessionListPage() {
     [setSearchParams],
   );
 
+  const tuning = useMemo(() => parseTuning(searchParams), [searchParams]);
+  const setTuning = useCallback(
+    (value: SearchTuning) => {
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          applyTuning(sp, value);
+          return sp;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+  // A tuning restored from the URL opens the panel: it is already affecting the
+  // results, so it has to be where the results are explained.
+  const [optionsOpen, setOptionsOpen] = useState(() => tuningChanges(parseTuning(searchParams)) > 0);
+  const tunedCount = tuningChanges(tuning);
+
   const searchActive = q.trim().length >= 2;
   const searchQuery = useQuery({
-    queryKey: ['search', q, scope],
-    queryFn: () => api.search(q, scope),
+    queryKey: ['search', q, scope, tuning.mode, tuning.scope, tuning.wholeWord],
+    queryFn: () => api.search(q, scope, tuning),
     enabled: searchActive,
   });
 
@@ -235,7 +266,25 @@ export function SessionListPage() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setOptionsOpen((v) => !v)}
+            title={
+              tunedCount > 0
+                ? 'Advanced search — options are changing these results'
+                : 'Advanced search options'
+            }
+            className={`cursor-pointer rounded border px-1.5 py-1 text-xs whitespace-nowrap ${
+              tunedCount > 0
+                ? 'border-[var(--accent-dim)] text-[var(--text)]'
+                : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
+            }`}
+          >
+            {/* The count is what keeps a collapsed panel from changing results in silence. */}
+            Advanced{tunedCount > 0 && ` · ${tunedCount}`} {optionsOpen ? '▴' : '▾'}
+          </button>
         </SortBar>
+        {optionsOpen && <SearchOptions tuning={tuning} onChange={setTuning} />}
         <div
           ref={parentRef}
           onScroll={(e) => saveListScroll(e.currentTarget.scrollTop)}

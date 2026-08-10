@@ -18,6 +18,7 @@ import type {
   UpdateStatusResponse,
   UsageResponse,
 } from '@claude-history/shared';
+import { applyTuning, type SearchTuning } from '../lib/searchTuning.ts';
 import { markUsageReadFailed, takeUsageRead } from './usageReason.ts';
 
 /** Enough to name what moved without turning the URL into a list of UUIDs. */
@@ -62,8 +63,12 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<{ prices: PriceTable; isDefault: boolean }>;
   },
-  search: (q: string, scope?: string) =>
-    getJson<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}${scope ? `&in=${encodeURIComponent(scope)}` : ''}`),
+  search: (q: string, scope?: string, tuning?: SearchTuning) => {
+    const params = new URLSearchParams({ q });
+    if (scope) params.set('in', scope);
+    if (tuning) applyTuning(params, tuning);
+    return getJson<SearchResponse>(`/api/search?${params}`);
+  },
   pinSession: async (id: string, pinned: boolean) => {
     const res = await fetch(`/api/sessions/${id}/pin`, {
       method: 'PUT',
