@@ -104,7 +104,15 @@ export function ContextSnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }
   );
 }
 
-/** A compaction boundary: the one place the transcript states one outright. */
+/**
+ * A compaction boundary: the one place the transcript states one outright.
+ *
+ * It carries no cost pill because there is nothing to price: the call that wrote
+ * the summary is recorded nowhere — no assistant line, and the summary itself
+ * (`isCompactSummary`) is a `user` line with no `usage` (3 of 3 boundaries on
+ * this machine). The spend is real — the whole conversation in, the summary out —
+ * so the panel says so rather than letting the absence read as "it was free".
+ */
 export function CompactBoundaryPanel({ boundary }: { boundary: CompactBoundary }) {
   const dropped =
     boundary.preTokens !== null && boundary.postTokens !== null ? boundary.preTokens - boundary.postTokens : null;
@@ -134,6 +142,11 @@ export function CompactBoundaryPanel({ boundary }: { boundary: CompactBoundary }
           </span>
         )}
       </div>
+      <p className="mt-1 text-[10px] text-[var(--text-dim)]">
+        No cost here because none was recorded: the call that wrote the summary leaves no{' '}
+        <span className="font-mono">usage</span> in the transcript, so its spend — this whole conversation in, the
+        summary out — is real but is not part of the session total.
+      </p>
     </div>
   );
 }
