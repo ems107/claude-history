@@ -8,14 +8,15 @@ import {
 } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
+import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4">
+    <section id={id} className="scroll-mt-4 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4">
       <h2 className="mb-3 text-sm font-semibold">{title}</h2>
       <div className="space-y-3 text-xs">{children}</div>
     </section>
@@ -337,6 +338,18 @@ export function SettingsPage() {
   const [wipeData, setWipeData] = useState(false);
   const [uninstalled, setUninstalled] = useState(false);
 
+  // Arriving from the "change" link at the foot of the session list: this page
+  // is long, so land on the block that was asked for. Keyed on whether the
+  // settings have loaded (the sections do not exist before that), never on the
+  // settings object itself — that changes on every save and would yank the page
+  // back to the anchor mid-edit.
+  const { hash } = useLocation();
+  const loaded = !!data;
+  useEffect(() => {
+    if (!hash || !loaded) return;
+    document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' });
+  }, [hash, loaded]);
+
   if (!data) return <div className="p-8 text-[var(--text-dim)]">Loading settings…</div>;
 
   const save = (patch: Partial<AppSettings>) => {
@@ -642,6 +655,12 @@ export function SettingsPage() {
             </ul>
           </div>
           <AutoReloadStatusPanel />
+        </Section>
+
+        {/* Claude Code's setting, not ours — shown and explained, never written.
+            The id is what the session list's "change" link scrolls to. */}
+        <Section title="How long Claude keeps your history" id="claude-retention">
+          <RetentionPanel />
         </Section>
 
         <Section title="Logs">

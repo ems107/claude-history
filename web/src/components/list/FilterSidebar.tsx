@@ -2,6 +2,7 @@ import type { ProjectInfo, SessionSummary } from '@claude-history/shared';
 import { useMemo, type ReactNode } from 'react';
 import { entrypointLabel, shortModel } from '../../lib/format.ts';
 import type { BadgeFilter, FilterState } from '../../lib/filters.ts';
+import { RetentionFooter } from './RetentionFooter.tsx';
 
 const BADGE_OPTIONS: Array<{ id: BadgeFilter; label: string }> = [
   { id: 'pinned', label: '★ Pinned' },
@@ -226,6 +227,11 @@ export function FilterSidebar({
           Show empty sessions
         </CheckRow>
       </Section>
+
+      {/* Every session listed here has an expiry date, and it is set outside this
+          app. `mt-auto` pins this to the bottom when the filters are short and
+          lets it scroll with them when they are not. */}
+      <RetentionFooter />
     </aside>
   );
 }

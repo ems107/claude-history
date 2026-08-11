@@ -9,6 +9,7 @@ import type {
   PriceTable,
   ProjectsResponse,
   PromptsResponse,
+  RetentionResponse,
   SearchResponse,
   SessionDetailResponse,
   SessionsResponse,
@@ -129,6 +130,10 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<{ settings: AppSettings }>;
   },
+  // Claude Code's own `cleanupPeriodDays`, read from its settings files. We only
+  // ever read it: changing it is a manual edit, explained in Settings.
+  retention: () => getJson<RetentionResponse>('/api/retention'),
+  openClaudeSettingsFolder: () => fetch('/api/retention/open-folder', { method: 'POST' }),
   logs: () => getJson<LogsResponse>('/api/logs'),
   logDay: (date: string, filters: { levels?: string[]; sources?: string[]; q?: string }) => {
     const params = new URLSearchParams();

@@ -400,6 +400,86 @@ export interface AutoReloadStatus {
   cliPath: string | null;
 }
 
+// ---- Claude Code's own history retention (cleanupPeriodDays) ----
+
+/**
+ * What Claude Code deletes when nothing sets `cleanupPeriodDays`. Verified in
+ * the CLI bundle (2.1.228) and in the docs: 30 days, minimum 1, and a literal 0
+ * fails validation rather than meaning "never".
+ */
+export const CLAUDE_RETENTION_DEFAULT_DAYS = 30;
+export const CLAUDE_RETENTION_MIN_DAYS = 1;
+
+/**
+ * The sweep runs at startup at most once a day: `~/.claude/.last-cleanup` is
+ * the sentinel, and a mtime younger than this means it is skipped outright.
+ */
+export const CLAUDE_SWEEP_INTERVAL_HOURS = 24;
+
+/** Where a value came from. Precedence: policy > local > project > user. */
+export type RetentionScope = 'policy' | 'user' | 'project' | 'local';
+
+/** One settings file, and what it has to say about `cleanupPeriodDays`. */
+export interface RetentionSource {
+  scope: RetentionScope;
+  path: string;
+  exists: boolean;
+  /** null when the file does not set the key at all. */
+  days: number | null;
+  /**
+   * The file exists but could not be read or parsed. This is a finding, not a
+   * failure of ours: Claude Code PAUSES the whole retention sweep while any of
+   * its settings files is in that state.
+   */
+  unreadable: string | null;
+  /** The key is there but is not an integer >= 1, so Claude Code rejects it. */
+  invalidValue: string | null;
+  /** Only on project-scoped sources: whose settings file this is. */
+  project: { name: string; path: string } | null;
+}
+
+export interface RetentionResponse {
+  /** Effective days outside any project that overrides it. */
+  days: number;
+  /** Nothing sets it, so the built-in default applies. */
+  usedDefault: boolean;
+  effectiveScope: RetentionScope | 'default';
+  defaultDays: number;
+  minDays: number;
+  /** The file to edit — always the user one, whatever won above. */
+  userSettingsFile: string;
+  /** Folder holding it; what the "open the folder" button opens. */
+  settingsDir: string;
+  /** The global chain: managed policy and user settings, in precedence order. */
+  sources: RetentionSource[];
+  /**
+   * Project `.claude` settings that set the key or cannot be read. They only
+   * apply when Claude Code is started in that project — but then they win over
+   * the user file, so a number shown without them can be a lie.
+   */
+  projectOverrides: RetentionSource[];
+  /** Why Claude Code is not cleaning up at all right now, when that is the case. */
+  sweepBlocked: string | null;
+  /** True when a managed-settings file was found (its values outrank everything). */
+  policyPresent: boolean;
+  /** `.last-cleanup`: when the sweep last ran. */
+  lastSweepAt: string | null;
+  /** Files whose mtime is older than this are deleted by the next sweep. */
+  cutoff: string;
+  /**
+   * Sessions this app lists whose transcript is ALREADY past the cutoff — the
+   * next sweep deletes them. Counted here rather than in the browser so the
+   * footer of the list and the settings page cannot end up disagreeing, and
+   * against `mtimeMs`, which is exactly what the sweep compares.
+   */
+  expiredCount: number;
+  /** How many sessions that count was taken over. */
+  countedSessions: number;
+  /** mtime (epoch ms) of the oldest session NOT past the cutoff: the margin. */
+  oldestKeptMtimeMs: number | null;
+  readAt: string;
+}
+
 // ---- Subscription usage ----
 
 /**
@@ -483,6 +563,8 @@ export const LOG_SOURCES = [
   'watcher',
   'usage',
   'auto-reload',
+  /** Reading Claude Code's own `cleanupPeriodDays` out of its settings files. */
+  'retention',
   'updates',
   /** Imported from the installer's update.log so an update reads as one timeline. */
   'update-helper',
