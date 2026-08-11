@@ -31,12 +31,27 @@ $updateTaskName = 'claude-history-update'
 
 $ErrorActionPreference = 'Stop'
 $logFile = Join-Path $Root 'update.log'
+# The .NET call in Log() resolves a relative path against the PROCESS working
+# directory, which is not PowerShell's location. $Root arrives absolute from the
+# server; this only makes sure of it.
+if (-not [System.IO.Path]::IsPathRooted($logFile)) {
+  $logFile = Join-Path (Get-Location).Path $logFile
+}
+# BOM-less UTF-8, written through .NET because neither Add-Content encoding
+# will do. -Encoding ASCII replaced every non-ASCII character with a literal
+# "?", and on an install under a profile whose name is not ASCII that is nearly
+# every line this file has: the install root, the junction targets, the script
+# path, the user name. -Encoding UTF8 in PowerShell 5.1 writes a BOM at the head
+# of the file, which the importer would then read as part of the first record.
+# The SCRIPT stays pure ASCII (package.mjs enforces it); its output does not.
+$logEncoding = New-Object System.Text.UTF8Encoding($false)
 # One record per line, always: exception messages arrive with trailing newlines
 # and .NET ones can be several lines long, which would break both a person
 # reading this and the importer that copies these lines into the app's log.
 function Log([string]$msg, [string]$level = 'info') {
   $flat = ($msg -replace "`r?`n", ' ').Trim()
-  "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  [$level] $flat" | Add-Content -Path $logFile -Encoding ASCII
+  $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  [$level] $flat"
+  [System.IO.File]::AppendAllText($logFile, ($line + [Environment]::NewLine), $logEncoding)
 }
 
 function Get-MetaVersion {

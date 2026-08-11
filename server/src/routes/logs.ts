@@ -73,7 +73,11 @@ export function registerLogRoutes(app: FastifyInstance, ctx: AppContext): void {
         const start = Math.max(0, stat.size - UPDATE_LOG_MAX_BYTES);
         const buffer = Buffer.alloc(stat.size - start);
         await handle.read(buffer, 0, buffer.length, start);
-        const text = (start > 0 ? `[... ${start} earlier bytes not shown ...]\n` : '') + buffer.toString('utf8');
+        // The file is UTF-8 now (it was ASCII, which could not be cut wrong):
+        // an offset landing mid-character decodes to a leading U+FFFD, so drop
+        // whatever the truncation itself broke.
+        const tail = start > 0 ? buffer.toString('utf8').replace(/^\uFFFD+/, '') : buffer.toString('utf8');
+        const text = (start > 0 ? `[... ${start} earlier bytes not shown ...]\n` : '') + tail;
         return { available: true, path: file, text, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString() };
       } finally {
         await handle.close();

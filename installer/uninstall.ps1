@@ -27,9 +27,14 @@ $taskName = 'claude-history'
 $uninstallTaskName = 'claude-history-uninstall'
 if (-not $Root) { $Root = $PSScriptRoot }
 $logFile = Join-Path $env:TEMP 'claude-history-uninstall.log'
+# BOM-less UTF-8, same reasoning as update-helper.ps1: ASCII would print the
+# install root as "C:\Users\Javier?" on a profile whose name is not ASCII, and
+# this file is what you read when an uninstall swallowed itself silently.
+$logEncoding = New-Object System.Text.UTF8Encoding($false)
 
 function Log([string]$msg) {
-  "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg" | Add-Content -Path $logFile -Encoding ASCII
+  $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg"
+  [System.IO.File]::AppendAllText($logFile, ($line + [Environment]::NewLine), $logEncoding)
 }
 
 if ($Register) {

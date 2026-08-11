@@ -21,9 +21,10 @@ const log = createLogger('updates');
  */
 
 /**
- * `2026-08-09 14:27:06  [warn] message` — local time, two spaces, ASCII
- * (PowerShell 5.1). The level tag is recent: lines written by older helpers
- * have none, so it is optional and `levelFor` covers them.
+ * `2026-08-09 14:27:06  [warn] message` — local time, two spaces, BOM-less
+ * UTF-8 (older helpers wrote ASCII, which is a subset, so both read alike).
+ * The level tag is recent: lines written by older helpers have none, so it is
+ * optional and `levelFor` covers them.
  */
 const LINE_RE = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) {2}(?:\[(\w+)\] )?(.*)$/;
 
@@ -93,7 +94,15 @@ function importOnce(updateLog: string, markerFile: string): void {
     return;
   }
 
-  const lines = fs.readFileSync(updateLog, 'utf8').split(/\r?\n/).filter((l) => l.trim().length > 0);
+  // The helper writes BOM-less UTF-8, but a file opened and saved by hand (or by
+  // an older helper's `-Encoding UTF8`) can start with one. Left in place it
+  // would ride along inside the first record AND change the fingerprint below,
+  // which replays the whole file into ours.
+  const lines = fs
+    .readFileSync(updateLog, 'utf8')
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0);
   const head = fingerprint(lines[0]);
   // A replaced file (different opening line, or simply shorter) starts over:
   // carrying the old count forward would hide however many lines it names.
