@@ -85,7 +85,7 @@ export function MessageActions({
         title="Copy this message as Markdown source"
         onClick={() => void copyPlain(blocksMarkdown(item, blocks, COPY_OPTS)).then(() => flash('md'))}
       >
-        {done === 'md' ? 'Copied ✓' : '⧉ MD'}
+        {done === 'md' ? 'Copied ✓' : '⧉ Copy as Markdown'}
       </button>
     </span>
   );
