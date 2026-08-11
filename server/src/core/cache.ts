@@ -3,7 +3,7 @@ import path from 'node:path';
 import { createLogger } from './logger.ts';
 
 /** Bump to invalidate every cached artifact after a schema change. */
-export const CACHE_VERSION = 3;
+export const CACHE_VERSION = 4;
 
 const cacheLog = createLogger('cache');
 

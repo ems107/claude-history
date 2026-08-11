@@ -53,6 +53,10 @@ function RowContent({
       : session.messageCount !== null
         ? `~${session.messageCount} msgs`
         : null,
+    // Only when it happened: every session would otherwise carry a "0".
+    session.enrichment && session.enrichment.compactionCount > 0
+      ? `${session.enrichment.compactionCount} compaction${session.enrichment.compactionCount === 1 ? '' : 's'}`
+      : null,
     formatBytes(session.sizeBytes),
   ];
 

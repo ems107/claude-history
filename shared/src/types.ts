@@ -96,6 +96,8 @@ export interface SessionEnrichment {
   assistantMessageCount: number;
   toolUseCount: number;
   turnCount: number;
+  /** `system`/`compact_boundary` lines: how many times this session was compacted. */
+  compactionCount: number;
   usage: UsageTotals;
   usageByModel: Record<string, UsageTotals>;
   /** Per-UTC-day usage (yyyy-mm-dd) for the stats dashboard. */

@@ -286,6 +286,62 @@ function SystemItem({ item }: { item: MessageItem }) {
   );
 }
 
+/** What prompts-only folds away: the assistant's side of the turn. */
+function foldedCounts(turn: TurnType, showThinking: boolean): { responses: number; tools: number } {
+  let responses = 0;
+  let tools = 0;
+  for (const item of turn.items) {
+    if (item.role !== 'assistant') continue;
+    const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
+    if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
+    tools += visible.filter((b) => b.kind === 'tool').length;
+  }
+  return { responses, tools };
+}
+
+/**
+ * The fold line of a turn in prompts-only mode. It is rendered in BOTH states,
+ * and at the same place — where the folded content starts — so unfolding moves
+ * nothing around and there is always something to click to fold it back.
+ */
+function FoldStrip({
+  open,
+  responses,
+  tools,
+  at,
+  onToggle,
+}: {
+  open: boolean;
+  responses: number;
+  tools: number;
+  /** Only for a turn no prompt opened, which would otherwise be anonymous. */
+  at: string | null;
+  onToggle?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="my-1.5 ml-6 flex cursor-pointer items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+    >
+      <span>{open ? '▾' : '▸'}</span>
+      {at && <span className="shrink-0">{formatDateTime(at)}</span>}
+      {responses > 0 && (
+        <span className="shrink-0 font-semibold text-emerald-300/80">
+          {responses} response{responses === 1 ? '' : 's'}
+        </span>
+      )}
+      {responses > 0 && tools > 0 && <span className="opacity-50">·</span>}
+      {tools > 0 && (
+        <span className="shrink-0 font-semibold text-sky-300/80">
+          {tools} tool call{tools === 1 ? '' : 's'}
+        </span>
+      )}
+      {open && <span className="opacity-70">— collapse</span>}
+    </button>
+  );
+}
+
 /**
  * A user item is not always a prompt: the compaction summary wears the same
  * role, and gets its own panel instead of a bubble nobody wrote.
@@ -329,10 +385,18 @@ export function TurnView({
   // user only wants to see one collapsed line for the whole run.
   const nodes: ReactNode[] = [];
   let pendingTools: PendingTool[] = [];
+  // Where the fold line goes: at the FIRST thing prompts-only would hide, not
+  // at the end of the turn — otherwise unfolding drops the answers above a
+  // system panel the line sat below, and the turn reorders itself under you.
+  let foldAt: number | null = null;
+  const markFold = () => {
+    foldAt ??= nodes.length;
+  };
   const flushTools = () => {
     if (pendingTools.length === 0) return;
     // Indented: a run between two bubbles is the assistant's own work, not a
     // third speaker.
+    markFold();
     nodes.push(
       <div key={`tools-${nodes.length}`} className="ml-6">
         <ToolGroup tools={pendingTools} expandAll={expandTools} onOpenAgent={onOpenAgent} costs={costs} />
@@ -363,13 +427,25 @@ export function TurnView({
   // own line instead, so no turn is ever left without its total.
   let badgePlaced = false;
 
+  const folded = promptsOnly ? foldedCounts(turn, showThinking) : { responses: 0, tools: 0 };
+  const anyFolded = folded.responses > 0 || folded.tools > 0;
+  let promptShown = false;
+  const foldStrip = (open: boolean) => (
+    <FoldStrip
+      key="fold"
+      open={open}
+      responses={folded.responses}
+      tools={folded.tools}
+      // A turn nobody prompted would otherwise be an anonymous line.
+      at={promptShown ? null : (turn.items[0]?.timestamp ?? null)}
+      onToggle={onToggleExpanded}
+    />
+  );
+
   // Prompts only, and this turn not asked for: the prompt, whatever is
   // structural (a compaction, a /context run) and one line saying what is
   // folded. Never a silent omission.
   if (promptsOnly && !expanded) {
-    let responses = 0;
-    let tools = 0;
-    let promptShown = false;
     for (const item of turn.items) {
       if (item.role === 'user' && (isPromptItem(item) || item.isCompactSummary)) {
         // The summary panel takes no badge, so it must not consume one either.
@@ -382,36 +458,9 @@ export function TurnView({
         nodes.push(<SystemItem key={item.uuid} item={item} />);
         continue;
       }
-      const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
-      if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
-      tools += visible.filter((b) => b.kind === 'tool').length;
+      markFold();
     }
-    const first = turn.items[0];
-    if (responses > 0 || tools > 0) {
-      nodes.push(
-        <button
-          key="expand"
-          type="button"
-          onClick={onToggleExpanded}
-          className="ml-6 flex cursor-pointer items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
-        >
-          <span>▸</span>
-          {/* A turn nobody prompted still says when it happened. */}
-          {!promptShown && first?.timestamp && <span>{formatDateTime(first.timestamp)}</span>}
-          {responses > 0 && (
-            <span>
-              {responses} response{responses === 1 ? '' : 's'}
-            </span>
-          )}
-          {tools > 0 && (
-            <span>
-              {responses > 0 ? '· ' : ''}
-              {tools} tool call{tools === 1 ? '' : 's'}
-            </span>
-          )}
-        </button>,
-      );
-    }
+    if (anyFolded) nodes.splice(foldAt ?? nodes.length, 0, foldStrip(false));
     return (
       <div className="space-y-1.5">
         {!badgePlaced && turnBadge && <div className="flex justify-end">{turnBadge}</div>}
@@ -427,6 +476,7 @@ export function TurnView({
         userNode(item, badgePlaced ? undefined : turnBadge, promptsOnly ? onToggleExpanded : undefined),
       );
       badgePlaced ||= !item.isCompactSummary;
+      promptShown ||= !item.isCompactSummary;
       continue;
     }
     if (item.role !== 'assistant') {
@@ -475,6 +525,7 @@ export function TurnView({
       // Only a message with something to show gets a bubble: an assistant
       // message that is nothing but tool calls prints no header today (the run
       // carries its cost) and must not grow an envelope either.
+      markFold();
       nodes.push(
         <AssistantItem key={item.uuid} item={item} costs={costs} blocks={prose}>
           {rendered}
@@ -483,6 +534,8 @@ export function TurnView({
     }
   }
   flushTools();
+  // Unfolded, the same line stays where it was and folds the turn back.
+  if (promptsOnly && anyFolded) nodes.splice(foldAt ?? nodes.length, 0, foldStrip(true));
 
   return (
     <div className="space-y-1.5">

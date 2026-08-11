@@ -43,6 +43,7 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
   let userMessageCount = 0;
   let assistantMessageCount = 0;
   let toolUseCount = 0;
+  let compactionCount = 0;
 
   const dayOf = (o: Record<string, unknown>): string | null => {
     const ts = str(o.timestamp);
@@ -110,6 +111,8 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
           }
         }
       }
+    } else if (type === 'system' && str(o.subtype) === 'compact_boundary') {
+      compactionCount++;
     }
   }
 
@@ -121,6 +124,7 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
       assistantMessageCount,
       toolUseCount,
       turnCount: promptIds.size,
+      compactionCount,
       usage,
       usageByModel,
       daily,
