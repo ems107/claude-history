@@ -3,7 +3,7 @@ import type { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import type { AppSettings, AutoReloadRun, AutoReloadStatus } from '@claude-history/shared';
 import { validateAutoReload } from '@claude-history/shared';
-import { cleanEnv, findClaudeCli } from '../util/launcher.ts';
+import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import { createLogger, localStamp } from './logger.ts';
 import type { UsageReadEvent, UsageService } from './usage.ts';
 
@@ -253,10 +253,17 @@ export class AutoReloadService {
     return JSON.stringify([s.autoReloadEnabled, s.autoReloadModel, s.autoReloadMessage, s.autoReloadCwd]);
   }
 
+  /**
+   * Both outcomes are logged with the path, because from a log alone "found"
+   * and "found, and unusable" looked identical for as long as this feature has
+   * existed — a resolved path that could not be spawned only ever surfaced as
+   * an ENOENT much later, next to a prompt that never went out.
+   */
   private async resolveCli(): Promise<string | null> {
     if (this.cliPath !== undefined) return this.cliPath;
-    this.cliPath = await findClaudeCli();
-    if (!this.cliPath) log.warn('the claude CLI could not be found');
+    this.cliPath = findClaudeCli();
+    if (this.cliPath) log.info(`the claude CLI is ${this.cliPath}`);
+    else log.warn('the claude CLI could not be found');
     return this.cliPath;
   }
 
@@ -593,6 +600,13 @@ export class AutoReloadService {
       run.durationMs = Date.now() - startedAt;
       run.error = err instanceof Error ? err.message : String(err);
       run.verifiedAt = new Date().toISOString();
+      // A path that resolved and then would not spawn is not a path: throw it
+      // away so the next attempt resolves again, rather than re-launching the
+      // one thing already known not to launch until a settings save says so.
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        forgetClaudeCli();
+        this.cliPath = undefined;
+      }
       log.warn(`the prompt failed: ${run.error}`);
       this.countFailure(`the prompt failed (${run.error})`);
       return run;
