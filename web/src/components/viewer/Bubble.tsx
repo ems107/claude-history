@@ -58,8 +58,12 @@ export function Bubble({
       id={id}
       title={title}
       onClick={onClick}
+      // A ring, deliberately not a `filter` (brightness/opacity): a filtered
+      // ancestor becomes the containing block for `position: fixed`, and the
+      // cost and context pills in the header open fixed hover cards that would
+      // then anchor to the bubble instead of the viewport.
       className={`group relative w-full rounded-lg border px-3 py-2 ${STYLES[side].shell} ${
-        onClick ? 'cursor-pointer hover:brightness-125' : ''
+        onClick ? 'cursor-pointer hover:ring-1 hover:ring-[var(--text-dim)]/40' : ''
       }`}
     >
       <span aria-hidden className={`absolute top-4 size-3 rotate-45 ${STYLES[side].tail}`} />
