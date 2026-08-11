@@ -25,8 +25,9 @@ const STYLES: Record<BubbleSide, { shell: string; tail: string }> = {
  * blocks that a 70 %-wide column would squeeze), with the speaker told by the
  * colour and by which side the tail comes out of.
  *
- * `group` is on the shell so a hover toolbar inside can use `group-hover:` —
- * the same convention as the rename/pin buttons in the session header.
+ * `group/bubble` is on the shell so a hover toolbar inside can use
+ * `group-hover/bubble:` — the same convention as the rename/pin buttons in the
+ * session header, named because the fold line runs its own group nearby.
  */
 export function Bubble({
   side,
@@ -62,7 +63,7 @@ export function Bubble({
       // ancestor becomes the containing block for `position: fixed`, and the
       // cost and context pills in the header open fixed hover cards that would
       // then anchor to the bubble instead of the viewport.
-      className={`group relative w-full rounded-lg border px-3 py-2 ${STYLES[side].shell} ${
+      className={`group/bubble relative w-full rounded-lg border px-3 py-2 ${STYLES[side].shell} ${
         onClick ? 'cursor-pointer hover:ring-1 hover:ring-[var(--text-dim)]/40' : ''
       }`}
     >

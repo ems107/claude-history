@@ -75,7 +75,8 @@ function UserItem({
               {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
             </span>
           )}
-          {/* Same trailing run as the assistant's: model, cost, context, actions. */}
+          <MessageActions item={item} blocks={item.blocks} body={body} />
+          {/* Same trailing run as the assistant's: model, cost, context. */}
           <span className="ml-auto flex items-center gap-2">
             {models.length > 0 && (
               <span
@@ -90,7 +91,6 @@ function UserItem({
               </span>
             )}
             {badge}
-            <MessageActions item={item} blocks={item.blocks} body={body} />
           </span>
         </div>
       }
@@ -226,7 +226,8 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
           {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
         </span>
       )}
-      {/* Same trailing run as the prompt's: model, cost, context, actions. */}
+      {actions}
+      {/* Same trailing run as the prompt's: model, cost, context. */}
       <span className="ml-auto flex items-center gap-2">
         {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
         {entry && (
@@ -238,7 +239,6 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
           />
         )}
         <ContextPill point={costs.context.get(item.uuid)} />
-        {actions}
       </span>
     </div>
   );

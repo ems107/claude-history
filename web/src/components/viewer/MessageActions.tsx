@@ -46,12 +46,21 @@ export function MessageActions({
   };
 
   const cls =
-    'shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] focus-visible:opacity-100';
+    'shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case hover:bg-[var(--bg-hover)] hover:text-[var(--text)]';
 
   return (
-    // The click never belongs to whatever is underneath: in prompts-only mode
-    // the bubble itself expands the turn.
-    <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+    // `hidden`, not `opacity-0`: invisible buttons still take their width, and
+    // here that left a permanent gap in the header. They live in the empty
+    // middle of the row, BEFORE the auto margin, so appearing eats slack from
+    // the spacer instead of shoving the model/cost/context pills sideways
+    // exactly when the pointer is heading for them.
+    //
+    // The click never belongs to whatever is underneath: a folded bubble
+    // unfolds its turn.
+    <span
+      className="hidden items-center gap-0.5 group-hover/bubble:flex"
+      onClick={(e) => e.stopPropagation()}
+    >
       <button
         type="button"
         className={cls}
