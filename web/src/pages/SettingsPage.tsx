@@ -14,9 +14,25 @@ import { markUsageRead } from '../api/usageReason.ts';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
 
-function Section({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) {
+function Section({
+  title,
+  children,
+  id,
+  highlight,
+}: {
+  title: string;
+  children: React.ReactNode;
+  id?: string;
+  /** Just arrived here from an anchor link: flash once, then settle. */
+  highlight?: boolean;
+}) {
   return (
-    <section id={id} className="scroll-mt-4 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4">
+    <section
+      id={id}
+      className={`scroll-mt-4 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 ${
+        highlight ? 'anchor-flash' : ''
+      }`}
+    >
       <h2 className="mb-3 text-sm font-semibold">{title}</h2>
       <div className="space-y-3 text-xs">{children}</div>
     </section>
@@ -55,6 +71,9 @@ function Toggle({
 
 const btn =
   'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
+
+/** Must match the `anchor-flash` animation in styles.css. */
+const ANCHOR_FLASH_MS = 2_500;
 
 const asText = (v: boolean | number | string): string => {
   if (typeof v === 'boolean') return v ? 'on' : 'off';
@@ -339,16 +358,25 @@ export function SettingsPage() {
   const [uninstalled, setUninstalled] = useState(false);
 
   // Arriving from the "change" link at the foot of the session list: this page
-  // is long, so land on the block that was asked for. Keyed on whether the
-  // settings have loaded (the sections do not exist before that), never on the
-  // settings object itself — that changes on every save and would yank the page
-  // back to the anchor mid-edit.
-  const { hash } = useLocation();
+  // is long, so land on the block that was asked for and mark it for a moment —
+  // scrolling alone leaves you looking at a wall of settings with no clue which
+  // one you were sent to. Keyed on whether the settings have loaded (the
+  // sections do not exist before that) and on the navigation's own key, so
+  // following the same link twice flashes again; never on the settings object
+  // itself, which changes on every save and would yank the page back mid-edit.
+  const { hash, key: navigationKey } = useLocation();
   const loaded = !!data;
+  const [flashed, setFlashed] = useState<string | null>(null);
   useEffect(() => {
     if (!hash || !loaded) return;
-    document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' });
-  }, [hash, loaded]);
+    const id = hash.slice(1);
+    document.getElementById(id)?.scrollIntoView({ block: 'start' });
+    setFlashed(id);
+    // Dropped once the animation is over, so the class does not linger and
+    // replay on the next unrelated re-render.
+    const timer = setTimeout(() => setFlashed(null), ANCHOR_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [hash, navigationKey, loaded]);
 
   if (!data) return <div className="p-8 text-[var(--text-dim)]">Loading settings…</div>;
 
@@ -659,7 +687,11 @@ export function SettingsPage() {
 
         {/* Claude Code's setting, not ours — shown and explained, never written.
             The id is what the session list's "change" link scrolls to. */}
-        <Section title="How long Claude keeps your history" id="claude-retention">
+        <Section
+          title="How long Claude keeps your history"
+          id="claude-retention"
+          highlight={flashed === 'claude-retention'}
+        >
           <RetentionPanel />
         </Section>
 

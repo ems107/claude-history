@@ -35,6 +35,29 @@ body {
   font-family: ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* Landing on an anchor (#claude-retention from the session list): say WHICH
+   block was meant, then get out of the way. A ring and a tint, both fading in
+   one pass — drawn with box-shadow so nothing reflows, and never blinking:
+   this is a pointer, not an alarm. */
+@keyframes anchor-flash {
+  0% {
+    box-shadow: 0 0 0 2px var(--accent);
+    background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  }
+  60% {
+    box-shadow: 0 0 0 2px var(--accent);
+    background-color: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+    background-color: var(--bg-raised);
+  }
+}
+
+.anchor-flash {
+  animation: anchor-flash 2.5s ease-out;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
