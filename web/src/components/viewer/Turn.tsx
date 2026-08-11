@@ -75,9 +75,12 @@ function UserItem({
               {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
             </span>
           )}
+          {/* An explicit spacer rather than `ml-auto` on the run: the actions
+              sit between the two, and only the spacer gives way to them. */}
+          <span className="flex-1" />
           <MessageActions item={item} blocks={item.blocks} body={body} />
           {/* Same trailing run as the assistant's: model, cost, context. */}
-          <span className="ml-auto flex items-center gap-2">
+          <span className="flex items-center gap-2">
             {models.length > 0 && (
               <span
                 className="font-mono font-normal text-[var(--text-dim)] normal-case"
@@ -226,9 +229,10 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
           {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
         </span>
       )}
+      <span className="flex-1" />
       {actions}
       {/* Same trailing run as the prompt's: model, cost, context. */}
-      <span className="ml-auto flex items-center gap-2">
+      <span className="flex items-center gap-2">
         {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
         {entry && (
           <CostPill

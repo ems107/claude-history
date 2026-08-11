@@ -50,15 +50,21 @@ export function MessageActions({
 
   return (
     // `hidden`, not `opacity-0`: invisible buttons still take their width, and
-    // here that left a permanent gap in the header. They live in the empty
-    // middle of the row, BEFORE the auto margin, so appearing eats slack from
-    // the spacer instead of shoving the model/cost/context pills sideways
+    // here that left a permanent gap in the header. They sit right before the
+    // model/cost/context run, after a `flex-1` spacer that absorbs their width,
+    // so appearing shrinks the spacer instead of shoving those pills sideways
     // exactly when the pointer is heading for them.
+    //
+    // `-my-0.5` cancels the buttons' own vertical padding from the row's
+    // height: the assistant's pills are bare text (the `inline` HoverCard
+    // variant), so without it the header grew by 4 px on hover and nudged the
+    // answer down. The buttons still paint their full padding, 2 px over the
+    // row on each side.
     //
     // The click never belongs to whatever is underneath: a folded bubble
     // unfolds its turn.
     <span
-      className="hidden items-center gap-0.5 group-hover/bubble:flex"
+      className="-my-0.5 hidden items-center gap-0.5 group-hover/bubble:flex"
       onClick={(e) => e.stopPropagation()}
     >
       <button
