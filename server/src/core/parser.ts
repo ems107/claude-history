@@ -265,6 +265,7 @@ export async function parseTranscript(
             endTimestamp: str(o.timestamp),
             model: null,
             isMeta: false,
+            isCompactSummary: false,
             systemSubtype: 'context',
             usage: null,
             effort: null,
@@ -286,6 +287,9 @@ export async function parseTranscript(
           endTimestamp: str(o.timestamp),
           model: null,
           isMeta: false,
+          // The compaction summary comes down this very path: a `user` line with
+          // string content, indistinguishable from a typed prompt without it.
+          isCompactSummary: o.isCompactSummary === true,
           systemSubtype: null,
           usage: null,
           effort: null,
@@ -322,6 +326,7 @@ export async function parseTranscript(
             endTimestamp: str(o.timestamp),
             model: null,
             isMeta: false,
+            isCompactSummary: false,
             systemSubtype: null,
             usage: null,
             effort: null,
@@ -344,6 +349,7 @@ export async function parseTranscript(
           endTimestamp: str(o.timestamp),
           model: synthetic ? null : model,
           isMeta: false,
+          isCompactSummary: false,
           systemSubtype: null,
           // A synthetic message was not produced by a model and is excluded from
           // every total; an id-less line has no dedupe key, so counting it could
@@ -406,6 +412,7 @@ export async function parseTranscript(
           endTimestamp: str(o.timestamp),
           model: null,
           isMeta: false,
+          isCompactSummary: false,
           systemSubtype: subtype,
           usage: null,
           effort: null,
@@ -440,6 +447,7 @@ export async function parseTranscript(
         endTimestamp: str(o.timestamp),
         model: null,
         isMeta: o.isMeta === true,
+        isCompactSummary: false,
         systemSubtype: subtype,
         usage: null,
         effort: null,

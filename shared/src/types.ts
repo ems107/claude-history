@@ -217,6 +217,14 @@ export interface MessageItem {
   endTimestamp: string | null;
   model: string | null;
   isMeta: boolean;
+  /**
+   * The summary a compaction wrote, not something the user typed. Claude Code
+   * appends it as an ordinary `user` line with string content (no `usage`), so
+   * nothing but this flag tells the two apart — and the transcript's own
+   * `compactMetadata.preservedSegment.anchorUuid` points at exactly this uuid.
+   * Without it the viewer showed a 17,000-character "prompt" nobody wrote.
+   */
+  isCompactSummary: boolean;
   /** system messages only */
   systemSubtype: string | null;
   /** Assistant only: tokens billed for this message; null for `<synthetic>` and for every other role. */
