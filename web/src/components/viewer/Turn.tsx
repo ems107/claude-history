@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { foldedCounts } from '../../lib/folding.ts';
 import { isPromptItem } from '../../lib/segments.ts';
 import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
@@ -286,23 +287,10 @@ function SystemItem({ item }: { item: MessageItem }) {
   );
 }
 
-/** What prompts-only folds away: the assistant's side of the turn. */
-function foldedCounts(turn: TurnType, showThinking: boolean): { responses: number; tools: number } {
-  let responses = 0;
-  let tools = 0;
-  for (const item of turn.items) {
-    if (item.role !== 'assistant') continue;
-    const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
-    if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
-    tools += visible.filter((b) => b.kind === 'tool').length;
-  }
-  return { responses, tools };
-}
-
 /**
- * The fold line of a turn in prompts-only mode. It is rendered in BOTH states
- * and at the same place — where the folded content starts — so unfolding moves
- * nothing around and there is always something to click to fold it back.
+ * The fold line of a turn. It is rendered in BOTH states and at the same place
+ * — where the folded content starts — so unfolding moves nothing around and
+ * there is always something to click to fold it back.
  *
  * The two states are drawn to look nothing alike, because at a glance they
  * used to read the same: folded it is a closed drawer (dashed, raised, "show"),
@@ -385,8 +373,7 @@ export function TurnView({
   costs,
   turnCost,
   turnContext,
-  promptsOnly = false,
-  expanded = false,
+  expanded = true,
   onToggleExpanded,
 }: {
   turn: TurnType;
@@ -398,8 +385,7 @@ export function TurnView({
   turnCost: CostEntry[];
   /** The turn's requests, for the context badge. */
   turnContext: ContextTurn | null;
-  /** Show the prompt and fold away what it produced until it is asked for. */
-  promptsOnly?: boolean;
+  /** Folded, the turn shows its prompt and one line for what it produced. */
   expanded?: boolean;
   onToggleExpanded?: () => void;
 }) {
@@ -421,8 +407,9 @@ export function TurnView({
     // third speaker.
     markFold();
     nodes.push(
-      // Inside the unfolded rail the indent is the rail's, not its own.
-      <div key={`tools-${nodes.length}`} className={promptsOnly && expanded ? '' : 'ml-6'}>
+      // No indent of its own: a run only ever renders inside the fold rail,
+      // which already carries one.
+      <div key={`tools-${nodes.length}`}>
         <ToolGroup tools={pendingTools} expandAll={expandTools} onOpenAgent={onOpenAgent} costs={costs} />
       </div>,
     );
@@ -451,7 +438,7 @@ export function TurnView({
   // own line instead, so no turn is ever left without its total.
   let badgePlaced = false;
 
-  const folded = promptsOnly ? foldedCounts(turn, showThinking) : { responses: 0, tools: 0 };
+  const folded = foldedCounts(turn, showThinking);
   const anyFolded = folded.responses > 0 || folded.tools > 0;
   let promptShown = false;
   const foldStrip = (open: boolean) => (
@@ -466,10 +453,9 @@ export function TurnView({
     />
   );
 
-  // Prompts only, and this turn not asked for: the prompt, whatever is
-  // structural (a compaction, a /context run) and one line saying what is
-  // folded. Never a silent omission.
-  if (promptsOnly && !expanded) {
+  // Folded: the prompt, whatever is structural (a compaction, a /context run)
+  // and one line saying what is hidden. Never a silent omission.
+  if (!expanded) {
     for (const item of turn.items) {
       if (item.role === 'user' && (isPromptItem(item) || item.isCompactSummary)) {
         // The summary panel takes no badge, so it must not consume one either.
@@ -496,9 +482,7 @@ export function TurnView({
   for (const item of turn.items) {
     if (item.role === 'user') {
       flushTools();
-      nodes.push(
-        userNode(item, badgePlaced ? undefined : turnBadge, promptsOnly ? onToggleExpanded : undefined),
-      );
+      nodes.push(userNode(item, badgePlaced ? undefined : turnBadge, anyFolded ? onToggleExpanded : undefined));
       badgePlaced ||= !item.isCompactSummary;
       promptShown ||= !item.isCompactSummary;
       continue;
@@ -561,7 +545,7 @@ export function TurnView({
   // Unfolded, everything the prompt produced moves onto a rail headed by the
   // same line, which now folds it back. The rail starts where the folded pill
   // sat, so nothing shifts sideways when it opens either.
-  if (promptsOnly && anyFolded) {
+  if (anyFolded) {
     const produced = nodes.splice(foldAt ?? nodes.length);
     nodes.push(
       <div key="folded" className="ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3">

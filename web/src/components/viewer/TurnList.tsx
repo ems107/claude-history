@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
+import { type FoldState, turnKey } from '../../lib/folding.ts';
 import { buildSegments, type SegmentTurn } from '../../lib/segments.ts';
 import { CompactedSegment } from './CompactedSegment.tsx';
 import { TurnView } from './Turn.tsx';
@@ -11,21 +12,13 @@ import { TurnView } from './Turn.tsx';
 /** Stable identity, so the cost index is not rebuilt on every render before the prices arrive. */
 const NO_PRICES: PriceTable = {};
 
-/**
- * A live session's turns array is replaced wholesale every few seconds, so the
- * key has to come from the data: the first item's uuid. (It also fixes real
- * duplicate keys — after a compaction the summary turn and the `/compact` turn
- * carry the same promptId, which is what this used to key on.)
- */
-function turnKey(t: SegmentTurn): string {
-  return t.turn.items[0]?.uuid ?? `turn-${t.index}`;
-}
+const keyOf = (t: SegmentTurn): string => turnKey(t.turn, t.index);
 
 export function TurnList({
   turns,
   showThinking,
   expandTools = false,
-  promptsOnly = false,
+  fold,
   expandSegments = false,
   scrollToUuid,
   onOpenAgent,
@@ -33,8 +26,8 @@ export function TurnList({
   turns: Turn[];
   showThinking: boolean;
   expandTools?: boolean;
-  /** Show only the prompts; each turn opens on demand. */
-  promptsOnly?: boolean;
+  /** Which turns have their answers folded away — owned above, see useFoldState. */
+  fold: FoldState;
   /** Unfold every compacted segment at once (the header toggle). */
   expandSegments?: boolean;
   scrollToUuid?: string | null;
@@ -58,7 +51,6 @@ export function TurnList({
   const segments = useMemo(() => buildSegments(turns), [turns]);
 
   const [openSegments, setOpenSegments] = useState<Set<number>>(() => new Set());
-  const [openTurns, setOpenTurns] = useState<Set<string>>(() => new Set());
 
   // Read through a ref so this effect keys on the toggle ALONE: `segments` gets
   // a new identity on every refetch, and depending on it would re-fold whatever
@@ -71,18 +63,12 @@ export function TurnList({
     );
   }, [expandSegments]);
 
-  // Leaving prompts-only and coming back starts folded again: the mode is
-  // asked for to get the overview, not to find the turns left open last time.
-  useEffect(() => {
-    setOpenTurns(new Set());
-  }, [promptsOnly]);
-
   /** uuid (and every alias) → where it is, so a deep link can open its way in. */
   const locate = useMemo(() => {
     const map = new Map<string, { segment: number; turn: string }>();
     for (const segment of segments) {
       for (const st of segment.turns) {
-        const at = { segment: segment.index, turn: turnKey(st) };
+        const at = { segment: segment.index, turn: keyOf(st) };
         for (const item of st.turn.items) {
           map.set(item.uuid, at);
           for (const alias of item.aliasUuids) map.set(alias, at);
@@ -99,7 +85,7 @@ export function TurnList({
     const at = locate.get(scrollToUuid);
     if (at) {
       setOpenSegments((s) => (s.has(at.segment) ? s : new Set(s).add(at.segment)));
-      setOpenTurns((s) => (s.has(at.turn) ? s : new Set(s).add(at.turn)));
+      fold.open(at.turn);
     }
     // Let the DOM settle before scrolling to the deep-linked message.
     const t = setTimeout(() => {
@@ -121,7 +107,7 @@ export function TurnList({
 
   const renderTurns = (segmentTurns: SegmentTurn[]) =>
     segmentTurns.map((st) => {
-      const key = turnKey(st);
+      const key = keyOf(st);
       return (
         <TurnView
           key={key}
@@ -132,15 +118,8 @@ export function TurnList({
           costs={costs}
           turnCost={index.perTurn[st.index] ?? []}
           turnContext={contextIndex.perTurn[st.index] ?? null}
-          promptsOnly={promptsOnly}
-          expanded={openTurns.has(key)}
-          onToggleExpanded={() =>
-            setOpenTurns((s) => {
-              const next = new Set(s);
-              if (!next.delete(key)) next.add(key);
-              return next;
-            })
-          }
+          expanded={fold.isOpen(key)}
+          onToggleExpanded={() => fold.toggle(key)}
         />
       );
     });

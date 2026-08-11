@@ -1,12 +1,15 @@
-import type { PriceTable } from '@claude-history/shared';
+import type { PriceTable, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api } from '../../api/client.ts';
 import { costEntries } from '../../lib/cost.ts';
+import { useFoldState } from '../../lib/folding.ts';
 import { CostPill } from './CostPill.tsx';
 import { TurnList } from './TurnList.tsx';
 
 const NO_PRICES: PriceTable = {};
+/** Stable identity while the transcript loads. */
+const EMPTY_TURNS: Turn[] = [];
 
 export function SubagentDrawer({
   sessionId,
@@ -32,6 +35,9 @@ export function SubagentDrawer({
     () => costEntries((query.data?.turns ?? []).flatMap((t) => t.items), prices),
     [query.data, prices],
   );
+  // Its own fold state: the drawer has no header buttons, but its turns fold
+  // exactly like the conversation's.
+  const fold = useFoldState(query.data?.turns ?? EMPTY_TURNS, showThinking, agentId);
 
   return (
     <div className="fixed inset-y-0 right-0 z-20 flex w-[44rem] max-w-[90vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl">
@@ -55,7 +61,9 @@ export function SubagentDrawer({
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {query.isLoading && <div className="text-[var(--text-dim)]">Loading subagent transcript…</div>}
         {query.isError && <div className="text-red-400">Failed: {String(query.error)}</div>}
-        {query.data && <TurnList key={agentId} turns={query.data.turns} showThinking={showThinking} />}
+        {query.data && (
+          <TurnList key={agentId} turns={query.data.turns} showThinking={showThinking} fold={fold} />
+        )}
       </div>
     </div>
   );

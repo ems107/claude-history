@@ -1,7 +1,9 @@
+import type { Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { useFoldState } from '../lib/folding.ts';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
 import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
@@ -13,6 +15,8 @@ import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
+/** Stable identity while the conversation loads, so the fold state is not rebuilt. */
+const EMPTY_TURNS: Turn[] = [];
 
 export function SessionViewPage() {
   const { id = '' } = useParams();
@@ -21,7 +25,6 @@ export function SessionViewPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
   const [expandTools, setExpandTools] = useState(() => localStorage.getItem('expandTools') === 'true');
-  const [promptsOnly, setPromptsOnly] = useState(() => localStorage.getItem('promptsOnly') === 'true');
   // Not persisted: folded is the point of the feature, and a session opened
   // tomorrow should still open on the context that is alive.
   const [expandSegments, setExpandSegments] = useState(false);
@@ -72,6 +75,10 @@ export function SessionViewPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [agentId, closeAgent, navigate]);
 
+  // Above the early returns (hooks are not optional) and above TurnList: the
+  // header buttons need to know whether anything is left to fold or unfold.
+  const fold = useFoldState(detail.data?.turns ?? EMPTY_TURNS, showThinking, id);
+
   const { thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const blocks = (detail.data?.turns ?? []).flatMap((t) => t.items).flatMap((i) => i.blocks);
     return {
@@ -112,13 +119,10 @@ export function SessionViewPage() {
           });
         }}
         toolCount={toolCount}
-        promptsOnly={promptsOnly}
-        onTogglePromptsOnly={() => {
-          setPromptsOnly((v) => {
-            localStorage.setItem('promptsOnly', String(!v));
-            return !v;
-          });
-        }}
+        canHideResponses={fold.canHide}
+        onHideResponses={fold.hideAll}
+        canShowResponses={fold.canShow}
+        onShowResponses={fold.showAll}
         expandSegments={expandSegments}
         onToggleSegments={() => setExpandSegments((v) => !v)}
         compactionCount={compactionCount}
@@ -150,7 +154,7 @@ export function SessionViewPage() {
               turns={detail.data.turns}
               showThinking={showThinking}
               expandTools={expandTools}
-              promptsOnly={promptsOnly}
+              fold={fold}
               expandSegments={expandSegments}
               scrollToUuid={msg}
               onOpenAgent={openAgent}

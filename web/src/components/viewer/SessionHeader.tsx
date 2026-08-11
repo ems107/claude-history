@@ -92,8 +92,10 @@ export function SessionHeader({
   expandTools,
   onToggleTools,
   toolCount,
-  promptsOnly,
-  onTogglePromptsOnly,
+  canHideResponses,
+  onHideResponses,
+  canShowResponses,
+  onShowResponses,
   expandSegments,
   onToggleSegments,
   compactionCount,
@@ -113,8 +115,10 @@ export function SessionHeader({
   expandTools: boolean;
   onToggleTools: () => void;
   toolCount: number;
-  promptsOnly: boolean;
-  onTogglePromptsOnly: () => void;
+  canHideResponses: boolean;
+  onHideResponses: () => void;
+  canShowResponses: boolean;
+  onShowResponses: () => void;
   expandSegments: boolean;
   onToggleSegments: () => void;
   compactionCount: number;
@@ -217,13 +221,29 @@ export function SessionHeader({
         >
           Tools{toolCount > 0 ? ` (${toolCount})` : ''}
         </button>
+        {/* Actions, not modes: each one is spent once and then has nothing
+            left to do, which is exactly when it greys out. */}
         <button
           type="button"
-          onClick={onTogglePromptsOnly}
-          className={toggleClass(promptsOnly)}
-          title="Show only the prompts you typed — click any of them to unfold what it produced"
+          onClick={canHideResponses ? onHideResponses : undefined}
+          disabled={!canHideResponses}
+          className={toggleClass(false, !canHideResponses)}
+          title={
+            canHideResponses
+              ? 'Fold every answer away and leave the prompts — click any prompt to bring its own back'
+              : 'Every answer is already folded'
+          }
         >
-          Prompts only
+          Hide responses
+        </button>
+        <button
+          type="button"
+          onClick={canShowResponses ? onShowResponses : undefined}
+          disabled={!canShowResponses}
+          className={toggleClass(false, !canShowResponses)}
+          title={canShowResponses ? 'Unfold every answer' : 'Nothing is folded'}
+        >
+          Show responses
         </button>
         {compactionCount > 0 && (
           <button
