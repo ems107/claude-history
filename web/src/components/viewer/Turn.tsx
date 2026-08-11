@@ -1,5 +1,5 @@
 import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@claude-history/shared';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
@@ -9,6 +9,7 @@ import { CompactBoundaryPanel, ContextSnapshotPanel } from './ContextSnapshotPan
 import { CostPill } from './CostPill.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { Markdown } from './Markdown.tsx';
+import { MessageActions } from './MessageActions.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
 
@@ -45,10 +46,12 @@ function Anchors({ item }: { item: MessageItem }) {
 }
 
 function UserItem({ item, badge }: { item: MessageItem; badge?: ReactNode }) {
+  const body = useRef<HTMLDivElement>(null);
   return (
     <Bubble
       side="user"
       id={item.uuid}
+      bodyRef={body}
       header={
         <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
           <span>user</span>
@@ -57,7 +60,10 @@ function UserItem({ item, badge }: { item: MessageItem; badge?: ReactNode }) {
               {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
             </span>
           )}
-          {badge && <span className="ml-auto">{badge}</span>}
+          <span className="ml-auto flex items-center gap-2">
+            <MessageActions item={item} blocks={item.blocks} body={body} />
+            {badge}
+          </span>
         </div>
       }
     >
@@ -182,7 +188,7 @@ function ToolGroup({
   );
 }
 
-function AssistantHeader({ item, costs }: { item: MessageItem; costs: CostContext }) {
+function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: CostContext; actions?: ReactNode }) {
   const entry = costEntry(item, costs.prices);
   return (
     <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
@@ -202,7 +208,46 @@ function AssistantHeader({ item, costs }: { item: MessageItem; costs: CostContex
         />
       )}
       <ContextPill point={costs.context.get(item.uuid)} />
+      {actions && <span className="ml-auto">{actions}</span>}
     </div>
+  );
+}
+
+/**
+ * An assistant message with something to show. Its own component only because
+ * it needs a ref for the copy button, and the turn loop cannot hold one.
+ *
+ * `blocks` is what was actually rendered (thinking filtered, tool calls pulled
+ * out into runs) — the copy button must not offer more than the bubble shows.
+ */
+function AssistantItem({
+  item,
+  costs,
+  blocks,
+  children,
+}: {
+  item: MessageItem;
+  costs: CostContext;
+  blocks: ContentBlock[];
+  children: ReactNode;
+}) {
+  const body = useRef<HTMLDivElement>(null);
+  return (
+    <Bubble
+      id={item.uuid}
+      side="assistant"
+      bodyRef={body}
+      header={
+        <AssistantHeader
+          item={item}
+          costs={costs}
+          actions={<MessageActions item={item} blocks={blocks} body={body} />}
+        />
+      }
+    >
+      <Anchors item={item} />
+      {children}
+    </Bubble>
   );
 }
 
@@ -319,6 +364,7 @@ export function TurnView({
 
     flushTools();
     const rendered: ReactNode[] = [];
+    const prose: ContentBlock[] = [];
     for (const [i, b] of visible.entries()) {
       if (b.kind === 'tool') {
         pendingTools.push({ block: b, item, costOwner: false });
@@ -336,23 +382,22 @@ export function TurnView({
         );
         pendingTools = [];
       }
-      if (b.kind === 'thinking') rendered.push(<ThinkingBlock key={i} text={b.text} />);
-      else if (b.kind === 'text') rendered.push(<Markdown key={i} text={b.text} />);
+      if (b.kind === 'thinking') {
+        rendered.push(<ThinkingBlock key={i} text={b.text} />);
+        prose.push(b);
+      } else if (b.kind === 'text') {
+        rendered.push(<Markdown key={i} text={b.text} />);
+        prose.push(b);
+      }
     }
     if (rendered.length > 0) {
       // Only a message with something to show gets a bubble: an assistant
       // message that is nothing but tool calls prints no header today (the run
       // carries its cost) and must not grow an envelope either.
       nodes.push(
-        <Bubble
-          key={item.uuid}
-          id={item.uuid}
-          side="assistant"
-          header={<AssistantHeader item={item} costs={costs} />}
-        >
-          <Anchors item={item} />
+        <AssistantItem key={item.uuid} item={item} costs={costs} blocks={prose}>
           {rendered}
-        </Bubble>,
+        </AssistantItem>,
       );
     }
   }

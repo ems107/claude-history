@@ -1,4 +1,4 @@
-import type { MessageItem, SessionDetail } from '@claude-history/shared';
+import type { ContentBlock, MessageItem, SessionDetail } from '@claude-history/shared';
 import { formatDateTime, shortModel } from './format.ts';
 
 export interface ExportOptions {
@@ -22,6 +22,108 @@ function itemHeader(item: MessageItem): string {
   return `## 🤖 Assistant${model}${time}`;
 }
 
+/** A system item: a /context run and a compaction carry figures, not text. */
+function systemLines(item: MessageItem): string[] {
+  const first = item.blocks[0];
+  if (first?.kind === 'context') {
+    const s = first.snapshot;
+    const window = s.limitTokens === null ? '' : ` of ${s.limitTokens.toLocaleString()}`;
+    const pct = s.reportedPct === null ? '' : ` (${s.reportedPct}%)`;
+    return [
+      `> ⚙️ **/context:** ${s.reportedTokens?.toLocaleString() ?? '—'}${window} tokens${pct} — ` +
+        s.categories.map((c) => `${c.label} ${c.tokens.toLocaleString()}`).join(' · '),
+      '',
+    ];
+  }
+  if (first?.kind === 'compact') {
+    const b = first.boundary;
+    return [
+      `> ⚙️ **Conversation compacted**${b.trigger ? ` (${b.trigger})` : ''}: ` +
+        `${b.preTokens?.toLocaleString() ?? '—'} → ${b.postTokens?.toLocaleString() ?? '—'} tokens`,
+      '',
+    ];
+  }
+  const text = first?.kind === 'text' ? first.text : '';
+  return [`> ⚙️ **${item.systemSubtype ?? 'system'}:** ${text.replace(/\n/g, ' ').slice(0, 500)}`, ''];
+}
+
+/**
+ * One message as markdown. Shared by the session export and the per-message
+ * copy button, which is the whole point: the two used to be able to disagree
+ * about what a message even contains.
+ *
+ * `blocks` is passed separately because the caller may hold a filtered view of
+ * them (the viewer hides thinking, and renders tool runs outside the bubble).
+ */
+function contentLines(
+  item: MessageItem,
+  blocks: readonly ContentBlock[],
+  opts: ExportOptions,
+  withHeader: boolean,
+): string[] {
+  const out: string[] = [];
+  let headerWritten = !withHeader;
+  const writeHeader = () => {
+    if (!headerWritten) {
+      out.push(itemHeader(item), '');
+      headerWritten = true;
+    }
+  };
+
+  for (const block of blocks) {
+    switch (block.kind) {
+      case 'text':
+        writeHeader();
+        out.push(block.text, '');
+        break;
+      case 'command':
+        writeHeader();
+        out.push(`\`❯ ${block.text}\``, '');
+        break;
+      case 'thinking':
+        if (!opts.includeThinking) break;
+        writeHeader();
+        out.push('<details>', '<summary>💭 Thinking</summary>', '', block.text, '', '</details>', '');
+        break;
+      case 'tool': {
+        if (!opts.includeTools) break;
+        writeHeader();
+        const summary = `🔧 <b>${block.toolName}</b>${block.inputSummary ? ` — <code>${block.inputSummary.slice(0, 120).replace(/</g, '&lt;')}</code>` : ''}`;
+        out.push('<details>', `<summary>${summary}</summary>`, '');
+        if (block.input !== null && block.input !== undefined) {
+          out.push('**Input**', '', fence(JSON.stringify(block.input, null, 2), 'json'), '');
+        }
+        if (block.result) {
+          out.push(
+            `**Result${block.result.isError ? ' (error)' : ''}${block.result.truncated ? ' (truncated)' : ''}**`,
+            '',
+            fence(block.result.text),
+            '',
+          );
+        }
+        out.push('</details>', '');
+        break;
+      }
+      case 'image':
+        writeHeader();
+        if (!block.data) {
+          out.push('*🖼 image attachment (no image data in the transcript)*', '');
+        } else if (opts.includeImages) {
+          out.push(`![Attachment](data:${block.mediaType ?? 'image/png'};base64,${block.data})`, '');
+        } else {
+          out.push('*🖼 image attachment (not included in this export)*', '');
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+/** What the per-message "copy as Markdown" button puts on the clipboard. */
+export function blocksMarkdown(item: MessageItem, blocks: readonly ContentBlock[], opts: ExportOptions): string {
+  return contentLines(item, blocks, opts, false).join('\n').trim();
+}
+
 export function buildMarkdown(detail: SessionDetail, opts: ExportOptions): string {
   const s = detail.summary;
   const out: string[] = [];
@@ -42,89 +144,10 @@ export function buildMarkdown(detail: SessionDetail, opts: ExportOptions): strin
   for (const turn of detail.turns) {
     for (const item of turn.items) {
       if (item.role === 'system') {
-        if (!opts.includeSystem) continue;
-        const first = item.blocks[0];
-        // A /context run and a compaction carry figures, not text — one line each
-        // rather than the empty quote they used to export as.
-        if (first?.kind === 'context') {
-          const s = first.snapshot;
-          const window = s.limitTokens === null ? '' : ` of ${s.limitTokens.toLocaleString()}`;
-          const pct = s.reportedPct === null ? '' : ` (${s.reportedPct}%)`;
-          out.push(
-            `> ⚙️ **/context:** ${s.reportedTokens?.toLocaleString() ?? '—'}${window} tokens${pct} — ` +
-              s.categories.map((c) => `${c.label} ${c.tokens.toLocaleString()}`).join(' · '),
-            '',
-          );
-          continue;
-        }
-        if (first?.kind === 'compact') {
-          const b = first.boundary;
-          out.push(
-            `> ⚙️ **Conversation compacted**${b.trigger ? ` (${b.trigger})` : ''}: ` +
-              `${b.preTokens?.toLocaleString() ?? '—'} → ${b.postTokens?.toLocaleString() ?? '—'} tokens`,
-            '',
-          );
-          continue;
-        }
-        const text = first?.kind === 'text' ? first.text : '';
-        out.push(`> ⚙️ **${item.systemSubtype ?? 'system'}:** ${text.replace(/\n/g, ' ').slice(0, 500)}`, '');
+        if (opts.includeSystem) out.push(...systemLines(item));
         continue;
       }
-
-      let headerWritten = false;
-      const writeHeader = () => {
-        if (!headerWritten) {
-          out.push(itemHeader(item), '');
-          headerWritten = true;
-        }
-      };
-
-      for (const block of item.blocks) {
-        switch (block.kind) {
-          case 'text':
-            writeHeader();
-            out.push(block.text, '');
-            break;
-          case 'command':
-            writeHeader();
-            out.push(`\`❯ ${block.text}\``, '');
-            break;
-          case 'thinking':
-            if (!opts.includeThinking) break;
-            writeHeader();
-            out.push('<details>', '<summary>💭 Thinking</summary>', '', block.text, '', '</details>', '');
-            break;
-          case 'tool': {
-            if (!opts.includeTools) break;
-            writeHeader();
-            const summary = `🔧 <b>${block.toolName}</b>${block.inputSummary ? ` — <code>${block.inputSummary.slice(0, 120).replace(/</g, '&lt;')}</code>` : ''}`;
-            out.push('<details>', `<summary>${summary}</summary>`, '');
-            if (block.input !== null && block.input !== undefined) {
-              out.push('**Input**', '', fence(JSON.stringify(block.input, null, 2), 'json'), '');
-            }
-            if (block.result) {
-              out.push(
-                `**Result${block.result.isError ? ' (error)' : ''}${block.result.truncated ? ' (truncated)' : ''}**`,
-                '',
-                fence(block.result.text),
-                '',
-              );
-            }
-            out.push('</details>', '');
-            break;
-          }
-          case 'image':
-            writeHeader();
-            if (!block.data) {
-              out.push('*🖼 image attachment (no image data in the transcript)*', '');
-            } else if (opts.includeImages) {
-              out.push(`![Attachment](data:${block.mediaType ?? 'image/png'};base64,${block.data})`, '');
-            } else {
-              out.push('*🖼 image attachment (not included in this export)*', '');
-            }
-            break;
-        }
-      }
+      out.push(...contentLines(item, item.blocks, opts, true));
     }
   }
 

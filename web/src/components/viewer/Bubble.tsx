@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 
 export type BubbleSide = 'user' | 'assistant';
 
@@ -33,6 +33,7 @@ export function Bubble({
   id,
   header,
   children,
+  bodyRef,
   onClick,
   title,
 }: {
@@ -41,6 +42,8 @@ export function Bubble({
   /** The meta row (role, time, model, pills). Rendered above the content. */
   header?: ReactNode;
   children?: ReactNode;
+  /** The content node, which the copy button reads back as HTML. */
+  bodyRef?: RefObject<HTMLDivElement | null>;
   /**
    * Prompts-only mode: clicking the bubble expands its turn. Anything
    * interactive inside (the copy buttons) must stop propagation. This is
@@ -61,7 +64,9 @@ export function Bubble({
     >
       <span aria-hidden className={`absolute top-4 size-3 rotate-45 ${STYLES[side].tail}`} />
       {header}
-      {children}
+      <div ref={bodyRef} className="min-w-0">
+        {children}
+      </div>
     </div>
   );
 }
