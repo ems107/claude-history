@@ -229,6 +229,11 @@ export async function parseTranscript(
   };
   const ensureTurn = (): Turn => current ?? newTurn(null);
   const makeUuid = (o: RawLine): string => str(o.uuid) ?? `gen-${fallbackId++}`;
+  /** The last item emitted: every push goes into the last turn. */
+  const lastItem = (): MessageItem | null => {
+    const turn = turns[turns.length - 1];
+    return turn && turn.items.length > 0 ? turn.items[turn.items.length - 1] : null;
+  };
 
   for await (const line of streamLines(filePath)) {
     const o = safeParse(line);
@@ -279,6 +284,21 @@ export async function parseTranscript(
       if (typeof content === 'string') {
         const prompt = extractPrompt(content);
         if (!prompt) continue; // local-command stdout noise
+        // A compaction replays the command that caused it into the fresh
+        // context, keeping its ORIGINAL timestamp — so `/compact` is written
+        // twice: once as the plain text that was typed, before the boundary,
+        // and once as a `<command-name>` line after the summary. Verified on
+        // both boundaries of f3384d17 (14:59:47 typed, 15:02:09 summary,
+        // 14:59:47 replay). Drop the replay: the real one is already in the
+        // transcript, on the side of the boundary where it happened.
+        const previous = lastItem();
+        if (
+          prompt.isSlashCommand &&
+          previous?.isCompactSummary &&
+          (!str(o.timestamp) || !previous.timestamp || str(o.timestamp)! <= previous.timestamp)
+        ) {
+          continue;
+        }
         newTurn(str(o.promptId)).items.push({
           uuid: makeUuid(o),
           aliasUuids: [],

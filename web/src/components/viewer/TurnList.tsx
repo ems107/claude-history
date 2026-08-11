@@ -71,6 +71,12 @@ export function TurnList({
     );
   }, [expandSegments]);
 
+  // Leaving prompts-only and coming back starts folded again: the mode is
+  // asked for to get the overview, not to find the turns left open last time.
+  useEffect(() => {
+    setOpenTurns(new Set());
+  }, [promptsOnly]);
+
   /** uuid (and every alias) → where it is, so a deep link can open its way in. */
   const locate = useMemo(() => {
     const map = new Map<string, { segment: number; turn: string }>();

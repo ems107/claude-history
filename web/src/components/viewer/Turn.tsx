@@ -300,9 +300,13 @@ function foldedCounts(turn: TurnType, showThinking: boolean): { responses: numbe
 }
 
 /**
- * The fold line of a turn in prompts-only mode. It is rendered in BOTH states,
+ * The fold line of a turn in prompts-only mode. It is rendered in BOTH states
  * and at the same place — where the folded content starts — so unfolding moves
  * nothing around and there is always something to click to fold it back.
+ *
+ * The two states are drawn to look nothing alike, because at a glance they
+ * used to read the same: folded it is a closed drawer (dashed, raised, "show"),
+ * open it is the head of the rail that holds everything the prompt produced.
  */
 function FoldStrip({
   open,
@@ -318,13 +322,8 @@ function FoldStrip({
   at: string | null;
   onToggle?: () => void;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="my-1.5 ml-6 flex cursor-pointer items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
-    >
-      <span>{open ? '▾' : '▸'}</span>
+  const counts = (
+    <>
       {at && <span className="shrink-0">{formatDateTime(at)}</span>}
       {responses > 0 && (
         <span className="shrink-0 font-semibold text-emerald-300/80">
@@ -337,7 +336,31 @@ function FoldStrip({
           {tools} tool call{tools === 1 ? '' : 's'}
         </span>
       )}
-      {open && <span className="opacity-70">— collapse</span>}
+    </>
+  );
+
+  if (open) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        className="group/fold -mt-0.5 flex cursor-pointer items-center gap-2 text-xs text-[var(--text-dim)]"
+      >
+        <span className="text-emerald-400/70">▾</span>
+        {counts}
+        <span className="opacity-60 group-hover/fold:opacity-100">— hide</span>
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="group/fold my-1.5 ml-6 flex cursor-pointer items-center gap-2 rounded-full border border-dashed border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+    >
+      <span>▸</span>
+      {counts}
+      <span className="opacity-0 group-hover/fold:opacity-70">— show</span>
     </button>
   );
 }
@@ -398,7 +421,8 @@ export function TurnView({
     // third speaker.
     markFold();
     nodes.push(
-      <div key={`tools-${nodes.length}`} className="ml-6">
+      // Inside the unfolded rail the indent is the rail's, not its own.
+      <div key={`tools-${nodes.length}`} className={promptsOnly && expanded ? '' : 'ml-6'}>
         <ToolGroup tools={pendingTools} expandAll={expandTools} onOpenAgent={onOpenAgent} costs={costs} />
       </div>,
     );
@@ -534,8 +558,18 @@ export function TurnView({
     }
   }
   flushTools();
-  // Unfolded, the same line stays where it was and folds the turn back.
-  if (promptsOnly && anyFolded) nodes.splice(foldAt ?? nodes.length, 0, foldStrip(true));
+  // Unfolded, everything the prompt produced moves onto a rail headed by the
+  // same line, which now folds it back. The rail starts where the folded pill
+  // sat, so nothing shifts sideways when it opens either.
+  if (promptsOnly && anyFolded) {
+    const produced = nodes.splice(foldAt ?? nodes.length);
+    nodes.push(
+      <div key="folded" className="ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3">
+        {foldStrip(true)}
+        {produced}
+      </div>,
+    );
+  }
 
   return (
     <div className="space-y-1.5">
