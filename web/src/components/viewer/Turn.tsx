@@ -348,7 +348,9 @@ function FoldStrip({
     >
       <span>▸</span>
       {counts}
-      <span className="opacity-0 group-hover/fold:opacity-70">— show</span>
+      {/* Visible, not `opacity-0`: hidden text still takes its width, and
+          inside a shrink-wrapped pill that reads as a gaping right margin. */}
+      <span className="opacity-60 group-hover/fold:opacity-100">— show</span>
     </button>
   );
 }
