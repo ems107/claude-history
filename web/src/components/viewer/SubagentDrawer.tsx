@@ -55,7 +55,7 @@ export function SubagentDrawer({
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {query.isLoading && <div className="text-[var(--text-dim)]">Loading subagent transcript…</div>}
         {query.isError && <div className="text-red-400">Failed: {String(query.error)}</div>}
-        {query.data && <TurnList turns={query.data.turns} showThinking={showThinking} />}
+        {query.data && <TurnList key={agentId} turns={query.data.turns} showThinking={showThinking} />}
       </div>
     </div>
   );

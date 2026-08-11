@@ -3,9 +3,10 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { isPromptItem } from '../../lib/segments.ts';
 import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
-import { CompactBoundaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
+import { CompactBoundaryPanel, CompactSummaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
 import { CostPill } from './CostPill.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -45,13 +46,15 @@ function Anchors({ item }: { item: MessageItem }) {
   );
 }
 
-function UserItem({ item, badge }: { item: MessageItem; badge?: ReactNode }) {
+function UserItem({ item, badge, onClick }: { item: MessageItem; badge?: ReactNode; onClick?: () => void }) {
   const body = useRef<HTMLDivElement>(null);
   return (
     <Bubble
       side="user"
       id={item.uuid}
       bodyRef={body}
+      onClick={onClick}
+      title={onClick ? 'Click to show or hide what this prompt produced' : undefined}
       header={
         <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
           <span>user</span>
@@ -283,6 +286,18 @@ function SystemItem({ item }: { item: MessageItem }) {
   );
 }
 
+/**
+ * A user item is not always a prompt: the compaction summary wears the same
+ * role, and gets its own panel instead of a bubble nobody wrote.
+ */
+function userNode(item: MessageItem, badge: ReactNode | undefined, onClick?: () => void): ReactNode {
+  if (item.isCompactSummary) {
+    const text = item.blocks.find((b) => b.kind === 'text');
+    return <CompactSummaryPanel key={item.uuid} id={item.uuid} text={text?.kind === 'text' ? text.text : ''} />;
+  }
+  return <UserItem key={item.uuid} item={item} badge={badge} onClick={onClick} />;
+}
+
 export function TurnView({
   turn,
   showThinking,
@@ -291,6 +306,9 @@ export function TurnView({
   costs,
   turnCost,
   turnContext,
+  promptsOnly = false,
+  expanded = false,
+  onToggleExpanded,
 }: {
   turn: TurnType;
   showThinking: boolean;
@@ -301,6 +319,10 @@ export function TurnView({
   turnCost: CostEntry[];
   /** The turn's requests, for the context badge. */
   turnContext: ContextTurn | null;
+  /** Show the prompt and fold away what it produced until it is asked for. */
+  promptsOnly?: boolean;
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 }) {
   // Tool runs are grouped across items, not just within one assistant
   // message: a turn is usually assistant(tool) → assistant(tool) → … and the
@@ -341,11 +363,70 @@ export function TurnView({
   // own line instead, so no turn is ever left without its total.
   let badgePlaced = false;
 
+  // Prompts only, and this turn not asked for: the prompt, whatever is
+  // structural (a compaction, a /context run) and one line saying what is
+  // folded. Never a silent omission.
+  if (promptsOnly && !expanded) {
+    let responses = 0;
+    let tools = 0;
+    let promptShown = false;
+    for (const item of turn.items) {
+      if (item.role === 'user' && (isPromptItem(item) || item.isCompactSummary)) {
+        // The summary panel takes no badge, so it must not consume one either.
+        nodes.push(userNode(item, badgePlaced ? undefined : turnBadge, onToggleExpanded));
+        badgePlaced ||= !item.isCompactSummary;
+        promptShown ||= !item.isCompactSummary;
+        continue;
+      }
+      if (item.role === 'system') {
+        nodes.push(<SystemItem key={item.uuid} item={item} />);
+        continue;
+      }
+      const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
+      if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
+      tools += visible.filter((b) => b.kind === 'tool').length;
+    }
+    const first = turn.items[0];
+    if (responses > 0 || tools > 0) {
+      nodes.push(
+        <button
+          key="expand"
+          type="button"
+          onClick={onToggleExpanded}
+          className="ml-6 flex cursor-pointer items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+        >
+          <span>▸</span>
+          {/* A turn nobody prompted still says when it happened. */}
+          {!promptShown && first?.timestamp && <span>{formatDateTime(first.timestamp)}</span>}
+          {responses > 0 && (
+            <span>
+              {responses} response{responses === 1 ? '' : 's'}
+            </span>
+          )}
+          {tools > 0 && (
+            <span>
+              {responses > 0 ? '· ' : ''}
+              {tools} tool call{tools === 1 ? '' : 's'}
+            </span>
+          )}
+        </button>,
+      );
+    }
+    return (
+      <div className="space-y-1.5">
+        {!badgePlaced && turnBadge && <div className="flex justify-end">{turnBadge}</div>}
+        {nodes}
+      </div>
+    );
+  }
+
   for (const item of turn.items) {
     if (item.role === 'user') {
       flushTools();
-      nodes.push(<UserItem key={item.uuid} item={item} badge={badgePlaced ? undefined : turnBadge} />);
-      badgePlaced = true;
+      nodes.push(
+        userNode(item, badgePlaced ? undefined : turnBadge, promptsOnly ? onToggleExpanded : undefined),
+      );
+      badgePlaced ||= !item.isCompactSummary;
       continue;
     }
     if (item.role !== 'assistant') {

@@ -21,6 +21,10 @@ export function SessionViewPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
   const [expandTools, setExpandTools] = useState(() => localStorage.getItem('expandTools') === 'true');
+  const [promptsOnly, setPromptsOnly] = useState(() => localStorage.getItem('promptsOnly') === 'true');
+  // Not persisted: folded is the point of the feature, and a session opened
+  // tomorrow should still open on the context that is alive.
+  const [expandSegments, setExpandSegments] = useState(false);
   const [showTokens, setShowTokens] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
@@ -68,11 +72,12 @@ export function SessionViewPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [agentId, closeAgent, navigate]);
 
-  const { thinkingCount, toolCount } = useMemo(() => {
+  const { thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const blocks = (detail.data?.turns ?? []).flatMap((t) => t.items).flatMap((i) => i.blocks);
     return {
       thinkingCount: blocks.filter((b) => b.kind === 'thinking').length,
       toolCount: blocks.filter((b) => b.kind === 'tool').length,
+      compactionCount: blocks.filter((b) => b.kind === 'compact').length,
     };
   }, [detail.data]);
 
@@ -107,6 +112,16 @@ export function SessionViewPage() {
           });
         }}
         toolCount={toolCount}
+        promptsOnly={promptsOnly}
+        onTogglePromptsOnly={() => {
+          setPromptsOnly((v) => {
+            localStorage.setItem('promptsOnly', String(!v));
+            return !v;
+          });
+        }}
+        expandSegments={expandSegments}
+        onToggleSegments={() => setExpandSegments((v) => !v)}
+        compactionCount={compactionCount}
         showTokens={showTokens}
         onToggleTokens={() => setShowTokens((v) => !v)}
         showLineage={showLineage}
@@ -129,9 +144,14 @@ export function SessionViewPage() {
         <div ref={follow.scrollRef} className="h-full overflow-y-auto px-4 py-4">
           <div ref={follow.contentRef} className="mx-auto max-w-4xl">
             <TurnList
+              // Keyed on the session: what the user unfolded here must not
+              // carry over to the next session's segments and turns.
+              key={id}
               turns={detail.data.turns}
               showThinking={showThinking}
               expandTools={expandTools}
+              promptsOnly={promptsOnly}
+              expandSegments={expandSegments}
               scrollToUuid={msg}
               onOpenAgent={openAgent}
             />

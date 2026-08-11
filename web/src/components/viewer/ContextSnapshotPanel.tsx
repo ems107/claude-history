@@ -1,6 +1,7 @@
 import type { CompactBoundary, ContextSnapshot } from '@claude-history/shared';
 import { useState } from 'react';
 import { formatContextTokens } from '../../lib/context.ts';
+import { Markdown } from './Markdown.tsx';
 
 const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
 
@@ -147,6 +148,38 @@ export function CompactBoundaryPanel({ boundary }: { boundary: CompactBoundary }
         <span className="font-mono">usage</span> in the transcript, so its spend — this whole conversation in, the
         summary out — is real but is not part of the session total.
       </p>
+    </div>
+  );
+}
+
+/**
+ * The summary a compaction wrote. Claude Code appends it as an ordinary `user`
+ * line, so the viewer used to show it as a 17,000-character prompt nobody
+ * typed. It is the head of the new context, not a message: collapsed by
+ * default, and rendered as the markdown it is when opened.
+ */
+export function CompactSummaryPanel({ id, text }: { id: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div id={id} className="my-2 rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full cursor-pointer items-center gap-2 text-left"
+      >
+        <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
+        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-300 uppercase">
+          carried-over summary
+        </span>
+        <span className="min-w-0 truncate text-[var(--text-dim)]">
+          {text.length.toLocaleString()} characters — everything above, as the model kept it
+        </span>
+      </button>
+      {open && (
+        <div className="mt-2 border-t border-[var(--border)] pt-2">
+          <Markdown text={text} />
+        </div>
+      )}
     </div>
   );
 }

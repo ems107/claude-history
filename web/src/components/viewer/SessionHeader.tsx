@@ -92,6 +92,11 @@ export function SessionHeader({
   expandTools,
   onToggleTools,
   toolCount,
+  promptsOnly,
+  onTogglePromptsOnly,
+  expandSegments,
+  onToggleSegments,
+  compactionCount,
   showTokens,
   onToggleTokens,
   showLineage,
@@ -108,6 +113,11 @@ export function SessionHeader({
   expandTools: boolean;
   onToggleTools: () => void;
   toolCount: number;
+  promptsOnly: boolean;
+  onTogglePromptsOnly: () => void;
+  expandSegments: boolean;
+  onToggleSegments: () => void;
+  compactionCount: number;
   showTokens: boolean;
   onToggleTokens: () => void;
   showLineage: boolean;
@@ -207,6 +217,24 @@ export function SessionHeader({
         >
           Tools{toolCount > 0 ? ` (${toolCount})` : ''}
         </button>
+        <button
+          type="button"
+          onClick={onTogglePromptsOnly}
+          className={toggleClass(promptsOnly)}
+          title="Show only the prompts you typed — click any of them to unfold what it produced"
+        >
+          Prompts only
+        </button>
+        {compactionCount > 0 && (
+          <button
+            type="button"
+            onClick={onToggleSegments}
+            className={toggleClass(expandSegments)}
+            title="Unfold every stretch of conversation that was compacted away (they start folded — only the current context is open)"
+          >
+            Compactions ({compactionCount})
+          </button>
+        )}
         <button type="button" onClick={onToggleTokens} className={toggleClass(showTokens)}>
           Tokens
         </button>
