@@ -11,6 +11,16 @@
   --text-dim: #8b96a5;
   --accent: #d97757; /* claude-ish terracotta */
   --accent-dim: #a05a44;
+
+  /* Chat bubbles. Terracotta for the user and emerald for the assistant, the
+     two colours those roles already wear everywhere else in the app.
+     Deliberately OPAQUE rather than the /5-/15 tints used elsewhere: the tail
+     is a rotated square laid over the bubble's own border, and a translucent
+     fill would show that border through the overlap as a darker seam. */
+  --bubble-user-bg: #221a17;
+  --bubble-user-border: #573528;
+  --bubble-assistant-bg: #141b1a;
+  --bubble-assistant-border: #274a41;
 }
 
 html,

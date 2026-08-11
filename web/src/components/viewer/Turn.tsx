@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
 import { CompactBoundaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
 import { CostPill } from './CostPill.tsx';
@@ -45,17 +46,22 @@ function Anchors({ item }: { item: MessageItem }) {
 
 function UserItem({ item, badge }: { item: MessageItem; badge?: ReactNode }) {
   return (
-    <div id={item.uuid} className="rounded-lg border-l-2 border-[var(--accent)] bg-[var(--bg-raised)] px-3 py-2">
+    <Bubble
+      side="user"
+      id={item.uuid}
+      header={
+        <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
+          <span>user</span>
+          {item.timestamp && (
+            <span className="font-normal text-[var(--text-dim)] normal-case" title={formatDateTimeFull(item.timestamp)}>
+              {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
+            </span>
+          )}
+          {badge && <span className="ml-auto">{badge}</span>}
+        </div>
+      }
+    >
       <Anchors item={item} />
-      <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
-        <span>user</span>
-        {item.timestamp && (
-          <span className="font-normal text-[var(--text-dim)] normal-case" title={formatDateTimeFull(item.timestamp)}>
-            {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
-          </span>
-        )}
-        {badge && <span className="ml-auto">{badge}</span>}
-      </div>
       {item.blocks.map((b, i) => {
         if (b.kind === 'command') {
           return (
@@ -76,7 +82,7 @@ function UserItem({ item, badge }: { item: MessageItem; badge?: ReactNode }) {
         }
         return null;
       })}
-    </div>
+    </Bubble>
   );
 }
 
@@ -258,14 +264,12 @@ export function TurnView({
   let pendingTools: PendingTool[] = [];
   const flushTools = () => {
     if (pendingTools.length === 0) return;
+    // Indented: a run between two bubbles is the assistant's own work, not a
+    // third speaker.
     nodes.push(
-      <ToolGroup
-        key={`tools-${nodes.length}`}
-        tools={pendingTools}
-        expandAll={expandTools}
-        onOpenAgent={onOpenAgent}
-        costs={costs}
-      />,
+      <div key={`tools-${nodes.length}`} className="ml-6">
+        <ToolGroup tools={pendingTools} expandAll={expandTools} onOpenAgent={onOpenAgent} costs={costs} />
+      </div>,
     );
     pendingTools = [];
   };
@@ -336,12 +340,19 @@ export function TurnView({
       else if (b.kind === 'text') rendered.push(<Markdown key={i} text={b.text} />);
     }
     if (rendered.length > 0) {
+      // Only a message with something to show gets a bubble: an assistant
+      // message that is nothing but tool calls prints no header today (the run
+      // carries its cost) and must not grow an envelope either.
       nodes.push(
-        <div key={item.uuid} id={item.uuid} className="px-1 py-1">
+        <Bubble
+          key={item.uuid}
+          id={item.uuid}
+          side="assistant"
+          header={<AssistantHeader item={item} costs={costs} />}
+        >
           <Anchors item={item} />
-          <AssistantHeader item={item} costs={costs} />
           {rendered}
-        </div>,
+        </Bubble>,
       );
     }
   }
