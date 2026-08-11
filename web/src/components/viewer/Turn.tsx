@@ -47,7 +47,18 @@ function Anchors({ item }: { item: MessageItem }) {
   );
 }
 
-function UserItem({ item, badge, onClick }: { item: MessageItem; badge?: ReactNode; onClick?: () => void }) {
+function UserItem({
+  item,
+  models,
+  badge,
+  onClick,
+}: {
+  item: MessageItem;
+  /** A prompt records no model of its own — these are the ones that answered it. */
+  models: string[];
+  badge?: ReactNode;
+  onClick?: () => void;
+}) {
   const body = useRef<HTMLDivElement>(null);
   return (
     <Bubble
@@ -64,9 +75,22 @@ function UserItem({ item, badge, onClick }: { item: MessageItem; badge?: ReactNo
               {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
             </span>
           )}
+          {/* Same trailing run as the assistant's: model, cost, context, actions. */}
           <span className="ml-auto flex items-center gap-2">
-            <MessageActions item={item} blocks={item.blocks} body={body} />
+            {models.length > 0 && (
+              <span
+                className="font-mono font-normal text-[var(--text-dim)] normal-case"
+                title={
+                  models.length > 1
+                    ? `Models that answered this prompt: ${models.join(', ')}`
+                    : `Model that answered this prompt: ${models[0]}`
+                }
+              >
+                {models.map(shortModel).join(', ')}
+              </span>
+            )}
             {badge}
+            <MessageActions item={item} blocks={item.blocks} body={body} />
           </span>
         </div>
       }
@@ -197,22 +221,25 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
   return (
     <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
       <span className="text-emerald-400/80">assistant</span>
-      {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
       {item.timestamp && (
         <span className="font-normal normal-case" title={formatDateTimeFull(item.timestamp)}>
           {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
         </span>
       )}
-      {entry && (
-        <CostPill
-          entries={[entry]}
-          prices={costs.prices}
-          cumulative={costs.cumulative.get(entry.uuid)}
-          sessionTotal={costs.sessionTotal}
-        />
-      )}
-      <ContextPill point={costs.context.get(item.uuid)} />
-      {actions && <span className="ml-auto">{actions}</span>}
+      {/* Same trailing run as the prompt's: model, cost, context, actions. */}
+      <span className="ml-auto flex items-center gap-2">
+        {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
+        {entry && (
+          <CostPill
+            entries={[entry]}
+            prices={costs.prices}
+            cumulative={costs.cumulative.get(entry.uuid)}
+            sessionTotal={costs.sessionTotal}
+          />
+        )}
+        <ContextPill point={costs.context.get(item.uuid)} />
+        {actions}
+      </span>
     </div>
   );
 }
@@ -356,15 +383,33 @@ function FoldStrip({
 }
 
 /**
+ * The models that answered a prompt. A `user` line records none of its own, and
+ * there should only ever be one per turn — if a session changed model mid-turn,
+ * saying so is better than picking one.
+ */
+function turnModels(turn: TurnType): string[] {
+  const models = new Set<string>();
+  for (const item of turn.items) {
+    if (item.role === 'assistant' && item.model) models.add(item.model);
+  }
+  return [...models];
+}
+
+/**
  * A user item is not always a prompt: the compaction summary wears the same
  * role, and gets its own panel instead of a bubble nobody wrote.
  */
-function userNode(item: MessageItem, badge: ReactNode | undefined, onClick?: () => void): ReactNode {
+function userNode(
+  item: MessageItem,
+  models: string[],
+  badge: ReactNode | undefined,
+  onClick?: () => void,
+): ReactNode {
   if (item.isCompactSummary) {
     const text = item.blocks.find((b) => b.kind === 'text');
     return <CompactSummaryPanel key={item.uuid} id={item.uuid} text={text?.kind === 'text' ? text.text : ''} />;
   }
-  return <UserItem key={item.uuid} item={item} badge={badge} onClick={onClick} />;
+  return <UserItem key={item.uuid} item={item} models={models} badge={badge} onClick={onClick} />;
 }
 
 export function TurnView({
@@ -442,6 +487,7 @@ export function TurnView({
 
   const folded = foldedCounts(turn, showThinking);
   const anyFolded = folded.responses > 0 || folded.tools > 0;
+  const models = turnModels(turn);
   let promptShown = false;
   const foldStrip = (open: boolean) => (
     <FoldStrip
@@ -461,7 +507,7 @@ export function TurnView({
     for (const item of turn.items) {
       if (item.role === 'user' && (isPromptItem(item) || item.isCompactSummary)) {
         // The summary panel takes no badge, so it must not consume one either.
-        nodes.push(userNode(item, badgePlaced ? undefined : turnBadge, onToggleExpanded));
+        nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge, onToggleExpanded));
         badgePlaced ||= !item.isCompactSummary;
         promptShown ||= !item.isCompactSummary;
         continue;
@@ -484,7 +530,9 @@ export function TurnView({
   for (const item of turn.items) {
     if (item.role === 'user') {
       flushTools();
-      nodes.push(userNode(item, badgePlaced ? undefined : turnBadge, anyFolded ? onToggleExpanded : undefined));
+      nodes.push(
+        userNode(item, models, badgePlaced ? undefined : turnBadge, anyFolded ? onToggleExpanded : undefined),
+      );
       badgePlaced ||= !item.isCompactSummary;
       promptShown ||= !item.isCompactSummary;
       continue;
