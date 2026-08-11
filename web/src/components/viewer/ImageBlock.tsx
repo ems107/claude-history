@@ -1,5 +1,6 @@
 import type { ContentBlock } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 type ImageContentBlock = Extract<ContentBlock, { kind: 'image' }>;
 
@@ -57,14 +58,20 @@ export function ImageBlock({ block }: { block: ImageContentBlock }) {
       </button>
       <div className="mt-0.5 text-[10px] text-[var(--text-dim)]">🖼 {label}</div>
 
-      {zoomed && (
-        <div
-          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-6"
-          onClick={() => setZoomed(false)}
-        >
-          <img src={src} alt="Attachment" className="max-h-full max-w-full rounded shadow-xl" />
-        </div>
-      )}
+      {/* Portalled: `inset-0` must mean the viewport, and inside a thread
+          carrying a `zoom` it would mean the zoomed coordinate space instead —
+          a full-screen overlay that covers neither the whole screen nor the
+          image at its own scale. */}
+      {zoomed &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-black/80 p-6"
+            onClick={() => setZoomed(false)}
+          >
+            <img src={src} alt="Attachment" className="max-h-full max-w-full rounded shadow-xl" />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

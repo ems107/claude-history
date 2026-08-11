@@ -1,4 +1,5 @@
 import { type ReactNode, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /** Matches `w-84` on the card: the anchor is computed in px, so it has to. */
 const CARD_WIDTH = 336;
@@ -70,14 +71,20 @@ export function HoverCard({
       }
     >
       {pill}
-      {anchor && (
-        <span
-          className="pointer-events-none fixed z-50 block w-84 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2.5 text-left text-[11px] text-[var(--text)] shadow-2xl"
-          style={anchor}
-        >
-          {children}
-        </span>
-      )}
+      {/* Portalled to the body, not rendered in place: the card is positioned
+          from viewport coordinates, and the thread can carry a `zoom`, which
+          rescales the coordinate system of every fixed descendant. Out here it
+          answers to the viewport alone. */}
+      {anchor &&
+        createPortal(
+          <span
+            className="pointer-events-none fixed z-50 block w-84 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2.5 text-left text-[11px] text-[var(--text)] shadow-2xl"
+            style={anchor}
+          >
+            {children}
+          </span>,
+          document.body,
+        )}
     </span>
   );
 }

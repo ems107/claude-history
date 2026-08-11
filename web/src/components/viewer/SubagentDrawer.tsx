@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { api } from '../../api/client.ts';
 import { costEntries } from '../../lib/cost.ts';
 import { useFoldState } from '../../lib/folding.ts';
+import { ZOOM_DEFAULT } from '../../lib/viewPrefs.ts';
 import { CostPill } from './CostPill.tsx';
 import { TurnList } from './TurnList.tsx';
 
@@ -15,11 +16,14 @@ export function SubagentDrawer({
   sessionId,
   agentId,
   showThinking,
+  zoom,
   onClose,
 }: {
   sessionId: string;
   agentId: string;
   showThinking: boolean;
+  /** The thread zoom, passed down rather than read again: this is a thread too. */
+  zoom: number;
   onClose: () => void;
 }) {
   const query = useQuery({
@@ -62,7 +66,9 @@ export function SubagentDrawer({
         {query.isLoading && <div className="text-[var(--text-dim)]">Loading subagent transcript…</div>}
         {query.isError && <div className="text-red-400">Failed: {String(query.error)}</div>}
         {query.data && (
-          <TurnList key={agentId} turns={query.data.turns} showThinking={showThinking} fold={fold} />
+          <div style={zoom === ZOOM_DEFAULT ? undefined : { zoom: `${zoom}%` }}>
+            <TurnList key={agentId} turns={query.data.turns} showThinking={showThinking} fold={fold} />
+          </div>
         )}
       </div>
     </div>

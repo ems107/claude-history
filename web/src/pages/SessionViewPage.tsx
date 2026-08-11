@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { useFoldState } from '../lib/folding.ts';
+import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
 import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
@@ -13,6 +14,7 @@ import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
+import { ViewButton } from '../components/viewer/ViewButton.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 /** Stable identity while the conversation loads, so the fold state is not rebuilt. */
@@ -28,6 +30,7 @@ export function SessionViewPage() {
   // Not persisted: folded is the point of the feature, and a session opened
   // tomorrow should still open on the context that is alive.
   const [expandSegments, setExpandSegments] = useState(false);
+  const view = useViewPrefs();
   const [showTokens, setShowTokens] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
@@ -134,6 +137,7 @@ export function SessionViewPage() {
         onToggleFiles={() => setShowFiles((v) => !v)}
         actions={
           <>
+            <ViewButton view={view} />
             <ExportButton detail={detail.data} />
             <ResumeButtons session={detail.data.summary} />
           </>
@@ -146,28 +150,45 @@ export function SessionViewPage() {
           scroll away with the conversation. */}
       <div className="relative min-h-0 flex-1">
         <div ref={follow.scrollRef} className="h-full overflow-y-auto px-4 py-4">
-          <div ref={follow.contentRef} className="mx-auto max-w-4xl">
-            <TurnList
-              // Keyed on the session: what the user unfolded here must not
-              // carry over to the next session's segments and turns.
-              key={id}
-              turns={detail.data.turns}
-              showThinking={showThinking}
-              expandTools={expandTools}
-              fold={fold}
-              expandSegments={expandSegments}
-              scrollToUuid={msg}
-              onOpenAgent={openAgent}
-            />
-            {detail.data.turns.length === 0 && (
-              <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
-            )}
+          {/* Width on the outer box, zoom on an inner one — never both on the
+              same element: a max-width INSIDE a zoomed box is a length like any
+              other and would be scaled with it, so 896 px would drift to 1344
+              at 150 %. And `zoom` is only ever set when it is not 100, so the
+              default view runs through no zoom at all. */}
+          <div
+            ref={follow.contentRef}
+            className="mx-auto"
+            style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
+          >
+            <div style={view.zoom === ZOOM_DEFAULT ? undefined : { zoom: `${view.zoom}%` }}>
+              <TurnList
+                // Keyed on the session: what the user unfolded here must not
+                // carry over to the next session's segments and turns.
+                key={id}
+                turns={detail.data.turns}
+                showThinking={showThinking}
+                expandTools={expandTools}
+                fold={fold}
+                expandSegments={expandSegments}
+                scrollToUuid={msg}
+                onOpenAgent={openAgent}
+              />
+              {detail.data.turns.length === 0 && (
+                <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
+              )}
+            </div>
           </div>
         </div>
         {follow.scrollable && <FollowBottomButton following={follow.following} toggle={follow.toggle} />}
       </div>
       {agentId && (
-        <SubagentDrawer sessionId={id} agentId={agentId} showThinking={showThinking} onClose={closeAgent} />
+        <SubagentDrawer
+          sessionId={id}
+          agentId={agentId}
+          showThinking={showThinking}
+          zoom={view.zoom}
+          onClose={closeAgent}
+        />
       )}
     </div>
   );

@@ -8,6 +8,17 @@ import { listUrl } from '../../lib/listState.ts';
 import { SessionBadges } from '../list/Badges.tsx';
 import { ProjectTag } from '../list/ProjectTag.tsx';
 
+/** The look of every control in the session header, wherever it is rendered. */
+export function toggleClass(active: boolean, disabled = false): string {
+  return `rounded border px-2 py-0.5 text-xs ${
+    disabled
+      ? 'cursor-default border-[var(--border)] text-[var(--text-dim)]/50'
+      : active
+        ? 'cursor-pointer border-[var(--accent)] text-[var(--accent)]'
+        : 'cursor-pointer border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
+  }`;
+}
+
 function AncestryChips({ label, ids }: { label: string; ids: string[] }) {
   if (ids.length === 0) return null;
   return (
@@ -134,14 +145,6 @@ export function SessionHeader({
   const e = s.enrichment;
   const [editing, setEditing] = useState(false);
   const queryClient = useQueryClient();
-  const toggleClass = (active: boolean, disabled = false) =>
-    `rounded border px-2 py-0.5 text-xs ${
-      disabled
-        ? 'cursor-default border-[var(--border)] text-[var(--text-dim)]/50'
-        : active
-          ? 'cursor-pointer border-[var(--accent)] text-[var(--accent)]'
-          : 'cursor-pointer border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
-    }`;
 
   return (
     <div className="border-b border-[var(--border)] px-4 py-3">
