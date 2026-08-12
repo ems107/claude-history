@@ -1,5 +1,4 @@
 import type { ReactNode, RefObject } from 'react';
-import { hasSelection } from '../../lib/selection.ts';
 
 export type BubbleSide = 'user' | 'assistant';
 
@@ -36,8 +35,6 @@ export function Bubble({
   header,
   children,
   bodyRef,
-  onClick,
-  title,
 }: {
   side: BubbleSide;
   id?: string;
@@ -46,36 +43,15 @@ export function Bubble({
   children?: ReactNode;
   /** The content node, which the copy button reads back as HTML. */
   bodyRef?: RefObject<HTMLDivElement | null>;
-  /**
-   * Prompts-only mode: clicking the bubble expands its turn. Anything
-   * interactive inside (the copy buttons) must stop propagation. This is
-   * deliberately not a <button> — it would nest interactive elements, and its
-   * text could not be selected — so the keyboard route is the expand strip
-   * below the bubble, which is focusable and answers Enter/Space.
-   */
-  onClick?: () => void;
-  title?: string;
 }) {
+  // A bubble is text to read and copy, never a control: folding a turn is the
+  // fold strip's job alone. Clicking a prompt used to fold it too, which meant
+  // an accidental click — or a drag that a selection check let through — hid
+  // the answer the user was reading.
   return (
     <div
       id={id}
-      title={title}
-      // Selecting text inside a prompt used to fold the turn shut on mouse-up,
-      // taking the answer the selection was being compared against with it.
-      onClick={
-        onClick &&
-        (() => {
-          if (hasSelection()) return;
-          onClick();
-        })
-      }
-      // A ring, deliberately not a `filter` (brightness/opacity): a filtered
-      // ancestor becomes the containing block for `position: fixed`, and the
-      // cost and context pills in the header open fixed hover cards that would
-      // then anchor to the bubble instead of the viewport.
-      className={`group/bubble relative w-full rounded-lg border px-3 py-2 ${STYLES[side].shell} ${
-        onClick ? 'cursor-pointer hover:ring-1 hover:ring-[var(--text-dim)]/40' : ''
-      }`}
+      className={`group/bubble relative w-full rounded-lg border px-3 py-2 ${STYLES[side].shell}`}
     >
       <span aria-hidden className={`absolute top-4 size-3 rotate-45 ${STYLES[side].tail}`} />
       {header}

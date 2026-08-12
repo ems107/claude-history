@@ -53,13 +53,11 @@ function UserItem({
   item,
   models,
   badge,
-  onClick,
 }: {
   item: MessageItem;
   /** A prompt records no model of its own — these are the ones that answered it. */
   models: string[];
   badge?: ReactNode;
-  onClick?: () => void;
 }) {
   const body = useRef<HTMLDivElement>(null);
   return (
@@ -67,8 +65,6 @@ function UserItem({
       side="user"
       id={item.uuid}
       bodyRef={body}
-      onClick={onClick}
-      title={onClick ? 'Click to show or hide what this prompt produced' : undefined}
       header={
         <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
           <span>user</span>
@@ -426,18 +422,16 @@ function noticeNode(
 /**
  * A user item is not always a prompt: the compaction summary wears the same
  * role, and gets its own panel instead of a bubble nobody wrote.
+ *
+ * Neither of them takes a click: a prompt is text to read and copy, and the
+ * only thing that folds a turn is its fold strip.
  */
-function userNode(
-  item: MessageItem,
-  models: string[],
-  badge: ReactNode | undefined,
-  onClick?: () => void,
-): ReactNode {
+function userNode(item: MessageItem, models: string[], badge: ReactNode | undefined): ReactNode {
   if (item.isCompactSummary) {
     const text = item.blocks.find((b) => b.kind === 'text');
     return <CompactSummaryPanel key={item.uuid} id={item.uuid} text={text?.kind === 'text' ? text.text : ''} />;
   }
-  return <UserItem key={item.uuid} item={item} models={models} badge={badge} onClick={onClick} />;
+  return <UserItem key={item.uuid} item={item} models={models} badge={badge} />;
 }
 
 export function TurnView({
@@ -554,7 +548,7 @@ export function TurnView({
     for (const item of turn.items) {
       if (item.role === 'user' && (isPromptItem(item) || item.isCompactSummary)) {
         // The summary panel takes no badge, so it must not consume one either.
-        nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge, onToggleExpanded));
+        nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge));
         badgePlaced ||= !item.isCompactSummary;
         promptShown ||= !item.isCompactSummary;
         continue;
@@ -585,9 +579,7 @@ export function TurnView({
   for (const item of turn.items) {
     if (item.role === 'user') {
       flushTools();
-      nodes.push(
-        userNode(item, models, badgePlaced ? undefined : turnBadge, anyFolded ? onToggleExpanded : undefined),
-      );
+      nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge));
       badgePlaced ||= !item.isCompactSummary;
       promptShown ||= !item.isCompactSummary;
       continue;
