@@ -214,6 +214,14 @@ export type ContentBlock =
    * is the one case where the viewer may say the image is unavailable.
    */
   | { kind: 'image'; mediaType: string | null; data: string | null }
+  /**
+   * A line Claude Code injected into the conversation itself — today a
+   * background command or an Agent reporting back (`origin.kind`,
+   * e.g. `task-notification`). It wears the `user` role in the transcript but
+   * nobody typed it, so it gets its own panel: it OPENS a turn (a real exchange
+   * follows) and has to look like an event, not like a prompt.
+   */
+  | { kind: 'notice'; origin: string; text: string }
   /** The output of a `/context` run, parsed. */
   | { kind: 'context'; snapshot: ContextSnapshot }
   /** A compaction boundary, with what it dropped. */

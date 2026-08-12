@@ -11,6 +11,7 @@ import { CompactBoundaryPanel, CompactSummaryPanel, ContextSnapshotPanel } from 
 import { CostPill } from './CostPill.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
+import { InjectedNotice } from './InjectedNotice.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
@@ -303,6 +304,11 @@ function SystemItem({ item }: { item: MessageItem }) {
       </div>
     );
   }
+  // Normally rendered by TurnView, which has the turn badge to hand it; this is
+  // the path for anywhere else a notice can turn up.
+  if (first?.kind === 'notice') {
+    return <InjectedNotice item={item} origin={first.origin} text={first.text} />;
+  }
   const text = first?.kind === 'text' ? first.text : '';
   return (
     <div id={item.uuid} className="px-2 py-0.5 text-xs text-[var(--text-dim)]/70">
@@ -398,6 +404,23 @@ function turnModels(turn: TurnType): string[] {
     if (item.role === 'assistant' && item.model) models.add(item.model);
   }
   return [...models];
+}
+
+/** What Claude Code injected, when this item is one of those (see `InjectedNotice`). */
+function noticeOf(item: MessageItem): Extract<ContentBlock, { kind: 'notice' }> | null {
+  const first = item.blocks[0];
+  return first?.kind === 'notice' ? first : null;
+}
+
+function noticeNode(
+  item: MessageItem,
+  notice: Extract<ContentBlock, { kind: 'notice' }>,
+  badge: ReactNode | undefined,
+  onClick?: () => void,
+): ReactNode {
+  return (
+    <InjectedNotice key={item.uuid} item={item} origin={notice.origin} text={notice.text} badge={badge} onClick={onClick} />
+  );
 }
 
 /**
@@ -536,6 +559,13 @@ export function TurnView({
         promptShown ||= !item.isCompactSummary;
         continue;
       }
+      const notice = noticeOf(item);
+      if (notice) {
+        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge, onToggleExpanded));
+        badgePlaced = true;
+        promptShown = true;
+        continue;
+      }
       if (item.role === 'system') {
         nodes.push(<SystemItem key={item.uuid} item={item} />);
         continue;
@@ -564,6 +594,13 @@ export function TurnView({
     }
     if (item.role !== 'assistant') {
       flushTools();
+      const notice = noticeOf(item);
+      if (notice) {
+        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge, anyFolded ? onToggleExpanded : undefined));
+        badgePlaced = true;
+        promptShown = true;
+        continue;
+      }
       nodes.push(<SystemItem key={item.uuid} item={item} />);
       continue;
     }

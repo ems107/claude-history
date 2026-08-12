@@ -445,7 +445,7 @@ export async function parseTranscript(
             discardedBranch: null,
             usage: null,
             effort: null,
-            blocks: [{ kind: 'text', text: notificationText(content) }],
+            blocks: [{ kind: 'notice', origin: injected, text: notificationText(content) }],
           });
           continue;
         }
