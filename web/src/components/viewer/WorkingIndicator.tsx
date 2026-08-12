@@ -46,13 +46,15 @@ export function WorkingIndicator({ live }: { live: LiveInfo | null }) {
   return (
     <div className="mt-3" role="status">
       <Bubble side="assistant">
-        <div className="flex items-center gap-3 py-0.5 text-sm text-[var(--text-dim)]">
-          <span aria-hidden="true" className="flex items-center gap-1">
+        {/* py-1.5 is headroom, not padding: the dots rise 5 px out of their line
+            and a tight row would clip the top of the wave. */}
+        <div className="flex items-center gap-3 py-1.5 text-sm text-[var(--text-dim)]">
+          <span aria-hidden="true" className="flex items-center gap-1.5">
             {/* One keyframe, three delays: the stagger is what reads as motion. */}
-            {[0, 200, 400].map((delay) => (
+            {[0, 150, 300].map((delay) => (
               <span
                 key={delay}
-                className="working-dot size-1.5 rounded-full bg-[var(--accent)]"
+                className="working-dot size-2 rounded-full bg-[var(--accent)]"
                 style={{ animationDelay: `${delay}ms` }}
               />
             ))}
@@ -60,7 +62,7 @@ export function WorkingIndicator({ live }: { live: LiveInfo | null }) {
           {/* Deliberately not "writing a response": `busy` covers the whole turn,
               tool calls included, and most of a turn is not prose being written.
               Claiming otherwise would be wrong for most of the time it shows. */}
-          <span>Claude is working…</span>
+          <span className="working-label">Claude is working…</span>
           {spent !== null && (
             // Out of the announced text: a screen reader repeating the seconds
             // every second would drown the one thing worth saying.
