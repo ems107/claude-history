@@ -39,6 +39,23 @@ export function MessageActions({
   /** The bubble's content node, for the formatted copy. */
   body: RefObject<HTMLDivElement | null>;
 }) {
+  return <CopyActions markdown={() => blocksMarkdown(item, blocks, COPY_OPTS)} body={body} />;
+}
+
+/**
+ * The buttons themselves, for anything with a body worth copying — a bubble, or
+ * the summary a compaction wrote. `markdown` is a thunk so nothing builds a
+ * 17,000-character string on every render of a panel nobody clicked.
+ */
+export function CopyActions({
+  markdown,
+  body,
+}: {
+  /** The source form, for the Markdown button. */
+  markdown: () => string;
+  /** The rendered node, whose HTML the formatted copy takes. */
+  body: RefObject<HTMLDivElement | null>;
+}) {
   const [done, setDone] = useState<'rich' | 'md' | null>(null);
   const flash = (which: 'rich' | 'md') => {
     setDone(which);
@@ -83,7 +100,7 @@ export function MessageActions({
         type="button"
         className={cls}
         title="Copy this message as Markdown source"
-        onClick={() => void copyPlain(blocksMarkdown(item, blocks, COPY_OPTS)).then(() => flash('md'))}
+        onClick={() => void copyPlain(markdown()).then(() => flash('md'))}
       >
         {done === 'md' ? 'Copied ✓' : '⧉ Copy as Markdown'}
       </button>

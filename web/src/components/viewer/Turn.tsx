@@ -9,6 +9,7 @@ import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
 import { CompactBoundaryPanel, CompactSummaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
 import { CostPill } from './CostPill.tsx';
+import { FoldHeader } from './FoldHeader.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
@@ -165,13 +166,9 @@ function ToolGroup({
     return (
       <div className="my-1.5 border-l border-[var(--border)] pl-2">
         <div className="mb-1 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="cursor-pointer text-xs text-[var(--text-dim)] hover:text-[var(--text)]"
-          >
+          <FoldHeader open onToggle={() => setOpen(false)} className="text-xs text-[var(--text-dim)] hover:text-[var(--text)]">
             ▾ {blocks.length} tool call{blocks.length !== 1 ? 's' : ''} — collapse
-          </button>
+          </FoldHeader>
           <span className="ml-auto">{runPill}</span>
         </div>
         {tools.map((t, i) => {
@@ -201,10 +198,10 @@ function ToolGroup({
   }
   return (
     <div className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]">
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+      <FoldHeader
+        open={false}
+        onToggle={() => setOpen(true)}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
         title={names.join(', ')}
       >
         <span>▸</span>
@@ -212,7 +209,7 @@ function ToolGroup({
           {blocks.length} tool call{blocks.length !== 1 ? 's' : ''}
         </span>
         <span className="min-w-0 truncate font-mono opacity-70">{names.join(', ')}</span>
-      </button>
+      </FoldHeader>
       {errors > 0 && <span className="shrink-0 text-red-400">{errors} failed</span>}
       {runPill}
     </div>
@@ -358,31 +355,35 @@ function FoldStrip({
     </>
   );
 
+  const toggle = onToggle ?? (() => {});
+
   if (open) {
     return (
-      <button
-        type="button"
-        onClick={onToggle}
-        className="group/fold -mt-0.5 flex cursor-pointer items-center gap-2 text-xs text-[var(--text-dim)]"
+      <FoldHeader
+        open
+        onToggle={toggle}
+        // `w-fit`, which a <button> gave for free: a block-level flex div would
+        // stretch the click target across the whole column.
+        className="group/fold -mt-0.5 flex w-fit items-center gap-2 text-xs text-[var(--text-dim)]"
       >
         <span className="text-emerald-400/70">▾</span>
         {counts}
         <span className="opacity-60 group-hover/fold:opacity-100">— hide</span>
-      </button>
+      </FoldHeader>
     );
   }
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="group/fold my-1.5 ml-6 flex cursor-pointer items-center gap-2 rounded-full border border-dashed border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+    <FoldHeader
+      open={false}
+      onToggle={toggle}
+      className="group/fold my-1.5 ml-6 flex w-fit items-center gap-2 rounded-full border border-dashed border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
     >
       <span>▸</span>
       {counts}
       {/* Visible, not `opacity-0`: hidden text still takes its width, and
           inside a shrink-wrapped pill that reads as a gaping right margin. */}
       <span className="opacity-60 group-hover/fold:opacity-100">— show</span>
-    </button>
+    </FoldHeader>
   );
 }
 

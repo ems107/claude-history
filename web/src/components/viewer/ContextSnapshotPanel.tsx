@@ -1,7 +1,9 @@
 import type { CompactBoundary, ContextSnapshot } from '@claude-history/shared';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { formatContextTokens } from '../../lib/context.ts';
+import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
+import { CopyActions } from './MessageActions.tsx';
 
 const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
 
@@ -76,14 +78,14 @@ export function ContextSnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }
 
       {snapshot.mcpTools.length > 0 && (
         <div className="mt-1.5 border-t border-[var(--border)] pt-1.5">
-          <button
-            type="button"
-            onClick={() => setShowMcp((v) => !v)}
-            className="cursor-pointer text-[var(--text-dim)] hover:text-[var(--text)]"
+          <FoldHeader
+            open={showMcp}
+            onToggle={() => setShowMcp((v) => !v)}
+            className="inline-block text-[var(--text-dim)] hover:text-[var(--text)]"
           >
             {showMcp ? '▾' : '▸'} {snapshot.mcpTools.length} MCP tools ·{' '}
             {fmt(snapshot.mcpTools.reduce((a, t) => a + t.tokens, 0))} tokens
-          </button>
+          </FoldHeader>
           {showMcp && (
             <table className="mt-1 w-full">
               <tbody>
@@ -160,23 +162,30 @@ export function CompactBoundaryPanel({ boundary }: { boundary: CompactBoundary }
  */
 export function CompactSummaryPanel({ id, text }: { id: string; text: string }) {
   const [open, setOpen] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
   return (
-    <div id={id} className="my-2 rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center gap-2 text-left"
-      >
-        <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
-        <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-300 uppercase">
-          carried-over summary
-        </span>
-        <span className="min-w-0 truncate text-[var(--text-dim)]">
-          {text.length.toLocaleString()} characters — everything above, as the model kept it
-        </span>
-      </button>
+    // `group/bubble` so the copy buttons reveal on hover exactly as they do on a
+    // user or assistant bubble — this is the one thing here that IS a message's
+    // worth of text, whoever wrote it.
+    <div id={id} className="group/bubble my-2 rounded border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs">
+      <div className="flex items-center gap-2">
+        <FoldHeader open={open} onToggle={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-300 uppercase">
+            carried-over summary
+          </span>
+          <span className="min-w-0 truncate text-[var(--text-dim)]">
+            {text.length.toLocaleString()} characters — everything above, as the model kept it
+          </span>
+        </FoldHeader>
+        {/* Only while open, and for the same reason the bubbles' buttons copy
+            only what they rendered: the formatted copy reads the node on
+            screen, and folded there is none — a button that silently did
+            nothing would be worse than no button. */}
+        {open && <CopyActions markdown={() => text} body={body} />}
+      </div>
       {open && (
-        <div className="mt-2 border-t border-[var(--border)] pt-2">
+        <div ref={body} className="mt-2 border-t border-[var(--border)] pt-2">
           <Markdown text={text} />
         </div>
       )}

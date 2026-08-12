@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
+import { hasSelection } from '../lib/selection.ts';
 
 /** Diagnostics, so the whole thing lives under Settings rather than the nav. */
 
@@ -85,7 +86,7 @@ function Row({ record, showPid }: { record: LogRecord; showPid: boolean }) {
     <div
       onClick={() => {
         // Do not fight a selection the user just made in order to copy it.
-        if (window.getSelection()?.toString()) return;
+        if (hasSelection()) return;
         if (hasDetail) setOpen(!open);
       }}
       className={`group border-b border-[var(--border)]/40 px-3 py-1 font-mono text-[11px] hover:bg-[var(--bg-hover)]/40 ${

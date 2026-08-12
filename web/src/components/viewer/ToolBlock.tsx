@@ -2,6 +2,7 @@ import type { ContentBlock } from '@claude-history/shared';
 import { type ReactNode, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes } from '../../lib/format.ts';
+import { FoldHeader } from './FoldHeader.tsx';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
@@ -49,16 +50,12 @@ export function ToolBlock({
   return (
     <div className="my-1.5 rounded border border-[var(--border)] bg-[var(--bg-raised)]/60">
       <div className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-        >
+        <FoldHeader open={open} onToggle={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
           <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
           <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
           <span className="truncate font-mono text-[var(--text-dim)]">{block.inputSummary}</span>
-        </button>
+        </FoldHeader>
         {costBadge}
         {block.agentId && onOpenAgent && (
           <button

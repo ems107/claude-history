@@ -1,4 +1,5 @@
 import type { ReactNode, RefObject } from 'react';
+import { hasSelection } from '../../lib/selection.ts';
 
 export type BubbleSide = 'user' | 'assistant';
 
@@ -48,8 +49,9 @@ export function Bubble({
   /**
    * Prompts-only mode: clicking the bubble expands its turn. Anything
    * interactive inside (the copy buttons) must stop propagation. This is
-   * deliberately not a <button> — it would nest interactive elements — so the
-   * keyboard route is the expand strip below the bubble, which is a real one.
+   * deliberately not a <button> — it would nest interactive elements, and its
+   * text could not be selected — so the keyboard route is the expand strip
+   * below the bubble, which is focusable and answers Enter/Space.
    */
   onClick?: () => void;
   title?: string;
@@ -58,7 +60,15 @@ export function Bubble({
     <div
       id={id}
       title={title}
-      onClick={onClick}
+      // Selecting text inside a prompt used to fold the turn shut on mouse-up,
+      // taking the answer the selection was being compared against with it.
+      onClick={
+        onClick &&
+        (() => {
+          if (hasSelection()) return;
+          onClick();
+        })
+      }
       // A ring, deliberately not a `filter` (brightness/opacity): a filtered
       // ancestor becomes the containing block for `position: fixed`, and the
       // cost and context pills in the header open fixed hover cards that would

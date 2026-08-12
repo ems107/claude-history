@@ -1,6 +1,7 @@
 import type { FileChange } from '@claude-history/shared';
 import { useState } from 'react';
 import { formatDateTime } from '../../lib/format.ts';
+import { FoldHeader } from './FoldHeader.tsx';
 
 function EditBlock({ edit }: { edit: FileChange['edits'][number] }) {
   return (
@@ -41,9 +42,9 @@ export function FileChangesPanel({ fileChanges }: { fileChanges: FileChange[] })
         const last = fc.edits[fc.edits.length - 1]?.timestamp;
         return (
           <div key={fc.path} className="mb-1">
-            <button
-              type="button"
-              onClick={() =>
+            <FoldHeader
+              open={isOpen}
+              onToggle={() =>
                 setOpen((prev) => {
                   const next = new Set(prev);
                   if (next.has(fc.path)) next.delete(fc.path);
@@ -51,7 +52,7 @@ export function FileChangesPanel({ fileChanges }: { fileChanges: FileChange[] })
                   return next;
                 })
               }
-              className="flex w-full cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
+              className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
             >
               <span className="text-[var(--text-dim)]">{isOpen ? '▾' : '▸'}</span>
               <span className="min-w-0 flex-1 truncate font-mono" title={fc.path}>
@@ -61,7 +62,7 @@ export function FileChangesPanel({ fileChanges }: { fileChanges: FileChange[] })
                 {fc.edits.length} edit{fc.edits.length !== 1 ? 's' : ''}
                 {first && ` · ${formatDateTime(first)}${last && last !== first ? ` → ${formatDateTime(last)}` : ''}`}
               </span>
-            </button>
+            </FoldHeader>
             {isOpen && (
               <div className="mt-1 ml-5">
                 {fc.edits.map((edit, i) => (

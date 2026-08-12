@@ -4,6 +4,7 @@ import { formatContextTokens } from '../../lib/context.ts';
 import { costEntries, formatUsd, sumCost } from '../../lib/cost.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { type Segment, summarizeSegment } from '../../lib/segments.ts';
+import { FoldHeader } from './FoldHeader.tsx';
 
 /**
  * A stretch of conversation the model no longer sees, folded into one line.
@@ -37,27 +38,10 @@ export function CompactedSegment({
 
   return (
     <div className="rounded border border-amber-500/25 bg-amber-500/5">
-      {/*
-       * A div with a button role, not a real <button>: text inside a <button>
-       * cannot be selected, and this header is where the dates, the cost and the
-       * compaction figures are written — the numbers most worth copying out of a
-       * folded stretch. Same trade as the log rows.
-       */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        onClick={() => {
-          // Do not fight a selection the user just made in order to copy it.
-          if (window.getSelection()?.toString()) return;
-          onToggle();
-        }}
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' && e.key !== ' ') return;
-          e.preventDefault();
-          onToggle();
-        }}
-        className="flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left text-xs select-text hover:bg-amber-500/5"
+      <FoldHeader
+        open={open}
+        onToggle={onToggle}
+        className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left text-xs hover:bg-amber-500/5"
         title={open ? 'Fold this context back' : 'Unfold everything that was compacted away here'}
       >
         <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
@@ -75,7 +59,7 @@ export function CompactedSegment({
             {b.trigger ? ` (${b.trigger})` : ''}
           </span>
         )}
-      </div>
+      </FoldHeader>
       {open && <div className="space-y-4 border-t border-amber-500/25 px-3 py-3">{children}</div>}
     </div>
   );
