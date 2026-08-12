@@ -16,7 +16,7 @@ import type {
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
-import { extractPrompt } from './summarizer.ts';
+import { extractPrompt, injectedOrigin, notificationText } from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
 
@@ -425,6 +425,30 @@ export async function parseTranscript(
       const content = o.message.content;
 
       if (typeof content === 'string') {
+        // Injected by Claude Code, not typed: a background command reporting
+        // back wears the `user` role and carries a plain string, so it drew a
+        // prompt bubble nobody wrote. It still opens a turn — an exchange really
+        // follows it — but as what it is, and `isPromptItem` stops counting it.
+        const injected = injectedOrigin(o);
+        if (injected) {
+          newTurn(str(o.promptId)).items.push({
+            uuid: makeUuid(o),
+            aliasUuids: [],
+            role: 'system',
+            timestamp: str(o.timestamp),
+            endTimestamp: str(o.timestamp),
+            model: null,
+            isMeta: false,
+            isCompactSummary: false,
+            systemSubtype: injected,
+            carriedOver,
+            discardedBranch: null,
+            usage: null,
+            effort: null,
+            blocks: [{ kind: 'text', text: notificationText(content) }],
+          });
+          continue;
+        }
         const prompt = extractPrompt(content);
         if (!prompt) continue; // local-command stdout noise
         // A compaction replays the command that caused it into the fresh

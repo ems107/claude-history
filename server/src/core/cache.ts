@@ -8,9 +8,10 @@ import { createLogger } from './logger.ts';
  * (path, size, mtime) and a corrected count would otherwise wait for the
  * transcript to be written to again. 5: replayed lines stopped being counted.
  * 6: `forkedFrom` replaced the `session_id` ancestry guess, and a fork's
- * carried-over tokens moved out of its own totals.
+ * carried-over tokens moved out of its own totals. 7: lines Claude Code injected
+ * (background-task notifications) stopped being counted and indexed as prompts.
  */
-export const CACHE_VERSION = 6;
+export const CACHE_VERSION = 7;
 
 const cacheLog = createLogger('cache');
 

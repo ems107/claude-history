@@ -19,6 +19,35 @@ function truncate(text: string, len: number): string {
 }
 
 /**
+ * What put a `user` line in the transcript, when it was not the human: the
+ * `origin.kind` Claude Code stamps on it, or null when the user really typed it.
+ *
+ * The role says `user` and the content is a plain string, so nothing in the line
+ * itself tells a typed prompt from something the harness injected — and 219 lines
+ * in this corpus are injected, across 18 sessions (80 in one, 56 in another).
+ * They are `<task-notification>` blocks: a background command finished, and
+ * Claude Code hands the model the news the same way it hands it a prompt. Counted
+ * as prompts they inflated one session's total from ~12 to 92.
+ *
+ * `origin.kind` is exact where it exists — all 219 carry it, not one is labelled
+ * `human` — and absent only in older transcripts, which had no background tasks
+ * to notify about. So: no `origin` means the human typed it (what this app always
+ * assumed), and any kind other than `human` means it did not. `promptSource`
+ * (`typed` / `queued` / `sdk` / `system`) is NOT the discriminator: a human prompt
+ * sent through the SDK reads `sdk` there, and so do most notifications.
+ */
+export function injectedOrigin(o: RawLine): string | null {
+  const kind = isRec(o.origin) ? str(o.origin.kind) : null;
+  return kind === null || kind === 'human' ? null : kind;
+}
+
+/** The line a `<task-notification>` is worth showing: its own summary of itself. */
+export function notificationText(content: string): string {
+  const summary = /<summary>([\s\S]*?)<\/summary>/.exec(content);
+  return (summary?.[1] ?? content).trim();
+}
+
+/**
  * Classify a user message string. Slash commands arrive wrapped in
  * `<command-name>/foo</command-name>` XML; meta banners are filtered upstream
  * via isMeta. Returns null for content that is not a human-typed prompt.
@@ -131,7 +160,13 @@ function extractFromLines(headParsed: RawLine[], tailParsed: RawLine[]): Extract
       if (count !== null) x.messageCount = count;
     }
 
-    if (type === 'user' && o.isMeta !== true && isRec(o.message) && typeof o.message.content === 'string') {
+    if (
+      type === 'user' &&
+      o.isMeta !== true &&
+      isRec(o.message) &&
+      typeof o.message.content === 'string' &&
+      injectedOrigin(o) === null
+    ) {
       const prompt = extractPrompt(o.message.content);
       if (prompt) {
         if (prompt.isSlashCommand) {

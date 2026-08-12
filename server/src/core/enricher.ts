@@ -1,6 +1,6 @@
 import type { DailyUsage, PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
-import { extractPrompt } from './summarizer.ts';
+import { extractPrompt, injectedOrigin } from './summarizer.ts';
 
 export interface SearchBlock {
   uuid: string | null;
@@ -91,7 +91,15 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
     if (promptId) promptIds.add(promptId);
 
     if (type === 'user') {
-      if (o.isMeta !== true && isRec(o.message) && typeof o.message.content === 'string') {
+      // A line Claude Code injected (a background command reporting back) is not
+      // a prompt and is not indexed: it is tool output wearing the user role, and
+      // tool output never enters the corpus — see the Search section of CLAUDE.md.
+      if (
+        o.isMeta !== true &&
+        isRec(o.message) &&
+        typeof o.message.content === 'string' &&
+        injectedOrigin(o) === null
+      ) {
         const prompt = extractPrompt(o.message.content);
         if (prompt) {
           userMessageCount++;
