@@ -6,6 +6,7 @@ import {
   type SearchQueryEcho,
   type SearchResponse,
   type SearchSnippet,
+  type SessionMatchesResponse,
 } from '@claude-history/shared';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -17,6 +18,8 @@ import { createLogger } from './logger.ts';
 import type { SearchService } from './search.ts';
 import {
   buildSnippet,
+  hasTerm,
+  matchWindows,
   occurrences,
   parseTerms,
   type SearchOptions,
@@ -222,12 +225,90 @@ export class DeepSearchService {
       }
     }
 
-    for await (const chunk of this.toolChunks(id, request, deadline, scan)) {
+    for await (const chunk of this.toolChunks(id, request.signal, deadline, scan)) {
       consume(chunk, foldText(chunk.text));
     }
 
     if (matchCount === 0 || !perTerm.every((n) => n > 0)) return null;
     return { sessionId: id, matchCount, snippets };
+  }
+
+  /**
+   * One page of EVERY place the query matched in ONE session, tool calls, tool
+   * output and subagents included — the deep counterpart of
+   * `SearchService.matchesIn`, and the only honest way to page through a hit
+   * that came from a deep scan: its count includes matches the index cannot see,
+   * so answering from the index alone would show fewer than it promised.
+   *
+   * It re-reads that one transcript per page, which is why the caller asks for a
+   * bigger page here than it does for the indexed corpus.
+   */
+  async matchesIn(request: {
+    id: string;
+    query: string;
+    options: SearchOptions;
+    offset: number;
+    limit: number;
+    signal?: AbortSignal;
+  }): Promise<SessionMatchesResponse> {
+    const t0 = performance.now();
+    const { roles, wholeWord = false } = request.options;
+    const mode = request.options.mode ?? 'phrase';
+    const scope = request.options.scope ?? 'message';
+    const terms = parseTerms(request.query, mode);
+    const echo: SearchQueryEcho = { terms, mode, scope, wholeWord };
+    const scan: DeepScanInfo = { sessionsRead: 0, bytesRead: 0, stoppedEarly: false };
+    const snippets: SearchSnippet[] = [];
+    let total = 0;
+    let matchCount = 0;
+    let pageMatches = 0;
+
+    const consume = (block: SearchBlock, folded: string): void => {
+      if (scope === 'message' && !terms.every((t) => hasTerm(folded, t, wholeWord))) return;
+      let map: number[] | null = null;
+      for (const window of matchWindows(folded, terms, wholeWord)) {
+        matchCount += window.matches;
+        const index = total++;
+        if (index < request.offset || snippets.length >= request.limit) continue;
+        map ??= foldWithMap(block.text).map;
+        snippets.push(buildSnippet(block, folded, map, window.from, window.to, terms, wholeWord));
+        pageMatches += window.matches;
+      }
+    };
+
+    if (terms.length > 0) {
+      const deadline = performance.now() + BUDGET_MS;
+      // The prose first, exactly as the scan reads it, so the order a page shows
+      // is the order the whole session would show.
+      const indexed = await this.search.unitsOf(request.id);
+      if (indexed) {
+        for (let i = 0; i < indexed.blocks.length; i++) {
+          if (roles && !roles.has(indexed.blocks[i].role)) continue;
+          consume(indexed.blocks[i], indexed.folded[i]);
+        }
+      }
+      for await (const chunk of this.toolChunks(request.id, request.signal, deadline, scan)) {
+        consume(chunk, foldText(chunk.text));
+      }
+      scan.sessionsRead = 1;
+      if (request.signal?.aborted) scan.stoppedEarly = true;
+      log.info(
+        `deep matches ${request.offset}-${request.offset + snippets.length} of ${total} in ${request.id.slice(0, 8)}`,
+        { terms, total, matchCount, bytesRead: scan.bytesRead, stoppedEarly: scan.stoppedEarly },
+      );
+    }
+
+    return {
+      sessionId: request.id,
+      query: echo,
+      snippets,
+      offset: request.offset,
+      total,
+      matchCount,
+      pageMatches,
+      tookMs: Math.round(performance.now() - t0),
+      deep: scan,
+    };
   }
 
   /**
@@ -238,7 +319,7 @@ export class DeepSearchService {
    */
   private async *toolChunks(
     id: string,
-    request: DeepRequest,
+    signal: AbortSignal | undefined,
     deadline: number,
     scan: DeepScanInfo,
   ): AsyncGenerator<SearchBlock> {
@@ -252,7 +333,7 @@ export class DeepSearchService {
     // command and counts its matches again.
     const isReplay = replayFilter();
     const overBudget = (): boolean => {
-      if (request.signal?.aborted) return true;
+      if (signal?.aborted) return true;
       if (++lines % LINES_PER_CLOCK_CHECK !== 0) return false;
       if (performance.now() <= deadline) return false;
       scan.stoppedEarly = true;

@@ -12,6 +12,7 @@ import type {
   RetentionResponse,
   SearchResponse,
   SessionDetailResponse,
+  SessionMatchesResponse,
   SessionsResponse,
   SubagentDetailResponse,
   ToolResultFileResponse,
@@ -37,8 +38,8 @@ export interface SettingsResponse {
   version: string;
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${url}`);
   return res.json() as Promise<T>;
 }
@@ -85,6 +86,24 @@ export const api = {
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<SearchResponse>;
+  },
+  /**
+   * One page of every place a query matched in one session — what a hit's
+   * "+N more matches" opens. `deep` has to match how the results were obtained:
+   * a hit from a deep scan counts matches the index cannot see, and asking the
+   * indexed corpus for them would quietly come back with fewer.
+   */
+  sessionMatches: (
+    sessionId: string,
+    q: string,
+    tuning: SearchTuning,
+    page: { offset: number; limit: number; deep: boolean },
+    signal?: AbortSignal,
+  ) => {
+    const params = new URLSearchParams({ q, offset: String(page.offset), limit: String(page.limit) });
+    applyTuning(params, tuning);
+    if (page.deep) params.set('deep', '1');
+    return getJson<SessionMatchesResponse>(`/api/search/session/${sessionId}/matches?${params}`, signal);
   },
   pinSession: async (id: string, pinned: boolean) => {
     const res = await fetch(`/api/sessions/${id}/pin`, {

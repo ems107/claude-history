@@ -286,6 +286,8 @@ export function SessionListPage() {
             ) : (
               <SearchResults
                 response={deepResponse ?? searchQuery.data!}
+                q={q}
+                tuning={tuning}
                 summaries={summaryMap}
                 colorByProject={colorByProject}
                 visibleIds={visibleIds}

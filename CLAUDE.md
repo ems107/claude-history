@@ -61,7 +61,7 @@ The notes are not a changelog nobody reads: they are what the user sees in the u
 - `server/src/routes/` — REST endpoints (see `shared/src/api.ts`).
 - `web/src/` — React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SSE (`EventSource`) for live invalidation.
   - **No ancestor of a message may carry a `filter`** — a `hover:brightness`, an opacity animation, anything. `HoverCard` (the cost and context popovers) is `position: fixed`, and a filtered element becomes the containing block for its fixed descendants, so the card would anchor to the bubble instead of the viewport. Hover feedback goes through a ring or a border.
-  - **Nothing that folds may be a `<button>`** — no browser lets a button's text be selected, and a fold header is where the viewer writes the figures worth copying: the tool name with its arguments, file paths, the dates and cost of a compacted stretch, token counts. They all go through `FoldHeader` (a div with `role="button"`, `tabIndex`, Enter/Space, `select-text`), and everything that folds on a click — that includes a prompt bubble in prompts-only mode and the log rows — first asks `hasSelection()`, or a drag that ends inside it collapses what the user was about to copy. Two consequences: nothing interactive may be nested inside a `FoldHeader` (copy buttons, cost pills and the subagent link are siblings in the header row), and a shrink-wrapped header needs `w-fit`, which the `<button>` gave for free. Real buttons stay real: the header's mode toggles are controls with nothing to copy.
+  - **Nothing that folds may be a `<button>`** — no browser lets a button's text be selected, and a fold header is where the viewer writes the figures worth copying: the tool name with its arguments, file paths, the dates and cost of a compacted stretch, token counts. They all go through `FoldHeader` (a div with `role="button"`, `tabIndex`, Enter/Space, `select-text`), and everything that folds on a click — that includes an injected notice and the log rows — first asks `hasSelection()`, or a drag that ends inside it collapses what the user was about to copy. **A message bubble is not one of them**: a prompt used to fold its own turn in prompts-only mode, and an accidental click there hid the answer being read, so `Bubble` takes no `onClick` at all and a turn folds only from its fold strip. Two consequences: nothing interactive may be nested inside a `FoldHeader` (copy buttons, cost pills and the subagent link are siblings in the header row), and a shrink-wrapped header needs `w-fit`, which the `<button>` gave for free. Real buttons stay real: the header's mode toggles are controls with nothing to copy.
   - **Three things fold, and all three are presentation only**: a compacted stretch (`CompactedSegment`), a branch a rewind cut away (`DiscardedBranch`, grouped by `groupTurns`) and a turn's own answers. None of them may filter the data — `buildCostIndex`/`buildContextIndex` still run over every turn, read by original index, which is the only reason the pills reconcile.
   - **What is folded lives in `TurnList`**, keyed on the session id, never in the component that draws it: a live session replaces the whole `turns` array every few seconds, so per-component state dies with the remount and any effect keyed on `turns` re-folds what the user just opened. For the same reason the "expand all" effects read the segments through a ref and key on the toggle alone. Deep links (`?msg=`) must unfold their way in — segment and turn — before scrolling, or the link silently does nothing.
 
@@ -94,6 +94,31 @@ more text**, with 129 MB of it inside a single session. So:
   arrived long before and its close event says nothing about who is listening.
   `BUDGET_MS` and `MAX_HITS` set `stoppedEarly`, which the results header shows:
   a partial answer must never read as a complete one.
+
+**A hit's count has to be reachable.** The snippets a hit shows are a teaser
+(three, six when deep) and `+N more matches` was a line of text about matches
+nobody could get to. `GET /api/search/session/:id/matches` pages over PLACES —
+one snippet row each — and **`deep=1` must match how the hit was obtained**: a
+deep hit counts matches the index never saw, so the indexed corpus would answer
+with fewer places than the number that was clicked on. Each page re-walks the
+session rather than keeping a cursor (the folded text is already in memory: 1 ms
+a page), and a deep page re-streams that one transcript, which is why the UI asks
+for 100 places a click there against 25.
+
+- **The arithmetic must close**, and `matchWindows` is what closes it: every
+  occurrence is assigned to exactly one window, so the pages' `pageMatches` add up
+  to `matchCount` to the unit (46/46 across 38 places; deep, 503/503 across 502 in
+  `f3384d17`). Without that the footer would count "31 of 46" and never reach 46,
+  and the button would go on offering more of what was already shown. It is also
+  why the window enumeration is its own function and not the search's three-anchor
+  round-robin: that one deliberately stops counting places after three.
+- **Opening replaces the teaser instead of continuing after it.** Those snippets
+  are picked one per term so that every word gets a slot — the right teaser and the
+  wrong beginning for an ordered list. The list runs in the order the corpus is
+  read (prose, then tool calls and output, then subagents, for a deep one).
+- The button counts **rows**, the footer counts **matches**: a row can carry
+  several occurrences, so a button promising matches would overpromise, while the
+  footer has to speak in the same unit as the `+N` that was clicked.
 
 Folding (`shared/src/fold.ts`, imported by both sides — there is exactly one
 `normalize('NFD')` in the repo and it must stay that way) is case-, diacritic-
@@ -318,6 +343,17 @@ No automated test suite (personal tool). Verify against real data:
    session scope gives 0 then a hit — that pairing is the reason the scan re-matches
    the indexed text. Cancel it mid-scan (`curl --max-time 1`) and the log must read
    `deep search cancelled` with the bytes it got through, not the full corpus.
+   Expanding a hit is arithmetic, so check it without the browser: page
+   `/api/search/session/:id/matches` to the end and the pages' `pageMatches` must
+   sum to `matchCount` and their snippets to `total`, with `matchCount` equal to what
+   `/api/search` said (`compact` → 46/46 in 38 places). Repeat with `deep=1` on a hit
+   only the deep scan produces (`old_string` → 503/503 in 502 places for `f3384d17`,
+   6 pages of 100, ~16 MB re-read each, `call`/`tool`/`agent` rows among them) — and
+   page that same hit WITHOUT the flag to see it come back short, which is why the
+   flag is threaded from the response all the way into the request. `offset` past the
+   end must answer 0 snippets with the totals intact, `limit=999` must clamp to 200,
+   and every mode has to work the same way (words + session scope, whole words, and
+   `in=user`, whose rows must all read USER).
 10. Per-response cost: the pills must **reconcile**, and that is checkable without the UI — sum `usage` over every assistant item of `GET /api/sessions/:id` at the `/api/prices` rates and it must equal the token panel's total to the last decimal (verified: delta 0 on 89- and 831-message sessions). On a fork it reconciles in **two halves**: the items with `carriedOver: false` must add up to `enrichment.usage` and the ones with `carriedOver: true` to `enrichment.carriedOverUsage`, exactly (verified on `c0f70eda` and, with an empty second half, on `0f5b1c8b`). In the viewer, open a turn with a long tool run: the collapsed run carries its own pill (over half the spend lives there), expanding moves one pill onto the first call of each message, and the three levels must never show the same message twice. A session using `claude-haiku-4-5-20251001` must price at the `claude-haiku-4-5` rates, not "—" and never $0.000; a model with no row anywhere must read "—" and appear in the price editor in amber so it can be given one. Open a subagent (`?agent=`) → its own total in the drawer header, absent from the parent's session total by design, and its popover must read **cache write (5m)** at 1.25x input where a session's reads **(1h)** at 2x — a subagent pill showing the 1h rate means the TTL split was lost somewhere.
 11. Replayed lines: the three sessions that carry them are `0f5b1c8b` (2,072 lines), `cae7f9f5` (17,678) and `1decb824` (26, and no duplicated boundary — text only). The first must show **7 "earlier context" headers, not 9**, the second **19, not 42**, none of them dating backwards, none holding prompts with no answer, and every collapsed header must quote the compaction that really closed it (the last of `0f5b1c8b`: 12 prompts, 12/08 11:44:21 → 12/08 14:31:19, 642k → 9.0k). No assistant item may carry the same text block twice (108 did). And the check that says the fix took nothing real with it: the four token totals must be **identical** before and after, and no `message.id` may appear only in a replay.
 12. Context: open `f3384d17` (the only session with `/context`) — 4 snapshot panels, 2 compaction panels, and **no ANSI escapes anywhere** (the grid line must be dropped, not rendered). In each panel the non-deferred categories must sum to the reported total (gap 0 or ±100 from rounding) and the model must keep its `[1m]` marker. The curve in the token panel must show 3 shrinks, 2 tied to a boundary and one labelled as having none. On a plain session (`3b326b6c`): 0 panels, 0 shrinks, and the first three `ctx` pills read 54,612 → 55,416 (+804) → 65,736 (+10,320). No percentage of the window may appear outside a `/context` panel — if one does, someone assumed a limit.

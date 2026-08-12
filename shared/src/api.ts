@@ -82,6 +82,40 @@ export interface SearchResponse {
   deep?: DeepScanInfo;
 }
 
+/**
+ * Every place one query matched inside ONE session, a page at a time. A hit in
+ * the list only ever shows a handful of snippets and then says how many matches
+ * it left out; this is how those get looked at.
+ *
+ * It pages over PLACES, not over occurrences: one window of text can hold
+ * several of them, so `total` and `matchCount` are different numbers and both
+ * have to be said.
+ */
+export interface SessionMatchesResponse {
+  sessionId: string;
+  query: SearchQueryEcho;
+  /** This page, in the order the corpus is read. */
+  snippets: SearchSnippet[];
+  /** Where this page starts in the session's list of places. */
+  offset: number;
+  /** Places in the whole session — what the pagination counts. */
+  total: number;
+  /**
+   * Term occurrences in the whole session: the figure `SearchHit.matchCount`
+   * carries, recomputed here (a live transcript may have grown since).
+   */
+  matchCount: number;
+  /**
+   * Occurrences covered by THIS page. Every occurrence is assigned to exactly
+   * one place, so the pages add up to `matchCount` once the last one arrives —
+   * which is what lets the UI count down to zero and mean it.
+   */
+  pageMatches: number;
+  tookMs: number;
+  /** Present only when tool calls and output were read too. */
+  deep?: DeepScanInfo;
+}
+
 export interface ToolResultFileResponse {
   text: string;
   sizeBytes: number;

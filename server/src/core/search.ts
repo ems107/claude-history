@@ -5,11 +5,14 @@ import {
   type SearchQueryEcho,
   type SearchResponse,
   type SearchSnippet,
+  type SessionMatchesResponse,
 } from '@claude-history/shared';
 import type { SearchBlock } from './enricher.ts';
 import type { SessionIndex } from './index.ts';
 import {
   buildSnippet,
+  hasTerm,
+  matchWindows,
   occurrences,
   parseTerms,
   type SearchOptions,
@@ -84,6 +87,64 @@ export class SearchService {
   /** The indexed text of one session, folded — what deepSearch adds tool text to. */
   async unitsOf(id: string): Promise<{ blocks: SearchBlock[]; folded: string[] } | null> {
     return this.ensureSession(id);
+  }
+
+  /**
+   * One page of EVERY place the query matched in one session, in block order.
+   * The search itself shows three snippets a session and counts the rest, which
+   * left the count as the only thing said about matches nobody could reach.
+   *
+   * The whole session is walked on every page — the folded text is already in
+   * memory, so a page costs the same milliseconds the search does, and paging
+   * that way cannot drift when a live transcript grows between two clicks.
+   */
+  async matchesIn(
+    id: string,
+    query: string,
+    options: SearchOptions,
+    page: { offset: number; limit: number },
+  ): Promise<SessionMatchesResponse> {
+    const t0 = performance.now();
+    const { roles, wholeWord = false } = options;
+    const mode = options.mode ?? 'phrase';
+    const scope = options.scope ?? 'message';
+    const terms = parseTerms(query, mode);
+    const echo: SearchQueryEcho = { terms, mode, scope, wholeWord };
+    const snippets: SearchSnippet[] = [];
+    let total = 0;
+    let matchCount = 0;
+    let pageMatches = 0;
+
+    const st = terms.length > 0 ? await this.ensureSession(id) : null;
+    if (st) {
+      for (let bi = 0; bi < st.blocks.length; bi++) {
+        if (roles && !roles.has(st.blocks[bi].role)) continue;
+        const folded = st.folded[bi];
+        if (scope === 'message' && !terms.every((t) => hasTerm(folded, t, wholeWord))) continue;
+        let map: number[] | null = null;
+        for (const window of matchWindows(folded, terms, wholeWord)) {
+          matchCount += window.matches;
+          const index = total++;
+          // Past the page, but still counted: the figures are about the session,
+          // not about what fitted in this response.
+          if (index < page.offset || snippets.length >= page.limit) continue;
+          map ??= foldWithMap(st.blocks[bi].text).map;
+          snippets.push(buildSnippet(st.blocks[bi], folded, map, window.from, window.to, terms, wholeWord));
+          pageMatches += window.matches;
+        }
+      }
+    }
+
+    return {
+      sessionId: id,
+      query: echo,
+      snippets,
+      offset: page.offset,
+      total,
+      matchCount,
+      pageMatches,
+      tookMs: Math.round(performance.now() - t0),
+    };
   }
 
   async search(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
