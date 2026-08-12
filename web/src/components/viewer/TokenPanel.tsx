@@ -2,6 +2,7 @@ import type { ModelPrices, SessionSummary, Turn, UsageTotals } from '@claude-his
 import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { computeCost, formatUsd } from '../../lib/cost.ts';
@@ -36,6 +37,16 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
   }
   const priceTable = pricesQ.data?.prices ?? {};
   const models = Object.entries(e.usageByModel);
+  const carried = e.carriedOverUsage;
+  const carriedTokens = carried.input + carried.output + carried.cacheRead + carried.cacheCreate;
+  // Priced at the session's own model: the enrichment does not split the carried
+  // tokens per model, and a fork copies the parent's last exchanges, answered by
+  // the model that was running then — the same one.
+  const carriedCost = carriedTokens > 0 ? computeCost(carried, resolvePrices(summary.model, priceTable)) : null;
+  const carriedMessages = turns.reduce(
+    (n, t) => n + t.items.filter((i) => i.role === 'assistant' && i.carriedOver && i.usage).length,
+    0,
+  );
   const totalCost = models.reduce(
     (acc, [model, usage]) => acc + (computeCost(usage, resolvePrices(model, priceTable)) ?? 0),
     0,
@@ -53,6 +64,12 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
         </span>
         <span>
           <b className="text-[var(--text)]">{e.assistantMessageCount}</b> assistant msgs
+          {carriedMessages > 0 && (
+            <span title="Copied in by /branch: they are part of this transcript, but the parent session paid for them">
+              {' '}
+              ({carriedMessages} carried over)
+            </span>
+          )}
         </span>
         <span>
           <b className="text-[var(--text)]">{e.turnCount}</b> turns
@@ -89,8 +106,37 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
               <td className="px-2 text-right">{formatUsd(totalCost)}</td>
             </tr>
           )}
+          {carriedTokens > 0 && (
+            <tr className="border-t border-dashed border-amber-500/40 text-amber-300/80">
+              <td className="py-1 pr-4 font-mono" title="Copied in by /branch — billed in the parent session, not here">
+                carried over
+              </td>
+              <td className="px-2 text-right">{fmt(carried.input)}</td>
+              <td className="px-2 text-right">{fmt(carried.output)}</td>
+              <td className="px-2 text-right">{fmt(carried.cacheRead)}</td>
+              <td className="px-2 text-right">{fmt(carried.cacheCreate)}</td>
+              <td className="px-2 text-right">{formatUsd(carriedCost)}</td>
+            </tr>
+          )}
         </tbody>
       </table>
+      {carriedTokens > 0 && (
+        <div className="mt-1 text-[10px] text-amber-300/70">
+          The rows above are what this session spent. “Carried over” is the context <code>/branch</code> copied from
+          {e.forkedFrom ? (
+            <>
+              {' '}
+              <Link to={`/session/${e.forkedFrom}`} className="font-mono underline hover:text-amber-200">
+                {e.forkedFrom.slice(0, 8)}
+              </Link>
+            </>
+          ) : (
+            ' the parent session'
+          )}
+          : those messages are shown here and cost that much, but they were billed there, so they are left out of every
+          total.
+        </div>
+      )}
       <div className="mt-1 text-[10px] text-[var(--text-dim)] opacity-70">
         ≈ cost is API-equivalent value at the prices configured in Stats — not actual subscription spend.
       </div>

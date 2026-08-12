@@ -35,8 +35,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     },
   );
 
-  // Full resume/fork lineage graph around a session (transitive closure over
-  // resumedFrom ancestry + descendants). Referenced-but-deleted sessions
+  // Full fork lineage graph around a session (transitive closure over
+  // `forkedFrom` ancestry + descendants). Referenced-but-deleted sessions
   // appear as exists:false nodes.
   app.get<{ Params: { id: string } }>('/api/sessions/:id/lineage', async (request, reply) => {
     const { id } = request.params;
@@ -60,9 +60,10 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         lastActivityAt: s?.lastActivityAt ?? null,
       });
       if (!s) continue;
-      for (const ancestor of s.enrichment?.resumedFrom ?? []) {
-        edges.add(`${ancestor}>${current}`);
-        queue.push(ancestor);
+      const parent = s.enrichment?.forkedFrom;
+      if (parent) {
+        edges.add(`${parent}>${current}`);
+        queue.push(parent);
       }
       for (const child of s.descendants) {
         edges.add(`${current}>${child}`);

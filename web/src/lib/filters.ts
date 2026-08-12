@@ -2,7 +2,7 @@ import type { PriceTable, SessionSummary } from '@claude-history/shared';
 import { sessionCost } from './cost.ts';
 
 export type SortField = 'activity' | 'created' | 'messages' | 'size' | 'cost';
-export type BadgeFilter = 'pinned' | 'live' | 'pr' | 'subagents' | 'resumed' | 'bg';
+export type BadgeFilter = 'pinned' | 'live' | 'pr' | 'subagents' | 'fork' | 'bg';
 export type GroupMode = 'none' | 'day' | 'project';
 
 export interface FilterState {
@@ -94,8 +94,8 @@ function hasBadge(s: SessionSummary, badge: BadgeFilter): boolean {
       return (s.enrichment?.prLinks.length ?? 0) > 0;
     case 'subagents':
       return s.subagentCount > 0;
-    case 'resumed':
-      return (s.enrichment?.resumedFrom.length ?? 0) > 0;
+    case 'fork':
+      return s.enrichment?.forkedFrom != null;
     case 'bg':
       return s.isBackground;
   }

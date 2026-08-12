@@ -64,6 +64,36 @@ export function buildSegments(turns: Turn[]): Segment[] {
   return segments;
 }
 
+/** A stretch of a segment: either live conversation or what a rewind cut away. */
+export type TurnGroup =
+  | { kind: 'live'; turns: SegmentTurn[] }
+  | { kind: 'discarded'; turns: SegmentTurn[]; key: string };
+
+/**
+ * Split a segment's turns into runs of live and discarded ones, so a rewound
+ * branch folds into a single header instead of reading like conversation that
+ * still stands. A rewind branches at a prompt, and a prompt opens a turn, so in
+ * practice a turn is entirely one or the other; a turn that somehow mixed both
+ * counts as live, because hiding a live message is the worse mistake.
+ */
+export function groupTurns(turns: SegmentTurn[]): TurnGroup[] {
+  const groups: TurnGroup[] = [];
+  for (const st of turns) {
+    const discarded = st.turn.items.length > 0 && st.turn.items.every((i) => i.discarded);
+    const last = groups[groups.length - 1];
+    if (last && (last.kind === 'discarded') === discarded) {
+      last.turns.push(st);
+    } else if (discarded) {
+      // Keyed on the first uuid, not the index: stable across the refetches of a
+      // live session, like every other fold key here.
+      groups.push({ kind: 'discarded', turns: [st], key: `discarded-${st.turn.items[0]?.uuid ?? st.index}` });
+    } else {
+      groups.push({ kind: 'live', turns: [st] });
+    }
+  }
+  return groups;
+}
+
 /**
  * A message the user actually typed. `role === 'user'` is not enough: the
  * summary a compaction writes wears the same role, and so do the lines that
@@ -86,7 +116,12 @@ export interface SegmentSummary {
 
 /** What a collapsed segment header shows. All of it derivable in the client. */
 export function summarizeSegment(segment: Segment): SegmentSummary {
-  const items = segment.turns.flatMap((t) => t.turn.items);
+  return summarizeTurns(segment.turns);
+}
+
+/** The same, for any run of turns — a discarded branch has its own header. */
+export function summarizeTurns(turns: SegmentTurn[]): SegmentSummary {
+  const items = turns.flatMap((t) => t.turn.items);
   let firstAt: string | null = null;
   let lastAt: string | null = null;
   for (const item of items) {

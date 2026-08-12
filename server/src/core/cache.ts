@@ -7,8 +7,10 @@ import { createLogger } from './logger.ts';
  * change in what the enricher COUNTS, since an entry is keyed on the file's
  * (path, size, mtime) and a corrected count would otherwise wait for the
  * transcript to be written to again. 5: replayed lines stopped being counted.
+ * 6: `forkedFrom` replaced the `session_id` ancestry guess, and a fork's
+ * carried-over tokens moved out of its own totals.
  */
-export const CACHE_VERSION = 5;
+export const CACHE_VERSION = 6;
 
 const cacheLog = createLogger('cache');
 

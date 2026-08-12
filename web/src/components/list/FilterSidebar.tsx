@@ -9,7 +9,7 @@ const BADGE_OPTIONS: Array<{ id: BadgeFilter; label: string }> = [
   { id: 'live', label: 'Running now' },
   { id: 'pr', label: 'Has PR' },
   { id: 'subagents', label: 'Has subagents' },
-  { id: 'resumed', label: 'Resumed' },
+  { id: 'fork', label: 'Fork' },
   { id: 'bg', label: 'Background' },
 ];
 

@@ -116,7 +116,7 @@ export interface LineageNode {
 
 export interface LineageResponse {
   nodes: LineageNode[];
-  /** from = ancestor session, to = the session it was resumed into. */
+  /** from = the session that was forked, to = the fork (`/branch`) made from it. */
   edges: Array<{ from: string; to: string }>;
 }
 

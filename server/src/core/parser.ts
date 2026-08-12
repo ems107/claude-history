@@ -20,6 +20,9 @@ import { extractPrompt } from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
 
+/** Stands in for the uuid of a line that carried none — never part of the message tree. */
+const GEN_UUID_PREFIX = 'gen-';
+
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
 export async function loadSubagents(sessionDir: string | null): Promise<SubagentMeta[]> {
@@ -155,8 +158,112 @@ function summarizeInput(toolName: string, input: unknown): string {
 export interface ParsedTranscript {
   turns: Turn[];
   prLinks: PrLink[];
-  originSessionIds: Set<string>;
+  /** From `forkedFrom`: the session this transcript's opening context was copied from. */
+  forkedFrom: string | null;
   fileChanges: FileChange[];
+}
+
+/**
+ * One line of the transcript, as the message tree sees it. Positions, not uuids:
+ * a replayed line repeats its uuid, and which occurrence an edge meant depends on
+ * where in the file it was written.
+ */
+interface TreeLine {
+  uuid: string;
+  /** `parentUuid`, or `logicalParentUuid` when a compaction left the first null. */
+  parentRef: string | null;
+  isBoundary: boolean;
+}
+
+/**
+ * Which messages a `/rewind` left behind.
+ *
+ * Every line names its predecessor in `parentUuid`, so a transcript is a tree,
+ * not a list — and a rewind is a second child: the abandoned branch stays in the
+ * file forever and the new prompt hangs off the message the user went back to.
+ * Claude Code renders only the branch still alive (verified: it showed none of
+ * the 72 rewound lines of `c0f70eda`, which sit in the middle of the file), and
+ * that branch is the one ending at the LAST line written. Trusting the
+ * `last-prompt` sidecar instead is what Claude Code itself gets wrong — after
+ * that rewind its `leafUuid` still pointed at the tail of the discarded branch.
+ *
+ * Three things were each bought with a wrong answer on real data:
+ *
+ * - **A compaction breaks `parentUuid`** (null on the boundary, 56 of 56 in this
+ *   corpus) and `logicalParentUuid` is the bridge back. Without it the walk stops
+ *   at the last compaction: 99.9% of `cae7f9f5` came out "discarded".
+ * - **An edge resolves to the LAST occurrence of the parent before it**, because
+ *   a replayed stretch repeats uuids verbatim and the conversation then continues
+ *   from the COPY. Resolving to the first occurrence re-attached that edge a day
+ *   and a thousand lines earlier and made the real conversation in between look
+ *   abandoned — 2,147 lines of `0f5b1c8b`.
+ * - **A branch holding a compaction boundary is never folded away.** A boundary
+ *   is Claude Code stating that this stretch BECAME the context that followed, so
+ *   it happened, whatever the tree says; and the viewer's "earlier context"
+ *   sections are built from those very lines. This is what keeps the two big
+ *   stretches of `0f5b1c8b` (4,163 lines) visible.
+ *
+ * Anything the walk cannot reach at all — a parent that is not in the file, which
+ * happens in 3 sessions here — is left ALONE rather than hidden: showing an
+ * abandoned message is a much smaller error than hiding a real one.
+ */
+function discardedUuids(lines: TreeLine[]): Set<string> {
+  const discarded = new Set<string>();
+  if (lines.length === 0) return discarded;
+
+  const occurrences = new Map<string, number[]>();
+  for (const [i, line] of lines.entries()) {
+    const at = occurrences.get(line.uuid);
+    if (at) at.push(i);
+    else occurrences.set(line.uuid, [i]);
+  }
+
+  const parentAt = new Array<number>(lines.length).fill(-1);
+  const children = new Map<number, number[]>();
+  for (const [i, line] of lines.entries()) {
+    if (!line.parentRef) continue;
+    const at = occurrences.get(line.parentRef);
+    if (!at) continue; // parent not in this file — the walk simply stops here
+    let best = -1;
+    for (const q of at) if (q < i && q > best) best = q;
+    parentAt[i] = best;
+    if (best >= 0) {
+      const list = children.get(best);
+      if (list) list.push(i);
+      else children.set(best, [i]);
+    }
+  }
+
+  const live = new Set<number>();
+  for (let at = lines.length - 1; at >= 0 && !live.has(at); at = parentAt[at]) live.add(at);
+
+  const discardedAt = new Set<number>();
+  for (const i of live) {
+    for (const child of children.get(i) ?? []) {
+      if (live.has(child)) continue;
+      // Collect the whole abandoned subtree first: the decision below is about
+      // the branch, not about one line of it.
+      const branch: number[] = [];
+      const queue = [child];
+      const seen = new Set<number>();
+      while (queue.length > 0) {
+        const at = queue.pop()!;
+        if (seen.has(at)) continue;
+        seen.add(at);
+        branch.push(at);
+        for (const next of children.get(at) ?? []) queue.push(next);
+      }
+      if (branch.some((at) => lines[at].isBoundary)) continue;
+      for (const at of branch) discardedAt.add(at);
+    }
+  }
+
+  // A message is discarded only when NO copy of it is alive: a replay of a live
+  // line is still that line.
+  for (const [uuid, at] of occurrences) {
+    if (at.some((i) => discardedAt.has(i)) && !at.some((i) => live.has(i))) discarded.add(uuid);
+  }
+  return discarded;
 }
 
 const MAX_EDIT_CHARS = 4000;
@@ -214,7 +321,9 @@ export async function parseTranscript(
 ): Promise<ParsedTranscript> {
   const turns: Turn[] = [];
   const prLinks: PrLink[] = [];
-  const originSessionIds = new Set<string>();
+  /** Every uuid-bearing line, in file order — replayed copies included. See `discardedUuids`. */
+  const treeLines: TreeLine[] = [];
+  let forkedFrom: string | null = null;
   const toolBlocksById = new Map<string, ToolBlock>();
   const assistantItems = new Map<string, MessageItem>();
   const fileEdits = new Map<string, FileEdit[]>();
@@ -229,7 +338,7 @@ export async function parseTranscript(
     return current;
   };
   const ensureTurn = (): Turn => current ?? newTurn(null);
-  const makeUuid = (o: RawLine): string => str(o.uuid) ?? `gen-${fallbackId++}`;
+  const makeUuid = (o: RawLine): string => str(o.uuid) ?? `${GEN_UUID_PREFIX}${fallbackId++}`;
   /** The last item emitted: every push goes into the last turn. */
   const lastItem = (): MessageItem | null => {
     const turn = turns[turns.length - 1];
@@ -251,14 +360,28 @@ export async function parseTranscript(
       continue;
     }
 
+    // The message tree is recorded BEFORE anything is dropped: it needs the lines
+    // that render nothing (attachments — one was a rewind target — and
+    // turn_duration) AND the replayed copies, since an edge written after a replay
+    // points at the copy and not at the original.
+    const lineUuid = str(o.uuid);
+    if (lineUuid) {
+      treeLines.push({
+        uuid: lineUuid,
+        parentRef: str(o.parentUuid) ?? str(o.logicalParentUuid),
+        isBoundary: str(o.subtype) === 'compact_boundary',
+      });
+    }
+
     // A line already parsed, re-appended by a compaction (see `replayFilter`).
     // It has to go before anything else touches it: an assistant chunk would
     // otherwise be merged by `message.id` into the item written days earlier and
     // append its text to it a second time.
     if (isReplay(o)) continue;
 
-    const originId = str(o.session_id);
-    if (originId) originSessionIds.add(originId);
+    const fork = isRec(o.forkedFrom) ? str(o.forkedFrom.sessionId) : null;
+    if (fork) forkedFrom ??= fork;
+    const carriedOver = fork !== null;
 
     if (type === 'user') {
       if (!isRec(o.message)) continue;
@@ -279,6 +402,8 @@ export async function parseTranscript(
             isMeta: false,
             isCompactSummary: false,
             systemSubtype: 'context',
+            carriedOver,
+            discarded: false,
             usage: null,
             effort: null,
             blocks: [{ kind: 'context', snapshot }],
@@ -318,6 +443,8 @@ export async function parseTranscript(
           // string content, indistinguishable from a typed prompt without it.
           isCompactSummary: o.isCompactSummary === true,
           systemSubtype: null,
+          carriedOver,
+          discarded: false,
           usage: null,
           effort: null,
           blocks: [prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text }],
@@ -355,6 +482,8 @@ export async function parseTranscript(
             isMeta: false,
             isCompactSummary: false,
             systemSubtype: null,
+            carriedOver,
+            discarded: false,
             usage: null,
             effort: null,
             blocks: userBlocks,
@@ -378,6 +507,8 @@ export async function parseTranscript(
           isMeta: false,
           isCompactSummary: false,
           systemSubtype: null,
+          carriedOver,
+          discarded: false,
           // A synthetic message was not produced by a model and is excluded from
           // every total; an id-less line has no dedupe key, so counting it could
           // multiply a streamed message across its chunks.
@@ -441,6 +572,8 @@ export async function parseTranscript(
           isMeta: false,
           isCompactSummary: false,
           systemSubtype: subtype,
+          carriedOver,
+          discarded: false,
           usage: null,
           effort: null,
           blocks: [
@@ -476,6 +609,8 @@ export async function parseTranscript(
         isMeta: o.isMeta === true,
         isCompactSummary: false,
         systemSubtype: subtype,
+        carriedOver,
+        discarded: false,
         usage: null,
         effort: null,
         blocks: [{ kind: 'text', text }],
@@ -483,11 +618,26 @@ export async function parseTranscript(
     }
   }
 
+  // What a rewind cut away, marked only once the whole tree is known. An item with
+  // no line uuid at all (a generated fallback id) is left alone: nothing places it,
+  // and a wrongly hidden message is worse than a wrongly shown one.
+  const cutAway = discardedUuids(treeLines);
+  if (cutAway.size > 0) {
+    for (const turn of turns) {
+      for (const item of turn.items) {
+        // `makeUuid` invents a `gen-` id for a line that carried none; those are
+        // not in the tree and must not decide anything.
+        const real = [item.uuid, ...item.aliasUuids].filter((u) => !u.startsWith(GEN_UUID_PREFIX));
+        if (real.length > 0 && real.every((u) => cutAway.has(u))) item.discarded = true;
+      }
+    }
+  }
+
   const fileChanges: FileChange[] = [...fileEdits.entries()]
     .map(([path, edits]) => ({ path, edits }))
     .sort((a, b) => b.edits.length - a.edits.length);
 
-  return { turns, prLinks, originSessionIds, fileChanges };
+  return { turns, prLinks, forkedFrom, fileChanges };
 }
 
 export async function parseSession(
@@ -497,18 +647,18 @@ export async function parseSession(
 ): Promise<SessionDetail> {
   const subagents = await loadSubagents(scanned.sessionDir);
   const agentIdByToolUse = new Map(subagents.filter((a) => a.toolUseId).map((a) => [a.toolUseId, a.agentId]));
-  const { turns, prLinks, originSessionIds, fileChanges } = await parseTranscript(
+  const { turns, prLinks, forkedFrom, fileChanges } = await parseTranscript(
     scanned.filePath,
     agentIdByToolUse,
     projectsDir,
   );
-  originSessionIds.delete(scanned.id);
   return {
     summary,
     turns,
     subagents,
     ancestry: {
-      resumedFrom: summary.enrichment?.resumedFrom ?? [...originSessionIds],
+      // The enrichment may not have run yet; the parse just read the same field.
+      forkedFrom: summary.enrichment?.forkedFrom ?? forkedFrom,
       descendants: summary.descendants,
     },
     prLinks: prLinks.length > 0 ? prLinks : (summary.enrichment?.prLinks ?? []),

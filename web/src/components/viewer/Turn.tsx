@@ -494,6 +494,25 @@ export function TurnView({
   const anyFolded = folded.responses > 0 || folded.tools > 0;
   const models = turnModels(turn);
   let promptShown = false;
+  // A rewind that cut in the MIDDLE of a turn: part of it is still the
+  // conversation and part of it is not. A turn cut away whole is folded one
+  // level up (`DiscardedBranch`), and splitting this one is not an option —
+  // two halves would each claim the turn's cost badge — so the turn says it
+  // outright instead of quietly reading as if all of it still stood.
+  const discardedItems = turn.items.filter((i) => i.discarded).length;
+  const partlyDiscarded = discardedItems > 0 && discardedItems < turn.items.length;
+  const discardedNotice = partlyDiscarded ? (
+    <div
+      key="rewound"
+      className="flex items-center gap-1.5 text-[10px] text-rose-300/70"
+      title="A /rewind branched away from the middle of this turn: Claude Code shows the conversation only up to that point, and what follows here it no longer shows. It was still billed."
+    >
+      <span className="rounded bg-rose-500/10 px-1.5 py-px font-semibold tracking-wider uppercase">rewound away</span>
+      <span>
+        {discardedItems} of {turn.items.length} messages in this turn were cut away by a rewind
+      </span>
+    </div>
+  ) : null;
   const foldStrip = (open: boolean) => (
     <FoldStrip
       key="fold"
@@ -527,6 +546,7 @@ export function TurnView({
     return (
       <div className="space-y-1.5">
         {!badgePlaced && turnBadge && <div className="flex justify-end">{turnBadge}</div>}
+        {discardedNotice}
         {nodes}
       </div>
     );
@@ -613,6 +633,7 @@ export function TurnView({
   return (
     <div className="space-y-1.5">
       {!badgePlaced && turnBadge && <div className="flex justify-end">{turnBadge}</div>}
+      {discardedNotice}
       {nodes}
     </div>
   );

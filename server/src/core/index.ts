@@ -289,20 +289,20 @@ export class SessionIndex {
         await this.cache.saveEntry('text', s.id, { ...key, blocks: data.searchBlocks } satisfies TextEntry);
       }
       summary.enrichment = enriched.enrichment;
-      this.linkAncestry(s.id, enriched.enrichment.resumedFrom);
+      this.linkFork(s.id, enriched.enrichment.forkedFrom);
       this.events.emit('session-updated', s.id);
     } catch (err) {
       log.warn(`failed to enrich ${s.filePath}`, err);
     }
   }
 
-  private linkAncestry(id: string, resumedFrom: string[]): void {
-    for (const ancestorId of resumedFrom) {
-      const ancestor = this.sessions.get(ancestorId);
-      if (ancestor && !ancestor.descendants.includes(id)) {
-        ancestor.descendants.push(id);
-        this.events.emit('session-updated', ancestorId);
-      }
+  /** The reverse of `forkedFrom`: the parent gets to know what was branched off it. */
+  private linkFork(id: string, forkedFrom: string | null): void {
+    if (!forkedFrom) return;
+    const parent = this.sessions.get(forkedFrom);
+    if (parent && !parent.descendants.includes(id)) {
+      parent.descendants.push(id);
+      this.events.emit('session-updated', forkedFrom);
     }
   }
 

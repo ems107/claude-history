@@ -27,14 +27,16 @@ function addUsage(totals: UsageTotals, usage: Record<string, unknown>): void {
 /**
  * Full single-pass parse of one transcript: exact counts, token totals
  * (assistant lines deduped by message.id — streamed turns repeat the usage
- * object), PR links, resume ancestry and extracted text for full-text search.
+ * object), PR links, fork ancestry and extracted text for full-text search.
  */
 export async function enrichSession(filePath: string, sessionId: string): Promise<EnrichData> {
   const usage = zeroUsage();
+  const carriedOverUsage = zeroUsage();
   const usageByModel: Record<string, UsageTotals> = {};
   const models = new Set<string>();
   const prLinks: PrLink[] = [];
-  const originSessionIds = new Set<string>();
+  const runIds = new Set<string>();
+  let forkedFrom: string | null = null;
   const seenMessageIds = new Set<string>();
   const promptIds = new Set<string>();
   const searchBlocks: SearchBlock[] = [];
@@ -74,8 +76,17 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
     // not, and neither did the indexed text.
     if (isReplay(o)) continue;
 
-    const originId = str(o.session_id);
-    if (originId) originSessionIds.add(originId);
+    // `session_id` names the RUN that wrote the line, NOT an ancestor: resuming
+    // from a fresh CLI stamps that CLI's id on everything it appends here. The
+    // real ancestry is `forkedFrom`, and only a fork has one.
+    const runId = str(o.session_id);
+    if (runId && runId !== sessionId) runIds.add(runId);
+    const fork = isRec(o.forkedFrom) ? str(o.forkedFrom.sessionId) : null;
+    if (fork && fork !== sessionId) forkedFrom ??= fork;
+    // A line `/branch` copied from the parent. It counts as content — it is
+    // rendered and searchable — but every AGGREGATE belongs to the parent, which
+    // already billed it and already counted its prompt on its own day.
+    const carried = fork !== null;
     const promptId = str(o.promptId);
     if (promptId) promptIds.add(promptId);
 
@@ -85,7 +96,7 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
         if (prompt) {
           userMessageCount++;
           const day = dayOf(o);
-          if (day) dayBucket(day).prompts++;
+          if (day && !carried) dayBucket(day).prompts++;
           searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text });
         }
       }
@@ -97,12 +108,16 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
         seenMessageIds.add(messageId);
         assistantMessageCount++;
         if (model && model !== '<synthetic>' && isRec(o.message.usage)) {
-          addUsage(usage, o.message.usage);
-          addUsage((usageByModel[model] ??= zeroUsage()), o.message.usage);
-          const day = dayOf(o);
-          if (day) {
-            const bucket = dayBucket(day);
-            addUsage((bucket.byModel[model] ??= zeroUsage()), o.message.usage);
+          if (carried) {
+            addUsage(carriedOverUsage, o.message.usage);
+          } else {
+            addUsage(usage, o.message.usage);
+            addUsage((usageByModel[model] ??= zeroUsage()), o.message.usage);
+            const day = dayOf(o);
+            if (day) {
+              const bucket = dayBucket(day);
+              addUsage((bucket.byModel[model] ??= zeroUsage()), o.message.usage);
+            }
           }
         }
       }
@@ -123,8 +138,6 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
     }
   }
 
-  originSessionIds.delete(sessionId);
-
   return {
     enrichment: {
       userMessageCount,
@@ -137,7 +150,9 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
       daily,
       models: [...models].sort(),
       prLinks,
-      resumedFrom: [...originSessionIds],
+      forkedFrom,
+      carriedOverUsage,
+      runIds: [...runIds],
     },
     searchBlocks,
   };

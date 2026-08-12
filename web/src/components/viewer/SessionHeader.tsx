@@ -261,12 +261,12 @@ export function SessionHeader({
         <button type="button" onClick={onToggleTokens} className={toggleClass(showTokens)}>
           Tokens
         </button>
-        {detail.ancestry.resumedFrom.length + detail.ancestry.descendants.length > 0 && (
+        {(detail.ancestry.forkedFrom !== null || detail.ancestry.descendants.length > 0) && (
           <button
             type="button"
             onClick={onToggleLineage}
             className={toggleClass(showLineage)}
-            title="Show the full resume/fork chain of this session"
+            title="Show the full fork chain of this session"
           >
             Lineage
           </button>
@@ -302,8 +302,16 @@ export function SessionHeader({
         {s.slug && <span className="font-mono opacity-70">{s.slug}</span>}
         {s.claudeVersion && <span className="opacity-70">cc {s.claudeVersion}</span>}
         <SessionBadges session={s} omitPr />
-        <AncestryChips label="resumed from" ids={detail.ancestry.resumedFrom} />
-        <AncestryChips label="continued in" ids={detail.ancestry.descendants} />
+        <AncestryChips label="forked from" ids={detail.ancestry.forkedFrom ? [detail.ancestry.forkedFrom] : []} />
+        <AncestryChips label="branched into" ids={detail.ancestry.descendants} />
+        {(s.enrichment?.runIds.length ?? 0) > 0 && (
+          <span
+            title={`Appended to by ${s.enrichment!.runIds.length} other Claude Code run(s) — what the transcript records in session_id: ${s.enrichment!.runIds.join(', ')}. Those are the ids of the CLI processes that resumed this session, not sessions it came from.`}
+          >
+            <span className="opacity-60">resumed ×</span>
+            {s.enrichment!.runIds.length}
+          </span>
+        )}
         {detail.prLinks.map((pr) => (
           <a
             key={pr.prUrl}

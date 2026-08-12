@@ -1,12 +1,13 @@
 import type { PriceTable, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
 import { type FoldState, turnKey } from '../../lib/folding.ts';
-import { buildSegments, type SegmentTurn } from '../../lib/segments.ts';
+import { buildSegments, groupTurns, type SegmentTurn } from '../../lib/segments.ts';
 import { CompactedSegment } from './CompactedSegment.tsx';
+import { DiscardedBranch } from './DiscardedBranch.tsx';
 import { TurnView } from './Turn.tsx';
 
 /** Stable identity, so the cost index is not rebuilt on every render before the prices arrive. */
@@ -51,6 +52,8 @@ export function TurnList({
   const segments = useMemo(() => buildSegments(turns), [turns]);
 
   const [openSegments, setOpenSegments] = useState<Set<number>>(() => new Set());
+  /** Rewound-away branches the user has opened, by their stable group key. */
+  const [openDiscarded, setOpenDiscarded] = useState<Set<string>>(() => new Set());
 
   // Read through a ref so this effect keys on the toggle ALONE: `segments` gets
   // a new identity on every refetch, and depending on it would re-fold whatever
@@ -65,13 +68,19 @@ export function TurnList({
 
   /** uuid (and every alias) → where it is, so a deep link can open its way in. */
   const locate = useMemo(() => {
-    const map = new Map<string, { segment: number; turn: string }>();
+    const map = new Map<string, { segment: number; turn: string; discarded: string | null }>();
     for (const segment of segments) {
-      for (const st of segment.turns) {
-        const at = { segment: segment.index, turn: keyOf(st) };
-        for (const item of st.turn.items) {
-          map.set(item.uuid, at);
-          for (const alias of item.aliasUuids) map.set(alias, at);
+      for (const group of groupTurns(segment.turns)) {
+        for (const st of group.turns) {
+          const at = {
+            segment: segment.index,
+            turn: keyOf(st),
+            discarded: group.kind === 'discarded' ? group.key : null,
+          };
+          for (const item of st.turn.items) {
+            map.set(item.uuid, at);
+            for (const alias of item.aliasUuids) map.set(alias, at);
+          }
         }
       }
     }
@@ -85,6 +94,10 @@ export function TurnList({
     const at = locate.get(scrollToUuid);
     if (at) {
       setOpenSegments((s) => (s.has(at.segment) ? s : new Set(s).add(at.segment)));
+      if (at.discarded) {
+        const key = at.discarded;
+        setOpenDiscarded((s) => (s.has(key) ? s : new Set(s).add(key)));
+      }
       fold.open(at.turn);
     }
     // Let the DOM settle before scrolling to the deep-linked message.
@@ -105,7 +118,7 @@ export function TurnList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToUuid]);
 
-  const renderTurns = (segmentTurns: SegmentTurn[]) =>
+  const renderPlain = (segmentTurns: SegmentTurn[]) =>
     segmentTurns.map((st) => {
       const key = keyOf(st);
       return (
@@ -123,6 +136,36 @@ export function TurnList({
         />
       );
     });
+
+  /**
+   * The turns of a segment, with every rewound-away run folded behind its own
+   * header. Grouping is presentation only, like the segments themselves: the
+   * cost and context indexes still run over every turn, by original index.
+   */
+  const renderTurns = (segmentTurns: SegmentTurn[]) =>
+    groupTurns(segmentTurns).map((group) =>
+      group.kind === 'live' ? (
+        // A keyed Fragment, not a bare array: the runs of a segment come and go
+        // as a live session grows, and React needs to tell them apart.
+        <Fragment key={`live-${keyOf(group.turns[0])}`}>{renderPlain(group.turns)}</Fragment>
+      ) : (
+        <DiscardedBranch
+          key={group.key}
+          turns={group.turns}
+          prices={prices}
+          open={openDiscarded.has(group.key)}
+          onToggle={() =>
+            setOpenDiscarded((s) => {
+              const next = new Set(s);
+              if (!next.delete(group.key)) next.add(group.key);
+              return next;
+            })
+          }
+        >
+          {openDiscarded.has(group.key) && renderPlain(group.turns)}
+        </DiscardedBranch>
+      ),
+    );
 
   return (
     <div className="space-y-4">

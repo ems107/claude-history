@@ -98,13 +98,37 @@ export interface SessionEnrichment {
   turnCount: number;
   /** `system`/`compact_boundary` lines: how many times this session was compacted. */
   compactionCount: number;
+  /**
+   * What THIS session spent. Carried-over lines are excluded (see
+   * `carriedOverUsage`), so summing sessions never bills a fork's copies twice.
+   */
   usage: UsageTotals;
   usageByModel: Record<string, UsageTotals>;
-  /** Per-UTC-day usage (yyyy-mm-dd) for the stats dashboard. */
+  /** Per-UTC-day usage (yyyy-mm-dd) for the stats dashboard. Carried-over lines excluded. */
   daily: Record<string, DailyUsage>;
   models: string[];
   prLinks: PrLink[];
-  resumedFrom: string[];
+  /**
+   * The session this one was forked from (`/branch`), read from the `forkedFrom`
+   * field Claude Code stamps on every copied line. The ONLY explicit ancestry in
+   * the format — see `runIds` for what used to be mistaken for it.
+   */
+  forkedFrom: string | null;
+  /**
+   * Tokens that arrived WITH the fork: lines copied from the parent, already
+   * billed there. Kept apart instead of dropped, because the viewer renders
+   * those messages and their pills have to add up to something.
+   */
+  carriedOverUsage: UsageTotals;
+  /**
+   * Other Claude Code runs that appended to this transcript, from the
+   * `session_id` field — which names the RUN that wrote a line, not an ancestor.
+   * Resuming a session from a fresh CLI stamps that CLI's id on everything it
+   * writes, and the id usually belongs to a 1-line stub with no conversation of
+   * its own. Verified across all 22 cases in this corpus: not one carries a
+   * copied uuid, so nothing here is history this session inherited.
+   */
+  runIds: string[];
 }
 
 export interface LiveInfo {
@@ -144,7 +168,7 @@ export interface SessionSummary {
   subagentCount: number;
   enrichment: SessionEnrichment | null;
   live: LiveInfo | null;
-  // Sessions this one was resumed *into* (computed from reverse ancestry).
+  // Sessions forked FROM this one (the reverse of their `forkedFrom`).
   descendants: string[];
 }
 
@@ -229,6 +253,21 @@ export interface MessageItem {
   isCompactSummary: boolean;
   /** system messages only */
   systemSubtype: string | null;
+  /**
+   * A line copied into this transcript by `/branch` (`forkedFrom` on the line):
+   * the exchange happened in the parent session and was billed there. Rendered
+   * like any other message — it IS the context the fork started from — but its
+   * cost belongs to the parent, and the fork's own total leaves it out.
+   */
+  carriedOver: boolean;
+  /**
+   * A message a `/rewind` cut away: it stays in the file forever, but nothing
+   * descends from it any more, so Claude Code stops showing it. True for every
+   * item outside the parent chain of the transcript's last message — which is
+   * the branch still alive. It was really said and really billed, so it is
+   * folded away rather than dropped.
+   */
+  discarded: boolean;
   /** Assistant only: tokens billed for this message; null for `<synthetic>` and for every other role. */
   usage: MessageUsage | null;
   /** Assistant only: the reasoning effort recorded on the line (`effort`), e.g. "xhigh". */
@@ -266,7 +305,8 @@ export interface SessionDetail {
   summary: SessionSummary;
   turns: Turn[];
   subagents: SubagentMeta[];
-  ancestry: { resumedFrom: string[]; descendants: string[] };
+  /** `forkedFrom`: the session `/branch` copied this one's context from. */
+  ancestry: { forkedFrom: string | null; descendants: string[] };
   prLinks: PrLink[];
   /** Files touched by Edit/Write tool calls in THIS transcript (subagent edits live in their own transcripts). */
   fileChanges: FileChange[];

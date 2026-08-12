@@ -55,12 +55,12 @@ export function SessionBadges({ session, omitPr = false }: { session: SessionSum
       />,
     );
   }
-  if (session.enrichment && session.enrichment.resumedFrom.length > 0) {
+  if (session.enrichment?.forkedFrom) {
     badges.push(
       <Badge
-        key="resumed"
-        label="resumed"
-        title={`Resumed from ${session.enrichment.resumedFrom.join(', ')}`}
+        key="fork"
+        label="fork"
+        title={`Branched off session ${session.enrichment.forkedFrom}`}
         className="bg-amber-500/15 text-amber-400"
       />,
     );
