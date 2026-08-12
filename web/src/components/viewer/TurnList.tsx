@@ -1,6 +1,6 @@
 import type { PriceTable, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
@@ -44,6 +44,7 @@ export function TurnList({
   scrollToTool,
   highlight,
   onOpenAgent,
+  footer,
 }: {
   turns: Turn[];
   showThinking: boolean;
@@ -62,6 +63,13 @@ export function TurnList({
   /** The words a search matched, when the link came from one. */
   highlight?: MatchHighlight | null;
   onOpenAgent?: (agentId: string) => void;
+  /**
+   * Hung at the end of the last turn still in the conversation — the working
+   * indicator. It goes through the turn rather than after the list so it lands
+   * on that turn's rail, which is what makes it read as the answer coming in
+   * instead of as a sibling of the prompt.
+   */
+  footer?: ReactNode;
 }) {
   // The same cached query the token panel uses — no extra request.
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
@@ -233,12 +241,30 @@ export function TurnList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scrollToUuid, scrollToTool]);
 
+  /**
+   * The turn the footer belongs to: the last one of the live segment, and only
+   * if it is still part of the conversation. A rewound-away branch is history —
+   * hanging "Claude is working" off it would say the abandoned exchange is the
+   * one being answered. Null means there is nowhere to put it (an empty session,
+   * or a last group that is discarded), and it is rendered on its own below.
+   */
+  const footerTurnKey = useMemo(() => {
+    const last = segments[segments.length - 1];
+    if (!last) return null;
+    const groups = groupTurns(last.turns);
+    const lastGroup = groups[groups.length - 1];
+    if (!lastGroup || lastGroup.kind !== 'live') return null;
+    const st = lastGroup.turns[lastGroup.turns.length - 1];
+    return st ? keyOf(st) : null;
+  }, [segments]);
+
   const renderPlain = (segmentTurns: SegmentTurn[]) =>
     segmentTurns.map((st) => {
       const key = keyOf(st);
       return (
         <TurnView
           key={key}
+          footer={footer && key === footerTurnKey ? footer : undefined}
           turn={st.turn}
           showThinking={showThinking}
           expandTools={expandTools}
@@ -308,6 +334,9 @@ export function TurnList({
           </CompactedSegment>
         ),
       )}
+      {/* Nowhere to hang it: no turns at all, or a last group that is a rewound
+          branch. Better loose than attached to the wrong exchange. */}
+      {footer && footerTurnKey === null && footer}
     </div>
   );
 }

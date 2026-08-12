@@ -13,6 +13,15 @@ import { Bubble } from './Bubble.tsx';
 const BUSY = 'busy';
 
 /**
+ * Whether this session is mid-turn. Exported because the caller has to know
+ * BEFORE rendering: the indicator hangs on the turn's rail, and a rail built
+ * around a component that renders nothing is a stray green line down the page.
+ */
+export function isWorking(live: LiveInfo | null | undefined): boolean {
+  return live?.status === BUSY;
+}
+
+/**
  * "Claude is working" at the foot of a live conversation.
  *
  * This is the closest an on-disk reader can get to the CLI's streaming answer,
@@ -28,7 +37,7 @@ const BUSY = 'busy';
  * pill keeps it in view as the answer grows.
  */
 export function WorkingIndicator({ live }: { live: LiveInfo | null }) {
-  const busy = live?.status === BUSY;
+  const busy = isWorking(live);
   const since = live?.statusUpdatedAt ?? live?.updatedAt ?? null;
   // The counter is re-rendered, not recomputed from a stored value: `elapsed`
   // reads the clock, so a tick a second is all it takes to keep it truthful.
@@ -43,8 +52,10 @@ export function WorkingIndicator({ live }: { live: LiveInfo | null }) {
   if (!busy) return null;
   const spent = since === null ? null : elapsed(since);
 
+  // No margin of its own: it is spaced by whatever holds it — the turn's rail,
+  // or the list itself when there is no turn to hang it on.
   return (
-    <div className="mt-3" role="status">
+    <div role="status">
       <Bubble side="assistant">
         {/* py-1.5 is headroom, not padding: the dots rise 5 px out of their line
             and a tight row would clip the top of the wave. */}

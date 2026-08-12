@@ -20,6 +20,15 @@ import { ToolBlock } from './ToolBlock.tsx';
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
 /**
+ * The rail a prompt's answers hang from. Named because a turn can need one it
+ * did not grow on its own: a turn still being answered has produced nothing to
+ * fold yet, and the working indicator has to line up with the replies all the
+ * same — at the root level it read as a sibling of the prompt rather than as
+ * the answer arriving.
+ */
+const RAIL = 'ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3';
+
+/**
  * A tool call plus the assistant message that made it. `costOwner` is false when
  * that message prints its own header: its cost is shown there, and counting it
  * again on the tool run would double it.
@@ -456,6 +465,7 @@ export function TurnView({
   expanded = true,
   onToggleExpanded,
   targetTool,
+  footer,
 }: {
   turn: TurnType;
   showThinking: boolean;
@@ -471,6 +481,13 @@ export function TurnView({
   onToggleExpanded?: () => void;
   /** A search result's tool call: its run and the call itself open on arrival. */
   targetTool?: string | null;
+  /**
+   * Presentation hung at the end of the turn, on its rail — today only the
+   * working indicator, which belongs to the answer being written and not to the
+   * conversation. It is NOT an item: it never reaches `turn.items`, so nothing
+   * that folds, counts or prices a message can see it.
+   */
+  footer?: ReactNode;
 }) {
   // Tool runs are grouped across items, not just within one assistant
   // message: a turn is usually assistant(tool) → assistant(tool) → … and the
@@ -592,6 +609,9 @@ export function TurnView({
         {!badgePlaced && turnBadge && <div className="flex justify-end">{turnBadge}</div>}
         {discardedNotice}
         {nodes}
+        {/* Shown even folded: "Claude is working" is live news, and hiding it
+            because the user collapsed the turn would answer the wrong question. */}
+        {footer && <div className={RAIL}>{footer}</div>}
       </div>
     );
   }
@@ -672,9 +692,19 @@ export function TurnView({
   if (anyFolded) {
     const produced = nodes.splice(foldAt ?? nodes.length);
     nodes.push(
-      <div key="folded" className="ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3">
+      <div key="folded" className={RAIL}>
         {foldStrip(true)}
         {produced}
+        {footer}
+      </div>,
+    );
+  } else if (footer) {
+    // A turn with nothing to fold yet — the prompt is in, the answer is not —
+    // still puts the indicator on a rail of its own, so the reply starts where
+    // every other reply starts instead of jumping left.
+    nodes.push(
+      <div key="working" className={RAIL}>
+        {footer}
       </div>,
     );
   }

@@ -16,7 +16,7 @@ import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
 import { ViewButton } from '../components/viewer/ViewButton.tsx';
-import { WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
+import { isWorking, WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 /** Stable identity while the conversation loads, so the fold state is not rebuilt. */
@@ -126,6 +126,7 @@ export function SessionViewPage() {
 
   const color =
     projects.data?.find((p) => p.key === detail.data.summary.projectKey)?.color ?? FALLBACK_COLOR;
+  const liveInfo = live.data?.find((l) => l.sessionId === id) ?? null;
 
   return (
     <div className="flex h-full flex-col">
@@ -200,13 +201,15 @@ export function SessionViewPage() {
                 scrollToTool={tool}
                 highlight={highlight}
                 onOpenAgent={openAgent}
+                // Handed to the list, which hangs it off the last turn's rail:
+                // an answer being written belongs where the answers are, not at
+                // the root level beside the prompt. Passed only while it has
+                // something to draw — see isWorking.
+                footer={isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined}
               />
               {detail.data.turns.length === 0 && (
                 <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
               )}
-              {/* Below TurnList, never inside it: this is not a message and must
-                  stay out of everything that folds, counts or prices one. */}
-              <WorkingIndicator live={live.data?.find((l) => l.sessionId === id) ?? null} />
             </div>
           </div>
         </div>
