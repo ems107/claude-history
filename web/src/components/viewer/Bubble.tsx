@@ -58,7 +58,7 @@ export function Bubble({
       data-bubble={side}
       className={`group/bubble relative w-full rounded-lg border px-3 py-2 ${STYLES[side].shell}`}
     >
-      <span aria-hidden className={`absolute top-4 size-3 rotate-45 ${STYLES[side].tail}`} />
+      <span aria-hidden data-bubble-tail className={`absolute top-4 size-3 rotate-45 ${STYLES[side].tail}`} />
       {header}
       <div ref={bodyRef} data-bubble-body className="min-w-0">
         {children}

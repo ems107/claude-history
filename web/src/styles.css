@@ -67,6 +67,7 @@ body {
 @keyframes match-flash {
   0%,
   60% {
+    border-color: var(--accent);
     box-shadow:
       0 0 0 2px var(--accent),
       inset 0 0 0 9999px color-mix(in srgb, var(--accent) 10%, transparent);
@@ -75,11 +76,36 @@ body {
     box-shadow:
       0 0 0 2px transparent,
       inset 0 0 0 9999px transparent;
+    /* border-color is deliberately absent here: an omitted property takes the
+       element's own value as the endpoint, which is how one animation serves a
+       user bubble, an assistant one and an amber panel without knowing their
+       colours. Naming a colour would mean naming the wrong one twice. */
+  }
+}
+
+/* The tail is a separate element with its own border and its own opaque fill, so
+   the bubble's flash does not reach it: the corner kept the old colour AND its
+   fill painted over the ring, punching a dark notch in the very line it exists
+   to continue. It gets the same pass, colour and tint alike — the tint as an
+   inset shadow again, so this needs to know no more about the two sides than the
+   rule above does. */
+@keyframes match-flash-tail {
+  0%,
+  60% {
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  100% {
+    box-shadow: inset 0 0 0 9999px transparent;
   }
 }
 
 .match-flash {
   animation: match-flash 2.5s ease-out;
+}
+
+.match-flash [data-bubble-tail] {
+  animation: match-flash-tail 2.5s ease-out;
 }
 
 /* The words themselves, marked through the CSS Custom Highlight API — the
