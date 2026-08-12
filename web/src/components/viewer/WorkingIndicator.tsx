@@ -65,7 +65,7 @@ export function WorkingIndicator({ live }: { live: LiveInfo | null }) {
             {[0, 150, 300].map((delay) => (
               <span
                 key={delay}
-                className="working-dot size-2 rounded-full bg-[var(--accent)]"
+                className="working-dot size-[7px] rounded-full bg-[var(--accent)]"
                 style={{ animationDelay: `${delay}ms` }}
               />
             ))}
