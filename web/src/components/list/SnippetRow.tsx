@@ -1,6 +1,6 @@
 import type { SearchQueryEcho, SearchSnippet } from '@claude-history/shared';
 import { Link } from 'react-router';
-import { highlightSearchParams } from '../../lib/highlight.ts';
+import { highlightSearchParams, TOOL_PARAM } from '../../lib/highlight.ts';
 
 /**
  * One matched snippet, linking into the session at the message it came from.
@@ -26,9 +26,12 @@ export function SnippetRow({
   query: SearchQueryEcho;
 }) {
   let to = `/session/${sessionId}`;
-  if (snippet.uuid) {
+  if (snippet.uuid || snippet.toolUseId) {
     const params = highlightSearchParams(query);
-    params.set('msg', snippet.uuid);
+    if (snippet.uuid) params.set('msg', snippet.uuid);
+    // A tool hit needs its run and its own block opened, and neither is
+    // reachable from a line uuid — see the comment on the field.
+    if (snippet.toolUseId) params.set(TOOL_PARAM, snippet.toolUseId);
     to += `?${params}`;
   }
   return (

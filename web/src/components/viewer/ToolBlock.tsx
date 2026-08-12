@@ -1,15 +1,45 @@
 import type { ContentBlock } from '@claude-history/shared';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes } from '../../lib/format.ts';
 import { FoldHeader } from './FoldHeader.tsx';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
-function OffloadedResult({ path, sizeBytes }: { path: string; sizeBytes: number | null }) {
+function OffloadedResult({
+  path,
+  sizeBytes,
+  autoLoad = false,
+}: {
+  path: string;
+  sizeBytes: number | null;
+  /**
+   * A search sent the reader here, and the words looked for can be in this file
+   * and nowhere else: 34% of the corpus is tool output and the deep scan reads
+   * these too. Arriving at a button that says "Load full output" would be
+   * arriving at the wrong answer to "show me the hit".
+   */
+  autoLoad?: boolean;
+}) {
   const [text, setText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    setLoading(true);
+    api
+      .toolResult(path)
+      .then((r) => setText(r.text))
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
+  };
+  const started = loading || text !== null || error !== null;
+  useEffect(() => {
+    if (autoLoad && !started) load();
+    // Once per arrival: the load itself flips `started`, and re-running on it
+    // would either loop or re-fetch a file that failed for a reason of its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoad]);
 
   if (text !== null) {
     return <pre className="mt-1 max-h-96 overflow-auto rounded bg-black/40 p-2 text-xs whitespace-pre-wrap">{text}</pre>;
@@ -18,14 +48,7 @@ function OffloadedResult({ path, sizeBytes }: { path: string; sizeBytes: number 
     <button
       type="button"
       disabled={loading}
-      onClick={() => {
-        setLoading(true);
-        api
-          .toolResult(path)
-          .then((r) => setText(r.text))
-          .catch((e) => setError(String(e)))
-          .finally(() => setLoading(false));
-      }}
+      onClick={load}
       className="mt-1 cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
     >
       {error ? `Failed: ${error}` : loading ? 'Loading…' : `Load full output${sizeBytes ? ` (${formatBytes(sizeBytes)})` : ''}`}
@@ -37,18 +60,32 @@ export function ToolBlock({
   block,
   onOpenAgent,
   costBadge,
+  targeted = false,
 }: {
   block: ToolContentBlock;
   onOpenAgent?: (agentId: string) => void;
   /** Set on the first call of each assistant message — what that message was billed. */
   costBadge?: ReactNode;
+  /** A deep link points at this call: open it, and show the whole of its output. */
+  targeted?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(targeted);
+  // Deliberately not `open={targeted || open}`: this opens it and then lets go,
+  // so the reader can still fold it back with the link's parameter still in the URL.
+  useEffect(() => {
+    if (targeted) setOpen(true);
+  }, [targeted]);
   const result = block.result;
   const statusColor = result ? (result.isError ? 'bg-red-400' : 'bg-emerald-400') : 'bg-zinc-500';
 
   return (
-    <div className="my-1.5 rounded border border-[var(--border)] bg-[var(--bg-raised)]/60">
+    // The anchor a search result scrolls to and flashes. A data attribute rather
+    // than an id: tool ids come out of the transcript and share the document with
+    // message uuids, and nothing here needs to be a fragment target.
+    <div
+      data-tool-id={block.toolUseId || undefined}
+      className="my-1.5 rounded border border-[var(--border)] bg-[var(--bg-raised)]/60"
+    >
       <div className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs">
         <FoldHeader open={open} onToggle={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
           <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
@@ -93,7 +130,9 @@ export function ToolBlock({
               >
                 {result.text}
               </pre>
-              {result.offloadedFile && <OffloadedResult path={result.offloadedFile} sizeBytes={null} />}
+              {result.offloadedFile && (
+                <OffloadedResult path={result.offloadedFile} sizeBytes={null} autoLoad={targeted} />
+              )}
             </>
           )}
         </div>

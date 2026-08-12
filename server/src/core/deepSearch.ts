@@ -349,14 +349,19 @@ export class DeepSearchService {
         if (isReplay(o)) continue;
         const uuid = str(o.uuid);
         const message = isRec(o.message) ? o.message : null;
+        // The tool this line's output belongs to, so an offloaded chunk (which
+        // arrives from `toolUseResult`, outside the content array) can be
+        // anchored to the same call as the inline part of it.
+        let resultOf: string | null = null;
         if (message && Array.isArray(message.content)) {
           for (const block of message.content) {
             if (!isRec(block)) continue;
             if (block.type === 'tool_use') {
-              yield { uuid, role: 'call', text: toolCallText(block) };
+              yield { uuid, role: 'call', text: toolCallText(block), toolUseId: str(block.id) };
             } else if (block.type === 'tool_result') {
+              resultOf ??= str(block.tool_use_id);
               const text = toolResultText(block.content);
-              if (text.trim()) yield { uuid, role: 'tool', text };
+              if (text.trim()) yield { uuid, role: 'tool', text, toolUseId: str(block.tool_use_id) };
             }
           }
         }
@@ -364,7 +369,7 @@ export class DeepSearchService {
         const persisted = result ? str(result.persistedOutputPath) : null;
         if (persisted) {
           const text = await this.readPersisted(persisted, scan);
-          if (text) yield { uuid, role: 'tool', text };
+          if (text) yield { uuid, role: 'tool', text, toolUseId: resultOf };
         }
       }
     } catch (err) {
@@ -391,7 +396,9 @@ export class DeepSearchService {
           if (!message) continue;
           // A subagent line's uuid means nothing to the viewer, which knows only
           // the parent transcript -- so the snippet links to the session with no
-          // anchor rather than to an anchor that resolves nowhere.
+          // anchor rather than to an anchor that resolves nowhere. Its tool ids
+          // are in the same position: they exist only inside this transcript, and
+          // the parent's parse holds no block carrying one.
           if (typeof message.content === 'string') {
             if (message.content.trim()) yield { uuid: null, role: 'agent', text: message.content };
           } else if (Array.isArray(message.content)) {

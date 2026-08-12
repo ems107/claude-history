@@ -6,6 +6,13 @@ export interface SearchBlock {
   uuid: string | null;
   role: string;
   text: string;
+  /**
+   * Only on the blocks the deep scan reads: which tool call this text belongs to.
+   * A line uuid cannot say it — one assistant message carries several calls, and
+   * the line that carries a `tool_result` is not rendered at all — so this is the
+   * only anchor that can open the right tool in the viewer.
+   */
+  toolUseId?: string | null;
 }
 
 export interface EnrichData {

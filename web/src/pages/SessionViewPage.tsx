@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { useFoldState } from '../lib/folding.ts';
-import { parseHighlight } from '../lib/highlight.ts';
+import { parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
@@ -39,6 +39,7 @@ export function SessionViewPage() {
   const follow = useFollowBottom(id);
 
   const msg = searchParams.get('msg');
+  const tool = searchParams.get(TOOL_PARAM);
   const agentId = searchParams.get('agent');
   // Memoised on the querystring so the identity is stable: the viewer's deep-link
   // effect must fire for the link, not for a re-render.
@@ -175,6 +176,7 @@ export function SessionViewPage() {
                 fold={fold}
                 expandSegments={expandSegments}
                 scrollToUuid={msg}
+                scrollToTool={tool}
                 highlight={highlight}
                 onOpenAgent={openAgent}
               />

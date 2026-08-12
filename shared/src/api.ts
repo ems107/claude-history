@@ -47,6 +47,13 @@ export interface SearchSnippet {
   uuid: string | null;
   role: string;
   parts: { text: string; hit?: true }[];
+  /**
+   * The tool call this text belongs to, on the deep scan's `call`/`tool`
+   * snippets. Only this can open the right tool in the viewer: a line uuid does
+   * not identify one (an assistant message carries several calls) and the line
+   * carrying a `tool_result` is rendered nowhere at all.
+   */
+  toolUseId: string | null;
 }
 
 export interface SearchHit {

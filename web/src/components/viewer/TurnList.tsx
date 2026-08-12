@@ -5,7 +5,7 @@ import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
 import { type FoldState, turnKey } from '../../lib/folding.ts';
-import { type MatchHighlight, markMatches } from '../../lib/highlight.ts';
+import { type MatchHighlight, markMatches, revealRange } from '../../lib/highlight.ts';
 import { buildSegments, groupTurns, type SegmentTurn } from '../../lib/segments.ts';
 import { CompactedSegment } from './CompactedSegment.tsx';
 import { DiscardedBranch } from './DiscardedBranch.tsx';
@@ -21,6 +21,16 @@ const FLASH_MS = 2500;
  * own. Long enough to do that, short enough that the page is not left painted.
  */
 const MARK_MS = 8000;
+/**
+ * How long the anchor is looked for. Opening the way in is a chain of state
+ * updates — segment, rewound branch, turn, tool run, tool block — so the element
+ * to flash does not exist when the effect runs, and on a multi-megabyte session
+ * the first paint is not instant either.
+ */
+const ANCHOR_STEP_MS = 100;
+const ANCHOR_TRIES = 15;
+/** When an offloaded tool output, fetched on arrival, would have landed. */
+const LATE_TEXT_MS = 900;
 
 const keyOf = (t: SegmentTurn): string => turnKey(t.turn, t.index);
 
@@ -31,6 +41,7 @@ export function TurnList({
   fold,
   expandSegments = false,
   scrollToUuid,
+  scrollToTool,
   highlight,
   onOpenAgent,
 }: {
@@ -42,6 +53,12 @@ export function TurnList({
   /** Unfold every compacted segment at once (the header toggle). */
   expandSegments?: boolean;
   scrollToUuid?: string | null;
+  /**
+   * A tool call to open and go to (`?tool=`), which is the only anchor a hit in
+   * tool output has: it is not a message, and the line carrying its result is
+   * rendered nowhere. It wins over `scrollToUuid` when both are given.
+   */
+  scrollToTool?: string | null;
   /** The words a search matched, when the link came from one. */
   highlight?: MatchHighlight | null;
   onOpenAgent?: (agentId: string) => void;
@@ -78,7 +95,11 @@ export function TurnList({
     );
   }, [expandSegments]);
 
-  /** uuid (and every alias) → where it is, so a deep link can open its way in. */
+  /**
+   * uuid (and every alias) → where it is, so a deep link can open its way in.
+   * Tool calls are in the same map: a hit in tool output is anchored by its
+   * `toolUseId`, and it has to open the same segment and turn as any other.
+   */
   const locate = useMemo(() => {
     const map = new Map<string, { segment: number; turn: string; discarded: string | null }>();
     for (const segment of segments) {
@@ -92,6 +113,9 @@ export function TurnList({
           for (const item of st.turn.items) {
             map.set(item.uuid, at);
             for (const alias of item.aliasUuids) map.set(alias, at);
+            for (const block of item.blocks) {
+              if (block.kind === 'tool' && block.toolUseId) map.set(block.toolUseId, at);
+            }
           }
         }
       }
@@ -105,10 +129,16 @@ export function TurnList({
   highlightRef.current = highlight;
 
   useEffect(() => {
-    if (!scrollToUuid) return;
-    // A folded segment or turn would swallow the link silently, so open the
-    // way in first — the state lands well before the scroll below fires.
-    const at = locate.get(scrollToUuid);
+    // A tool call is the more precise anchor and wins: a `call` hit also carries
+    // the uuid of the message that made it, which would flash a whole answer
+    // instead of the one call among a run of thirty.
+    const anchor = scrollToTool ?? scrollToUuid;
+    if (!anchor) return;
+    // A folded segment, a rewound-away branch or a folded turn would swallow the
+    // link silently, so open the way in first — the state lands well before the
+    // scroll below fires. The tool's own run and block open on the way down, from
+    // `targetTool`; this only has to make the turn itself visible.
+    const at = locate.get(anchor);
     if (at) {
       setOpenSegments((s) => (s.has(at.segment) ? s : new Set(s).add(at.segment)));
       if (at.discarded) {
@@ -117,41 +147,80 @@ export function TurnList({
       }
       fold.open(at.turn);
     }
-    // Let the DOM settle before scrolling to the deep-linked message.
+
     const timers: ReturnType<typeof setTimeout>[] = [];
     let clearMarks: (() => void) | null = null;
-    timers.push(
-      setTimeout(() => {
-        const el = document.getElementById(scrollToUuid);
-        if (!el) return;
-        // The anchor may be an alias uuid — a zero-sized <span> inside the
-        // bubble — so what gets flashed is the box, not whatever carries the id.
-        const box = el.closest<HTMLElement>('[data-bubble]') ?? el;
-        box.scrollIntoView({ block: 'center' });
-        box.classList.add('match-flash');
-        timers.push(setTimeout(() => box.classList.remove('match-flash'), FLASH_MS));
+    const find = (): HTMLElement | null => {
+      if (scrollToTool) {
+        const tool = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(scrollToTool)}"]`);
+        if (tool) return tool;
+        // Only then the message: a tool id this parse does not hold (a fork, a
+        // subagent's own call) still lands on the exchange it belonged to.
+        if (!scrollToUuid) return null;
+      }
+      return scrollToUuid ? document.getElementById(scrollToUuid) : null;
+    };
 
-        const hl = highlightRef.current;
-        if (!hl) return;
-        const marked = markMatches(box.querySelector<HTMLElement>('[data-bubble-body]') ?? box, hl);
+    const arrive = (el: HTMLElement): void => {
+      // The anchor may be an alias uuid — a zero-sized <span> inside the bubble —
+      // so what gets flashed is the box, not whatever carries the id. A tool block
+      // is its own box and sits outside any bubble.
+      const box = el.closest<HTMLElement>('[data-bubble]') ?? el;
+      box.scrollIntoView({ block: 'center' });
+      box.classList.add('match-flash');
+      timers.push(setTimeout(() => box.classList.remove('match-flash'), FLASH_MS));
+
+      const hl = highlightRef.current;
+      if (!hl) return;
+      // A bubble marks its body only, to keep the role and the model out of it;
+      // a tool block has no such split, and its header — the tool name and its
+      // input summary — is often exactly where the hit is.
+      const body = box.querySelector<HTMLElement>('[data-bubble-body]') ?? box;
+      const mark = () => {
+        clearMarks?.();
+        const marked = markMatches(body, hl);
         clearMarks = marked.clear;
-        timers.push(
-          setTimeout(() => {
-            marked.clear();
-            clearMarks = null;
-          }, MARK_MS),
-        );
-        // A long answer can be taller than the window, so centring the bubble is
-        // no promise that the match is on screen. Only then is the paragraph
-        // holding it scrolled to: doing it always would push the bubble's own
-        // header — role, time, cost — out of view for nothing.
-        const rect = marked.first?.getBoundingClientRect();
-        if (rect && (rect.top < 0 || rect.bottom > window.innerHeight)) {
-          const target = marked.first?.startContainer.parentElement;
-          target?.scrollIntoView({ block: 'center' });
-        }
-      }, 100),
-    );
+        return marked;
+      };
+      const marked = mark();
+      timers.push(
+        setTimeout(() => {
+          clearMarks?.();
+          clearMarks = null;
+        }, MARK_MS),
+      );
+      // A long answer, or a tool result of a thousand lines, can be taller than
+      // the window — or scroll inside its own box — so centring the box is no
+      // promise that the match is on screen. `revealRange` moves only what has to
+      // move, and nothing at all when the mark is already in view: centring is
+      // otherwise thrown away, taking the box's own header with it.
+      if (marked.first) revealRange(marked.first);
+      // An offloaded tool output is fetched on arrival and lands after this pass,
+      // so the text searched may not be here yet. Re-marking once, and only when
+      // the text really changed, is what covers that without a second guess.
+      const settled = body.textContent?.length ?? 0;
+      timers.push(
+        setTimeout(() => {
+          if (!clearMarks || (body.textContent?.length ?? 0) === settled) return;
+          const late = mark();
+          if (late.first) revealRange(late.first);
+        }, LATE_TEXT_MS),
+      );
+    };
+
+    // Polled rather than waited out once: opening the way in is a chain of state
+    // updates — segment, branch, turn, tool run, tool block — and a single 100 ms
+    // guess at the end of it is a race on a big session.
+    let tries = 0;
+    const attempt = (): void => {
+      const el = find();
+      if (el) {
+        arrive(el);
+        return;
+      }
+      if (++tries < ANCHOR_TRIES) timers.push(setTimeout(attempt, ANCHOR_STEP_MS));
+    };
+    timers.push(setTimeout(attempt, ANCHOR_STEP_MS));
     return () => {
       for (const t of timers) clearTimeout(t);
       clearMarks?.();
@@ -162,7 +231,7 @@ export function TurnList({
     // follow-the-end button for control of the scroll. The turns are already
     // rendered when this mounts, so there is nothing to wait for.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToUuid]);
+  }, [scrollToUuid, scrollToTool]);
 
   const renderPlain = (segmentTurns: SegmentTurn[]) =>
     segmentTurns.map((st) => {
@@ -179,6 +248,7 @@ export function TurnList({
           turnContext={contextIndex.perTurn[st.index] ?? null}
           expanded={fold.isOpen(key)}
           onToggleExpanded={() => fold.toggle(key)}
+          targetTool={scrollToTool}
         />
       );
     });

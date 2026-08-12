@@ -116,5 +116,5 @@ export function buildSnippet(
   }
   push(lead + oneLine(text.slice(at(cursor), at(endFold))) + (endFold < map.length ? '…' : ''));
 
-  return { uuid: block.uuid, role: block.role, parts };
+  return { uuid: block.uuid, role: block.role, parts, toolUseId: block.toolUseId ?? null };
 }

@@ -14,6 +14,8 @@ export interface MatchHighlight {
 /** One `hl` per term: a phrase term holds spaces, so a joined list could not be split back. */
 const TERM_PARAM = 'hl';
 const WHOLE_WORD_PARAM = 'hlw';
+/** Which tool call to open, when the hit was in one. */
+export const TOOL_PARAM = 'tool';
 /** The registered name of the CSS highlight; `::highlight()` in styles.css must match. */
 const HIGHLIGHT_NAME = 'search-match';
 /** A term can match hundreds of times in one long answer; marks past this add nothing. */
@@ -97,6 +99,35 @@ export function matchSpans(texts: string[], hl: MatchHighlight, max = MAX_MARKS)
   // Document order, so "the first" is the one nearest the top of the message.
   spans.sort((a, b) => a.start.piece - b.start.piece || a.start.offset - b.start.offset);
   return spans;
+}
+
+/**
+ * Brings a marked range into view — and does nothing when it already is.
+ *
+ * Scrolling the page to the box that holds a match is not the same as showing
+ * the match: a tool result renders inside a `max-h-96 overflow-auto` pre, so a
+ * hit 2,000 lines down was on screen only in the sense that its container was.
+ * Every scroller between the text and the window gets its turn, innermost first,
+ * each measured again after the one inside it moved.
+ */
+export function revealRange(range: Range): void {
+  const scrollers: Element[] = [];
+  for (let node = range.startContainer.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY;
+    if ((overflow === 'auto' || overflow === 'scroll') && node.scrollHeight > node.clientHeight + 1) {
+      scrollers.push(node);
+    }
+  }
+  for (const scroller of scrollers) {
+    const rect = range.getBoundingClientRect();
+    const box = scroller.getBoundingClientRect();
+    if (rect.top >= box.top && rect.bottom <= box.bottom) continue;
+    scroller.scrollTop += rect.top - box.top - box.height / 2 + rect.height / 2;
+  }
+  const rect = range.getBoundingClientRect();
+  if (rect.top < 0 || rect.bottom > window.innerHeight) {
+    range.startContainer.parentElement?.scrollIntoView({ block: 'center' });
+  }
 }
 
 /**

@@ -131,14 +131,24 @@ function ToolGroup({
   expandAll,
   onOpenAgent,
   costs,
+  targetTool,
 }: {
   tools: PendingTool[];
   expandAll: boolean;
   onOpenAgent?: (agentId: string) => void;
   costs: CostContext;
+  /** A deep link's tool call: the run holding it has to be open to show it. */
+  targetTool?: string | null;
 }) {
-  const [open, setOpen] = useState(expandAll);
+  const holdsTarget = !!targetTool && tools.some((t) => t.block.toolUseId === targetTool);
+  const [open, setOpen] = useState(expandAll || holdsTarget);
   useEffect(() => setOpen(expandAll), [expandAll]);
+  // AFTER the one above, and that order is the whole of it: effects run in
+  // declaration order, and a mount runs both — so this one has the last word and
+  // a run holding the link's target opens whatever the Tools toggle says.
+  useEffect(() => {
+    if (holdsTarget) setOpen(true);
+  }, [holdsTarget]);
 
   const blocks = tools.map((t) => t.block);
   const names = [...new Set(blocks.map((b) => b.toolName))];
@@ -177,6 +187,7 @@ function ToolGroup({
               key={i}
               block={t.block}
               onOpenAgent={onOpenAgent}
+              targeted={!!targetTool && t.block.toolUseId === targetTool}
               costBadge={
                 entry ? (
                   <CostPill
@@ -444,6 +455,7 @@ export function TurnView({
   turnContext,
   expanded = true,
   onToggleExpanded,
+  targetTool,
 }: {
   turn: TurnType;
   showThinking: boolean;
@@ -457,6 +469,8 @@ export function TurnView({
   /** Folded, the turn shows its prompt and one line for what it produced. */
   expanded?: boolean;
   onToggleExpanded?: () => void;
+  /** A search result's tool call: its run and the call itself open on arrival. */
+  targetTool?: string | null;
 }) {
   // Tool runs are grouped across items, not just within one assistant
   // message: a turn is usually assistant(tool) → assistant(tool) → … and the
@@ -479,7 +493,13 @@ export function TurnView({
       // No indent of its own: a run only ever renders inside the fold rail,
       // which already carries one.
       <div key={`tools-${nodes.length}`}>
-        <ToolGroup tools={pendingTools} expandAll={expandTools} onOpenAgent={onOpenAgent} costs={costs} />
+        <ToolGroup
+          tools={pendingTools}
+          expandAll={expandTools}
+          onOpenAgent={onOpenAgent}
+          costs={costs}
+          targetTool={targetTool}
+        />
       </div>,
     );
     pendingTools = [];
