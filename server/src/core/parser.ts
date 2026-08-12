@@ -14,7 +14,7 @@ import type {
   Turn,
 } from '@claude-history/shared';
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
-import { isRec, num, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
+import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
 import { extractPrompt } from './summarizer.ts';
 
@@ -219,6 +219,7 @@ export async function parseTranscript(
   const assistantItems = new Map<string, MessageItem>();
   const fileEdits = new Map<string, FileEdit[]>();
   const MUTATING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
+  const isReplay = replayFilter();
   let current: Turn | null = null;
   let fallbackId = 0;
 
@@ -249,6 +250,12 @@ export async function parseTranscript(
       }
       continue;
     }
+
+    // A line already parsed, re-appended by a compaction (see `replayFilter`).
+    // It has to go before anything else touches it: an assistant chunk would
+    // otherwise be merged by `message.id` into the item written days earlier and
+    // append its text to it a second time.
+    if (isReplay(o)) continue;
 
     const originId = str(o.session_id);
     if (originId) originSessionIds.add(originId);

@@ -134,6 +134,37 @@ export async function* streamLines(filePath: string): AsyncGenerator<string> {
   for await (const line of rl) yield line;
 }
 
+/**
+ * Tells a re-appended line from a new one, and every full parse of a transcript
+ * must apply it — identically.
+ *
+ * When Claude Code compacts, it does not only write the boundary and the
+ * summary: it replays the stretch of conversation it carries into the fresh
+ * context by appending those lines AGAIN, re-parented onto the summary and
+ * keeping their ORIGINAL timestamps. Verified on two boundaries of
+ * `0f5b1c8b` (2,072 lines, the previous segment in full, boundary and summary
+ * included) and 23 of `cae7f9f5` (17,678). Read as new messages they invent
+ * whole segments of conversation, duplicate the boundary that closes them so a
+ * segment ends before it starts, and repeat text into answers given days
+ * earlier.
+ *
+ * A uuid identifies a line and the copies keep theirs, so a uuid seen twice is
+ * a replay of the first. Keep the FIRST: that is where the exchange really
+ * happened, and the one carrying the billed `usage` — a replay's top-level
+ * token counts are zeroed (only its `iterations[]` keeps the figures), so
+ * Claude Code does not bill it either.
+ */
+export function replayFilter(): (o: RawLine) => boolean {
+  const seen = new Set<string>();
+  return (o) => {
+    const uuid = str(o.uuid);
+    if (!uuid) return false;
+    if (seen.has(uuid)) return true;
+    seen.add(uuid);
+    return false;
+  };
+}
+
 // ---- loose accessors over parsed lines ----
 
 export function isRec(v: unknown): v is Record<string, unknown> {

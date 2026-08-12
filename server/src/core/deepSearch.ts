@@ -12,7 +12,7 @@ import path from 'node:path';
 import type { AppConfig } from '../config.ts';
 import type { SearchBlock } from './enricher.ts';
 import type { SessionIndex } from './index.ts';
-import { isRec, safeParse, str, streamLines } from './jsonl.ts';
+import { isRec, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { createLogger } from './logger.ts';
 import type { SearchService } from './search.ts';
 import {
@@ -246,6 +246,11 @@ export class DeepSearchService {
     if (!scanned) return;
 
     let lines = 0;
+    // The indexed text arrives deduplicated by uuid+text; the tool output it
+    // does not hold has to earn the same treatment here, or a compaction's
+    // replay (see `replayFilter`) spends the snippet budget twice on one
+    // command and counts its matches again.
+    const isReplay = replayFilter();
     const overBudget = (): boolean => {
       if (request.signal?.aborted) return true;
       if (++lines % LINES_PER_CLOCK_CHECK !== 0) return false;
@@ -260,6 +265,7 @@ export class DeepSearchService {
         scan.bytesRead += line.length;
         const o = safeParse(line);
         if (!o) continue;
+        if (isReplay(o)) continue;
         const uuid = str(o.uuid);
         const message = isRec(o.message) ? o.message : null;
         if (message && Array.isArray(message.content)) {

@@ -2,8 +2,13 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { createLogger } from './logger.ts';
 
-/** Bump to invalidate every cached artifact after a schema change. */
-export const CACHE_VERSION = 4;
+/**
+ * Bump to invalidate every cached artifact after a schema change — or after a
+ * change in what the enricher COUNTS, since an entry is keyed on the file's
+ * (path, size, mtime) and a corrected count would otherwise wait for the
+ * transcript to be written to again. 5: replayed lines stopped being counted.
+ */
+export const CACHE_VERSION = 5;
 
 const cacheLog = createLogger('cache');
 

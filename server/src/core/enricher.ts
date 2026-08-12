@@ -1,5 +1,5 @@
 import type { DailyUsage, PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
-import { isRec, num, safeParse, str, streamLines } from './jsonl.ts';
+import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { extractPrompt } from './summarizer.ts';
 
 export interface SearchBlock {
@@ -40,6 +40,7 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
   const searchBlocks: SearchBlock[] = [];
   const prSeen = new Set<string>();
   const daily: Record<string, DailyUsage> = {};
+  const isReplay = replayFilter();
   let userMessageCount = 0;
   let assistantMessageCount = 0;
   let toolUseCount = 0;
@@ -66,6 +67,12 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
       }
       continue;
     }
+
+    // A line already counted, re-appended by a compaction (see `replayFilter`).
+    // The token totals survived it by luck — they dedupe by `message.id` — but
+    // the prompts, the tool calls, the compactions and the daily buckets did
+    // not, and neither did the indexed text.
+    if (isReplay(o)) continue;
 
     const originId = str(o.session_id);
     if (originId) originSessionIds.add(originId);
