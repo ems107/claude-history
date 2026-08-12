@@ -499,7 +499,7 @@ export function TurnView({
   // level up (`DiscardedBranch`), and splitting this one is not an option —
   // two halves would each claim the turn's cost badge — so the turn says it
   // outright instead of quietly reading as if all of it still stood.
-  const discardedItems = turn.items.filter((i) => i.discarded).length;
+  const discardedItems = turn.items.filter((i) => i.discardedBranch !== null).length;
   const partlyDiscarded = discardedItems > 0 && discardedItems < turn.items.length;
   const discardedNotice = partlyDiscarded ? (
     <div

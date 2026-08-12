@@ -144,12 +144,19 @@ export function buildMarkdown(detail: SessionDetail, opts: ExportOptions): strin
   // A rewound-away turn is exported, but it must say so: read in order it would
   // otherwise look like part of the conversation that stands, which is the exact
   // mistake the viewer's fold exists to prevent.
-  let inDiscarded = false;
+  // Tracked by branch, not by a flag: two rewinds to the same message leave two
+  // branches back to back, and one heading over both would join them.
+  let branch: string | null = null;
   for (const turn of detail.turns) {
-    const discarded = turn.items.length > 0 && turn.items.every((i) => i.discarded);
-    if (discarded !== inDiscarded) {
-      out.push('', discarded ? '> ⟲ **Discarded by a rewind** — below is a branch Claude Code no longer shows.' : '> ⟲ **End of the rewound-away branch.**', '');
-      inDiscarded = discarded;
+    const first = turn.items[0]?.discardedBranch ?? null;
+    const turnBranch =
+      first !== null && turn.items.every((i) => i.discardedBranch === first) ? first : null;
+    if (turnBranch !== branch) {
+      if (branch !== null) out.push('', '> ⟲ **End of the rewound-away branch.**', '');
+      if (turnBranch !== null) {
+        out.push('', '> ⟲ **Discarded by a rewind** — below is a branch Claude Code no longer shows.', '');
+      }
+      branch = turnBranch;
     }
     for (const item of turn.items) {
       if (item.role === 'system') {

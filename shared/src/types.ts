@@ -261,13 +261,19 @@ export interface MessageItem {
    */
   carriedOver: boolean;
   /**
-   * A message a `/rewind` cut away: it stays in the file forever, but nothing
-   * descends from it any more, so Claude Code stops showing it. True for every
-   * item outside the parent chain of the transcript's last message — which is
-   * the branch still alive. It was really said and really billed, so it is
-   * folded away rather than dropped.
+   * Set on a message a `/rewind` cut away: it stays in the file forever, but
+   * nothing descends from it any more, so Claude Code stops showing it. It was
+   * really said and really billed, so the viewer folds it away rather than
+   * dropping it.
+   *
+   * The value is WHICH branch it was cut away with — the uuid of the message that
+   * starts it — because rewinding twice to the same point leaves two separate
+   * branches there, and they are two different pieces of history: `c0f70eda` has
+   * a 9-turn one from 15:21 and a 2-turn one from 17:38 hanging off the same
+   * message, and showing them as one 11-turn stretch invented a span that never
+   * existed. Null means the message is part of the conversation that stands.
    */
-  discarded: boolean;
+  discardedBranch: string | null;
   /** Assistant only: tokens billed for this message; null for `<synthetic>` and for every other role. */
   usage: MessageUsage | null;
   /** Assistant only: the reasoning effort recorded on the line (`effort`), e.g. "xhigh". */

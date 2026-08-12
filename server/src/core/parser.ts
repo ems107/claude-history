@@ -206,9 +206,17 @@ interface TreeLine {
  * Anything the walk cannot reach at all — a parent that is not in the file, which
  * happens in 3 sessions here — is left ALONE rather than hidden: showing an
  * abandoned message is a much smaller error than hiding a real one.
+ *
+ * The answer is a uuid → BRANCH map, not a flat set: rewinding twice to the same
+ * message leaves two separate branches hanging off it, and they are two different
+ * pieces of history. `c0f70eda` has exactly that — `/review PR 1968` (15:21, 9
+ * turns) and `Estado actual?` (17:38, 2 turns) both hang off `277ac189`, with the
+ * live conversation as its third child — and merging them read as one 11-turn
+ * stretch running 15:21 → 17:39, which is a span nothing ever occupied.
  */
-function discardedUuids(lines: TreeLine[]): Set<string> {
-  const discarded = new Set<string>();
+function discardedBranches(lines: TreeLine[]): Map<string, string> {
+  /** uuid → the uuid of the line that starts the branch it was cut away with. */
+  const discarded = new Map<string, string>();
   if (lines.length === 0) return discarded;
 
   const occurrences = new Map<string, number[]>();
@@ -237,7 +245,8 @@ function discardedUuids(lines: TreeLine[]): Set<string> {
   const live = new Set<number>();
   for (let at = lines.length - 1; at >= 0 && !live.has(at); at = parentAt[at]) live.add(at);
 
-  const discardedAt = new Set<number>();
+  /** Line position → the branch it belongs to (the position that starts it). */
+  const branchOf = new Map<number, number>();
   for (const i of live) {
     for (const child of children.get(i) ?? []) {
       if (live.has(child)) continue;
@@ -254,14 +263,16 @@ function discardedUuids(lines: TreeLine[]): Set<string> {
         for (const next of children.get(at) ?? []) queue.push(next);
       }
       if (branch.some((at) => lines[at].isBoundary)) continue;
-      for (const at of branch) discardedAt.add(at);
+      for (const at of branch) branchOf.set(at, child);
     }
   }
 
   // A message is discarded only when NO copy of it is alive: a replay of a live
   // line is still that line.
   for (const [uuid, at] of occurrences) {
-    if (at.some((i) => discardedAt.has(i)) && !at.some((i) => live.has(i))) discarded.add(uuid);
+    if (at.some((i) => live.has(i))) continue;
+    const cut = at.find((i) => branchOf.has(i));
+    if (cut !== undefined) discarded.set(uuid, lines[branchOf.get(cut)!].uuid);
   }
   return discarded;
 }
@@ -403,7 +414,7 @@ export async function parseTranscript(
             isCompactSummary: false,
             systemSubtype: 'context',
             carriedOver,
-            discarded: false,
+            discardedBranch: null,
             usage: null,
             effort: null,
             blocks: [{ kind: 'context', snapshot }],
@@ -444,7 +455,7 @@ export async function parseTranscript(
           isCompactSummary: o.isCompactSummary === true,
           systemSubtype: null,
           carriedOver,
-          discarded: false,
+          discardedBranch: null,
           usage: null,
           effort: null,
           blocks: [prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text }],
@@ -483,7 +494,7 @@ export async function parseTranscript(
             isCompactSummary: false,
             systemSubtype: null,
             carriedOver,
-            discarded: false,
+            discardedBranch: null,
             usage: null,
             effort: null,
             blocks: userBlocks,
@@ -508,7 +519,7 @@ export async function parseTranscript(
           isCompactSummary: false,
           systemSubtype: null,
           carriedOver,
-          discarded: false,
+          discardedBranch: null,
           // A synthetic message was not produced by a model and is excluded from
           // every total; an id-less line has no dedupe key, so counting it could
           // multiply a streamed message across its chunks.
@@ -573,7 +584,7 @@ export async function parseTranscript(
           isCompactSummary: false,
           systemSubtype: subtype,
           carriedOver,
-          discarded: false,
+          discardedBranch: null,
           usage: null,
           effort: null,
           blocks: [
@@ -610,7 +621,7 @@ export async function parseTranscript(
         isCompactSummary: false,
         systemSubtype: subtype,
         carriedOver,
-        discarded: false,
+        discardedBranch: null,
         usage: null,
         effort: null,
         blocks: [{ kind: 'text', text }],
@@ -621,14 +632,16 @@ export async function parseTranscript(
   // What a rewind cut away, marked only once the whole tree is known. An item with
   // no line uuid at all (a generated fallback id) is left alone: nothing places it,
   // and a wrongly hidden message is worse than a wrongly shown one.
-  const cutAway = discardedUuids(treeLines);
+  const cutAway = discardedBranches(treeLines);
   if (cutAway.size > 0) {
     for (const turn of turns) {
       for (const item of turn.items) {
         // `makeUuid` invents a `gen-` id for a line that carried none; those are
         // not in the tree and must not decide anything.
         const real = [item.uuid, ...item.aliasUuids].filter((u) => !u.startsWith(GEN_UUID_PREFIX));
-        if (real.length > 0 && real.every((u) => cutAway.has(u))) item.discarded = true;
+        if (real.length > 0 && real.every((u) => cutAway.has(u))) {
+          item.discardedBranch = cutAway.get(item.uuid) ?? cutAway.get(real[0]) ?? null;
+        }
       }
     }
   }

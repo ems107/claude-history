@@ -64,29 +64,45 @@ export function buildSegments(turns: Turn[]): Segment[] {
   return segments;
 }
 
-/** A stretch of a segment: either live conversation or what a rewind cut away. */
+/** A stretch of a segment: either live conversation or what one rewind cut away. */
 export type TurnGroup =
   | { kind: 'live'; turns: SegmentTurn[] }
-  | { kind: 'discarded'; turns: SegmentTurn[]; key: string };
+  | { kind: 'discarded'; turns: SegmentTurn[]; key: string; branch: string };
+
+/** The branch a whole turn was cut away with, or null if any of it still stands. */
+function discardedBranchOf(st: SegmentTurn): string | null {
+  const items = st.turn.items;
+  if (items.length === 0) return null;
+  const branch = items[0].discardedBranch;
+  return branch !== null && items.every((i) => i.discardedBranch === branch) ? branch : null;
+}
 
 /**
- * Split a segment's turns into runs of live and discarded ones, so a rewound
- * branch folds into a single header instead of reading like conversation that
- * still stands. A rewind branches at a prompt, and a prompt opens a turn, so in
- * practice a turn is entirely one or the other; a turn that somehow mixed both
- * counts as live, because hiding a live message is the worse mistake.
+ * Split a segment's turns into runs of live turns and runs of rewound-away ones,
+ * so each abandoned branch folds into its own header instead of reading like
+ * conversation that still stands.
+ *
+ * Turns are grouped only while they belong to the SAME branch: two rewinds to the
+ * same message leave two branches, consecutive in the file and adjacent here, and
+ * merging them would date one stretch from the first message of one to the last
+ * of the other — a span nothing ever occupied.
+ *
+ * A rewind branches at a prompt, and a prompt opens a turn, so in practice a turn
+ * is entirely on one side; a turn that somehow mixed both counts as live, because
+ * hiding a live message is the worse mistake (`Turn.tsx` labels it instead).
  */
 export function groupTurns(turns: SegmentTurn[]): TurnGroup[] {
   const groups: TurnGroup[] = [];
   for (const st of turns) {
-    const discarded = st.turn.items.length > 0 && st.turn.items.every((i) => i.discarded);
+    const branch = discardedBranchOf(st);
     const last = groups[groups.length - 1];
-    if (last && (last.kind === 'discarded') === discarded) {
+    if (last && (branch === null ? last.kind === 'live' : last.kind === 'discarded' && last.branch === branch)) {
       last.turns.push(st);
-    } else if (discarded) {
-      // Keyed on the first uuid, not the index: stable across the refetches of a
-      // live session, like every other fold key here.
-      groups.push({ kind: 'discarded', turns: [st], key: `discarded-${st.turn.items[0]?.uuid ?? st.index}` });
+    } else if (branch !== null) {
+      // Keyed on the turn's own first uuid rather than on the branch: stable
+      // across the refetches of a live session, and unique even if a branch ever
+      // came back to the file in two pieces.
+      groups.push({ kind: 'discarded', turns: [st], key: `discarded-${st.turn.items[0]?.uuid ?? st.index}`, branch });
     } else {
       groups.push({ kind: 'live', turns: [st] });
     }
