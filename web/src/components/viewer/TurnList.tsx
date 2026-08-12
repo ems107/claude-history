@@ -5,6 +5,7 @@ import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
 import { type FoldState, turnKey } from '../../lib/folding.ts';
+import { type MatchHighlight, markMatches } from '../../lib/highlight.ts';
 import { buildSegments, groupTurns, type SegmentTurn } from '../../lib/segments.ts';
 import { CompactedSegment } from './CompactedSegment.tsx';
 import { DiscardedBranch } from './DiscardedBranch.tsx';
@@ -12,6 +13,14 @@ import { TurnView } from './Turn.tsx';
 
 /** Stable identity, so the cost index is not rebuilt on every render before the prices arrive. */
 const NO_PRICES: PriceTable = {};
+/** Must match the `match-flash` animation in styles.css. */
+const FLASH_MS = 2500;
+/**
+ * The marked words outlive the flash: the flash says which message, and it is
+ * read at a glance, while finding a word inside a long answer is a search of its
+ * own. Long enough to do that, short enough that the page is not left painted.
+ */
+const MARK_MS = 8000;
 
 const keyOf = (t: SegmentTurn): string => turnKey(t.turn, t.index);
 
@@ -22,6 +31,7 @@ export function TurnList({
   fold,
   expandSegments = false,
   scrollToUuid,
+  highlight,
   onOpenAgent,
 }: {
   turns: Turn[];
@@ -32,6 +42,8 @@ export function TurnList({
   /** Unfold every compacted segment at once (the header toggle). */
   expandSegments?: boolean;
   scrollToUuid?: string | null;
+  /** The words a search matched, when the link came from one. */
+  highlight?: MatchHighlight | null;
   onOpenAgent?: (agentId: string) => void;
 }) {
   // The same cached query the token panel uses — no extra request.
@@ -87,6 +99,11 @@ export function TurnList({
     return map;
   }, [segments]);
 
+  // Read through a ref for the same reason `segments` is: the effect below keys
+  // on the link alone, and this arrives as a fresh object on every render.
+  const highlightRef = useRef(highlight);
+  highlightRef.current = highlight;
+
   useEffect(() => {
     if (!scrollToUuid) return;
     // A folded segment or turn would swallow the link silently, so open the
@@ -101,15 +118,44 @@ export function TurnList({
       fold.open(at.turn);
     }
     // Let the DOM settle before scrolling to the deep-linked message.
-    const t = setTimeout(() => {
-      const el = document.getElementById(scrollToUuid);
-      if (el) {
-        el.scrollIntoView({ block: 'center' });
-        el.classList.add('ring-2', 'ring-[var(--accent)]');
-        setTimeout(() => el.classList.remove('ring-2', 'ring-[var(--accent)]'), 2500);
-      }
-    }, 100);
-    return () => clearTimeout(t);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let clearMarks: (() => void) | null = null;
+    timers.push(
+      setTimeout(() => {
+        const el = document.getElementById(scrollToUuid);
+        if (!el) return;
+        // The anchor may be an alias uuid — a zero-sized <span> inside the
+        // bubble — so what gets flashed is the box, not whatever carries the id.
+        const box = el.closest<HTMLElement>('[data-bubble]') ?? el;
+        box.scrollIntoView({ block: 'center' });
+        box.classList.add('match-flash');
+        timers.push(setTimeout(() => box.classList.remove('match-flash'), FLASH_MS));
+
+        const hl = highlightRef.current;
+        if (!hl) return;
+        const marked = markMatches(box.querySelector<HTMLElement>('[data-bubble-body]') ?? box, hl);
+        clearMarks = marked.clear;
+        timers.push(
+          setTimeout(() => {
+            marked.clear();
+            clearMarks = null;
+          }, MARK_MS),
+        );
+        // A long answer can be taller than the window, so centring the bubble is
+        // no promise that the match is on screen. Only then is the paragraph
+        // holding it scrolled to: doing it always would push the bubble's own
+        // header — role, time, cost — out of view for nothing.
+        const rect = marked.first?.getBoundingClientRect();
+        if (rect && (rect.top < 0 || rect.bottom > window.innerHeight)) {
+          const target = marked.first?.startContainer.parentElement;
+          target?.scrollIntoView({ block: 'center' });
+        }
+      }, 100),
+    );
+    return () => {
+      for (const t of timers) clearTimeout(t);
+      clearMarks?.();
+    };
     // Deliberately NOT keyed on `turns`/`locate`: the deep-linked jump belongs
     // to the link, not to the data. Re-running it on every refetch yanked a live
     // session back to the linked message every few seconds — and it fought the

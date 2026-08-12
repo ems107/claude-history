@@ -1,4 +1,4 @@
-import type { SearchSnippet } from '@claude-history/shared';
+import type { SearchQueryEcho, SearchSnippet } from '@claude-history/shared';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { api } from '../../api/client.ts';
 import type { SearchTuning } from '../../lib/searchTuning.ts';
@@ -27,6 +27,7 @@ export function HitMatches({
   sessionId,
   q,
   tuning,
+  query,
   deep,
   fallback,
   onCollapse,
@@ -34,6 +35,8 @@ export function HitMatches({
   sessionId: string;
   q: string;
   tuning: SearchTuning;
+  /** The query as the server understood it — what each row's link carries on. */
+  query: SearchQueryEcho;
   /** Must match how the results were obtained, or the count will not be reachable. */
   deep: boolean;
   /** The hit's own snippets, shown while the first page is on its way. */
@@ -41,7 +44,7 @@ export function HitMatches({
   onCollapse: () => void;
 }) {
   const limit = deep ? DEEP_PAGE : PAGE;
-  const query = useInfiniteQuery({
+  const matches = useInfiniteQuery({
     queryKey: ['search-matches', sessionId, q, tuning.where, tuning.mode, tuning.scope, tuning.wholeWord, deep],
     queryFn: ({ pageParam, signal }) =>
       api.sessionMatches(sessionId, q, tuning, { offset: pageParam, limit, deep }, signal),
@@ -60,7 +63,7 @@ export function HitMatches({
     retry: false,
   });
 
-  const pages = query.data?.pages ?? [];
+  const pages = matches.data?.pages ?? [];
   const last = pages[pages.length - 1];
   const snippets = pages.flatMap((p) => p.snippets);
   // Every occurrence belongs to exactly one place, so these add up to the total.
@@ -73,11 +76,11 @@ export function HitMatches({
   return (
     <div className="space-y-1">
       {(snippets.length > 0 ? snippets : fallback).map((sn, i) => (
-        <SnippetRow key={i} sessionId={sessionId} snippet={sn} />
+        <SnippetRow key={i} sessionId={sessionId} snippet={sn} query={query} />
       ))}
       <div className="flex flex-wrap items-center gap-2 px-2 pt-0.5 text-[11px] text-[var(--text-dim)]/70">
-        {query.isError ? (
-          <span className="text-red-400">Could not read the matches: {String(query.error)}</span>
+        {matches.isError ? (
+          <span className="text-red-400">Could not read the matches: {String(matches.error)}</span>
         ) : last ? (
           <span>
             {last.total === 0
@@ -92,21 +95,21 @@ export function HitMatches({
             {deep ? 'reading the transcript…' : 'finding every match…'}
           </span>
         )}
-        {query.isFetchingNextPage && <span className="text-[var(--accent)]">loading…</span>}
-        {query.hasNextPage && !query.isFetchingNextPage && (
+        {matches.isFetchingNextPage && <span className="text-[var(--accent)]">loading…</span>}
+        {matches.hasNextPage && !matches.isFetchingNextPage && (
           <button
             type="button"
-            onClick={() => void query.fetchNextPage()}
+            onClick={() => void matches.fetchNextPage()}
             title={deep ? 'Reads the transcript again for the next batch' : 'The next batch of matches'}
             className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
           >
             Show {Math.min(rowsLeft, limit)} more
           </button>
         )}
-        {query.isError && (
+        {matches.isError && (
           <button
             type="button"
-            onClick={() => void query.refetch()}
+            onClick={() => void matches.refetch()}
             className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
           >
             Try again

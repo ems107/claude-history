@@ -1,19 +1,19 @@
 import {
-  foldText,
   foldWithMap,
+  occurrences,
   type SearchMode,
   type SearchSnippet,
   type SearchWordScope,
 } from '@claude-history/shared';
 import type { SearchBlock } from './enricher.ts';
 
+// Finding a term is shared with the web (the viewer marks the words a search
+// landed on), so it lives in `@claude-history/shared` and is re-exported here —
+// the server's search paths were written against this module.
+export { hasTerm, occurrences, parseTerms } from '@claude-history/shared';
+
 export const SNIPPET_BEFORE = 60; // folded chars of context before the match
 export const SNIPPET_AFTER = 90;
-/** More than this and the query is a paragraph, not a search. */
-const MAX_TERMS = 8;
-/** A single character matches half the corpus and still costs a full scan. */
-const MIN_TERM_LENGTH = 2;
-const WORD_CHAR = /[\p{L}\p{N}]/u;
 
 function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ');
@@ -25,65 +25,6 @@ export interface SearchOptions {
   mode?: SearchMode;
   scope?: SearchWordScope;
   wholeWord?: boolean;
-}
-
-/**
- * Folds the query and splits it into the terms to look for: in 'words' mode on
- * the single spaces the fold left behind, keeping anything double-quoted
- * together; in 'phrase' mode not at all. A phrase is just the one-term case,
- * which is why a single scan serves both modes.
- *
- * Nothing shorter than MIN_TERM_LENGTH survives, and an empty query yields no
- * terms at all — which is what keeps indexOf away from the empty string, found
- * at every position and never advancing the scan.
- */
-export function parseTerms(query: string, mode: SearchMode): string[] {
-  const folded = foldText(query.trim());
-  if (!folded) return [];
-  if (mode === 'phrase') return [folded];
-  const terms: string[] = [];
-  for (const m of folded.matchAll(/"([^"]*)"|(\S+)/g)) {
-    const term = (m[1] ?? m[2]).trim();
-    if (term.length >= MIN_TERM_LENGTH && !terms.includes(term)) terms.push(term);
-  }
-  return terms.slice(0, MAX_TERMS);
-}
-
-/** A match is a whole word when neither side of it is a letter or a digit. */
-function isWholeWord(folded: string, idx: number, len: number): boolean {
-  const before = idx > 0 ? folded[idx - 1] : '';
-  const after = folded[idx + len] ?? '';
-  return !WORD_CHAR.test(before) && !WORD_CHAR.test(after);
-}
-
-/**
- * Folded positions of `term` at or after `from`, stopping past `until`.
- * A rejected boundary advances by one, not by the term's length: the match it
- * turned down can still overlap a later one that qualifies.
- */
-export function* occurrences(
-  folded: string,
-  term: string,
-  wholeWord: boolean,
-  from = 0,
-  until = Number.MAX_SAFE_INTEGER,
-): Generator<number> {
-  let at = from;
-  let idx: number;
-  while ((idx = folded.indexOf(term, at)) !== -1 && idx + term.length <= until) {
-    if (wholeWord && !isWholeWord(folded, idx, term.length)) {
-      at = idx + 1;
-      continue;
-    }
-    yield idx;
-    at = idx + term.length;
-  }
-}
-
-/** Whether a term is in a folded block at all — the whole-word rule makes `indexOf` too generous. */
-export function hasTerm(folded: string, term: string, wholeWord: boolean): boolean {
-  for (const _ of occurrences(folded, term, wholeWord)) return true;
-  return false;
 }
 
 /** One place a query matched, as folded offsets, with the occurrences it accounts for. */

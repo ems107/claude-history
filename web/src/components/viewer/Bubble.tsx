@@ -48,14 +48,19 @@ export function Bubble({
   // fold strip's job alone. Clicking a prompt used to fold it too, which meant
   // an accidental click — or a drag that a selection check let through — hid
   // the answer the user was reading.
+  // `data-bubble` is how a deep link finds the box to flash: the anchor it was
+  // given can be an alias uuid, which is a zero-sized <span> inside here, and a
+  // ring on that is a ring on nothing. `data-bubble-body` keeps the marking off
+  // the header, whose words (the role, the model) are not what was searched.
   return (
     <div
       id={id}
+      data-bubble={side}
       className={`group/bubble relative w-full rounded-lg border px-3 py-2 ${STYLES[side].shell}`}
     >
       <span aria-hidden className={`absolute top-4 size-3 rotate-45 ${STYLES[side].tail}`} />
       {header}
-      <div ref={bodyRef} className="min-w-0">
+      <div ref={bodyRef} data-bubble-body className="min-w-0">
         {children}
       </div>
     </div>

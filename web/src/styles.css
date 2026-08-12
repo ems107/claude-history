@@ -58,6 +58,39 @@ body {
   animation: anchor-flash 2.5s ease-out;
 }
 
+/* Landing on a message from a search result. Same one pass and same duration as
+   anchor-flash, but the tint is an INSET shadow rather than a background: a
+   bubble paints its own background, and animating that property would end the
+   flash on the wrong colour and then snap back. Only box-shadow is animated —
+   a transform or a filter here would become the containing block for the cost
+   and context popovers inside, which are position: fixed. */
+@keyframes match-flash {
+  0%,
+  60% {
+    box-shadow:
+      0 0 0 2px var(--accent),
+      inset 0 0 0 9999px color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px transparent,
+      inset 0 0 0 9999px transparent;
+  }
+}
+
+.match-flash {
+  animation: match-flash 2.5s ease-out;
+}
+
+/* The words themselves, marked through the CSS Custom Highlight API — the
+   ranges are handed to the browser, so nothing in React's DOM is rewritten.
+   These properties are the only ones a highlight pseudo takes, and it inherits
+   nothing, so both have to be said. */
+::highlight(search-match) {
+  background-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: #fff;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
