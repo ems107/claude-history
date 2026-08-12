@@ -108,6 +108,35 @@ body {
   animation: match-flash-tail 2.5s ease-out;
 }
 
+/* The three dots of the "Claude is working" bubble. Only `opacity` is animated,
+   and only on the dots themselves: a transform or a filter anywhere near a
+   bubble would become the containing block for the position:fixed popovers, and
+   these leaves hold nothing anyway. The stagger is a delay per dot, so one
+   keyframe serves all three. Under prefers-reduced-motion the dots simply stand
+   still at a mid opacity — the bubble and its elapsed counter still say that
+   something is happening, so nothing is lost by holding them. */
+@keyframes working-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+.working-dot {
+  animation: working-dot 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 /* The words themselves, marked through the CSS Custom Highlight API — the
    ranges are handed to the browser, so nothing in React's DOM is rewritten.
    These properties are the only ones a highlight pseudo takes, and it inherits

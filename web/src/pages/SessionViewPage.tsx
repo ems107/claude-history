@@ -16,6 +16,7 @@ import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
 import { ViewButton } from '../components/viewer/ViewButton.tsx';
+import { WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 /** Stable identity while the conversation loads, so the fold state is not rebuilt. */
@@ -26,6 +27,26 @@ export function SessionViewPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const detail = useQuery({ queryKey: ['session', id], queryFn: () => api.session(id), enabled: !!id });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
+  /**
+   * The live state comes from here and NOT from `detail.data.summary.live`,
+   * which carries the same field: that query is invalidated by 'sessions-changed'
+   * (the transcript grew), while the busy/idle flip is a write under
+   * ~/.claude/sessions and only ever fires 'live-changed'. Reading it off the
+   * detail would leave the indicator stuck on "working" after the last line of
+   * the turn was written — and re-parsing a multi-MB transcript on every status
+   * flip to avoid that would be absurd next to this, which reads two small files.
+   */
+  const live = useQuery({
+    queryKey: ['live'],
+    queryFn: api.live,
+    enabled: !!id,
+    // The poll is a backstop for the one thing SSE cannot report: a CLI killed
+    // outright leaves its file saying "busy" and writes nothing more, so no
+    // event ever comes — the server drops it by pid liveness, but only if asked.
+    // It runs solely while a turn is in flight, and never touches the network.
+    refetchInterval: (query) =>
+      query.state.data?.some((l) => l.sessionId === id && l.status === 'busy') ? 10_000 : false,
+  });
   const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
   const [expandTools, setExpandTools] = useState(() => localStorage.getItem('expandTools') === 'true');
   // Not persisted: folded is the point of the feature, and a session opened
@@ -183,6 +204,9 @@ export function SessionViewPage() {
               {detail.data.turns.length === 0 && (
                 <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
               )}
+              {/* Below TurnList, never inside it: this is not a message and must
+                  stay out of everything that folds, counts or prices one. */}
+              <WorkingIndicator live={live.data?.find((l) => l.sessionId === id) ?? null} />
             </div>
           </div>
         </div>

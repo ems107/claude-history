@@ -73,13 +73,25 @@ export const JUST_NOW_SECONDS = 5;
  * have to be truthful — they are floored, never rounded.
  */
 export function timeSince(when: string | number | null): string {
-  if (when === null) return '—';
+  const since = elapsed(when);
+  if (since === null) return '—';
+  const ms = typeof when === 'number' ? when : Date.parse(when as string);
+  if (Math.floor(Math.max(0, Date.now() - ms) / 1000) < JUST_NOW_SECONDS) return 'just now';
+  return `${since} ago`;
+}
+
+/**
+ * The same duration as a bare span — "12 s", "1 min 12 s", "1 hr 4 min" — with
+ * no "ago" and no "just now" floor, so a counter that starts at zero can read
+ * "0 s" instead of claiming the past tense. `timeSince` is worded on top of it:
+ * one place decides how a duration is spelt.
+ */
+export function elapsed(when: string | number | null): string | null {
+  if (when === null) return null;
   const ms = typeof when === 'number' ? when : Date.parse(when);
-  if (Number.isNaN(ms)) return '—';
+  if (Number.isNaN(ms)) return null;
 
   const total = Math.floor(Math.max(0, Date.now() - ms) / 1000);
-  if (total < JUST_NOW_SECONDS) return 'just now';
-
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor(total / 60) % 60;
   const seconds = total % 60;
@@ -89,7 +101,7 @@ export function timeSince(when: string | number | null): string {
   if (minutes > 0) parts.push(`${minutes} min`);
   // Seconds are the point of this format; they only become noise past an hour.
   if (hours === 0) parts.push(`${seconds} s`);
-  return `${parts.join(' ')} ago`;
+  return parts.join(' ');
 }
 
 export function formatBytes(n: number): string {

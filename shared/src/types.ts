@@ -137,6 +137,14 @@ export interface LiveInfo {
   name: string | null;
   startedAt: number | null; // epoch ms
   updatedAt: number | null; // epoch ms
+  /**
+   * When the status last changed — which, for a busy session, is when the turn
+   * began. Kept separate from `updatedAt` on purpose: the two are equal today
+   * because Claude Code writes this file only when something changes (measured:
+   * `updatedAt` frozen for 3 minutes into a busy turn, no heartbeat at all), and
+   * a heartbeat appearing later would move `updatedAt` while this stays true.
+   */
+  statusUpdatedAt: number | null; // epoch ms
 }
 
 export interface SessionSummary {

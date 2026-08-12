@@ -40,6 +40,7 @@ export async function readLiveSessions(sessionsDir: string): Promise<LiveSession
         name: str(raw.name),
         startedAt: num(raw.startedAt),
         updatedAt: num(raw.updatedAt),
+        statusUpdatedAt: num(raw.statusUpdatedAt),
         entrypoint: str(raw.entrypoint),
       });
     } catch {

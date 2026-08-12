@@ -3,6 +3,7 @@ import type {
   AutoReloadRun,
   AutoReloadStatus,
   LineageResponse,
+  LiveResponse,
   LogDayResponse,
   LogsResponse,
   MetaResponse,
@@ -49,6 +50,7 @@ export const api = {
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),
+  live: () => getJson<LiveResponse>('/api/live'),
   prices: () => getJson<{ prices: PriceTable; isDefault: boolean }>('/api/prices'),
   fetchOfficialPrices: async () => {
     const res = await fetch('/api/prices/fetch', { method: 'POST' });

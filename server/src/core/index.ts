@@ -223,7 +223,14 @@ export class SessionIndex {
     for (const s of this.sessions.values()) {
       const l = byId.get(s.id);
       s.live = l
-        ? { pid: l.pid, status: l.status, name: l.name, startedAt: l.startedAt, updatedAt: l.updatedAt }
+        ? {
+            pid: l.pid,
+            status: l.status,
+            name: l.name,
+            startedAt: l.startedAt,
+            updatedAt: l.updatedAt,
+            statusUpdatedAt: l.statusUpdatedAt,
+          }
         : null;
     }
   }
