@@ -117,9 +117,12 @@ export function SessionHeader({
   showFiles,
   onToggleFiles,
   actions,
+  live,
 }: {
   detail: SessionDetail;
   color: string;
+  /** Live state from the page, which tracks it far more closely than the summary. */
+  live?: import('@claude-history/shared').LiveInfo | null;
   showThinking: boolean;
   onToggleThinking: () => void;
   thinkingCount: number;
@@ -301,7 +304,7 @@ export function SessionHeader({
         {s.entrypoint && <span>{entrypointLabel(s.entrypoint)}</span>}
         {s.slug && <span className="font-mono opacity-70">{s.slug}</span>}
         {s.claudeVersion && <span className="opacity-70">cc {s.claudeVersion}</span>}
-        <SessionBadges session={s} omitPr />
+        <SessionBadges session={s} omitPr live={live} />
         <AncestryChips label="forked from" ids={detail.ancestry.forkedFrom ? [detail.ancestry.forkedFrom] : []} />
         <AncestryChips label="branched into" ids={detail.ancestry.descendants} />
         {(s.enrichment?.runIds.length ?? 0) > 0 && (

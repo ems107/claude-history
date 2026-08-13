@@ -1,4 +1,4 @@
-import type { SessionSummary } from '@claude-history/shared';
+import type { LiveInfo, SessionSummary } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 
 function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
@@ -12,8 +12,24 @@ function Badge({ label, className, title }: { label: string; className: string; 
   );
 }
 
-export function SessionBadges({ session, omitPr = false }: { session: SessionSummary; omitPr?: boolean }) {
+export function SessionBadges({
+  session,
+  omitPr = false,
+  live,
+}: {
+  session: SessionSummary;
+  omitPr?: boolean;
+  /**
+   * Live state from a fresher source than the summary, when the caller has one.
+   * The session page does: its summary comes from `['session', id]`, which is
+   * only refetched when the transcript grows — so on that page the badge would
+   * describe a turn that started before the last write and miss the one running
+   * now. Undefined means "use the summary"; null means "nothing is running".
+   */
+  live?: LiveInfo | null;
+}) {
   const badges: ReactNode[] = [];
+  const liveInfo = live === undefined ? session.live : live;
 
   if (session.pinned) {
     badges.push(
@@ -21,12 +37,12 @@ export function SessionBadges({ session, omitPr = false }: { session: SessionSum
     );
   }
 
-  if (session.live) {
+  if (liveInfo) {
     // Claude Code writes no status for a `--print` run, so a session being
     // answered from the app reads "unknown" here — which told the user
     // nothing. Only the two states that mean something get named.
-    const busy = session.live.status === 'busy';
-    const idle = session.live.status === 'idle';
+    const busy = liveInfo.status === 'busy';
+    const idle = liveInfo.status === 'idle';
     badges.push(
       <span
         key="live"

@@ -206,6 +206,10 @@ export function SessionViewPage() {
       <SessionHeader
         detail={detail.data}
         color={color}
+        // Not detail.summary.live: that one only moves when the transcript
+        // grows, so the badge would still read "live" through a turn the app
+        // itself is running.
+        live={liveInfo}
         showThinking={showThinking}
         onToggleThinking={() => {
           setShowThinking((v) => {
