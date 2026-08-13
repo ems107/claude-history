@@ -12,6 +12,13 @@ export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): voi
   // `progress` on GET /api/update (pushed over SSE). Holding the request open
   // for the whole download is what made a slow one look like a dead server.
   app.post<{ Body?: { version?: string } }>('/api/update/apply', async (request, reply) => {
+    // An update ends with this server being killed and replaced, which would
+    // cut off a turn in flight mid-answer.
+    if (ctx.chat.busy) {
+      return reply.code(409).send({
+        error: 'Claude is answering a prompt sent from the app — updating would cut it off. Wait for it to finish.',
+      });
+    }
     try {
       const started = ctx.updates.apply(ctx.config.port, request.body?.version);
       return { ok: true, ...started };

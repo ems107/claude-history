@@ -2,7 +2,9 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
 import { createLogger } from './core/logger.ts';
+import { isSameOrigin } from './util/sameOrigin.ts';
 import { registerAutoReloadRoutes } from './routes/autoReload.ts';
+import { registerChatRoutes } from './routes/chat.ts';
 import { registerEventRoutes } from './routes/events.ts';
 import { registerLogRoutes } from './routes/logs.ts';
 import { registerLiveRoutes } from './routes/live.ts';
@@ -61,6 +63,21 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const { config } = ctx;
   const app = Fastify({ logger: { level: 'warn', stream: fastifyLogStream() } });
 
+  // Anything that changes state or runs something must come from our own pages.
+  // Binding to 127.0.0.1 keeps other machines out but says nothing about the
+  // browser on this one, and these endpoints open terminals, stop the server
+  // and run Claude — the side effect is the whole attack, no reply needed.
+  // Reads are left alone: there is nothing to trigger and no reply to steal.
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return;
+    if (isSameOrigin(request)) return;
+    createLogger('http').warn(
+      `refused a cross-origin ${request.method} ${request.url}`,
+      { origin: request.headers.origin ?? null, site: request.headers['sec-fetch-site'] ?? null },
+    );
+    return reply.code(403).send({ error: 'Cross-origin requests are not allowed.' });
+  });
+
   app.get('/api/health', async () => ({ ok: true }));
   registerMetaRoutes(app, ctx);
   registerProjectRoutes(app, ctx);
@@ -72,6 +89,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerPromptRoutes(app, ctx);
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
+  registerChatRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
   registerRetentionRoutes(app, ctx);

@@ -225,6 +225,34 @@ export function clearLogs(): number {
 }
 
 /**
+ * Run before the process exits, on every path this module owns: a signal, a
+ * fatal error, or the plain `exit` event.
+ *
+ * It lives here because this is where the exit paths already are, and because
+ * the one thing registered on it — killing the `claude` processes the composer
+ * started — must not be left to chance. They are not in this process's tree in
+ * any way Windows tears down for us, and ending the scheduled task only kills
+ * the wscript wrapper. Handlers must be SYNCHRONOUS: on `exit` nothing
+ * asynchronous is ever given the chance to finish.
+ */
+const cleanups: (() => void)[] = [];
+
+export function onShutdown(fn: () => void): void {
+  cleanups.push(fn);
+}
+
+function runCleanups(): void {
+  while (cleanups.length) {
+    const fn = cleanups.pop();
+    try {
+      fn?.();
+    } catch {
+      // Exiting anyway; a failed cleanup must not stop the others.
+    }
+  }
+}
+
+/**
  * Start logging. Also routes stray `console.*` (ours or a dependency's) into
  * the same files, and makes sure a crash leaves a record: the installed
  * instance runs hidden, so without this it dies without a trace.
@@ -247,6 +275,7 @@ export function initLogging(dir: string): void {
 
   const fatal = (kind: string, err: unknown) => {
     record('server', 'fatal', kind, err instanceof Error ? err : { value: String(err) });
+    runCleanups();
     if (stream) stream.end(() => process.exit(1));
     else process.exit(1);
   };
@@ -255,6 +284,9 @@ export function initLogging(dir: string): void {
 
   // Written synchronously: by exit time the stream can no longer flush.
   process.on('exit', (code) => {
+    // Covers every exit the signal handlers do not: `process.exit()` from a
+    // route, the parent watchdog, an unhandled path out of main().
+    runCleanups();
     if (!logsDir) return;
     try {
       fs.appendFileSync(
@@ -268,6 +300,7 @@ export function initLogging(dir: string): void {
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const) {
     process.on(signal, () => {
       log.info(`received ${signal}`);
+      runCleanups();
       if (stream) stream.end(() => process.exit(0));
       else process.exit(0);
     });

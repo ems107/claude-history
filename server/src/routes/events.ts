@@ -29,6 +29,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onLive = () => send({ type: 'live-changed' });
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });
+    const onChat = (id: string) => send({ type: 'chat-changed', id });
     let logsTimer: NodeJS.Timeout | null = null;
     const onLogAppended = () => {
       if (logsTimer) return;
@@ -43,6 +44,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.index.events.on('live-changed', onLive);
     ctx.index.events.on('index-progress', onProgress);
     ctx.updates.events.on('update-status', onUpdateStatus);
+    ctx.chat.events.on('chat-changed', onChat);
     logEvents.on('appended', onLogAppended);
 
     const heartbeat = setInterval(() => reply.raw.write(': hb\n\n'), HEARTBEAT_MS);
@@ -56,6 +58,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.index.events.off('live-changed', onLive);
       ctx.index.events.off('index-progress', onProgress);
       ctx.updates.events.off('update-status', onUpdateStatus);
+      ctx.chat.events.off('chat-changed', onChat);
     });
   });
 }

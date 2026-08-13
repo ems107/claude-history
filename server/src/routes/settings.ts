@@ -117,6 +117,10 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn('uninstall refused: an update is being installed');
       return reply.code(409).send({ error: 'An update is being installed right now. Wait for it to finish.' });
     }
+    if (ctx.chat.busy) {
+      log.warn('uninstall refused: a prompt is being answered');
+      return reply.code(409).send({ error: 'Claude is answering a prompt sent from the app. Wait for it to finish.' });
+    }
     const script = path.join(install.versionDir, 'uninstall.ps1');
     if (!fs.existsSync(script)) {
       return reply.code(500).send({ error: `uninstall.ps1 not found in ${install.versionDir}` });
@@ -152,6 +156,13 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn('stop refused: an update is being installed');
       return reply.code(409).send({
         error: 'An update is being installed right now — stopping the server would abort it. Wait for it to finish.',
+      });
+    }
+    // Same reasoning one step down: stopping now kills the turn mid-answer.
+    if (ctx.chat.busy) {
+      log.warn('stop refused: a prompt is being answered');
+      return reply.code(409).send({
+        error: 'Claude is answering a prompt sent from the app — stopping the server would cut it off. Wait for it to finish.',
       });
     }
     void reply.send({ ok: true });

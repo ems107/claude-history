@@ -2,9 +2,10 @@ import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { AutoReloadService } from './core/autoReload.ts';
 import { SessionIndex } from './core/index.ts';
-import { applyLogSettings, createLogger, initLogging } from './core/logger.ts';
+import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
 import { SearchService } from './core/search.ts';
+import { SessionChatService } from './core/sessionChat.ts';
 import { startUpdateLogImport } from './core/updateLogImport.ts';
 import { UpdateService } from './core/updates.ts';
 import { UsageService } from './core/usage.ts';
@@ -40,9 +41,14 @@ async function main(): Promise<void> {
   startUpdateLogImport(updates.install?.root ?? null, config.cacheDir);
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
-  const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload });
+  const chat = new SessionChatService(index, () => index.getSettings());
+  const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload, chat });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
+  chat.start();
+  // The `claude` processes it owns outlive this one unless something kills
+  // them; the logger runs this on every exit path there is.
+  onShutdown(() => chat.shutdown());
 
   const watcher = new Watcher(config, index);
   watcher.start();
