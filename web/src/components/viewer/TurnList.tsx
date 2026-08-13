@@ -45,6 +45,7 @@ export function TurnList({
   highlight,
   onOpenAgent,
   footer,
+  pending,
 }: {
   turns: Turn[];
   showThinking: boolean;
@@ -70,6 +71,12 @@ export function TurnList({
    * instead of as a sibling of the prompt.
    */
   footer?: ReactNode;
+  /**
+   * Prompts sent from the composer that the transcript has not caught up with,
+   * appended after the last turn. Passed in rather than rendered beside the
+   * list so they sit inside its spacing and look like what they will become.
+   */
+  pending?: ReactNode;
 }) {
   // The same cached query the token panel uses — no extra request.
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
@@ -337,6 +344,11 @@ export function TurnList({
       {/* Nowhere to hang it: no turns at all, or a last group that is a rewound
           branch. Better loose than attached to the wrong exchange. */}
       {footer && footerTurnKey === null && footer}
+      {/* Prompts the transcript has not caught up with. They render INSIDE this
+          container so they inherit the same `space-y-4` every turn gets: as a
+          sibling outside it, the echo sat 6 px closer to the answer above than
+          the real message would, and visibly dropped into place when it landed. */}
+      {pending}
     </div>
   );
 }

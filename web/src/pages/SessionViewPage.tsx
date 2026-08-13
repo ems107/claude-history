@@ -293,12 +293,14 @@ export function SessionViewPage() {
                 footer={
                   pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined
                 }
+                // Inside the list, so an echoed prompt is spaced like the turn
+                // it is about to become.
+                pending={pending.map((p, i) => (
+                  <PendingTurn key={`${p.at}:${i}`} text={p.text}>
+                    {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
+                  </PendingTurn>
+                ))}
               />
-              {pending.map((p, i) => (
-                <PendingTurn key={`${p.at}:${i}`} text={p.text}>
-                  {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
-                </PendingTurn>
-              ))}
               {detail.data.turns.length === 0 && pending.length === 0 && (
                 <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
               )}
