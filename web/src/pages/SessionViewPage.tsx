@@ -200,6 +200,22 @@ export function SessionViewPage() {
       ? { pid: 0, status: 'busy', name: null, startedAt: null, updatedAt: null, statusUpdatedAt: busySince }
       : null;
   const liveInfo = chatLive ?? live.data?.find((l) => l.sessionId === id) ?? null;
+  /**
+   * How this session was last answered — the composer's starting point. Read
+   * from the end backwards, because that is the state the conversation is
+   * actually in; the model at the top may be several changes old.
+   */
+  const lastAnswer = (() => {
+    const turns = detail.data.turns;
+    for (let t = turns.length - 1; t >= 0; t--) {
+      const items = turns[t].items;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const item = items[i];
+        if (item.role === 'assistant' && item.model) return { model: item.model, effort: item.effort };
+      }
+    }
+    return null;
+  })();
 
   return (
     <div className="flex h-full flex-col">
@@ -319,6 +335,8 @@ export function SessionViewPage() {
           sessionId={id}
           maxWidth={view.width === WIDTH_FULL ? undefined : `${view.width}px`}
           onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
+          lastModel={lastAnswer?.model ?? null}
+          lastEffort={lastAnswer?.effort ?? null}
         />
       )}
       {agentId && (

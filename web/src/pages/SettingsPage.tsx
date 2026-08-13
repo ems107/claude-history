@@ -1,6 +1,5 @@
 import {
   type AppSettings,
-  CLAUDE_EFFORTS,
   CLAUDE_MODELS,
   DEFAULT_SETTINGS,
   LOG_LEVEL_CHOICES,
@@ -697,41 +696,6 @@ export function SettingsPage() {
               hint="Continue a conversation without leaving the app. The prompt goes to a Claude Code process the server keeps alive for that session, and the answer appears in the viewer as it is written to the transcript. Sending is blocked while the session is open in a terminal: two processes writing the same transcript corrupt it."
             />
           </Row>
-          <Row badge={<DefaultBadge field="chatModel" value={s.chatModel} save={save} />}>
-            <label className={`flex items-center gap-2 ${chatOff}`}>
-              <span>Model</span>
-              <select
-                value={s.chatModel}
-                disabled={!s.chatEnabled}
-                onChange={(e) => save({ chatModel: e.target.value })}
-                className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40"
-              >
-                {CLAUDE_MODELS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-              <span className="text-[var(--text-dim)]">the starting point — each session's composer can change it</span>
-            </label>
-          </Row>
-          <Row badge={<DefaultBadge field="chatEffort" value={s.chatEffort} save={save} />}>
-            <label className={`flex items-center gap-2 ${chatOff}`}>
-              <span>Effort</span>
-              <select
-                value={s.chatEffort}
-                disabled={!s.chatEnabled}
-                onChange={(e) => save({ chatEffort: e.target.value })}
-                className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40"
-              >
-                {CLAUDE_EFFORTS.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </Row>
           <Row badge={<DefaultBadge field="chatIdleTimeoutMinutes" value={s.chatIdleTimeoutMinutes} save={save} />}>
             <label className={`flex items-center gap-2 ${chatOff}`}>
               <span>Close an idle process after</span>
@@ -749,9 +713,11 @@ export function SettingsPage() {
             </label>
           </Row>
           <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
-            Tools run under Claude Code's <span className="text-[var(--text)]">auto</span> permission mode, so nothing
-            stops to ask — the same as pressing Shift+Tab into auto mode in a terminal. Your MCP servers are loaded as
-            usual, so the first prompt of a session takes a moment longer than the ones after it.
+            The model and effort are not set here: each session's composer starts from whatever that conversation was
+            last answered with, and you change them per session there. Tools run under Claude Code's{' '}
+            <span className="text-[var(--text)]">auto</span> permission mode, so it only stops when it genuinely needs
+            you — and then it asks in the conversation, above the box. Your MCP servers are loaded as usual, so the
+            first prompt of a session takes a moment longer than the ones after it.
           </div>
         </Section>
 

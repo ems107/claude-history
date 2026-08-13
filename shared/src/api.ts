@@ -297,10 +297,6 @@ export interface AppSettings {
    * as `autoReloadEnabled`.
    */
   chatEnabled: boolean;
-  /** Model alias new chat processes start with (one of CLAUDE_MODELS). */
-  chatModel: string;
-  /** Effort level new chat processes start with (one of CLAUDE_EFFORTS). */
-  chatEffort: string;
   /**
    * Minutes of silence before a chat process is closed (minimum
    * MIN_CHAT_IDLE_MINUTES). It costs nothing to keep one alive, but it holds a
@@ -331,8 +327,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadCwd: '',
   autoReloadHideSessions: false,
   chatEnabled: false,
-  chatModel: 'sonnet',
-  chatEffort: 'high',
   chatIdleTimeoutMinutes: 10,
   logLevel: 'info',
   logRetentionDays: 14,
@@ -537,8 +531,15 @@ export interface ChatStatus {
   idleClosesAt: string | null;
   /** Prompts accepted while a turn was in flight, waiting their turn. */
   queued: number;
-  model: string;
-  effort: string;
+  /**
+   * The model and effort of the RUNNING process, or null when there is none.
+   * Deliberately not a configured default: the composer starts from whatever
+   * the session was last answered with, which is what continuing a
+   * conversation means — a setting would silently change the model of a
+   * session you only meant to reply to.
+   */
+  model: string | null;
+  effort: string | null;
   lastError: string | null;
   /**
    * Why a prompt cannot be sent right now, in the words the UI shows. One

@@ -28,6 +28,10 @@ const TURN_SILENCE_MS = 10 * 60_000;
  */
 const MAX_CHAT_SESSIONS = 3;
 
+/** Only for a caller that sends neither — the composer always sends both. */
+const FALLBACK_MODEL = 'sonnet';
+const FALLBACK_EFFORT = 'high';
+
 /** Resolves when the user answers, with the payload to hand back to the tool. */
 interface PendingAsk {
   question: ChatQuestion;
@@ -184,8 +188,10 @@ export class SessionChatService {
       turnStartedAt: p?.turnStartedAt ? new Date(p.turnStartedAt).toISOString() : null,
       idleClosesAt: idleCloses ? new Date(idleCloses).toISOString() : null,
       queued: p?.queued.length ?? 0,
-      model: p?.model ?? s.chatModel,
-      effort: p?.effort ?? s.chatEffort,
+      // What is running, not what would run: the composer picks the starting
+      // point from the transcript, which the server would have to parse to know.
+      model: p?.model ?? null,
+      effort: p?.effort ?? null,
       lastError,
       blockedReason: this.sendBlockedReason(sessionId),
       question: p?.ask?.question ?? null,
@@ -211,9 +217,11 @@ export class SessionChatService {
       throw new Error(`The prompt is too long (${prompt.length} > ${CHAT_MESSAGE_MAX} characters).`);
     }
 
-    const s = this.settings();
-    const wantModel = model ?? s.chatModel;
-    const wantEffort = effort ?? s.chatEffort;
+    // The composer always sends both, picked from the last answer in the
+    // transcript. These fallbacks are only for a caller that does not — curl,
+    // a script — and name what Claude Code itself would default to.
+    const wantModel = model ?? this.index.get(sessionId)?.model ?? FALLBACK_MODEL;
+    const wantEffort = effort ?? FALLBACK_EFFORT;
 
     let p = this.procs.get(sessionId);
     if (p && p.model !== wantModel) {

@@ -69,8 +69,10 @@ export function parseAskUserQuestion(block: ToolBlockType): AnsweredQuestions | 
 export function AnsweredQuestionCard({ parsed }: { parsed: AnsweredQuestions }) {
   return (
     <div className="my-2 rounded-lg border border-[var(--accent-dim)]/50 bg-[var(--accent)]/5 px-3 py-2">
+      {/* "assistant", not "Claude", to match the label on every answer bubble:
+          the reader is following one speaker, called the same thing throughout. */}
       <div className="mb-1.5 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
-        {parsed.declined ? 'Claude asked — declined' : 'Claude asked'}
+        {parsed.declined ? 'Assistant asked — declined' : 'Assistant asked'}
       </div>
       <AnsweredQuestionPanel parsed={parsed} />
     </div>

@@ -132,7 +132,12 @@ export class SessionIndex {
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
     this.prices = userdata?.prices ?? null;
-    this.settings = { ...DEFAULT_SETTINGS, ...(userdata?.settings ?? {}) };
+    // Only keys we still have: a setting that is retired would otherwise live
+    // on in userdata.json forever, be served by /api/settings and read as
+    // current — which is exactly what happened to chatModel/chatEffort.
+    const saved = (userdata?.settings ?? {}) as Record<string, unknown>;
+    const known = Object.fromEntries(Object.keys(DEFAULT_SETTINGS).filter((k) => k in saved).map((k) => [k, saved[k]]));
+    this.settings = { ...DEFAULT_SETTINGS, ...(known as Partial<AppSettings>) };
 
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
@@ -384,12 +389,6 @@ export class SessionIndex {
       )
         ? (patch.autoReloadModel ?? this.settings.autoReloadModel)
         : DEFAULT_SETTINGS.autoReloadModel,
-      chatModel: (CLAUDE_MODELS as readonly string[]).includes(patch.chatModel ?? this.settings.chatModel)
-        ? (patch.chatModel ?? this.settings.chatModel)
-        : DEFAULT_SETTINGS.chatModel,
-      chatEffort: (CLAUDE_EFFORTS as readonly string[]).includes(patch.chatEffort ?? this.settings.chatEffort)
-        ? (patch.chatEffort ?? this.settings.chatEffort)
-        : DEFAULT_SETTINGS.chatEffort,
       chatIdleTimeoutMinutes: clampInt(
         patch.chatIdleTimeoutMinutes,
         this.settings.chatIdleTimeoutMinutes,

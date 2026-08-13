@@ -8,6 +8,18 @@ import { QuestionPanel } from './QuestionPanel.tsx';
 const MAX_TEXTAREA_PX = 220;
 
 /**
+ * `claude-sonnet-5` and `sonnet` are the same choice wearing two names: the
+ * transcript records the full id, the CLI offers aliases. Match on the family
+ * so the picker opens on what the session was actually answered with.
+ */
+function matchModel(want: string, offered: readonly string[]): string {
+  if (offered.includes(want)) return want;
+  const family = (s: string) => s.toLowerCase().replace(/^claude-/, '').replace(/\[.*$/, '').split('-')[0];
+  const target = family(want);
+  return offered.find((o) => family(o) === target) ?? want;
+}
+
+/**
  * Discreet, borderless chips: the box is the control, these ride inside it.
  * `appearance-none` because a native select draws a chrome dropdown arrow that
  * looks nothing like the rest of the app — the caret is drawn alongside instead.
@@ -105,11 +117,20 @@ export function Composer({
   sessionId,
   maxWidth,
   onSent,
+  lastModel,
+  lastEffort,
 }: {
   sessionId: string;
   maxWidth?: string;
   /** The prompt was accepted by the server; show it before the transcript has it. */
   onSent?: (text: string) => void;
+  /**
+   * How this session was last answered, from the transcript. The starting point
+   * for the pickers: there is no configured default, because one would quietly
+   * switch the model of a session you only meant to reply to.
+   */
+  lastModel?: string | null;
+  lastEffort?: string | null;
 }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -132,12 +153,21 @@ export function Composer({
   const status = chat.data;
   const working = status?.state === 'working' || status?.state === 'starting' || status?.state === 'asking';
   const blocked = status?.blockedReason ?? null;
-  const model = status?.model ?? CLAUDE_MODELS[1];
-  const effort = status?.effort ?? 'high';
+  // A running process wins, because that is what a prompt would actually go to.
+  // Otherwise: how this session was last answered. Continuing a conversation
+  // should continue it — including the model and effort it was being held at.
+  const wantedModel = status?.model ?? lastModel ?? CLAUDE_MODELS[1];
+  const effort = status?.effort ?? lastEffort ?? 'high';
   // What this CLI really accepts, once a session has been asked. Before that,
   // the shared list — which is a reasonable guess, not the truth: the live list
   // turns out to carry variants like `opus[1m]` that no constant here had.
-  const models = status?.availableModels.length ? status.availableModels : [...CLAUDE_MODELS];
+  const offered = status?.availableModels.length ? status.availableModels : [...CLAUDE_MODELS];
+  // The transcript records full ids (`claude-sonnet-5`) while the CLI offers
+  // aliases (`sonnet`), so the last-used model has to be matched by family or
+  // the picker would show an empty box. Anything that still matches nothing is
+  // added as its own option rather than silently replaced.
+  const model = matchModel(wantedModel, offered);
+  const models = offered.includes(model) ? offered : [model, ...offered];
   const commands = status?.availableCommands ?? [];
 
   useEffect(() => {

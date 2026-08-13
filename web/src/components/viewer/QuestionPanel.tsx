@@ -85,8 +85,10 @@ export function QuestionPanel({
       <div className="mx-auto" style={{ maxWidth }}>
         <div className="rounded-lg border border-[var(--accent-dim)] bg-[var(--accent)]/5 shadow-lg">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--accent-dim)]/40 px-3 py-1.5">
+            {/* Same wording as the card it becomes in the transcript, and as
+                the label on every answer bubble. */}
             <span className="text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
-              {items ? 'Claude asked' : 'Claude needs permission'}
+              {items ? 'Assistant asked' : 'Assistant needs permission'}
             </span>
             {/* One tab per question. With a single one there is nothing to
                 switch between, so the strip would only be furniture. */}

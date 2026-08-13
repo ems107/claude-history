@@ -66,7 +66,7 @@ function UserItem({
 }: {
   item: MessageItem;
   /** A prompt records no model of its own — these are the ones that answered it. */
-  models: string[];
+  models: TurnModel[];
   badge?: ReactNode;
 }) {
   const body = useRef<HTMLDivElement>(null);
@@ -94,11 +94,11 @@ function UserItem({
                 className="font-mono font-normal text-[var(--text-dim)] normal-case"
                 title={
                   models.length > 1
-                    ? `Models that answered this prompt: ${models.join(', ')}`
-                    : `Model that answered this prompt: ${models[0]}`
+                    ? `Models that answered this prompt: ${models.map((m) => `${m.model}${m.effort ? ` (effort ${m.effort})` : ''}`).join(', ')}`
+                    : `Model that answered this prompt: ${models[0].model}${models[0].effort ? ` (effort ${models[0].effort})` : ''}`
                 }
               >
-                {models.map(shortModel).join(', ')}
+                {models.map(modelLabel).join(', ')}
               </span>
             )}
             {badge}
@@ -248,7 +248,15 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
       {actions}
       {/* Same trailing run as the prompt's: model, cost, context. */}
       <span className="flex items-center gap-2">
-        {item.model && <span className="font-mono font-normal normal-case">{shortModel(item.model)}</span>}
+        {item.model && (
+          <span className="font-mono font-normal normal-case">
+            {shortModel(item.model)}
+            {/* The effort the line was answered at, which the model name alone
+                does not tell you — the same answer costs and reads differently
+                at `low` and at `xhigh`. Only assistant lines carry it. */}
+            {item.effort && <span className="text-[var(--text-dim)]"> · {item.effort}</span>}
+          </span>
+        )}
         {entry && (
           <CostPill
             entries={[entry]}
@@ -415,12 +423,27 @@ function FoldStrip({
  * there should only ever be one per turn — if a session changed model mid-turn,
  * saying so is better than picking one.
  */
-function turnModels(turn: TurnType): string[] {
-  const models = new Set<string>();
+function turnModels(turn: TurnType): TurnModel[] {
+  // Keyed on the pair: the same model at two efforts is two different ways of
+  // answering, and collapsing them would hide the one that cost the most.
+  const seen = new Map<string, TurnModel>();
   for (const item of turn.items) {
-    if (item.role === 'assistant' && item.model) models.add(item.model);
+    if (item.role !== 'assistant' || !item.model) continue;
+    const key = `${item.model}|${item.effort ?? ''}`;
+    if (!seen.has(key)) seen.set(key, { model: item.model, effort: item.effort });
   }
-  return [...models];
+  return [...seen.values()];
+}
+
+/** A model as it answered: which one, and at what effort. */
+interface TurnModel {
+  model: string;
+  effort: string | null;
+}
+
+/** `sonnet-5 · xhigh`, or just the model when the line recorded no effort. */
+function modelLabel(m: TurnModel): string {
+  return m.effort ? `${shortModel(m.model)} · ${m.effort}` : shortModel(m.model) ?? m.model;
 }
 
 /** What Claude Code injected, when this item is one of those (see `InjectedNotice`). */
@@ -447,7 +470,7 @@ function noticeNode(
  * Neither of them takes a click: a prompt is text to read and copy, and the
  * only thing that folds a turn is its fold strip.
  */
-function userNode(item: MessageItem, models: string[], badge: ReactNode | undefined): ReactNode {
+function userNode(item: MessageItem, models: TurnModel[], badge: ReactNode | undefined): ReactNode {
   if (item.isCompactSummary) {
     const text = item.blocks.find((b) => b.kind === 'text');
     return <CompactSummaryPanel key={item.uuid} id={item.uuid} text={text?.kind === 'text' ? text.text : ''} />;
