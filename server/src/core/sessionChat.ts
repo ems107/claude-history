@@ -600,6 +600,11 @@ export class SessionChatService {
         log.warn(`taskkill failed for ${p.sessionId}`, err);
       }
     }
+    // Tell the index to look again, or the badge keeps saying LIVE: the process
+    // leaves its `~/.claude/sessions` file behind and nothing writes to that
+    // directory on the way out, so no watcher event is ever coming. The short
+    // delay is for the pid to actually be gone before we ask.
+    setTimeout(() => void this.index.refreshLive(), 300).unref();
   }
 
   private changed(sessionId: string): void {

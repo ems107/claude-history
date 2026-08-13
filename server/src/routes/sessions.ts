@@ -1,6 +1,7 @@
 import type { LineageResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { pidAlive } from '../core/live.ts';
 import { parseSession } from '../core/parser.ts';
 import { UUID_RE } from '../core/scanner.ts';
 import { markBusy } from '../util/chatLive.ts';
@@ -11,10 +12,14 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     // A prompt sent from the app is answered by a process that never writes a
     // `status`, so the badge would sit on "live" through the whole turn.
     const working = ctx.chat.workingSessions();
-    if (working.size === 0) return list;
     return list.map((s) => {
       const startedAt = working.get(s.id);
-      return startedAt === undefined ? s : { ...s, live: markBusy(s.live, startedAt) };
+      if (startedAt !== undefined) return { ...s, live: markBusy(s.live, startedAt) };
+      // And a session whose process has since exited is not live at all: the
+      // cached list keeps the entry because nothing writes to that directory
+      // on the way out, so the pid is what has to be asked.
+      if (s.live && !pidAlive(s.live.pid)) return { ...s, live: null };
+      return s;
     });
   });
 
