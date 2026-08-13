@@ -1,4 +1,4 @@
-import { CHAT_MESSAGE_MAX, CLAUDE_EFFORTS, CLAUDE_MODELS } from '@claude-history/shared';
+import { CHAT_MESSAGE_MAX, CLAUDE_EFFORTS, CLAUDE_MODELS, type ChatModelInfo } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
@@ -9,14 +9,28 @@ const MAX_TEXTAREA_PX = 220;
 
 /**
  * `claude-sonnet-5` and `sonnet` are the same choice wearing two names: the
- * transcript records the full id, the CLI offers aliases. Match on the family
- * so the picker opens on what the session was actually answered with.
+ * transcript records the resolved id, the CLI offers aliases. `resolvedModel`
+ * says which alias covers which id, which is exact; the family match is the
+ * fallback for a transcript written by a version that named it differently.
  */
-function matchModel(want: string, offered: readonly string[]): string {
-  if (offered.includes(want)) return want;
+function matchModel(want: string, offered: ChatModelInfo[]): string {
+  if (offered.some((m) => m.value === want)) return want;
+  const resolved = offered.find((m) => m.resolvedModel === want);
+  if (resolved) return resolved.value;
   const family = (s: string) => s.toLowerCase().replace(/^claude-/, '').replace(/\[.*$/, '').split('-')[0];
   const target = family(want);
-  return offered.find((o) => family(o) === target) ?? want;
+  return offered.find((m) => family(m.value) === target)?.value ?? want;
+}
+
+/**
+ * What to call a model in the picker. `description` leads with the version and
+ * says when it carries 1M of context (`Opus 5 with 1M context`), which the bare
+ * alias never did; `displayName` is the fallback for a row without one.
+ */
+function modelLabel(m: ChatModelInfo): string {
+  const version = m.description.split('·')[0].trim();
+  if (!version) return m.displayName;
+  return m.value === 'default' ? `Default · ${version}` : version;
 }
 
 /**
@@ -71,7 +85,7 @@ function Picker({
   onChange,
 }: {
   value: string;
-  options: readonly string[];
+  options: { value: string; label: string }[];
   disabled: boolean;
   title: string;
   onChange: (v: string) => void;
@@ -86,8 +100,8 @@ function Picker({
         title={title}
       >
         {options.map((o) => (
-          <option key={o} value={o}>
-            {o}
+          <option key={o.value} value={o.value}>
+            {o.label}
           </option>
         ))}
       </select>
@@ -161,13 +175,27 @@ export function Composer({
   // What this CLI really accepts, once a session has been asked. Before that,
   // the shared list — which is a reasonable guess, not the truth: the live list
   // turns out to carry variants like `opus[1m]` that no constant here had.
-  const offered = status?.availableModels.length ? status.availableModels : [...CLAUDE_MODELS];
-  // The transcript records full ids (`claude-sonnet-5`) while the CLI offers
-  // aliases (`sonnet`), so the last-used model has to be matched by family or
-  // the picker would show an empty box. Anything that still matches nothing is
-  // added as its own option rather than silently replaced.
+  // Before a process exists there is nothing to ask, so the shared aliases
+  // stand in — a reasonable guess, without versions or per-model efforts.
+  const offered: ChatModelInfo[] = status?.availableModels.length
+    ? status.availableModels
+    : CLAUDE_MODELS.map((v) => ({
+        value: v,
+        displayName: v,
+        description: '',
+        resolvedModel: null,
+        efforts: [...CLAUDE_EFFORTS],
+      }));
   const model = matchModel(wantedModel, offered);
-  const models = offered.includes(model) ? offered : [model, ...offered];
+  // Anything that matches nothing is added as its own option rather than
+  // silently replaced: the box must show what will actually be sent.
+  const models = offered.some((m) => m.value === model)
+    ? offered
+    : [{ value: model, displayName: model, description: '', resolvedModel: null, efforts: [...CLAUDE_EFFORTS] }, ...offered];
+  const current = models.find((m) => m.value === model);
+  // Per model, not a fixed list: haiku takes no effort at all, and offering it
+  // five levels was both wrong on screen and wrong on the wire.
+  const efforts = current?.efforts ?? [];
   const commands = status?.availableCommands ?? [];
 
   useEffect(() => {
@@ -183,7 +211,9 @@ export function Composer({
     setSending(true);
     setError(null);
     api
-      .chatSend(sessionId, { text: prompt, model, effort })
+      // Effort only when this model takes one — sending null tells the server
+      // to pass no `--effort` at all rather than guess a level for it.
+      .chatSend(sessionId, { text: prompt, model, effort: efforts.length > 0 ? (effort ?? efforts[0]) : null })
       .then(() => {
         setText('');
         // Only once the server has taken it: an echo of a prompt that was
@@ -215,7 +245,7 @@ export function Composer({
       .finally(() => void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] }));
   };
 
-  const change = (patch: { model?: string; effort?: string }) => {
+  const change = (patch: { model?: string; effort?: string | null }) => {
     // Both are startup flags, so the server restarts the process to honour a
     // new one. Nothing to do here but remember the choice for the next send.
     queryClient.setQueryData(['chat', sessionId], (old: typeof status) => (old ? { ...old, ...patch } : old));
@@ -318,18 +348,27 @@ export function Composer({
           <div className="flex items-center gap-1 px-2 pt-0.5 pb-2">
             <Picker
               value={model}
-              options={models}
+              options={models.map((m) => ({ value: m.value, label: modelLabel(m) }))}
               disabled={working || !!blocked}
-              title="Model for the next prompt"
-              onChange={(v) => change({ model: v })}
+              title={current?.description || 'Model for the next prompt'}
+              onChange={(v) => {
+                // The new model may not take the effort the old one was on.
+                const next = models.find((m) => m.value === v);
+                const keep = next && effort && next.efforts.includes(effort) ? effort : (next?.efforts[0] ?? null);
+                change({ model: v, effort: keep });
+              }}
             />
-            <Picker
-              value={effort}
-              options={CLAUDE_EFFORTS}
-              disabled={working || !!blocked}
-              title="Effort for the next prompt"
-              onChange={(v) => change({ effort: v })}
-            />
+            {/* Hidden entirely for a model with no effort levels, rather than
+                shown greyed: there is no setting to make, not a locked one. */}
+            {efforts.length > 0 && (
+              <Picker
+                value={effort ?? efforts[0]}
+                options={efforts.map((e: string) => ({ value: e, label: e }))}
+                disabled={working || !!blocked}
+                title="Effort for the next prompt"
+                onChange={(v) => change({ effort: v })}
+              />
+            )}
             {status?.state === 'starting' && (
               <span className="px-1 text-[11px] text-[var(--text-dim)]">starting…</span>
             )}

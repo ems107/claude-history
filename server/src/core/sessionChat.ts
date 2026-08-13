@@ -2,7 +2,7 @@ import { query, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import type { AppSettings, ChatQuestion, ChatState, ChatStatus } from '@claude-history/shared';
+import type { AppSettings, ChatModelInfo, ChatQuestion, ChatState, ChatStatus } from '@claude-history/shared';
 import { CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
@@ -28,9 +28,8 @@ const TURN_SILENCE_MS = 10 * 60_000;
  */
 const MAX_CHAT_SESSIONS = 3;
 
-/** Only for a caller that sends neither — the composer always sends both. */
+/** Only for a caller that sends no model — the composer always sends one. */
 const FALLBACK_MODEL = 'sonnet';
-const FALLBACK_EFFORT = 'high';
 
 /** Resolves when the user answers, with the payload to hand back to the tool. */
 interface PendingAsk {
@@ -48,7 +47,8 @@ interface ChatProcess {
   finish: () => void;
   cwd: string;
   model: string;
-  effort: string;
+  /** Null for a model that takes no effort setting. */
+  effort: string | null;
   queued: string[];
   working: boolean;
   starting: boolean;
@@ -58,7 +58,7 @@ interface ChatProcess {
   /** The question on screen right now, and how to answer it. */
   ask: PendingAsk | null;
   /** Filled from the running session, so the UI offers what this CLI really has. */
-  models: string[];
+  models: ChatModelInfo[];
   commands: string[];
   /**
    * The `claude` process the SDK started. Captured through `spawnClaudeCodeProcess`
@@ -205,7 +205,7 @@ export class SessionChatService {
    * flight, and switches model or effort live — no restart, which is one of the
    * things the control channel buys.
    */
-  async send(sessionId: string, text: string, model?: string, effort?: string): Promise<void> {
+  async send(sessionId: string, text: string, model?: string, effort?: string | null): Promise<void> {
     const blocked = this.sendBlockedReason(sessionId);
     if (blocked) {
       log.warn(`prompt refused for ${sessionId} — ${blocked}`);
@@ -221,7 +221,9 @@ export class SessionChatService {
     // transcript. These fallbacks are only for a caller that does not — curl,
     // a script — and name what Claude Code itself would default to.
     const wantModel = model ?? this.index.get(sessionId)?.model ?? FALLBACK_MODEL;
-    const wantEffort = effort ?? FALLBACK_EFFORT;
+    // No effort sent means no effort passed: the CLI then uses whatever that
+    // model's own default is, which is the only right answer for one that has none.
+    const wantEffort = effort ?? null;
 
     let p = this.procs.get(sessionId);
     if (p && p.model !== wantModel) {
@@ -324,7 +326,7 @@ export class SessionChatService {
 
   // ---- internals ----
 
-  private spawnFor(sessionId: string, model: string, effort: string): ChatProcess {
+  private spawnFor(sessionId: string, model: string, effort: string | null): ChatProcess {
     const cli = findClaudeCli();
     const summary = this.index.get(sessionId);
     if (!cli || !summary) throw new Error('The Claude Code CLI could not be found.');
@@ -357,7 +359,9 @@ export class SessionChatService {
         resume: sessionId,
         cwd,
         model,
-        effort: effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+        // Omitted entirely for a model that takes none — haiku is one, and
+        // handing it an effort is asking for a setting it does not have.
+        ...(effort ? { effort: effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
         // The classifier approves the ordinary work, so canUseTool is only
         // reached by what it will not take — and by AskUserQuestion, which
         // always falls through to it whatever the rules say.
@@ -395,7 +399,10 @@ export class SessionChatService {
     });
 
     this.procs.set(sessionId, p);
-    log.info(`started a session for ${sessionId} (${model}, effort ${effort}) in ${cwd}`, { cli });
+    log.info(
+      `started a session for ${sessionId} (${model}${effort ? `, effort ${effort}` : ', no effort — this model takes none'}) in ${cwd}`,
+      { cli },
+    );
     void this.pump(p);
     return p;
   }
@@ -454,9 +461,18 @@ export class SessionChatService {
    */
   private async readCapabilities(p: ChatProcess): Promise<void> {
     try {
-      // ModelInfo.value is what --model accepts ('sonnet', 'claude-sonnet-5'…).
+      // Kept whole: the effort levels are per model (haiku has none at all),
+      // and the description is where the version and the 1M context live.
       const models = await p.session.supportedModels();
-      p.models = models.map((m) => m.value).filter((v) => typeof v === 'string' && v.length > 0);
+      p.models = models
+        .filter((m) => typeof m.value === 'string' && m.value.length > 0)
+        .map((m) => ({
+          value: m.value,
+          displayName: m.displayName ?? m.value,
+          description: m.description ?? '',
+          resolvedModel: m.resolvedModel ?? null,
+          efforts: m.supportsEffort === false ? [] : (m.supportedEffortLevels ?? []),
+        }));
     } catch (err) {
       log.debug(`could not read the model list for ${p.sessionId}`, err);
     }

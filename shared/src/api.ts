@@ -554,10 +554,29 @@ export interface ChatStatus {
    * hard-coded: the model list it accepts and its slash commands. Empty until a
    * process exists, which is why the composer falls back to the shared lists.
    */
-  availableModels: string[];
+  availableModels: ChatModelInfo[];
   availableCommands: string[];
 }
 export type ChatStatusResponse = ChatStatus;
+
+/**
+ * A model as the running CLI describes it. Worth carrying whole rather than as
+ * a bare alias: `haiku` accepts no effort at all while everything else takes
+ * five levels, and only this says so — offering the same five for every model
+ * was both wrong on screen and wrong on the wire.
+ */
+export interface ChatModelInfo {
+  /** What `--model` takes: `sonnet`, `opus[1m]`, `default`… */
+  value: string;
+  /** `Sonnet`, `Opus (1M context)`, `Default (recommended)`. */
+  displayName: string;
+  /** `Sonnet 5 · Efficient for routine tasks` — carries the version, and 1M when it applies. */
+  description: string;
+  /** The id this alias resolves to, which is what a transcript records. */
+  resolvedModel: string | null;
+  /** Empty when the model takes no effort setting. */
+  efforts: string[];
+}
 
 export interface ChatAnswerRequest {
   /** Question text -> chosen label(s). Null declines the tool instead. */
@@ -568,7 +587,8 @@ export interface ChatSendRequest {
   text: string;
   /** Overrides the session's current model; starts a new process if it differs. */
   model?: string;
-  effort?: string;
+  /** Null for a model with no effort levels — nothing is passed to the CLI. */
+  effort?: string | null;
 }
 
 // ---- Claude Code's own history retention (cleanupPeriodDays) ----
