@@ -3,7 +3,13 @@ import path from 'node:path';
 import type { LiveSessionEntry } from '@claude-history/shared';
 import { num, str } from './jsonl.ts';
 
-function pidAlive(pid: number): boolean {
+/**
+ * Exported because the cached list goes stale in one direction that matters: a
+ * CLI killed outright leaves its file behind, and nothing writes to the
+ * directory again, so no watcher event ever comes to drop it. Anything making
+ * a decision on that list has to re-ask at the moment it decides.
+ */
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

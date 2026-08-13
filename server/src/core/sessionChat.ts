@@ -5,6 +5,7 @@ import type { AppSettings, ChatState, ChatStatus } from '@claude-history/shared'
 import { CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
+import { pidAlive } from './live.ts';
 import { createLogger } from './logger.ts';
 
 const log = createLogger('chat');
@@ -114,7 +115,17 @@ export class SessionChatService {
     // an interactive one does (verified — `entrypoint: "sdk-cli"`, and the pid
     // is the `claude.exe` we spawned). Without this the feature blocks itself
     // the moment it starts working.
-    if (this.index.liveSessions.some((l) => l.sessionId === sessionId && !this.ownsPid(l.pid))) {
+    //
+    // `pidAlive` is re-checked here rather than trusted from the list, which is
+    // only rebuilt when something writes to that directory. A CLI killed
+    // outright writes nothing on the way out, so its file stays and no event
+    // ever arrives to drop it — measured: the block survived the terminal it
+    // named by minutes, with nothing left running.
+    if (
+      this.index.liveSessions.some(
+        (l) => l.sessionId === sessionId && !this.ownsPid(l.pid) && pidAlive(l.pid),
+      )
+    ) {
       return 'This session is open in a terminal — two writers would corrupt its transcript.';
     }
     if (!this.procs.has(sessionId) && this.procs.size >= MAX_CHAT_SESSIONS) {
