@@ -158,6 +158,18 @@ export const api = {
     if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
     return payload;
   },
+  // Answers whatever Claude is waiting on. The turn has been held open since
+  // the question was asked, so this is what lets it continue.
+  chatAnswer: async (id: string, answers: Record<string, string | string[]> | null) => {
+    const res = await fetch(`/api/sessions/${id}/chat/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers }),
+    });
+    const payload = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload;
+  },
   chatStop: async (id: string) => {
     const res = await fetch(`/api/sessions/${id}/chat/stop`, { method: 'POST' });
     const payload = (await res.json()) as { ok?: boolean; error?: string };

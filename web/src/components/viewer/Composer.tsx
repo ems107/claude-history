@@ -2,6 +2,7 @@ import { CHAT_MESSAGE_MAX, CLAUDE_EFFORTS, CLAUDE_MODELS } from '@claude-history
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
+import { QuestionDialog } from './QuestionDialog.tsx';
 
 /** Grow with the text, but never eat the conversation above. */
 const MAX_TEXTAREA_PX = 220;
@@ -113,6 +114,7 @@ export function Composer({
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [answering, setAnswering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -128,10 +130,15 @@ export function Composer({
   });
 
   const status = chat.data;
-  const working = status?.state === 'working' || status?.state === 'starting';
+  const working = status?.state === 'working' || status?.state === 'starting' || status?.state === 'asking';
   const blocked = status?.blockedReason ?? null;
   const model = status?.model ?? CLAUDE_MODELS[1];
   const effort = status?.effort ?? 'high';
+  // What this CLI really accepts, once a session has been asked. Before that,
+  // the shared list — which is a reasonable guess, not the truth: the live list
+  // turns out to carry variants like `opus[1m]` that no constant here had.
+  const models = status?.availableModels.length ? status.availableModels : [...CLAUDE_MODELS];
+  const commands = status?.availableCommands ?? [];
 
   useEffect(() => {
     const el = box.current;
@@ -160,6 +167,17 @@ export function Composer({
       });
   };
 
+  const answer = (answers: Record<string, string | string[]> | null) => {
+    setAnswering(true);
+    api
+      .chatAnswer(sessionId, answers)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        setAnswering(false);
+        void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] });
+      });
+  };
+
   const stop = () => {
     api
       .chatStop(sessionId)
@@ -173,6 +191,13 @@ export function Composer({
     queryClient.setQueryData(['chat', sessionId], (old: typeof status) => (old ? { ...old, ...patch } : old));
   };
 
+  // Only while the whole box is a command being typed — a `/` inside a
+  // sentence is a slash, not a command.
+  const typedCommand = /^\/(\S*)$/.exec(text);
+  const suggestions = typedCommand
+    ? commands.filter((c) => c.startsWith(typedCommand[1])).slice(0, 8)
+    : [];
+
   // A message the user cannot act on is worse than no message: say why the box
   // is dead, right next to it.
   const notice = blocked ?? error ?? status?.lastError ?? null;
@@ -182,6 +207,37 @@ export function Composer({
     // The page's own background, so the conversation scrolls under this rather
     // than through it.
     <div className="relative shrink-0 bg-[var(--bg)] px-4 pt-1 pb-3">
+      {status?.question && (
+        <QuestionDialog
+          question={status.question}
+          busy={answering}
+          onAnswer={(answers) => answer(answers)}
+          onDecline={() => answer(null)}
+        />
+      )}
+      {/* Slash commands this CLI really has, offered as you type `/`. */}
+      {suggestions.length > 0 && (
+        <div className="mx-auto mb-1.5" style={{ maxWidth }}>
+          <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg">
+            {suggestions.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onMouseDown={(e) => {
+                  // mousedown, not click: the textarea must not lose focus
+                  // before the value is replaced.
+                  e.preventDefault();
+                  setText(`/${name} `);
+                  box.current?.focus();
+                }}
+                className="block w-full px-3 py-1 text-left font-mono text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+              >
+                /{name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {/* The last bubble used to meet the composer at a hard edge, mid-sentence.
           This fades it out over the scroller instead — it sits outside this box
           on purpose, and takes no space. */}
@@ -229,7 +285,7 @@ export function Composer({
           <div className="flex items-center gap-1 px-2 pt-0.5 pb-2">
             <Picker
               value={model}
-              options={CLAUDE_MODELS}
+              options={models}
               disabled={working || !!blocked}
               title="Model for the next prompt"
               onChange={(v) => change({ model: v })}
