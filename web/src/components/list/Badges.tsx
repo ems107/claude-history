@@ -22,16 +22,19 @@ export function SessionBadges({ session, omitPr = false }: { session: SessionSum
   }
 
   if (session.live) {
+    // Claude Code writes no status for a `--print` run, so a session being
+    // answered from the app reads "unknown" here — which told the user
+    // nothing. Only the two states that mean something get named.
+    const busy = session.live.status === 'busy';
+    const idle = session.live.status === 'idle';
     badges.push(
       <span
         key="live"
-        title={`Running now (${session.live.status})`}
+        title={busy ? 'Answering right now' : idle ? 'Open and idle' : 'A Claude Code process has this session open'}
         className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-green-400 uppercase"
       >
-        <span
-          className={`size-1.5 rounded-full bg-green-400 ${session.live.status === 'busy' ? 'animate-pulse' : ''}`}
-        />
-        {session.live.status === 'busy' ? 'busy' : 'live'}
+        <span className={`size-1.5 rounded-full bg-green-400 ${busy ? 'animate-pulse' : ''}`} />
+        {busy ? 'busy' : 'live'}
       </span>,
     );
   }

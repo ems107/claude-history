@@ -3,9 +3,20 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { parseSession } from '../core/parser.ts';
 import { UUID_RE } from '../core/scanner.ts';
+import { markBusy } from '../util/chatLive.ts';
 
 export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.get('/api/sessions', async () => ctx.index.list());
+  app.get('/api/sessions', async () => {
+    const list = ctx.index.list();
+    // A prompt sent from the app is answered by a process that never writes a
+    // `status`, so the badge would sit on "live" through the whole turn.
+    const working = ctx.chat.workingSessions();
+    if (working.size === 0) return list;
+    return list.map((s) => {
+      const startedAt = working.get(s.id);
+      return startedAt === undefined ? s : { ...s, live: markBusy(s.live, startedAt) };
+    });
+  });
 
   app.get<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {
     const { id } = request.params;

@@ -502,6 +502,13 @@ export interface ChatStatus {
   running: boolean;
   /** Start of the turn in flight — what the working indicator counts from. */
   turnStartedAt: string | null;
+  /**
+   * When an idle process will be closed on its own. Null while a turn runs
+   * (nothing is counting down) and when there is no process. The composer
+   * counts down to it, because a process quietly holding a slot with no way to
+   * see it or end it is the kind of thing that gets discovered by accident.
+   */
+  idleClosesAt: string | null;
   /** Prompts accepted while a turn was in flight, waiting their turn. */
   queued: number;
   model: string;

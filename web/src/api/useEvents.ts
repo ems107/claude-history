@@ -92,6 +92,11 @@ export function useEvents(): void {
         // ~/.claude/sessions, so `live-changed` never speaks for these.
         case 'chat-changed':
           void queryClient.invalidateQueries({ queryKey: ['chat', event.id] });
+          // The list shows these turns as busy, and its only source for that is
+          // the chat state — so the badge moves with this event, not with
+          // 'live-changed', which knows nothing about our processes.
+          void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+          void queryClient.invalidateQueries({ queryKey: ['live'] });
           break;
         // Already throttled to one per second by the server. Cheap: both
         // queries are local reads, and the day parse is cached and incremental.

@@ -14,6 +14,42 @@ const MAX_TEXTAREA_PX = 220;
 const chip =
   'cursor-pointer appearance-none rounded-md bg-transparent py-0.5 pr-4 pl-1.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent';
 
+/**
+ * The process is alive between turns — that is what makes the second prompt
+ * start in 38 ms instead of a second and a half — and until now nothing said
+ * so. A process holding a slot invisibly, with no way to end it but waiting,
+ * is the kind of thing found out by accident.
+ */
+function IdleProcess({ closesAt, onClose }: { closesAt: string | null; onClose: () => void }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 1_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const left = closesAt ? Date.parse(closesAt) - Date.now() : null;
+  const countdown =
+    left === null || left <= 0
+      ? null
+      : `${Math.floor(left / 60_000)}:${String(Math.floor((left % 60_000) / 1000)).padStart(2, '0')}`;
+
+  return (
+    <span className="flex items-center gap-1 px-1 text-[11px] text-[var(--text-dim)]">
+      <span title="A Claude Code process is loaded for this session, so the next prompt starts instantly">
+        ready{countdown ? ` · closes in ${countdown}` : ''}
+      </span>
+      <button
+        type="button"
+        onClick={onClose}
+        title="Close the process now instead of waiting for it to time out"
+        className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+      >
+        close
+      </button>
+    </span>
+  );
+}
+
 function Picker({
   value,
   options,
@@ -210,6 +246,9 @@ export function Composer({
             )}
             {(status?.queued ?? 0) > 0 && (
               <span className="px-1 text-[11px] text-[var(--text-dim)]">{status?.queued} queued</span>
+            )}
+            {!working && status?.running && (
+              <IdleProcess closesAt={status.idleClosesAt} onClose={stop} />
             )}
             <span className="ml-auto" />
             {working ? (

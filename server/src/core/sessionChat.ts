@@ -141,11 +141,14 @@ export class SessionChatService {
     let state: ChatState = 'idle';
     if (p?.working) state = p.starting ? 'starting' : 'working';
     else if (lastError) state = 'error';
+    const idleCloses =
+      p && !p.working ? p.lastActivityAt + Math.max(1, s.chatIdleTimeoutMinutes) * 60_000 : null;
     return {
       sessionId,
       state,
       running: p !== undefined,
       turnStartedAt: p?.turnStartedAt ? new Date(p.turnStartedAt).toISOString() : null,
+      idleClosesAt: idleCloses ? new Date(idleCloses).toISOString() : null,
       queued: p?.queued.length ?? 0,
       model: p?.model ?? s.chatModel,
       effort: p?.effort ?? s.chatEffort,
@@ -215,6 +218,19 @@ export class SessionChatService {
   /** True while any session has a turn in flight — the stop/uninstall guard. */
   get busy(): boolean {
     return [...this.procs.values()].some((p) => p.working);
+  }
+
+  /**
+   * Sessions with a turn in flight right now. The session list reads this to
+   * show them as busy: Claude Code writes no `status` for a `--print` run, so
+   * `~/.claude/sessions` — the badge's usual source — never says so itself.
+   */
+  workingSessions(): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const p of this.procs.values()) {
+      if (p.working) out.set(p.sessionId, p.turnStartedAt ?? Date.now());
+    }
+    return out;
   }
 
   /** Is this one of the processes we started? See sendBlockedReason. */
