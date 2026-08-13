@@ -1,7 +1,8 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { query, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import type { AppSettings, ChatState, ChatStatus } from '@claude-history/shared';
+import type { AppSettings, ChatQuestion, ChatState, ChatStatus } from '@claude-history/shared';
 import { CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
@@ -14,66 +15,109 @@ const log = createLogger('chat');
 const TICK_MS = 30_000;
 
 /**
- * A turn with no output at all for this long is treated as wedged and the
- * process is killed. It is not a cap on how long Claude may work — every line
- * it writes, thinking included, resets the clock — but a turn that has gone
- * completely silent for ten minutes is not coming back, and without this it
- * would hold its session's slot forever. This is also the backstop for an
- * `AskUserQuestion` nobody can answer in a `--print` run.
+ * A turn with no output at all for this long is treated as wedged and killed.
+ * It is not a cap on how long Claude may work — every line it writes resets the
+ * clock — and it is explicitly suspended while a question is waiting, because
+ * then the silence is ours, not the CLI's.
  */
 const TURN_SILENCE_MS = 10 * 60_000;
 
 /**
- * Processes alive at once. Each one holds a CLI with its MCP servers loaded,
- * so this is about the machine, not about correctness — three conversations in
- * flight from one browser is already generous.
+ * Processes alive at once. Each holds a CLI with its MCP servers loaded, so
+ * this is about the machine, not correctness.
  */
 const MAX_CHAT_SESSIONS = 3;
 
+/** Resolves when the user answers, with the payload to hand back to the tool. */
+interface PendingAsk {
+  question: ChatQuestion;
+  resolve: (result: PermissionResult) => void;
+}
+
 interface ChatProcess {
   sessionId: string;
-  child: ChildProcess;
+  /** The SDK's handle: an async iterator plus interrupt/setModel/close. */
+  session: ReturnType<typeof query>;
+  /** Feeds prompts into the SDK's streaming input. */
+  push: (text: string) => void;
+  /** Ends the input stream, which is what lets the CLI exit cleanly. */
+  finish: () => void;
   cwd: string;
   model: string;
   effort: string;
-  /** Prompts accepted while a turn was in flight, sent in order after it. */
   queued: string[];
-  /** A prompt has been written and its `result` has not come back. */
   working: boolean;
-  /** True until the first line of output: the CLI is still starting up. */
   starting: boolean;
   turnStartedAt: number | null;
   lastActivityAt: number;
   lastError: string | null;
-  /** Framing remainder. Never an accumulator — stdout is read, not kept. */
-  tail: string;
+  /** The question on screen right now, and how to answer it. */
+  ask: PendingAsk | null;
+  /** Filled from the running session, so the UI offers what this CLI really has. */
+  models: string[];
+  commands: string[];
+  /**
+   * The `claude` process the SDK started. Captured through `spawnClaudeCodeProcess`
+   * because nothing else exposes it, and two things need it: excluding ourselves
+   * from the two-writers guard (our own run registers a pid file like any other)
+   * and killing the tree if it outlives its session.
+   */
+  pid: number | null;
 }
 
 /**
- * Talks to one `claude` process per session, so a prompt typed in the app
- * reaches the conversation it belongs to.
+ * A queue an async generator can await: the bridge between HTTP requests
+ * arriving whenever they like and the SDK pulling one message at a time.
+ */
+function messageChannel() {
+  const items: string[] = [];
+  let wake: (() => void) | null = null;
+  let closed = false;
+  return {
+    push(text: string) {
+      items.push(text);
+      wake?.();
+    },
+    close() {
+      closed = true;
+      wake?.();
+    },
+    async *stream(): AsyncGenerator<{ type: 'user'; message: { role: 'user'; content: string }; parent_tool_use_id: null }> {
+      for (;;) {
+        while (items.length) {
+          const text = items.shift() as string;
+          yield { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null };
+        }
+        if (closed) return;
+        await new Promise<void>((r) => {
+          wake = r;
+        });
+        wake = null;
+      }
+    },
+  };
+}
+
+/**
+ * Talks to one Claude Code session per conversation, through the Agent SDK.
  *
  * The shape of this is set by one decision: **the answer is not rendered from
- * this stream.** Claude Code writes its own transcript, the watcher sees the
- * file grow and the viewer re-reads it — the path that already draws every
- * live session. So all this service does with stdout is follow the state
- * machine (`init` … `result`) and say when a turn starts and ends. Nothing is
- * accumulated, and a line it does not recognise costs nothing.
+ * the SDK's stream.** Claude Code writes its own transcript, the watcher sees
+ * the file grow and the viewer re-reads it — the path that already draws every
+ * live session. So the message loop is followed only far enough to know when a
+ * turn starts and ends, and nothing is accumulated.
  *
- * Verified against CC 2.1.229 before it was written: one process takes several
- * turns on the same stdin (1.45 s to the first `system/init`, 38 ms to the
- * second), and `--resume` appends to the SAME transcript file. Note that
- * `system/init` is emitted at the start of EVERY turn, not once at startup, so
- * it cannot be used as "the process is ready".
+ * What the SDK buys over talking to the CLI by hand is the control channel,
+ * and specifically `canUseTool`. `AskUserQuestion` does not exist at all in a
+ * plain `--print` run (measured: 33 tools without it, 36 with the SDK), so
+ * Claude would silently drop to asking in prose. Here the question arrives
+ * structured — header, options, descriptions — and is answered from the UI,
+ * which is the whole point: the app changes how it looks, not how it behaves.
  */
 export class SessionChatService {
   readonly events = new EventEmitter();
   private readonly procs = new Map<string, ChatProcess>();
-  /**
-   * Last failure per session, kept AFTER the process is gone. Without this the
-   * one thing worth reporting — why it died — would be dropped along with the
-   * process that knew it, and the composer would go quiet with no explanation.
-   */
+  /** Last failure per session, kept after the process is gone. */
   private readonly errors = new Map<string, string>();
   private timer: NodeJS.Timeout | null = null;
 
@@ -92,10 +136,8 @@ export class SessionChatService {
 
   /**
    * Why a prompt cannot be sent, in the words the composer shows. One string
-   * for the endpoint and the UI both: a control that is disabled and silent
-   * about it is the bug this shape exists to prevent.
-   *
-   * A turn already in flight is NOT a reason — that queues.
+   * for the endpoint and the UI both. A turn already in flight is NOT a reason
+   * — that queues.
    */
   sendBlockedReason(sessionId: string): string | null {
     const s = this.settings();
@@ -106,25 +148,16 @@ export class SessionChatService {
     if (!fs.existsSync(summary.projectPath)) {
       return `The project folder no longer exists: ${summary.projectPath}`;
     }
-    // The one that matters. Claude Code appends to the transcript from whatever
-    // process holds the session, and two writers is exactly what produces the
-    // duplicated uuids and replayed segments the parser has to undo.
+    // Claude Code appends to the transcript from whatever process holds the
+    // session, and two writers is exactly what produces the duplicated uuids
+    // and replayed segments the parser has to undo.
     //
-    // Our own process has to be excluded by pid, because it registers itself
-    // there too: a `--print` run writes the same `~/.claude/sessions/<pid>.json`
-    // an interactive one does (verified — `entrypoint: "sdk-cli"`, and the pid
-    // is the `claude.exe` we spawned). Without this the feature blocks itself
-    // the moment it starts working.
-    //
-    // `pidAlive` is re-checked here rather than trusted from the list, which is
-    // only rebuilt when something writes to that directory. A CLI killed
-    // outright writes nothing on the way out, so its file stays and no event
-    // ever arrives to drop it — measured: the block survived the terminal it
-    // named by minutes, with nothing left running.
+    // Our own process is excluded by pid: it registers itself there too. And
+    // `pidAlive` is re-checked rather than trusted from the list, which is only
+    // rebuilt when something writes to that directory — a CLI killed outright
+    // writes nothing on the way out, so its entry would block us forever.
     if (
-      this.index.liveSessions.some(
-        (l) => l.sessionId === sessionId && !this.ownsPid(l.pid) && pidAlive(l.pid),
-      )
+      this.index.liveSessions.some((l) => l.sessionId === sessionId && !this.ownsPid(l.pid) && pidAlive(l.pid))
     ) {
       return 'This session is open in a terminal — two writers would corrupt its transcript.';
     }
@@ -139,7 +172,8 @@ export class SessionChatService {
     const p = this.procs.get(sessionId);
     const lastError = p?.lastError ?? this.errors.get(sessionId) ?? null;
     let state: ChatState = 'idle';
-    if (p?.working) state = p.starting ? 'starting' : 'working';
+    if (p?.ask) state = 'asking';
+    else if (p?.working) state = p.starting ? 'starting' : 'working';
     else if (lastError) state = 'error';
     const idleCloses =
       p && !p.working ? p.lastActivityAt + Math.max(1, s.chatIdleTimeoutMinutes) * 60_000 : null;
@@ -154,15 +188,18 @@ export class SessionChatService {
       effort: p?.effort ?? s.chatEffort,
       lastError,
       blockedReason: this.sendBlockedReason(sessionId),
+      question: p?.ask?.question ?? null,
+      availableModels: p?.models ?? [],
+      availableCommands: p?.commands ?? [],
     };
   }
 
   /**
-   * Send one prompt. Starts a process if there is none, queues if a turn is in
-   * flight, and restarts the process when the model or effort changed — those
-   * are startup flags, so the only way to honour a new one is a new process.
+   * Send one prompt. Starts a session if there is none, queues if a turn is in
+   * flight, and switches model or effort live — no restart, which is one of the
+   * things the control channel buys.
    */
-  send(sessionId: string, text: string, model?: string, effort?: string): void {
+  async send(sessionId: string, text: string, model?: string, effort?: string): Promise<void> {
     const blocked = this.sendBlockedReason(sessionId);
     if (blocked) {
       log.warn(`prompt refused for ${sessionId} — ${blocked}`);
@@ -179,10 +216,19 @@ export class SessionChatService {
     const wantEffort = effort ?? s.chatEffort;
 
     let p = this.procs.get(sessionId);
-    if (p && (p.model !== wantModel || p.effort !== wantEffort)) {
-      if (p.working) throw new Error('Finish the current turn before changing model or effort.');
-      log.info(`restarting ${sessionId} for ${wantModel}/${wantEffort} (was ${p.model}/${p.effort})`);
-      this.kill(p, 'model or effort changed');
+    if (p && p.model !== wantModel) {
+      // Live, over the control channel. The old code had to kill the process
+      // and pay the whole startup again.
+      await p.session.setModel(wantModel).catch((err: unknown) => log.warn(`setModel failed`, err));
+      p.model = wantModel;
+      log.info(`switched ${sessionId} to ${wantModel}`);
+    }
+    // Effort is a startup flag with no control message, so it still needs a
+    // fresh process — but only when it actually changed.
+    if (p && p.effort !== wantEffort) {
+      if (p.working) throw new Error('Finish the current turn before changing effort.');
+      log.info(`restarting ${sessionId} for effort ${wantEffort} (was ${p.effort})`);
+      this.kill(p, 'effort changed');
       p = undefined;
     }
     if (!p) p = this.spawnFor(sessionId, wantModel, wantEffort);
@@ -196,19 +242,53 @@ export class SessionChatService {
     this.write(p, prompt);
   }
 
-  /** Kill the process for a session, dropping whatever was queued. */
-  stop(sessionId: string): void {
+  /**
+   * Answer the question on screen. `values` maps each question text to the
+   * label(s) chosen; a null answer denies the tool instead, which is how a
+   * permission prompt is refused.
+   */
+  answer(sessionId: string, values: Record<string, string | string[]> | null): void {
+    const p = this.procs.get(sessionId);
+    if (!p?.ask) throw new Error('Nothing is waiting for an answer.');
+    const { question, resolve } = p.ask;
+    p.ask = null;
+    p.lastActivityAt = Date.now();
+    if (values === null) {
+      log.info(`user declined ${question.toolName} in ${sessionId}`);
+      resolve({ behavior: 'deny', message: 'The user declined.' });
+    } else if (question.questions) {
+      // The tool wants its own questions echoed back beside the answers.
+      log.info(`user answered ${question.questions.length} question(s) in ${sessionId}`);
+      resolve({
+        behavior: 'allow',
+        updatedInput: { questions: question.questions, answers: values } as Record<string, unknown>,
+      });
+    } else {
+      log.info(`user allowed ${question.toolName} in ${sessionId}`);
+      resolve({ behavior: 'allow', updatedInput: (question.input ?? {}) as Record<string, unknown> });
+    }
+    this.changed(sessionId);
+  }
+
+  /** Interrupt the turn and close the session. */
+  async stop(sessionId: string): Promise<void> {
     const p = this.procs.get(sessionId);
     if (!p) return;
+    // A pending question is holding the turn open; let it go first or the
+    // interrupt lands on a loop that is not listening.
+    if (p.ask) {
+      p.ask.resolve({ behavior: 'deny', message: 'The user stopped the turn.' });
+      p.ask = null;
+    }
+    if (p.working) await p.session.interrupt().catch((err: unknown) => log.warn('interrupt failed', err));
     this.kill(p, 'stopped from the app');
     this.changed(sessionId);
   }
 
   /**
-   * Kill every process. Called from the signal handlers and from every route
-   * that ends the server, because nothing else would: `claude` is not in this
-   * process's tree in any way Windows cleans up for us, and the scheduled task
-   * only ever kills the wscript wrapper.
+   * Close every session. Called from the signal handlers and from every route
+   * that ends the server: the CLI the SDK spawned is not in this process's tree
+   * in any way Windows cleans up for us.
    */
   shutdown(): void {
     if (this.timer) clearInterval(this.timer);
@@ -220,11 +300,7 @@ export class SessionChatService {
     return [...this.procs.values()].some((p) => p.working);
   }
 
-  /**
-   * Sessions with a turn in flight right now. The session list reads this to
-   * show them as busy: Claude Code writes no `status` for a `--print` run, so
-   * `~/.claude/sessions` — the badge's usual source — never says so itself.
-   */
+  /** Sessions with a turn in flight — the session list shows these as busy. */
   workingSessions(): Map<string, number> {
     const out = new Map<string, number>();
     for (const p of this.procs.values()) {
@@ -233,9 +309,8 @@ export class SessionChatService {
     return out;
   }
 
-  /** Is this one of the processes we started? See sendBlockedReason. */
   private ownsPid(pid: number): boolean {
-    for (const p of this.procs.values()) if (p.child.pid === pid) return true;
+    for (const p of this.procs.values()) if (p.pid === pid) return true;
     return false;
   }
 
@@ -244,42 +319,15 @@ export class SessionChatService {
   private spawnFor(sessionId: string, model: string, effort: string): ChatProcess {
     const cli = findClaudeCli();
     const summary = this.index.get(sessionId);
-    // Both were checked by sendBlockedReason; this is the type-level echo.
     if (!cli || !summary) throw new Error('The Claude Code CLI could not be found.');
     const cwd = summary.projectPath;
 
-    // MCP servers are deliberately NOT skipped (no --strict-mcp-config): a
-    // prompt that needs Jira or SQL has to work the same here as in a terminal.
-    // The startup cost is paid once, because the process outlives the turn.
-    const args = [
-      '--print',
-      '--verbose',
-      '--resume',
-      sessionId,
-      '--input-format',
-      'stream-json',
-      '--output-format',
-      'stream-json',
-      '--permission-mode',
-      'auto',
-      '--model',
-      model,
-      '--effort',
-      effort,
-    ];
-    const child = spawn(cli, args, {
-      cwd,
-      // Strip our own CLAUDE_CODE_* markers, or the child treats itself as a
-      // nested session and stops persisting the transcript — which is the one
-      // thing this whole feature depends on.
-      env: cleanEnv(),
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
+    const channel = messageChannel();
     const p: ChatProcess = {
       sessionId,
-      child,
+      session: null as unknown as ReturnType<typeof query>,
+      push: channel.push,
+      finish: channel.close,
       cwd,
       model,
       effort,
@@ -289,105 +337,188 @@ export class SessionChatService {
       turnStartedAt: null,
       lastActivityAt: Date.now(),
       lastError: null,
-      tail: '',
+      ask: null,
+      models: [],
+      commands: [],
+      pid: null,
     };
-    this.procs.set(sessionId, p);
-    log.info(`started a process for ${sessionId} (${model}, effort ${effort}) in ${cwd}`, { cli, args });
 
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => this.onStdout(p, chunk));
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => {
-      const text = chunk.trim();
-      if (text) log.warn(`${sessionId} wrote to stderr: ${text.slice(0, 300)}`);
+    p.session = query({
+      prompt: channel.stream(),
+      options: {
+        resume: sessionId,
+        cwd,
+        model,
+        effort: effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+        // The classifier approves the ordinary work, so canUseTool is only
+        // reached by what it will not take — and by AskUserQuestion, which
+        // always falls through to it whatever the rules say.
+        permissionMode: 'auto',
+        // Never the SDK's own vendored copy: that is 293 MB we deliberately do
+        // not install, and this is the CLI the user actually runs.
+        pathToClaudeCodeExecutable: cli,
+        // Strip our own CLAUDE_CODE_* markers, or the child treats itself as a
+        // nested session and stops persisting the transcript — the one thing
+        // this whole feature depends on.
+        env: cleanEnv() as Record<string, string>,
+        // Spawn it ourselves purely to learn the pid; everything else is the
+        // SDK's own defaults passed straight through.
+        spawnClaudeCodeProcess: (opts) => {
+          const child = spawn(opts.command, opts.args, {
+            cwd: opts.cwd,
+            env: opts.env,
+            // The SDK's own forwarded signal, which only fires after it has
+            // tried stdin-EOF and waited out the grace window. Passing our own
+            // would race ahead of that and hard-kill the CLI on Windows.
+            signal: opts.signal,
+            windowsHide: true,
+            stdio: ['pipe', 'pipe', 'pipe'],
+          });
+          p.pid = child.pid ?? null;
+          log.info(`the claude process for ${sessionId} is pid ${String(p.pid)}`);
+          return child as unknown as ReturnType<NonNullable<Parameters<typeof query>[0]['options']>['spawnClaudeCodeProcess'] & object>;
+        },
+        canUseTool: (toolName, input) => this.onCanUseTool(sessionId, toolName, input),
+        stderr: (data: string) => {
+          const text = data.trim();
+          if (text) log.warn(`${sessionId} wrote to stderr: ${text.slice(0, 300)}`);
+        },
+      },
     });
-    child.once('error', (err) => {
-      // A path that resolved and then failed to spawn cannot stay cached.
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') forgetClaudeCli();
-      p.lastError = String(err);
-      log.error(`could not run the CLI for ${sessionId}`, err);
-      this.forget(p);
-    });
-    child.once('close', (code) => {
-      if (p.working) p.lastError = `The process exited (code ${code}) before the turn finished.`;
-      log.info(`process for ${sessionId} exited with code ${code}`);
-      this.forget(p);
-    });
+
+    this.procs.set(sessionId, p);
+    log.info(`started a session for ${sessionId} (${model}, effort ${effort}) in ${cwd}`, { cli });
+    void this.pump(p);
     return p;
   }
 
-  private write(p: ChatProcess, prompt: string): void {
-    if (!p.child.stdin?.writable) {
-      p.lastError = 'The process is no longer accepting input.';
+  /**
+   * Follow the SDK's messages far enough to track state. The content is
+   * already on its way to the viewer through the transcript, so nothing here
+   * accumulates or renders.
+   */
+  private async pump(p: ChatProcess): Promise<void> {
+    try {
+      for await (const message of p.session) {
+        p.lastActivityAt = Date.now();
+        p.starting = false;
+        if (message.type === 'system' && message.subtype === 'init') {
+          // Emitted at the start of EVERY turn, not once at startup, so it
+          // cannot mean "ready". Worth reading once: it names the slash
+          // commands this CLI actually has, which is what the composer offers
+          // instead of a list written here and doomed to drift.
+          if (p.commands.length === 0) void this.readCapabilities(p);
+          continue;
+        }
+        if (message.type === 'result') {
+          p.working = false;
+          p.turnStartedAt = null;
+          if (message.subtype !== 'success') {
+            p.lastError = `Claude Code reported an error (${message.subtype}).`;
+            log.warn(`turn for ${p.sessionId} ended in an error: ${message.subtype}`);
+          } else {
+            log.info(`turn finished for ${p.sessionId}`);
+          }
+          const next = p.queued.shift();
+          if (next) this.write(p, next);
+          else this.changed(p.sessionId);
+        }
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') forgetClaudeCli();
+      p.lastError = err instanceof Error ? err.message : String(err);
+      log.error(`the session for ${p.sessionId} failed`, err);
+    } finally {
+      p.working = false;
+      p.turnStartedAt = null;
+      const current = this.procs.get(p.sessionId);
+      if (current === p) this.procs.delete(p.sessionId);
+      if (p.lastError) this.errors.set(p.sessionId, p.lastError);
       this.changed(p.sessionId);
-      return;
     }
+  }
+
+  /**
+   * Ask the running CLI what it offers. Both lists are what make the composer
+   * honest: the models are the ones this install accepts (not a constant that
+   * ages), and the commands are what `/` should complete to. Failures are
+   * logged and dropped — the UI falls back to the shared defaults.
+   */
+  private async readCapabilities(p: ChatProcess): Promise<void> {
+    try {
+      // ModelInfo.value is what --model accepts ('sonnet', 'claude-sonnet-5'…).
+      const models = await p.session.supportedModels();
+      p.models = models.map((m) => m.value).filter((v) => typeof v === 'string' && v.length > 0);
+    } catch (err) {
+      log.debug(`could not read the model list for ${p.sessionId}`, err);
+    }
+    try {
+      const commands = await p.session.supportedCommands();
+      p.commands = commands.map((c) => c.name).filter((n) => typeof n === 'string' && n.length > 0);
+    } catch (err) {
+      log.debug(`could not read the command list for ${p.sessionId}`, err);
+    }
+    log.info(`${p.sessionId} offers ${p.models.length} models and ${p.commands.length} commands`);
+    this.changed(p.sessionId);
+  }
+
+  /**
+   * A tool needs the user. In auto mode this is rare — the classifier settles
+   * the ordinary work — but `AskUserQuestion` always arrives here, and so does
+   * anything the classifier refuses. Either way the promise is held until the
+   * browser answers, which is exactly what keeps the turn alive meanwhile.
+   */
+  private onCanUseTool(sessionId: string, toolName: string, input: Record<string, unknown>): Promise<PermissionResult> {
+    const p = this.procs.get(sessionId);
+    if (!p) return Promise.resolve({ behavior: 'deny' as const, message: 'The session is gone.' });
+
+    const questions = Array.isArray((input as { questions?: unknown }).questions)
+      ? ((input as { questions: ChatQuestion['questions'] }).questions ?? null)
+      : null;
+    const question: ChatQuestion = {
+      toolName,
+      questions,
+      input: questions ? undefined : input,
+      askedAt: new Date().toISOString(),
+    };
+    log.info(`${toolName} is waiting on the user in ${sessionId}`, { questions: questions?.length ?? 0 });
+
+    return new Promise((resolve) => {
+      p.ask = { question, resolve };
+      this.changed(sessionId);
+    });
+  }
+
+  private write(p: ChatProcess, prompt: string): void {
     p.working = true;
     p.turnStartedAt = Date.now();
     p.lastActivityAt = Date.now();
     p.lastError = null;
     this.errors.delete(p.sessionId);
-    // One NDJSON line per prompt. JSON.stringify escapes the newlines of a
-    // multi-line prompt, so a pasted stack trace is still exactly one line.
-    p.child.stdin.write(
-      `${JSON.stringify({ type: 'user', message: { role: 'user', content: prompt }, parent_tool_use_id: null })}\n`,
-    );
+    p.push(prompt);
     log.info(`sent a prompt to ${p.sessionId} (${prompt.length} chars)`);
     this.changed(p.sessionId);
-  }
-
-  /**
-   * Frame stdout into lines and follow the state machine. Only `type` is read:
-   * the content is already on its way to the viewer through the transcript.
-   */
-  private onStdout(p: ChatProcess, chunk: string): void {
-    p.lastActivityAt = Date.now();
-    p.starting = false;
-    p.tail += chunk;
-    const lines = p.tail.split('\n');
-    // The last piece is whatever came after the final newline: a partial line
-    // most of the time, and the empty string when the chunk ended cleanly.
-    p.tail = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let o: { type?: unknown; subtype?: unknown; is_error?: unknown };
-      try {
-        o = JSON.parse(line) as typeof o;
-      } catch {
-        log.warn(`unparseable line from ${p.sessionId}: ${line.slice(0, 200)}`);
-        continue;
-      }
-      if (o.type !== 'result') continue;
-      p.working = false;
-      p.turnStartedAt = null;
-      if (o.is_error === true) {
-        p.lastError = `Claude Code reported an error (${String(o.subtype ?? 'unknown')}).`;
-        log.warn(`turn for ${p.sessionId} ended in an error: ${String(o.subtype ?? 'unknown')}`);
-      } else {
-        log.info(`turn finished for ${p.sessionId}`);
-      }
-      const next = p.queued.shift();
-      if (next) this.write(p, next);
-      else this.changed(p.sessionId);
-    }
   }
 
   private sweep(): void {
     const idleMs = Math.max(1, this.settings().chatIdleTimeoutMinutes) * 60_000;
     const now = Date.now();
     for (const p of [...this.procs.values()]) {
+      // A question on screen is not silence: the turn is waiting for a person,
+      // and killing it would throw away the answer they are about to give.
+      if (p.ask) continue;
       const quiet = now - p.lastActivityAt;
       if (p.working) {
         if (quiet > TURN_SILENCE_MS) {
           p.lastError = `The turn produced no output for ${Math.round(TURN_SILENCE_MS / 60_000)} minutes and was stopped.`;
-          log.warn(`turn for ${p.sessionId} went silent — killing the process`);
+          log.warn(`turn for ${p.sessionId} went silent — closing it`);
           this.kill(p, 'the turn went silent');
           this.changed(p.sessionId);
         }
         continue;
       }
       if (quiet > idleMs) {
-        log.info(`closing the idle process for ${p.sessionId}`);
+        log.info(`closing the idle session for ${p.sessionId}`);
         this.kill(p, 'idle');
         this.changed(p.sessionId);
       }
@@ -395,30 +526,32 @@ export class SessionChatService {
   }
 
   /**
-   * `claude` spawns children of its own, so the tree goes — `child.kill()`
-   * leaves them behind. Synchronous on purpose: this also runs from the
-   * process-exit handler, where nothing asynchronous gets a chance to finish.
+   * Close a session for good. `close()` ends the SDK's side; ending the input
+   * stream is what lets the CLI exit on EOF, which it does on its own. The
+   * taskkill is the belt-and-braces for a child that ignores both — `claude`
+   * spawns children of its own, so it takes the tree.
    */
   private kill(p: ChatProcess, why: string): void {
     this.procs.delete(p.sessionId);
     if (p.lastError) this.errors.set(p.sessionId, p.lastError);
-    if (p.child.pid === undefined) return;
-    log.info(`killing the process for ${p.sessionId} — ${why}`);
-    try {
-      spawnSync('taskkill', ['/pid', String(p.child.pid), '/T', '/F'], { windowsHide: true });
-    } catch (err) {
-      log.warn(`taskkill failed for ${p.sessionId}`, err);
+    if (p.ask) {
+      p.ask.resolve({ behavior: 'deny', message: 'The session was closed.' });
+      p.ask = null;
     }
-  }
-
-  /** The process is gone on its own; keep the error for the panel to show. */
-  private forget(p: ChatProcess): void {
-    const current = this.procs.get(p.sessionId);
-    if (current === p) this.procs.delete(p.sessionId);
-    if (p.lastError) this.errors.set(p.sessionId, p.lastError);
-    p.working = false;
-    p.turnStartedAt = null;
-    this.changed(p.sessionId);
+    log.info(`closing the session for ${p.sessionId} — ${why}`);
+    try {
+      p.finish();
+      p.session.close();
+    } catch (err) {
+      log.warn(`could not close the SDK session for ${p.sessionId}`, err);
+    }
+    if (p.pid !== null) {
+      try {
+        spawnSync('taskkill', ['/pid', String(p.pid), '/T', '/F'], { windowsHide: true });
+      } catch (err) {
+        log.warn(`taskkill failed for ${p.sessionId}`, err);
+      }
+    }
   }
 
   private changed(sessionId: string): void {

@@ -1,4 +1,4 @@
-import type { ChatSendRequest, ChatStatusResponse } from '@claude-history/shared';
+import type { ChatAnswerRequest, ChatSendRequest, ChatStatusResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { UUID_RE } from '../core/scanner.ts';
@@ -29,7 +29,29 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { text, model, effort } = request.body ?? { text: '' };
       if (typeof text !== 'string') return reply.code(400).send({ error: 'text is required' });
       try {
-        ctx.chat.send(id, text, model, effort);
+        await ctx.chat.send(id, text, model, effort);
+        return { ok: true };
+      } catch (err) {
+        return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+  );
+
+  // Answer whatever Claude is waiting on: the choices for an AskUserQuestion,
+  // or a plain allow/deny for a tool the auto classifier would not take. The
+  // turn has been held open since the question was asked, so this is what lets
+  // it continue.
+  app.post<{ Params: { id: string }; Body: ChatAnswerRequest }>(
+    '/api/sessions/:id/chat/answer',
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
+      const answers = request.body?.answers;
+      if (answers !== null && (typeof answers !== 'object' || Array.isArray(answers))) {
+        return reply.code(400).send({ error: 'answers must be an object or null' });
+      }
+      try {
+        ctx.chat.answer(id, answers);
         return { ok: true };
       } catch (err) {
         return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) });
@@ -40,7 +62,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.post<{ Params: { id: string } }>('/api/sessions/:id/chat/stop', async (request, reply) => {
     const { id } = request.params;
     if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
-    ctx.chat.stop(id);
+    await ctx.chat.stop(id);
     return { ok: true };
   });
 }

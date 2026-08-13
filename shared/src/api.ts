@@ -493,7 +493,33 @@ export const CHAT_MESSAGE_MAX = 20_000;
  * composer that said "working" through several seconds of that would be
  * describing something that has not begun.
  */
-export type ChatState = 'idle' | 'starting' | 'working' | 'error';
+export type ChatState = 'idle' | 'starting' | 'working' | 'asking' | 'error';
+
+/** One of Claude's multiple-choice questions, as `AskUserQuestion` states it. */
+export interface ChatQuestionItem {
+  question: string;
+  /** Short label, max 12 characters — what the UI puts on the chip. */
+  header: string;
+  options: { label: string; description: string }[];
+  multiSelect: boolean;
+}
+
+/**
+ * Something Claude needs a person for, held open until the browser answers.
+ *
+ * Two shapes arrive here and the UI tells them apart by `questions`:
+ * `AskUserQuestion` carries the multiple-choice list, and anything the auto
+ * classifier will not approve carries the raw tool input instead, to be allowed
+ * or refused. Both exist only because the SDK's control channel surfaces them
+ * — a plain `--print` run is not offered `AskUserQuestion` at all.
+ */
+export interface ChatQuestion {
+  toolName: string;
+  questions: ChatQuestionItem[] | null;
+  /** The tool's own input, when this is a permission rather than a question. */
+  input?: unknown;
+  askedAt: string;
+}
 
 export interface ChatStatus {
   sessionId: string;
@@ -520,8 +546,22 @@ export interface ChatStatus {
    * never be silent about why — the lesson of `AutoReloadStatus.configError`.
    */
   blockedReason: string | null;
+  /** What Claude is waiting on, if anything. Null the rest of the time. */
+  question: ChatQuestion | null;
+  /**
+   * What this CLI really offers, read from the running session rather than
+   * hard-coded: the model list it accepts and its slash commands. Empty until a
+   * process exists, which is why the composer falls back to the shared lists.
+   */
+  availableModels: string[];
+  availableCommands: string[];
 }
 export type ChatStatusResponse = ChatStatus;
+
+export interface ChatAnswerRequest {
+  /** Question text -> chosen label(s). Null declines the tool instead. */
+  answers: Record<string, string | string[]> | null;
+}
 
 export interface ChatSendRequest {
   text: string;
