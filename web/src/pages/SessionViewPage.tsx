@@ -207,7 +207,13 @@ export function SessionViewPage() {
       {/* The pill is a sibling of the scroller, not a child: inside it, it would
           scroll away with the conversation. */}
       <div className="relative min-h-0 flex-1">
-        <div ref={follow.scrollRef} className="h-full overflow-y-auto px-4 py-4">
+        {/* `both-edges` so the scrollbar does not shift the centre: the composer
+            below is centred on the full width, and reserving the gutter on one
+            side only left the two misaligned by half a scrollbar (measured: 5 px). */}
+        <div
+          ref={follow.scrollRef}
+          className="h-full overflow-y-auto px-4 py-4 [scrollbar-gutter:stable_both-edges]"
+        >
           {/* Width on the outer box, zoom on an inner one — never both on the
               same element: a max-width INSIDE a zoomed box is a length like any
               other and would be scaled with it, so 896 px would drift to 1344
@@ -248,8 +254,12 @@ export function SessionViewPage() {
       </div>
       {/* A sibling of the scroller, not a child: the root is a column and the
           scroller is the only min-h-0 flex-1, so this sits at the foot without
-          taking part in the scrolling. */}
-      {chatEnabled && <Composer sessionId={id} />}
+          taking part in the scrolling. It takes the conversation's own width so
+          it lines up with the bubbles — the width lives on the outer box here
+          too, never on something zoomed. */}
+      {chatEnabled && (
+        <Composer sessionId={id} maxWidth={view.width === WIDTH_FULL ? undefined : `${view.width}px`} />
+      )}
       {agentId && (
         <SubagentDrawer
           sessionId={id}
