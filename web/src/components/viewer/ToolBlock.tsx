@@ -2,7 +2,6 @@ import type { ContentBlock } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes } from '../../lib/format.ts';
-import { AnsweredQuestionPanel, answerSummary, parseAskUserQuestion } from './AnsweredQuestion.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
@@ -78,10 +77,6 @@ export function ToolBlock({
   }, [targeted]);
   const result = block.result;
   const statusColor = result ? (result.isError ? 'bg-red-400' : 'bg-emerald-400') : 'bg-zinc-500';
-  // A question Claude asked is not plumbing like the other tool calls: it is a
-  // decision the reader made, and the JSON of both halves buries it. Rendered
-  // as itself, with the answer on the folded header so it reads at a glance.
-  const asked = parseAskUserQuestion(block);
 
   return (
     // The anchor a search result scrolls to and flashes. A data attribute rather
@@ -96,14 +91,7 @@ export function ToolBlock({
           <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
           <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
-          {asked ? (
-            <span className="truncate text-[var(--text)]">
-              <span className="text-[var(--text-dim)]">answered </span>
-              <span className="font-medium text-[var(--accent)]">{answerSummary(asked)}</span>
-            </span>
-          ) : (
-            <span className="truncate font-mono text-[var(--text-dim)]">{block.inputSummary}</span>
-          )}
+          <span className="truncate font-mono text-[var(--text-dim)]">{block.inputSummary}</span>
         </FoldHeader>
         {costBadge}
         {block.agentId && onOpenAgent && (
@@ -117,12 +105,7 @@ export function ToolBlock({
           </button>
         )}
       </div>
-      {open && asked && (
-        <div className="border-t border-[var(--border)] px-2 py-2">
-          <AnsweredQuestionPanel parsed={asked} />
-        </div>
-      )}
-      {open && !asked && (
+      {open && (
         <div className="border-t border-[var(--border)] px-2 py-1.5">
           {block.input !== null && block.input !== undefined && (
             <>

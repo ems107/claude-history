@@ -5,6 +5,7 @@ import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { foldedCounts } from '../../lib/folding.ts';
 import { isPromptItem } from '../../lib/segments.ts';
+import { AnsweredQuestionCard, parseAskUserQuestion } from './AnsweredQuestion.tsx';
 import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
 import { CompactBoundaryPanel, CompactSummaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
@@ -641,7 +642,19 @@ export function TurnView({
     // An assistant message that is only tool calls contributes to the run
     // without printing its own header — so the run carries its cost.
     if (visible.length > 0 && visible.every((b) => b.kind === 'tool')) {
-      pendingTools.push(...(visible as ToolContentBlock[]).map((block) => ({ block, item, costOwner: true })));
+      // A question to the user CLOSES the run it belongs to and is drawn after
+      // it, at conversation level. `costOwner` drops to false once that has
+      // happened: the message pays in the first run, and a second run holding
+      // more of its calls must not bill it again.
+      let owns = true;
+      for (const block of visible as ToolContentBlock[]) {
+        pendingTools.push({ block, item, costOwner: owns });
+        const asked = parseAskUserQuestion(block);
+        if (!asked) continue;
+        flushTools();
+        owns = false;
+        nodes.push(<AnsweredQuestionCard key={`asked-${block.toolUseId || item.uuid}`} parsed={asked} />);
+      }
       continue;
     }
 
@@ -651,6 +664,23 @@ export function TurnView({
     for (const [i, b] of visible.entries()) {
       if (b.kind === 'tool') {
         pendingTools.push({ block: b, item, costOwner: false });
+        // Same rule as above, inside a message that also has prose: the run
+        // ends at the question and the card follows it.
+        const asked = parseAskUserQuestion(b);
+        if (asked) {
+          rendered.push(
+            <ToolGroup
+              key={`tools-before-ask-${i}`}
+              tools={pendingTools}
+              expandAll={expandTools}
+              onOpenAgent={onOpenAgent}
+              costs={costs}
+              targetTool={targetTool}
+            />,
+          );
+          pendingTools = [];
+          rendered.push(<AnsweredQuestionCard key={`asked-${i}`} parsed={asked} />);
+        }
         continue;
       }
       if (pendingTools.length > 0) {

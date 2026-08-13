@@ -56,7 +56,28 @@ export function parseAskUserQuestion(block: ToolBlockType): AnsweredQuestions | 
   return { questions, answers, declined };
 }
 
-/** One-line summary for the folded header: what was chosen, nothing else. */
+/**
+ * The exchange as a part of the conversation, not as one of the tool calls.
+ *
+ * It sits BETWEEN tool runs rather than inside one, and never folds: Claude
+ * stopping to ask something, and the answer it was given, is a turn of the
+ * conversation in miniature — burying it among twenty Reads and Greps files it
+ * as plumbing, which it is not. The call itself stays in the run behind this,
+ * with its raw input, its result and its cost, so nothing is lost for anyone
+ * reading the mechanics or following a `?tool=` link.
+ */
+export function AnsweredQuestionCard({ parsed }: { parsed: AnsweredQuestions }) {
+  return (
+    <div className="my-2 rounded-lg border border-[var(--accent-dim)]/50 bg-[var(--accent)]/5 px-3 py-2">
+      <div className="mb-1.5 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
+        {parsed.declined ? 'Claude asked — declined' : 'Claude asked'}
+      </div>
+      <AnsweredQuestionPanel parsed={parsed} />
+    </div>
+  );
+}
+
+/** One-line summary of what was chosen. */
 export function answerSummary(parsed: AnsweredQuestions): string {
   if (parsed.declined) return 'declined';
   const picked = parsed.questions
