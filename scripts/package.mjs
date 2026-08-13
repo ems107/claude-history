@@ -64,7 +64,12 @@ await build({
   target: 'node24',
   format: 'cjs',
   outfile: path.join(verDir, 'server.cjs'),
-  define: { __APP_VERSION__: JSON.stringify(version) },
+  // The Agent SDK calls `createRequire(import.meta.url)` at module scope. In a
+  // CJS bundle esbuild has no import.meta to give it, so that argument arrives
+  // undefined and the whole bundle throws ERR_INVALID_ARG_VALUE before a line
+  // of ours runs. Hand it the equivalent for this file.
+  banner: { js: "const __sdkFileUrl = require('url').pathToFileURL(__filename).href;" },
+  define: { __APP_VERSION__: JSON.stringify(version), 'import.meta.url': '__sdkFileUrl' },
   sourcemap: false,
   logLevel: 'warning',
 });

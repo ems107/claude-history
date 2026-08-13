@@ -4,3 +4,10 @@ packages:
   - web
 allowBuilds:
   esbuild: true
+# The Agent SDK ships a whole copy of the Claude Code CLI as a per-platform
+# optional dependency -- 293 MB on Windows. We never use it: the server points
+# the SDK at the CLI the user already has (findClaudeCli), and the release
+# bundle carries no node_modules at all. Excluded here rather than with an
+# install flag so a clean `pnpm install` cannot quietly bring it back.
+ignoredOptionalDependencies:
+  - "@anthropic-ai/claude-agent-sdk-*"
