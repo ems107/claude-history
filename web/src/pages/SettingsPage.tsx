@@ -692,7 +692,7 @@ export function SettingsPage() {
             <Toggle
               checked={s.chatEnabled}
               onChange={(v) => save({ chatEnabled: v })}
-              label="Show a composer at the foot of every session"
+              label="Show a composer at the foot of every session (experimental)"
               hint="Continue a conversation without leaving the app. The prompt goes to a Claude Code process the server keeps alive for that session, and the answer appears in the viewer as it is written to the transcript. Sending is blocked while the session is open in a terminal: two processes writing the same transcript corrupt it."
             />
           </Row>
