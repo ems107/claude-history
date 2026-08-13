@@ -10,10 +10,12 @@ import type {
 } from '@claude-history/shared';
 import {
   AUTO_RELOAD_MESSAGE_MAX,
-  AUTO_RELOAD_MODELS,
+  CLAUDE_EFFORTS,
+  CLAUDE_MODELS,
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
   LOG_LEVEL_CHOICES,
+  MIN_CHAT_IDLE_MINUTES,
   MIN_LOG_RETENTION_DAYS,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
@@ -377,11 +379,22 @@ export class SessionIndex {
       ),
       // 0 is meaningful here: "always re-read when the window regains focus".
       usageFocusMaxAgeSeconds: clampInt(patch.usageFocusMaxAgeSeconds, this.settings.usageFocusMaxAgeSeconds, 0),
-      autoReloadModel: (AUTO_RELOAD_MODELS as readonly string[]).includes(
+      autoReloadModel: (CLAUDE_MODELS as readonly string[]).includes(
         patch.autoReloadModel ?? this.settings.autoReloadModel,
       )
         ? (patch.autoReloadModel ?? this.settings.autoReloadModel)
         : DEFAULT_SETTINGS.autoReloadModel,
+      chatModel: (CLAUDE_MODELS as readonly string[]).includes(patch.chatModel ?? this.settings.chatModel)
+        ? (patch.chatModel ?? this.settings.chatModel)
+        : DEFAULT_SETTINGS.chatModel,
+      chatEffort: (CLAUDE_EFFORTS as readonly string[]).includes(patch.chatEffort ?? this.settings.chatEffort)
+        ? (patch.chatEffort ?? this.settings.chatEffort)
+        : DEFAULT_SETTINGS.chatEffort,
+      chatIdleTimeoutMinutes: clampInt(
+        patch.chatIdleTimeoutMinutes,
+        this.settings.chatIdleTimeoutMinutes,
+        MIN_CHAT_IDLE_MINUTES,
+      ),
       autoReloadMessage: (patch.autoReloadMessage ?? this.settings.autoReloadMessage).slice(
         0,
         AUTO_RELOAD_MESSAGE_MAX,

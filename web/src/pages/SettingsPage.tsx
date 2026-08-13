@@ -1,6 +1,6 @@
 import {
   type AppSettings,
-  AUTO_RELOAD_MODELS,
+  CLAUDE_MODELS,
   DEFAULT_SETTINGS,
   LOG_LEVEL_CHOICES,
   MIN_USAGE_INTERVAL_SECONDS,
@@ -615,7 +615,7 @@ export function SettingsPage() {
                 onChange={(e) => save({ autoReloadModel: e.target.value })}
                 className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40"
               >
-                {AUTO_RELOAD_MODELS.map((m) => (
+                {CLAUDE_MODELS.map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>

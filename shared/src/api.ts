@@ -279,7 +279,7 @@ export interface AppSettings {
    * it works with no browser open.
    */
   autoReloadEnabled: boolean;
-  /** Model alias for that prompt (one of AUTO_RELOAD_MODELS). */
+  /** Model alias for that prompt (one of CLAUDE_MODELS). */
   autoReloadModel: string;
   /** The prompt itself. Anything non-empty works; it is thrown away. */
   autoReloadMessage: string;
@@ -290,6 +290,23 @@ export interface AppSettings {
   autoReloadCwd: string;
   /** Leave that folder's sessions out of the list, the filters and the counts. */
   autoReloadHideSessions: boolean;
+  /**
+   * Show the composer at the foot of a session and let it send prompts to a
+   * Claude Code process the server keeps alive. Off by default: it runs Claude
+   * and spends subscription quota, so it waits to be asked for — same reasoning
+   * as `autoReloadEnabled`.
+   */
+  chatEnabled: boolean;
+  /** Model alias new chat processes start with (one of CLAUDE_MODELS). */
+  chatModel: string;
+  /** Effort level new chat processes start with (one of CLAUDE_EFFORTS). */
+  chatEffort: string;
+  /**
+   * Minutes of silence before a chat process is closed (minimum
+   * MIN_CHAT_IDLE_MINUTES). It costs nothing to keep one alive, but it holds a
+   * slot and a `claude` process, and a forgotten tab should not own either.
+   */
+  chatIdleTimeoutMinutes: number;
   /** Lowest level actually written to the log files. */
   logLevel: LogLevel;
   /** Daily log files older than this are deleted (minimum 1). */
@@ -313,6 +330,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadMessage: 'Hi, Claude!',
   autoReloadCwd: '',
   autoReloadHideSessions: false,
+  chatEnabled: false,
+  chatModel: 'sonnet',
+  chatEffort: 'high',
+  chatIdleTimeoutMinutes: 10,
   logLevel: 'info',
   logRetentionDays: 14,
 };
@@ -334,10 +355,24 @@ export const MIN_USAGE_INTERVAL_SECONDS = 15;
  */
 export const MIN_USAGE_RATE_LIMIT_SECONDS = 60;
 
-// ---- Auto-reload of the 5-hour window ----
+/**
+ * Aliases `claude --model` accepts (verified against CC 2.1.224). One list, not
+ * one per feature: both the auto-reload and the composer pass these straight to
+ * the CLI, and two copies of the same set are two chances to disagree with it.
+ */
+export const CLAUDE_MODELS = ['haiku', 'sonnet', 'opus', 'fable'] as const;
 
-/** Aliases `claude --model` accepts (verified against CC 2.1.224). */
-export const AUTO_RELOAD_MODELS = ['haiku', 'sonnet', 'opus', 'fable'] as const;
+/** Levels `claude --effort` accepts. */
+export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+/**
+ * Floor on the chat idle timeout. Below a minute the process would be torn down
+ * and rebuilt between two prompts of the same conversation, paying the whole
+ * startup — MCP servers included — for nothing.
+ */
+export const MIN_CHAT_IDLE_MINUTES = 1;
+
+// ---- Auto-reload of the 5-hour window ----
 
 /** Longest prompt we store; the reload message is meant to be a one-liner. */
 export const AUTO_RELOAD_MESSAGE_MAX = 500;
@@ -349,7 +384,7 @@ export const AUTO_RELOAD_MESSAGE_MAX = 500;
  */
 export function validateAutoReload(s: AppSettings): string | null {
   if (!s.autoReloadMessage.trim()) return 'The message to send is empty.';
-  if (!(AUTO_RELOAD_MODELS as readonly string[]).includes(s.autoReloadModel)) {
+  if (!(CLAUDE_MODELS as readonly string[]).includes(s.autoReloadModel)) {
     return `Unknown model "${s.autoReloadModel}".`;
   }
   const cwd = s.autoReloadCwd.trim();
@@ -439,6 +474,53 @@ export interface AutoReloadStatus {
   lastRun: AutoReloadRun | null;
   /** Resolved claude executable; null when it could not be found. */
   cliPath: string | null;
+}
+
+// ---- Sending prompts to a live Claude Code process ----
+
+/**
+ * Longest prompt the composer accepts. Generous, because a pasted stack trace
+ * or a spec is a perfectly ordinary prompt; the cap only exists so a runaway
+ * paste cannot be written into a pipe one line at a time.
+ */
+export const CHAT_MESSAGE_MAX = 20_000;
+
+/**
+ * What the server's process for one session is doing.
+ *
+ * `starting` is its own state rather than a flavour of `working` because the
+ * first turn pays for the whole CLI startup — MCP servers included — and a
+ * composer that said "working" through several seconds of that would be
+ * describing something that has not begun.
+ */
+export type ChatState = 'idle' | 'starting' | 'working' | 'error';
+
+export interface ChatStatus {
+  sessionId: string;
+  state: ChatState;
+  /** A process exists for this session (it may be idle between turns). */
+  running: boolean;
+  /** Start of the turn in flight — what the working indicator counts from. */
+  turnStartedAt: string | null;
+  /** Prompts accepted while a turn was in flight, waiting their turn. */
+  queued: number;
+  model: string;
+  effort: string;
+  lastError: string | null;
+  /**
+   * Why a prompt cannot be sent right now, in the words the UI shows. One
+   * string for the endpoint and the composer both, so a disabled control can
+   * never be silent about why — the lesson of `AutoReloadStatus.configError`.
+   */
+  blockedReason: string | null;
+}
+export type ChatStatusResponse = ChatStatus;
+
+export interface ChatSendRequest {
+  text: string;
+  /** Overrides the session's current model; starts a new process if it differs. */
+  model?: string;
+  effort?: string;
 }
 
 // ---- Claude Code's own history retention (cleanupPeriodDays) ----
@@ -604,6 +686,8 @@ export const LOG_SOURCES = [
   'watcher',
   'usage',
   'auto-reload',
+  /** The Claude Code processes the composer talks to. */
+  'chat',
   /** Reading Claude Code's own `cleanupPeriodDays` out of its settings files. */
   'retention',
   'updates',
@@ -691,4 +775,11 @@ export type ServerEvent =
   | { type: 'live-changed' }
   | { type: 'index-progress'; enriched: number; total: number }
   | { type: 'update-status' }
+  /**
+   * A session's chat process changed state. Separate from `live-changed`
+   * because that one is driven by `~/.claude/sessions`, where a `--print` run
+   * does not register: the server's own processes have no other way to say
+   * they started a turn or finished one.
+   */
+  | { type: 'chat-changed'; id: string }
   | { type: 'logs-appended' };
