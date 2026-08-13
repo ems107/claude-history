@@ -2,7 +2,7 @@ import { CHAT_MESSAGE_MAX, CLAUDE_EFFORTS, CLAUDE_MODELS } from '@claude-history
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
-import { QuestionDialog } from './QuestionDialog.tsx';
+import { QuestionPanel } from './QuestionPanel.tsx';
 
 /** Grow with the text, but never eat the conversation above. */
 const MAX_TEXTAREA_PX = 220;
@@ -207,9 +207,12 @@ export function Composer({
     // The page's own background, so the conversation scrolls under this rather
     // than through it.
     <div className="relative shrink-0 bg-[var(--bg)] px-4 pt-1 pb-3">
+      {/* Above the box, below the conversation: where the next message goes.
+          Not a modal — a question is no reason to stop the app being usable. */}
       {status?.question && (
-        <QuestionDialog
+        <QuestionPanel
           question={status.question}
+          maxWidth={maxWidth}
           busy={answering}
           onAnswer={(answers) => answer(answers)}
           onDecline={() => answer(null)}
