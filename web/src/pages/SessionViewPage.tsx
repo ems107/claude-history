@@ -11,6 +11,7 @@ import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
 import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
+import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
@@ -50,6 +51,12 @@ export function SessionViewPage() {
   });
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
+  /**
+   * Prompts sent from the composer that the transcript has not caught up with.
+   * `at` is when it was accepted, which is also when the turn really began —
+   * the indicator counts from it while the server's own figure is in flight.
+   */
+  const [pending, setPending] = useState<{ text: string; at: number }[]>([]);
   /**
    * Shared with the Composer through the query key — one request, two readers.
    * The page needs it for the working indicator, because a `--print` process
@@ -118,6 +125,36 @@ export function SessionViewPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [agentId, closeAgent, navigate]);
 
+  /**
+   * Drop an echoed prompt as soon as the real one arrives, matched on its text
+   * — the transcript line has a uuid we never saw, so there is nothing else to
+   * match on. A failed turn clears the lot: the process is gone and no line is
+   * coming, and an echo left on screen would claim a message that never landed.
+   */
+  const turnsData = detail.data?.turns;
+  const chatState = chat.data?.state;
+  useEffect(() => {
+    if (pending.length === 0) return;
+    if (chatState === 'error') {
+      setPending([]);
+      return;
+    }
+    if (!turnsData) return;
+    const said = new Set<string>();
+    for (const turn of turnsData) {
+      for (const item of turn.items) {
+        if (item.role !== 'user') continue;
+        for (const block of item.blocks) {
+          if (block.kind === 'text' || block.kind === 'command') said.add(block.text.trim());
+        }
+      }
+    }
+    setPending((prev) => {
+      const next = prev.filter((p) => !said.has(p.text.trim()));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [turnsData, chatState, pending.length]);
+
   // Above the early returns (hooks are not optional) and above TurnList: the
   // header buttons need to know whether anything is left to fold or unfold.
   const fold = useFoldState(detail.data?.turns ?? EMPTY_TURNS, showThinking, id);
@@ -141,23 +178,28 @@ export function SessionViewPage() {
   const color =
     projects.data?.find((p) => p.key === detail.data.summary.projectKey)?.color ?? FALLBACK_COLOR;
   /**
-   * A turn we started looks like nothing to /api/live, so it gets a LiveInfo of
-   * its own rather than a second indicator: `WorkingIndicator` already knows
-   * how to draw "working since", and the only thing it needs is when the turn
-   * began. A real terminal session still wins — it is the one with a pid.
+   * A turn we started gets a LiveInfo of its own rather than a second
+   * indicator: `WorkingIndicator` already knows how to draw "working since",
+   * and all it needs is when the turn began.
+   *
+   * It has to come FIRST, not as a fallback. Our own process registers itself
+   * in ~/.claude/sessions like any other, but with no `status` field — so
+   * /api/live answers `status: "unknown"` for this very session, and letting
+   * that win meant the indicator never appeared at all while the composer was
+   * working (the browser check missed it: it caught the seconds before the
+   * watcher had picked the file up).
    */
+  const busySince =
+    // The server's figure when it has arrived, and until then the moment the
+    // prompt was accepted. Waiting for the round trip left the indicator dark
+    // for about a second after the click, which on a short turn is most of it —
+    // the prompt was already on screen with nothing to say it was being worked on.
+    chat.data?.turnStartedAt != null ? Date.parse(chat.data.turnStartedAt) : (pending[0]?.at ?? null);
   const chatLive: LiveInfo | null =
-    chat.data?.turnStartedAt !== null && chat.data?.turnStartedAt !== undefined
-      ? {
-          pid: 0,
-          status: 'busy',
-          name: null,
-          startedAt: null,
-          updatedAt: null,
-          statusUpdatedAt: Date.parse(chat.data.turnStartedAt),
-        }
+    busySince !== null
+      ? { pid: 0, status: 'busy', name: null, startedAt: null, updatedAt: null, statusUpdatedAt: busySince }
       : null;
-  const liveInfo = live.data?.find((l) => l.sessionId === id) ?? chatLive;
+  const liveInfo = chatLive ?? live.data?.find((l) => l.sessionId === id) ?? null;
 
   return (
     <div className="flex h-full flex-col">
@@ -241,10 +283,19 @@ export function SessionViewPage() {
                 // Handed to the list, which hangs it off the last turn's rail:
                 // an answer being written belongs where the answers are, not at
                 // the root level beside the prompt. Passed only while it has
-                // something to draw — see isWorking.
-                footer={isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined}
+                // something to draw — see isWorking. While a prompt is still
+                // waiting for the transcript, the indicator belongs under THAT
+                // instead: it is the exchange being answered.
+                footer={
+                  pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined
+                }
               />
-              {detail.data.turns.length === 0 && (
+              {pending.map((p, i) => (
+                <PendingTurn key={`${p.at}:${i}`} text={p.text}>
+                  {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
+                </PendingTurn>
+              ))}
+              {detail.data.turns.length === 0 && pending.length === 0 && (
                 <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
               )}
             </div>
@@ -258,7 +309,11 @@ export function SessionViewPage() {
           it lines up with the bubbles — the width lives on the outer box here
           too, never on something zoomed. */}
       {chatEnabled && (
-        <Composer sessionId={id} maxWidth={view.width === WIDTH_FULL ? undefined : `${view.width}px`} />
+        <Composer
+          sessionId={id}
+          maxWidth={view.width === WIDTH_FULL ? undefined : `${view.width}px`}
+          onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
+        />
       )}
       {agentId && (
         <SubagentDrawer

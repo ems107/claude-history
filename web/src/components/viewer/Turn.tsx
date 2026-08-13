@@ -26,7 +26,7 @@ type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
  * same — at the root level it read as a sibling of the prompt rather than as
  * the answer arriving.
  */
-const RAIL = 'ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3';
+export const RAIL = 'ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3';
 
 /**
  * A tool call plus the assistant message that made it. `costOwner` is false when

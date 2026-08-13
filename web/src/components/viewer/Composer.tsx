@@ -64,7 +64,16 @@ function Picker({
  * rail's indent — that belongs to the replies. A full-width footer read as
  * chrome bolted to the window instead of as the next thing in the thread.
  */
-export function Composer({ sessionId, maxWidth }: { sessionId: string; maxWidth?: string }) {
+export function Composer({
+  sessionId,
+  maxWidth,
+  onSent,
+}: {
+  sessionId: string;
+  maxWidth?: string;
+  /** The prompt was accepted by the server; show it before the transcript has it. */
+  onSent?: (text: string) => void;
+}) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -102,7 +111,12 @@ export function Composer({ sessionId, maxWidth }: { sessionId: string; maxWidth?
     setError(null);
     api
       .chatSend(sessionId, { text: prompt, model, effort })
-      .then(() => setText(''))
+      .then(() => {
+        setText('');
+        // Only once the server has taken it: an echo of a prompt that was
+        // refused would be a message the conversation never had.
+        onSent?.(prompt);
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         setSending(false);
