@@ -253,6 +253,30 @@ export class SessionChatService {
   }
 
   /**
+   * Start the session without sending anything.
+   *
+   * The composer needs this because the model list, and which effort levels
+   * each model has, are only knowable from a running CLI — there is no offline
+   * source for them. Rather than show a stale guess, it offers to open the
+   * session and asks once it is up.
+   */
+  open(sessionId: string, model?: string, effort?: string | null): void {
+    const blocked = this.sendBlockedReason(sessionId);
+    if (blocked) {
+      log.warn(`open refused for ${sessionId} — ${blocked}`);
+      throw new Error(blocked);
+    }
+    if (this.procs.has(sessionId)) return;
+    const p = this.spawnFor(sessionId, model ?? this.index.get(sessionId)?.model ?? FALLBACK_MODEL, effort ?? null);
+    // Asked for here and not left to `system/init`: that arrives at the start
+    // of a TURN, and the whole point of opening without a prompt is that there
+    // is no turn yet. Without this the picker would wait for a message it is
+    // meant to help you write.
+    void this.readCapabilities(p);
+    this.changed(sessionId);
+  }
+
+  /**
    * Answer the question on screen. `values` maps each question text to the
    * label(s) chosen; a null answer denies the tool instead, which is how a
    * permission prompt is refused.

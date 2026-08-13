@@ -59,6 +59,24 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
     },
   );
 
+  // Start the process without a prompt. The composer offers this because the
+  // model list and each model's effort levels come from a running CLI and from
+  // nowhere else — the alternative was showing a guess that aged badly.
+  app.post<{ Params: { id: string }; Body: { model?: string; effort?: string | null } }>(
+    '/api/sessions/:id/chat/start',
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
+      if (!ctx.index.get(id)) return reply.code(404).send({ error: 'Session not found' });
+      try {
+        ctx.chat.open(id, request.body?.model, request.body?.effort);
+        return { ok: true };
+      } catch (err) {
+        return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+  );
+
   app.post<{ Params: { id: string } }>('/api/sessions/:id/chat/stop', async (request, reply) => {
     const { id } = request.params;
     if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });

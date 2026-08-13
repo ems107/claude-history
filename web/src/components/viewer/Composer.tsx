@@ -1,7 +1,8 @@
-import { CHAT_MESSAGE_MAX, CLAUDE_EFFORTS, CLAUDE_MODELS, type ChatModelInfo } from '@claude-history/shared';
+import { CHAT_MESSAGE_MAX, CLAUDE_MODELS, type ChatModelInfo } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
+import { shortModel } from '../../lib/format.ts';
 import { QuestionPanel } from './QuestionPanel.tsx';
 
 /** Grow with the text, but never eat the conversation above. */
@@ -150,6 +151,7 @@ export function Composer({
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [answering, setAnswering] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -170,28 +172,25 @@ export function Composer({
   // A running process wins, because that is what a prompt would actually go to.
   // Otherwise: how this session was last answered. Continuing a conversation
   // should continue it — including the model and effort it was being held at.
+  // CLAUDE_MODELS[1] is the last resort only: a session with no answer in it at
+  // all, which has nothing to continue from.
   const wantedModel = status?.model ?? lastModel ?? CLAUDE_MODELS[1];
-  const effort = status?.effort ?? lastEffort ?? 'high';
-  // What this CLI really accepts, once a session has been asked. Before that,
-  // the shared list — which is a reasonable guess, not the truth: the live list
-  // turns out to carry variants like `opus[1m]` that no constant here had.
-  // Before a process exists there is nothing to ask, so the shared aliases
-  // stand in — a reasonable guess, without versions or per-model efforts.
-  const offered: ChatModelInfo[] = status?.availableModels.length
-    ? status.availableModels
-    : CLAUDE_MODELS.map((v) => ({
-        value: v,
-        displayName: v,
-        description: '',
-        resolvedModel: null,
-        efforts: [...CLAUDE_EFFORTS],
-      }));
+  // No invented default: a level this model may not even have is worse than
+  // letting the CLI use its own.
+  const effort = status?.effort ?? lastEffort ?? null;
+  /**
+   * The models this CLI offers — knowable only from a running one, so before
+   * that there is no list and none is shown. A hard-coded stand-in was worse
+   * than nothing: it claimed haiku takes five effort levels, which is exactly
+   * the thing the live list corrected.
+   */
+  const offered: ChatModelInfo[] = status?.availableModels ?? [];
   const model = matchModel(wantedModel, offered);
   // Anything that matches nothing is added as its own option rather than
   // silently replaced: the box must show what will actually be sent.
-  const models = offered.some((m) => m.value === model)
-    ? offered
-    : [{ value: model, displayName: model, description: '', resolvedModel: null, efforts: [...CLAUDE_EFFORTS] }, ...offered];
+  const models = offered.length > 0 && !offered.some((m) => m.value === model)
+    ? [{ value: model, displayName: model, description: '', resolvedModel: null, efforts: [] }, ...offered]
+    : offered;
   const current = models.find((m) => m.value === model);
   // Per model, not a fixed list: haiku takes no effort at all, and offering it
   // five levels was both wrong on screen and wrong on the wire.
@@ -211,9 +210,14 @@ export function Composer({
     setSending(true);
     setError(null);
     api
-      // Effort only when this model takes one — sending null tells the server
-      // to pass no `--effort` at all rather than guess a level for it.
-      .chatSend(sessionId, { text: prompt, model, effort: efforts.length > 0 ? (effort ?? efforts[0]) : null })
+      // With a model list, the effort is one this model actually takes, or none
+      // at all. Without one, the effort the session was last answered at is the
+      // only evidence available — and it is good evidence: that model took it.
+      .chatSend(sessionId, {
+        text: prompt,
+        model,
+        effort: models.length > 0 ? (efforts.length > 0 ? (effort ?? efforts[0]) : null) : effort,
+      })
       .then(() => {
         setText('');
         // Only once the server has taken it: an echo of a prompt that was
@@ -223,6 +227,18 @@ export function Composer({
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         setSending(false);
+        void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] });
+      });
+  };
+
+  const open = () => {
+    setOpening(true);
+    setError(null);
+    api
+      .chatStart(sessionId, { model: wantedModel, effort })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        setOpening(false);
         void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] });
       });
   };
@@ -346,28 +362,45 @@ export function Composer({
             className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)]"
           />
           <div className="flex items-center gap-1 px-2 pt-0.5 pb-2">
-            <Picker
-              value={model}
-              options={models.map((m) => ({ value: m.value, label: modelLabel(m) }))}
-              disabled={working || !!blocked}
-              title={current?.description || 'Model for the next prompt'}
-              onChange={(v) => {
-                // The new model may not take the effort the old one was on.
-                const next = models.find((m) => m.value === v);
-                const keep = next && effort && next.efforts.includes(effort) ? effort : (next?.efforts[0] ?? null);
-                change({ model: v, effort: keep });
-              }}
-            />
-            {/* Hidden entirely for a model with no effort levels, rather than
-                shown greyed: there is no setting to make, not a locked one. */}
-            {efforts.length > 0 && (
-              <Picker
-                value={effort ?? efforts[0]}
-                options={efforts.map((e: string) => ({ value: e, label: e }))}
-                disabled={working || !!blocked}
-                title="Effort for the next prompt"
-                onChange={(v) => change({ effort: v })}
-              />
+            {/* No running CLI, no model list — so instead of a stale guess,
+                the offer to go and get the real one. Sending works without it:
+                the prompt goes out on whatever answered this session last. */}
+            {models.length === 0 ? (
+              <button
+                type="button"
+                onClick={open}
+                disabled={opening || !!blocked}
+                title={`Loads this session so you can pick a model and effort. Without it, a prompt goes out on ${shortModel(wantedModel) ?? wantedModel}${effort ? ` at ${effort}` : ''} — how this session was last answered.`}
+                className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                {opening ? 'opening…' : 'choose model…'}
+              </button>
+            ) : (
+              <>
+                <Picker
+                  value={model}
+                  options={models.map((m) => ({ value: m.value, label: modelLabel(m) }))}
+                  disabled={working || !!blocked}
+                  title={current?.description || 'Model for the next prompt'}
+                  onChange={(v) => {
+                    // The new model may not take the effort the old one was on.
+                    const next = models.find((m) => m.value === v);
+                    const keep = next && effort && next.efforts.includes(effort) ? effort : (next?.efforts[0] ?? null);
+                    change({ model: v, effort: keep });
+                  }}
+                />
+                {/* Hidden entirely for a model with no effort levels, rather
+                    than shown greyed: there is no setting to make. */}
+                {efforts.length > 0 && (
+                  <Picker
+                    value={effort ?? efforts[0]}
+                    options={efforts.map((e: string) => ({ value: e, label: e }))}
+                    disabled={working || !!blocked}
+                    title="Effort for the next prompt"
+                    onChange={(v) => change({ effort: v })}
+                  />
+                )}
+              </>
             )}
             {status?.state === 'starting' && (
               <span className="px-1 text-[11px] text-[var(--text-dim)]">starting…</span>

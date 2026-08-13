@@ -170,6 +170,18 @@ export const api = {
     if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
     return payload;
   },
+  // Opens the process without sending a prompt, so the composer can offer the
+  // real model list — which only a running CLI knows.
+  chatStart: async (id: string, body: { model?: string; effort?: string | null }) => {
+    const res = await fetch(`/api/sessions/${id}/chat/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload;
+  },
   chatStop: async (id: string) => {
     const res = await fetch(`/api/sessions/${id}/chat/stop`, { method: 'POST' });
     const payload = (await res.json()) as { ok?: boolean; error?: string };
