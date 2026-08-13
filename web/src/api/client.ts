@@ -2,6 +2,8 @@ import type {
   AppSettings,
   AutoReloadRun,
   AutoReloadStatus,
+  ChatSendRequest,
+  ChatStatusResponse,
   LineageResponse,
   LiveResponse,
   LogDayResponse,
@@ -140,6 +142,27 @@ export const api = {
     const body = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
+  },
+  chatStatus: (id: string) => getJson<ChatStatusResponse>(`/api/sessions/${id}/chat`),
+  // Answers as soon as the prompt has been written to the process, not when
+  // Claude has answered: the answer arrives through the transcript like any
+  // other, and a request held open for a whole turn would just be a timeout
+  // waiting to happen.
+  chatSend: async (id: string, body: ChatSendRequest) => {
+    const res = await fetch(`/api/sessions/${id}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload;
+  },
+  chatStop: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/chat/stop`, { method: 'POST' });
+    const payload = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload;
   },
   settings: () => getJson<SettingsResponse>('/api/settings'),
   saveSettings: async (patch: Partial<AppSettings>) => {

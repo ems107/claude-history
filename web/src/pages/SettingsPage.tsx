@@ -1,8 +1,10 @@
 import {
   type AppSettings,
+  CLAUDE_EFFORTS,
   CLAUDE_MODELS,
   DEFAULT_SETTINGS,
   LOG_LEVEL_CHOICES,
+  MIN_CHAT_IDLE_MINUTES,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
 } from '@claude-history/shared';
@@ -399,6 +401,7 @@ export function SettingsPage() {
   // than leave controls that look live and are not.
   const autoReloadOff = !s.autoReloadEnabled;
   const dimmed = autoReloadOff ? 'opacity-40' : '';
+  const chatOff = s.chatEnabled ? '' : 'opacity-40';
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -683,6 +686,73 @@ export function SettingsPage() {
             </ul>
           </div>
           <AutoReloadStatusPanel />
+        </Section>
+
+        <Section title="Send prompts from the app">
+          <Row badge={<DefaultBadge field="chatEnabled" value={s.chatEnabled} save={save} />}>
+            <Toggle
+              checked={s.chatEnabled}
+              onChange={(v) => save({ chatEnabled: v })}
+              label="Show a composer at the foot of every session"
+              hint="Continue a conversation without leaving the app. The prompt goes to a Claude Code process the server keeps alive for that session, and the answer appears in the viewer as it is written to the transcript. Sending is blocked while the session is open in a terminal: two processes writing the same transcript corrupt it."
+            />
+          </Row>
+          <Row badge={<DefaultBadge field="chatModel" value={s.chatModel} save={save} />}>
+            <label className={`flex items-center gap-2 ${chatOff}`}>
+              <span>Model</span>
+              <select
+                value={s.chatModel}
+                disabled={!s.chatEnabled}
+                onChange={(e) => save({ chatModel: e.target.value })}
+                className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40"
+              >
+                {CLAUDE_MODELS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[var(--text-dim)]">the starting point — each session's composer can change it</span>
+            </label>
+          </Row>
+          <Row badge={<DefaultBadge field="chatEffort" value={s.chatEffort} save={save} />}>
+            <label className={`flex items-center gap-2 ${chatOff}`}>
+              <span>Effort</span>
+              <select
+                value={s.chatEffort}
+                disabled={!s.chatEnabled}
+                onChange={(e) => save({ chatEffort: e.target.value })}
+                className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40"
+              >
+                {CLAUDE_EFFORTS.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </Row>
+          <Row badge={<DefaultBadge field="chatIdleTimeoutMinutes" value={s.chatIdleTimeoutMinutes} save={save} />}>
+            <label className={`flex items-center gap-2 ${chatOff}`}>
+              <span>Close an idle process after</span>
+              <input
+                type="number"
+                min={MIN_CHAT_IDLE_MINUTES}
+                max={240}
+                step={5}
+                value={s.chatIdleTimeoutMinutes}
+                disabled={!s.chatEnabled}
+                onChange={(e) => save({ chatIdleTimeoutMinutes: Number(e.target.value) })}
+                className="w-16 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+              />
+              <span>minutes (minimum {MIN_CHAT_IDLE_MINUTES})</span>
+            </label>
+          </Row>
+          <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
+            Tools run under Claude Code's <span className="text-[var(--text)]">auto</span> permission mode, so nothing
+            stops to ask — the same as pressing Shift+Tab into auto mode in a terminal. Your MCP servers are loaded as
+            usual, so the first prompt of a session takes a moment longer than the ones after it.
+          </div>
         </Section>
 
         {/* Claude Code's setting, not ours — shown and explained, never written.

@@ -87,6 +87,12 @@ export function useEvents(): void {
         case 'update-status':
           void queryClient.invalidateQueries({ queryKey: ['update'] });
           break;
+        // A turn started, finished, or a process came and went. This is the
+        // only notice of it: a --print run writes no `status` into
+        // ~/.claude/sessions, so `live-changed` never speaks for these.
+        case 'chat-changed':
+          void queryClient.invalidateQueries({ queryKey: ['chat', event.id] });
+          break;
         // Already throttled to one per second by the server. Cheap: both
         // queries are local reads, and the day parse is cached and incremental.
         case 'logs-appended':

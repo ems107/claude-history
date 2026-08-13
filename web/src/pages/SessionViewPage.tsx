@@ -1,4 +1,4 @@
-import type { Turn } from '@claude-history/shared';
+import type { LiveInfo, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -6,6 +6,7 @@ import { api } from '../api/client.ts';
 import { useFoldState } from '../lib/folding.ts';
 import { parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
+import { Composer } from '../components/viewer/Composer.tsx';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
 import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
@@ -46,6 +47,19 @@ export function SessionViewPage() {
     // It runs solely while a turn is in flight, and never touches the network.
     refetchInterval: (query) =>
       query.state.data?.some((l) => l.sessionId === id && l.status === 'busy') ? 10_000 : false,
+  });
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const chatEnabled = settings.data?.settings.chatEnabled ?? false;
+  /**
+   * Shared with the Composer through the query key — one request, two readers.
+   * The page needs it for the working indicator, because a `--print` process
+   * writes no `status` into ~/.claude/sessions and so never shows up as busy
+   * in /api/live, however long it works.
+   */
+  const chat = useQuery({
+    queryKey: ['chat', id],
+    queryFn: () => api.chatStatus(id),
+    enabled: !!id && chatEnabled,
   });
   const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
   const [expandTools, setExpandTools] = useState(() => localStorage.getItem('expandTools') === 'true');
@@ -126,7 +140,24 @@ export function SessionViewPage() {
 
   const color =
     projects.data?.find((p) => p.key === detail.data.summary.projectKey)?.color ?? FALLBACK_COLOR;
-  const liveInfo = live.data?.find((l) => l.sessionId === id) ?? null;
+  /**
+   * A turn we started looks like nothing to /api/live, so it gets a LiveInfo of
+   * its own rather than a second indicator: `WorkingIndicator` already knows
+   * how to draw "working since", and the only thing it needs is when the turn
+   * began. A real terminal session still wins — it is the one with a pid.
+   */
+  const chatLive: LiveInfo | null =
+    chat.data?.turnStartedAt !== null && chat.data?.turnStartedAt !== undefined
+      ? {
+          pid: 0,
+          status: 'busy',
+          name: null,
+          startedAt: null,
+          updatedAt: null,
+          statusUpdatedAt: Date.parse(chat.data.turnStartedAt),
+        }
+      : null;
+  const liveInfo = live.data?.find((l) => l.sessionId === id) ?? chatLive;
 
   return (
     <div className="flex h-full flex-col">
@@ -215,6 +246,10 @@ export function SessionViewPage() {
         </div>
         {follow.scrollable && <FollowBottomButton following={follow.following} toggle={follow.toggle} />}
       </div>
+      {/* A sibling of the scroller, not a child: the root is a column and the
+          scroller is the only min-h-0 flex-1, so this sits at the foot without
+          taking part in the scrolling. */}
+      {chatEnabled && <Composer sessionId={id} />}
       {agentId && (
         <SubagentDrawer
           sessionId={id}
