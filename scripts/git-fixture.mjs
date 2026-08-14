@@ -17,6 +17,8 @@
 //
 //   repos/linear       20 commits, one branch, tracking the local bare remote
 //   repos/branchy      6 branches, 4 merges, 3 tags, 2 stashes
+//   repos/forky        6 unmerged branches off ONE old commit — the shape that
+//                      broke the graph's lanes, and that nothing else here has
 //   repos/conflict     two branches that collide on the same lines
 //   repos/odd-names    foo[1].txt, accents, spaces, 400 files to stage at once
 //   repos/big          ~5,000 commits and 60 branches (graph performance)
@@ -189,6 +191,39 @@ function buildBranchy(dir, remote) {
   git(dir, ['remote', 'add', 'origin', remote]);
   git(dir, ['push', '-q', 'origin', 'main:branchy']);
   git(dir, ['fetch', '-q', 'origin']);
+  return dir;
+}
+
+/**
+ * Many branches hanging off ONE old commit, none of them merged.
+ *
+ * The shape every long-lived repository really has, and the one that broke the
+ * graph: while several lanes are all waiting for the same commit, each must run
+ * straight down to it. Drawing them by looking the sha up instead put every
+ * lane into the first one on every row — one hook per row, ending in mid-air.
+ * Nothing else in this bench produced it, because its forks are all a row or
+ * two long.
+ */
+function buildForky(dir) {
+  init(dir);
+  write(dir, 'base.txt', 'the common ancestor\n');
+  commit(dir, 'The commit everything hangs off');
+  const base = git(dir, ['rev-parse', 'HEAD']).stdout.trim();
+  // A long main line, so the branch points sit far above the base in the log.
+  for (let i = 1; i <= 12; i++) {
+    write(dir, 'main.txt', `main step ${i}\n`);
+    commit(dir, `main: step ${i}`);
+  }
+  for (let b = 1; b <= 6; b++) {
+    // From the sha, never from HEAD~n: after the first topic, HEAD is that
+    // topic and the count would walk the wrong line.
+    git(dir, ['checkout', '-q', '-b', `topic/${b}`, base]);
+    for (let i = 1; i <= 4; i++) {
+      write(dir, `topic-${b}.txt`, `topic ${b} step ${i}\n`);
+      commit(dir, `topic ${b}: step ${i}`);
+    }
+  }
+  git(dir, ['checkout', '-q', 'main']);
   return dir;
 }
 
@@ -465,6 +500,9 @@ const linear = buildLinear(path.join(reposDir, 'linear'), remoteDir);
 log('repos/branchy');
 const branchy = buildBranchy(path.join(reposDir, 'branchy'), remoteDir);
 
+log('repos/forky');
+const forky = buildForky(path.join(reposDir, 'forky'));
+
 log('repos/conflict');
 const conflict = buildConflict(path.join(reposDir, 'conflict'));
 
@@ -500,7 +538,7 @@ const summary = {
   remote: remoteDir,
   worker,
   authServer,
-  repos: { linear, branchy, conflict, oddNames, big, withSub },
+  repos: { linear, branchy, forky, conflict, oddNames, big, withSub },
   scanRoot: scanDir,
   accentedExe,
   big: { commits: bigCommits, refs: bigRefs },

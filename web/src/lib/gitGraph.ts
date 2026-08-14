@@ -48,7 +48,12 @@ export interface GraphRowLayout {
   incoming: GraphSegment[];
   /** This commit's parents, leaving towards the bottom edge. */
   outgoing: GraphSegment[];
-  /** Unrelated lanes crossing the band, possibly shifting sideways. */
+  /**
+   * Unrelated lanes crossing the band. Always vertical: a lane keeps its index
+   * from the row it opens to the row it ends in, and nothing here moves one
+   * sideways — only `incoming` and `outgoing` bend, and each does it at the
+   * commit it belongs to.
+   */
   through: GraphSegment[];
   /** Lanes in use around this row, for the row's own width. */
   width: number;
@@ -132,9 +137,19 @@ export function layoutGraph(commits: GitCommit[]): GraphLayout {
     for (let j = 0; j < before.length; j++) {
       const sha = before[j];
       if (sha === null || sha === commit.sha) continue;
-      const to = after.indexOf(sha);
-      if (to < 0) continue; // it ended here (it was a parent taken over above)
-      through.push({ from: j, to, color: beforeColors[j] });
+      // A lane keeps its index for its whole life — nothing here relocates one
+      // — so a lane still holding its sha runs straight down, and a lane that
+      // no longer holds it ended in this row and is not drawn.
+      //
+      // It used to look the sha up instead (`after.indexOf(sha)`), which is
+      // wrong in the ordinary case of a FORK: both sides wait for the same
+      // commit, so every row between the fork and that commit drew the second
+      // lane curving into the first — one identical hook per row, each ending
+      // in mid-air, and the line reappearing from nothing on the row below.
+      // The two lanes converge exactly once, at the commit itself, and that is
+      // what `incoming` is for.
+      if (after[j] !== sha) continue;
+      through.push({ from: j, to: j, color: beforeColors[j] });
     }
 
     const width = Math.max(before.length, after.length, lane + 1);

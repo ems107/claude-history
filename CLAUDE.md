@@ -386,6 +386,8 @@ A visual git client over the repositories on this machine (`/git`, `core/gitServ
 - **Format traps, both verified rather than assumed.** In `--porcelain=v2 -z` a rename puts the original path in its **own NUL-terminated field** (tab-separated without `-z`); read as one field it mislabels every rename. And `for-each-ref` spells a hex escape `%1f` while `log`/`stash list` want `%x1f` — the wrong one does not fail, it prints itself.
 - **`git log --graph` is never used.** Its art is for people, it has changed between versions, and it cannot be turned back into edges. `%P` is the graph. **Lane layout happens in the browser** (`web/src/lib/gitGraph.ts`, pure): it depends on the viewport, it re-runs whenever a page is appended, and doing it server-side would mean per-viewer layout state and an uncacheable payload. `--date-order`, not `--topo-order`: topo order must walk the whole history before emitting the first commit.
 - **One `<svg>` per row, inside the row.** A single absolutely-positioned drawing over a virtualised list has to keep the window index, the scroll offset and every row height in agreement, and breaks the first time a row is not exactly `ROW_H`. This cannot drift because the picture is part of the row.
+  - **A lane keeps its index for its whole life, so a `through` segment is always vertical.** Resolving it by sha instead (`after.indexOf(sha)`) is wrong in the most ordinary shape there is — a FORK, where both sides wait for the same commit: every row between the branch point and that commit drew the second lane curving into the first, one identical hook per row, each ending in mid-air with the line reappearing from nothing below. The lanes converge exactly ONCE, at the commit, and that is what `incoming` is for. Reported from a real repository; 100 loose ends over 37 commits in the fixture built to reproduce it.
+  - **The invariant that catches this whole class, and the only one worth checking:** every lane leaving the bottom of a row is met by a lane entering the top of the next. It is checkable on the pure layout AND on the rendered picture (read the `d` of every `<path>`, collect the x at y=0 and y=`ROW_H`, compare consecutive rows), so a drawing bug cannot hide behind a correct layout.
 - **A merge is diffed against its first parent, explicitly.** `git show` on a merge prints nothing by default, which renders as "this commit changed no files".
 - **One lock per repository, covering reads as well as writes** — `git status` refreshes the index and takes `index.lock`, so a status racing a commit produces failures that look like our bug. But a read arriving while the repository is held by a MUTATION does **not** queue behind it: it answers with the last figures, marked `stale`. That is `UsageService`'s "a failed read never discards the last good figures", applied to a lock.
 - **`blocked` is one map per status read, and the endpoint recomputes the same function** — the disabled button and the 409 cannot drift apart. Nothing here is stricter than git: refusing a checkout because an unrelated file is modified would block an everyday, safe operation, and git's own refusal names the exact files. Only the rules git states outright are pre-checked. Staging and committing are deliberately allowed during a merge — staging is how a conflict is resolved and a commit is how a merge is concluded.
@@ -502,7 +504,7 @@ No automated test suite (personal tool). Verify against real data:
    The collision guard needs a real terminal, because `cmd /c start` minimized never gets far enough to register a session (verified: the process exists, `~/.claude/sessions` gains nothing). The cheapest fixture is the terminal you are already working in: **your own session is open in one**, so `GET /api/sessions/<your-own-id>/chat` must carry the block and a POST there must 409 (verified — `entrypoint: "cli"`, `status: "busy"`, against the composer's `sdk-cli` with no status at all). Otherwise use the app's own "Resume in terminal" and close the window by hand.
 20. The GIT tab. **The rule comes before the checks: none of this runs against a real
     repository, ever — not a write, not a read.** `node scripts/git-fixture.mjs --reset`
-    builds the bench under `%TEMP%` (linear, branchy, conflict, odd-names, big,
+    builds the bench under `%TEMP%` (linear, branchy, forky, conflict, odd-names, big,
     withsub, a bare `remote/origin.git` and a `scan/` tree), and it is served by a
     second instance with its own everything:
     `--data-root <tmp> --port 7434 --logs-dir <tmp>` plus `CLAUDE_HISTORY_CACHE`, so
@@ -532,6 +534,16 @@ No automated test suite (personal tool). Verify against real data:
     out in a millisecond. `layoutGraph` is pure, so a straight line, a merge, two
     unrelated roots and 200 synthetic commits are all checkable with no browser at
     all — and no segment may reference a lane outside its own row's width.
+    **The seam check is the one that matters** (see the rule above): over
+    `branchy`, `forky` and `big`, every lane leaving a row's bottom edge must be
+    met at the next row's top edge, and none may arrive from nothing. `forky`
+    exists for exactly this — six unmerged branches off one old commit, the
+    shape none of the other fixtures has — and the check must be shown to FAIL
+    on it with the old line restored (100 loose ends over 37 commits) before it
+    is believed. Then the same seam check in the browser, over the rendered
+    `<path>` coordinates, on `forky` and `branchy`: 0 loose ends, and `branchy`
+    must still draw curves (a fix that flattened every segment would also pass a
+    seam check).
     Diff: a two-hunk change 25 lines apart must keep both section headers, report the
     hidden runs (1 and 18 lines), advance old and new numbers independently, and add
     up to what numstat says. A phantom trailing context line means the empty string
