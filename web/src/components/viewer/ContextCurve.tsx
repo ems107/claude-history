@@ -1,7 +1,11 @@
-import { type ContextIndex, formatContextDelta, formatContextTokens } from '../../lib/context.ts';
+import type { PriceTable } from '@claude-history/shared';
+import { type ContextIndex, formatContextDelta, formatContextTokens, recacheCauseText } from '../../lib/context.ts';
+import { formatUsd, summariseRecache } from '../../lib/cost.ts';
 
 const W = 600;
 const H = 44;
+/** Height of a re-cache tick, in viewBox units — a base mark, not a full divider. */
+const TICK = 7;
 
 /**
  * How the context grew over the session, request by request, with every shrink
@@ -11,9 +15,10 @@ const H = 44;
  * A viewBox this wide with preserveAspectRatio="none" lets the line stretch to
  * whatever width the panel has: the shape is the message, not the pixel ratio.
  */
-export function ContextCurve({ index }: { index: ContextIndex }) {
+export function ContextCurve({ index, prices }: { index: ContextIndex; prices: PriceTable }) {
   const { points, max } = index;
   if (points.length < 2 || max === 0) return null;
+  const recache = summariseRecache(index.recaches, prices);
 
   const x = (i: number) => (i / (points.length - 1)) * W;
   const y = (total: number) => H - (total / max) * (H - 3) - 1.5;
@@ -35,6 +40,12 @@ export function ContextCurve({ index }: { index: ContextIndex }) {
             {index.shrinks.length} shrink{index.shrinks.length !== 1 ? 's' : ''} (
             {index.shrinks.filter((s) => s.shrink?.compacted).length} compaction
             {index.shrinks.filter((s) => s.shrink?.compacted).length !== 1 ? 's' : ''})
+          </span>
+        )}
+        {recache && (
+          <span className="normal-case text-amber-400/90">
+            {index.recaches.length} re-cache{index.recaches.length !== 1 ? 's' : ''}
+            {recache.cost.billed !== null && ` (≈${formatUsd(recache.cost.billed)})`}
           </span>
         )}
       </div>
@@ -65,6 +76,27 @@ export function ContextCurve({ index }: { index: ContextIndex }) {
                 : `Shrank ${formatContextDelta(p.delta ?? 0)} with no compaction boundary recorded`}
             </title>
           </g>
+        ))}
+        {/* A re-cache does NOT shrink the context — 458,675 → 458,823 in one of
+            them — so it cannot borrow the shrink divider. It gets a solid tick
+            on the baseline instead: a mark on the request, not a cut through
+            the curve. Stroked rather than filled so `preserveAspectRatio="none"`
+            cannot stretch it into a wedge. */}
+        {index.recaches.map((p) => (
+          <line
+            key={`recache-${p.uuid}`}
+            x1={x(p.index)}
+            x2={x(p.index)}
+            y1={H}
+            y2={H - TICK}
+            stroke="rgb(251 191 36)"
+            strokeWidth="1.5"
+            vectorEffect="non-scaling-stroke"
+          >
+            <title>
+              {`Re-cached ${p.recached.toLocaleString()} tokens. ${recacheCauseText(p.recacheCause, p.gapMs) ?? ''}`}
+            </title>
+          </line>
         ))}
         <circle cx={x(peak.index)} cy={y(peak.total)} r="2" fill="var(--accent)" vectorEffect="non-scaling-stroke">
           <title>{`Peak: ${peak.total.toLocaleString()} tokens at request ${peak.index + 1}`}</title>

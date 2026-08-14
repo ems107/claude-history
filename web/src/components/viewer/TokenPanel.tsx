@@ -4,8 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
-import { buildContextIndex } from '../../lib/context.ts';
-import { computeCost, formatUsd } from '../../lib/cost.ts';
+import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
+import { computeCost, formatUsd, summariseRecache } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
 
@@ -51,6 +51,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
     (acc, [model, usage]) => acc + (computeCost(usage, resolvePrices(model, priceTable)) ?? 0),
     0,
   );
+  const recache = summariseRecache(contextIndex.recaches, priceTable);
   const duration =
     summary.createdAt && summary.lastActivityAt
       ? Math.round((Date.parse(summary.lastActivityAt) - Date.parse(summary.createdAt)) / 60_000)
@@ -106,6 +107,22 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
               <td className="px-2 text-right">{formatUsd(totalCost)}</td>
             </tr>
           )}
+          {/* A SUBSET of the cache-write cell above, already inside the total —
+              unlike `carried over`, which sits outside every total. The dots in
+              the other columns are what keeps it from reading as a row that
+              adds: there is nothing to add, only part of one figure named. */}
+          {recache && (
+            <tr className="text-amber-300/80">
+              <td className="py-1 pr-4 pl-3 font-mono" title="Context that was cached, expired, and had to be written again">
+                ↳ of which re-cached
+              </td>
+              <td className="px-2 text-right opacity-40">·</td>
+              <td className="px-2 text-right opacity-40">·</td>
+              <td className="px-2 text-right opacity-40">·</td>
+              <td className="px-2 text-right">{fmt(recache.cost.tokens)}</td>
+              <td className="px-2 text-right">{formatUsd(recache.cost.billed)}</td>
+            </tr>
+          )}
           {carriedTokens > 0 && (
             <tr className="border-t border-dashed border-amber-500/40 text-amber-300/80">
               <td className="py-1 pr-4 font-mono" title="Copied in by /branch — billed in the parent session, not here">
@@ -120,6 +137,15 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           )}
         </tbody>
       </table>
+      {recache && (
+        <div className="mt-1 text-[10px] text-amber-300/70">
+          {fmt(recache.cost.tokens)} tokens of the cache write above had already been cached and had to be written
+          again, over {contextIndex.recaches.length} request
+          {contextIndex.recaches.length !== 1 ? 's' : ''}
+          {recache.cost.extra !== null && <> — {formatUsd(recache.cost.extra)} more than reading them would have cost</>}
+          . {recacheCauseText(recache.cause, recache.gapMs)}
+        </div>
+      )}
       {carriedTokens > 0 && (
         <div className="mt-1 text-[10px] text-amber-300/70">
           The rows above are what this session spent. “Carried over” is the context <code>/branch</code> copied from
@@ -141,7 +167,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
         ≈ cost is API-equivalent value at the prices configured in Stats — not actual subscription spend.
       </div>
       <div className="mt-3 border-t border-[var(--border)] pt-2">
-        <ContextCurve index={contextIndex} />
+        <ContextCurve index={contextIndex} prices={priceTable} />
       </div>
     </div>
   );
