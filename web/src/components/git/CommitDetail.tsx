@@ -1,9 +1,15 @@
+import type { GitStatus } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
+import { btn, inputClass } from '../../lib/ui.ts';
+import { toggleClass } from '../viewer/SessionHeader.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView } from './DiffView.tsx';
 import { RefChip } from './RefChip.tsx';
+import { useGitAction } from './useGitAction.ts';
 
 const STATUS_TONE: Record<string, string> = {
   A: 'text-emerald-400',
@@ -22,14 +28,128 @@ const STATUS_TONE: Record<string, string> = {
  * for a merge otherwise, which reads as "this changed no files" — the one
  * thing that is certainly untrue about a merge commit.
  */
+/**
+ * What you can do from a commit. Reset is the only destructive one and it
+ * carries its own confirmation, spelling out what a hard reset takes with it —
+ * the modes differ in exactly that, and the difference is the whole decision.
+ */
+function CommitActions({ repoId, sha, status }: { repoId: string; sha: string; status: GitStatus | undefined }) {
+  const action = useGitAction(repoId);
+  const [branching, setBranching] = useState(false);
+  const [name, setName] = useState('');
+  const [resetting, setResetting] = useState<'soft' | 'mixed' | 'hard' | null>(null);
+  const short = sha.slice(0, 7);
+  const dirty = (status?.entries.length ?? 0) > 0;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        className={btn}
+        disabled={action.busy || !!status?.blocked.checkout}
+        title={status?.blocked.checkout ?? `Check out ${short} (this detaches HEAD)`}
+        onClick={() => void action.run(() => gitApi.checkout(repoId, { ref: sha }))}
+      >
+        Check out
+      </button>
+      <button type="button" className={btn} disabled={action.busy} onClick={() => setBranching(true)}>
+        Branch here
+      </button>
+      <button
+        type="button"
+        className={btn}
+        disabled={action.busy || !!status?.blocked.reset}
+        title={status?.blocked.reset ?? `Move ${status?.branch ?? 'HEAD'} to ${short}`}
+        onClick={() => setResetting('mixed')}
+      >
+        Reset here…
+      </button>
+      {action.error && <span className="text-[11px] text-red-300">{action.error}</span>}
+
+      {branching && (
+        <span className="flex items-center gap-1.5">
+          <input
+            autoFocus
+            type="text"
+            spellCheck={false}
+            value={name}
+            placeholder="feature/from-here"
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setBranching(false);
+                setName('');
+              }
+              if (e.key === 'Enter' && name.trim()) {
+                const branch = name.trim();
+                setBranching(false);
+                setName('');
+                void action.run(() => gitApi.branchCreate(repoId, { name: branch, from: sha, checkout: true }));
+              }
+            }}
+            className={`${inputClass} w-56 font-mono text-[11px]`}
+          />
+          <span className="text-[10px] text-[var(--text-dim)]">Enter creates it from {short}</span>
+        </span>
+      )}
+
+      {resetting && (
+        <ConfirmDialog
+          title={`Reset to ${short}`}
+          body={
+            <>
+              <p>
+                <span className="font-mono">soft</span> keeps everything staged,{' '}
+                <span className="font-mono">mixed</span> keeps your files but unstages them, and{' '}
+                <span className="font-mono">hard</span> throws away every change in the working tree.
+              </p>
+              {dirty && (
+                <p className="mt-1 text-amber-400">
+                  There {status?.entries.length === 1 ? 'is' : 'are'} {status?.entries.length} uncommitted change
+                  {status?.entries.length === 1 ? '' : 's'} right now — a hard reset would take{' '}
+                  {status?.entries.length === 1 ? 'it' : 'them'} with it.
+                </p>
+              )}
+              <div className="mt-2 flex gap-1.5">
+                {(['soft', 'mixed', 'hard'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setResetting(mode)}
+                    className={resetting === mode ? toggleClass(true) : toggleClass(false)}
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            </>
+          }
+          command={`git reset --${resetting} ${short}`}
+          requireTyped={resetting === 'hard' && dirty ? short : undefined}
+          confirmLabel={`Reset --${resetting}`}
+          busy={action.busy}
+          onCancel={() => setResetting(null)}
+          onConfirm={() => {
+            const mode = resetting;
+            setResetting(null);
+            void action.run(() => gitApi.reset(repoId, { sha, mode, confirm: true }));
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 export function CommitDetail({
   repoId,
   sha,
+  status,
   selectedPath,
   onSelectPath,
 }: {
   repoId: string;
   sha: string;
+  status: GitStatus | undefined;
   selectedPath: string | null;
   onSelectPath: (path: string | null) => void;
 }) {
@@ -66,6 +186,8 @@ export function CommitDetail({
             <RefChip key={`${ref.kind}:${ref.fullRef}`} kind={ref.kind} name={ref.name} isHead={ref.isHead} />
           ))}
         </div>
+
+        <CommitActions repoId={repoId} sha={commit.sha} status={status} />
 
         <p className="mt-1.5 text-sm">{commit.subject}</p>
         {detail.body && (

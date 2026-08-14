@@ -1,5 +1,6 @@
 import type { GitDiffLineKind, GitFileDiff, GitHunk } from '@claude-history/shared';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { pairedRuns, wordDiff, type WordSpan } from '../../lib/gitWordDiff.ts';
 import { FoldHeader } from '../viewer/FoldHeader.tsx';
 
 /**
@@ -43,7 +44,26 @@ const STATUS_LABEL: Record<string, string> = {
   U: 'unmerged',
 };
 
+/** The mark inside a changed line. Spans, not the Highlight API: this DOM is ours and it is stable. */
+const MARK: Partial<Record<GitDiffLineKind, string>> = {
+  add: 'rounded-[2px] bg-emerald-500/25',
+  del: 'rounded-[2px] bg-red-500/25',
+};
+
 function Hunk({ hunk }: { hunk: GitHunk }) {
+  // Which lines pair up as one edit, and therefore what to mark inside them.
+  const marks = useMemo(() => {
+    const pairs = pairedRuns(hunk.lines.map((l) => l.kind));
+    const out = new Map<number, WordSpan[]>();
+    for (const [delIndex, addIndex] of pairs) {
+      const result = wordDiff(hunk.lines[delIndex].text, hunk.lines[addIndex].text);
+      if (!result) continue;
+      out.set(delIndex, result.del);
+      out.set(addIndex, result.add);
+    }
+    return out;
+  }, [hunk]);
+
   return (
     <>
       {hunk.gapBefore > 0 && (
@@ -52,16 +72,31 @@ function Hunk({ hunk }: { hunk: GitHunk }) {
         </div>
       )}
       <div className="bg-[var(--bg-raised)] px-2 py-0.5 font-mono text-[11px] text-sky-300/70">{hunk.header}</div>
-      {hunk.lines.map((line, i) => (
-        <div key={i} className={`flex font-mono text-[11px] leading-[18px] ${TONE[line.kind]}`}>
-          {/* The gutters are select-none so copying a hunk does not drag line
-              numbers along with the code. */}
-          <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">{line.oldNo ?? ''}</span>
-          <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">{line.newNo ?? ''}</span>
-          <span className="w-4 shrink-0 text-center opacity-60 select-none">{SIGN[line.kind]}</span>
-          <span className="min-w-0 flex-1 pr-4 whitespace-pre select-text">{line.text}</span>
-        </div>
-      ))}
+      {hunk.lines.map((line, i) => {
+        const spans = marks.get(i);
+        return (
+          <div key={i} className={`flex font-mono text-[11px] leading-[18px] ${TONE[line.kind]}`}>
+            {/* The gutters are select-none so copying a hunk does not drag line
+                numbers along with the code. */}
+            <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">{line.oldNo ?? ''}</span>
+            <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">{line.newNo ?? ''}</span>
+            <span className="w-4 shrink-0 text-center opacity-60 select-none">{SIGN[line.kind]}</span>
+            <span className="min-w-0 flex-1 pr-4 whitespace-pre select-text">
+              {spans
+                ? spans.map((span, k) =>
+                    span.hit ? (
+                      <span key={k} className={MARK[line.kind]}>
+                        {span.text}
+                      </span>
+                    ) : (
+                      <span key={k}>{span.text}</span>
+                    ),
+                  )
+                : line.text}
+            </span>
+          </div>
+        );
+      })}
     </>
   );
 }

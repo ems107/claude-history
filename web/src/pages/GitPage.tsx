@@ -142,6 +142,8 @@ export function GitPage() {
         className="h-full shrink-0 overflow-hidden border-r border-[var(--border)]"
       >
         <RefSidebar
+          repoId={repoId}
+          status={status}
           branches={branchesQ.data}
           tags={tagsQ.data}
           stashes={stashesQ.data}
@@ -168,7 +170,7 @@ export function GitPage() {
           tab={tab}
           onTab={(next) => setParam('tab', next === 'work' ? 'work' : null)}
         />
-        <RepoStateBanner status={status} />
+        <RepoStateBanner repoId={repoId} status={status} />
 
         {!repoId ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4 text-xs">
@@ -230,6 +232,7 @@ export function GitPage() {
                 <CommitDetail
                   repoId={repoId}
                   sha={selectedSha}
+                  status={status}
                   selectedPath={searchParams.get('f')}
                   onSelectPath={(path) => setParam('f', path)}
                 />
