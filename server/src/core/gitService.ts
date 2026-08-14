@@ -2,8 +2,11 @@ import {
   GIT_COMMIT_MAX_FILES,
   GIT_DIFF_MAX_FILES,
   GIT_DIFF_MAX_LINES,
+  GIT_FETCH_MODES,
   GIT_LOG_PAGE,
+  GIT_MERGE_MODES,
   GIT_MESSAGE_MAX,
+  GIT_PULL_MODES,
   GIT_STATUS_MAX_ENTRIES,
   isValidRefName,
   isValidSha,
@@ -1650,14 +1653,15 @@ export class GitService {
 
   async merge(
     repo: ResolvedRepo,
-    body: { ref?: unknown; noFf?: unknown; squash?: unknown },
+    body: { ref?: unknown; mode?: unknown },
   ): Promise<{ status: GitStatus; message: string }> {
     const ref = typeof body.ref === 'string' ? body.ref : '';
+    const mode = this.mode(GIT_MERGE_MODES, body.mode, 'gitMergeDefault');
     const { result, status } = await this.mutate(repo, 'merge', async () => {
       const target = await this.assertRef(repo, ref);
       const args = ['merge', '--no-edit'];
-      if (body.noFf === true) args.push('--no-ff');
-      if (body.squash === true) args.push('--squash');
+      if (mode === 'no-ff') args.push('--no-ff');
+      if (mode === 'squash') args.push('--squash');
       args.push('--', target);
       return this.writeAllowingConflict(repo, 'merge', args);
     });
@@ -1959,13 +1963,18 @@ export class GitService {
    */
   async fetch(
     repo: ResolvedRepo,
-    body: { remote?: unknown; all?: unknown; prune?: unknown },
+    body: { remote?: unknown; mode?: unknown },
     signal?: AbortSignal,
   ): Promise<{ status: GitStatus; message: string }> {
+    const mode = this.mode(GIT_FETCH_MODES, body.mode, 'gitFetchDefault');
     const { result, status } = await this.mutate(repo, 'fetch', async () => {
       const args = ['fetch'];
-      if (body.prune !== false) args.push('--prune');
-      if (body.all === false) args.push(await this.validRemote(repo, body.remote));
+      // Pruning only ever removes remote-tracking refs whose branch is gone
+      // from the remote; no local branch is touched. Never `--prune-tags`,
+      // which WOULD delete local tags — including ones made here and never
+      // pushed.
+      if (mode !== 'all') args.push('--prune');
+      if (mode === 'current') args.push(await this.validRemote(repo, body.remote));
       else args.push('--all');
       const res = await this.network(repo, 'fetch', args, signal);
       if (!res.ok) throw new GitFailed(res);
@@ -1978,20 +1987,21 @@ export class GitService {
   /**
    * Bring the upstream's commits in.
    *
-   * `--ff-only` by default: the alternative silently writes a merge commit
-   * nobody asked for, and the whole point of this tab is that nothing happens
-   * to a repository without somebody choosing it. Rebase and merge are both
-   * available, spelled out.
+   * `--ff-only` unless the settings say otherwise: the alternatives write a
+   * merge commit or rewrite your local ones, and the whole point of this tab is
+   * that nothing happens to a repository without somebody choosing it. All
+   * three are one click away either way, and a refusal offers the other two.
    */
   async pull(
     repo: ResolvedRepo,
-    body: { rebase?: unknown; merge?: unknown },
+    body: { mode?: unknown },
     signal?: AbortSignal,
   ): Promise<{ status: GitStatus; message: string }> {
+    const mode = this.mode(GIT_PULL_MODES, body.mode, 'gitPullDefault');
     const { result, status } = await this.mutate(repo, 'pull', async () => {
       const args = ['pull'];
-      if (body.rebase === true) args.push('--rebase');
-      else if (body.merge === true) args.push('--no-rebase', '--no-edit');
+      if (mode === 'rebase') args.push('--rebase');
+      else if (mode === 'merge') args.push('--no-rebase', '--no-edit');
       else args.push('--ff-only');
       const res = await this.network(repo, 'pull', args, signal);
       const output = `${res.stdout}\n${res.stderr}`;
@@ -2123,6 +2133,26 @@ export class GitService {
         ? `It stopped again on conflicts. Resolve them, stage the files, then continue.\n${result.message}`
         : result.message,
     };
+  }
+
+  /**
+   * Which variant of an operation to run: the one the request names, or the one
+   * the settings name when it names none.
+   *
+   * The fallback lives HERE rather than in the toolbar so the setting is the
+   * default in the real sense — a bare `POST /api/git/repos/:id/pull` from
+   * anywhere runs what the user chose, and there is one answer to "what does
+   * Pull do in this app" instead of one per caller.
+   */
+  private mode<T extends string>(
+    choices: readonly T[],
+    asked: unknown,
+    setting: 'gitFetchDefault' | 'gitPullDefault' | 'gitMergeDefault',
+  ): T {
+    if (typeof asked === 'string' && (choices as readonly string[]).includes(asked)) return asked as T;
+    if (asked !== undefined) throw new GitBadInput(`That is not one of: ${choices.join(', ')}.`);
+    const configured = this.index.getSettings()[setting];
+    return (choices as readonly string[]).includes(configured) ? (configured as T) : choices[0];
   }
 
   // ------------------------------------------------------------- shared checks

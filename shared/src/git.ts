@@ -485,18 +485,50 @@ export interface GitBranchRenameRequest {
   to: string;
 }
 
+/**
+ * The variants of the four operations that have more than one sensible answer.
+ *
+ * Each one is a whole git command rather than a flag, because that is the unit
+ * the user chooses in: a button's main click runs the one named in the
+ * settings, and its dropdown offers the rest. The lists live here so the
+ * settings validation, the server's fallback and the menu labels cannot drift
+ * apart — and the ORDER matters twice: it is the order the menu shows, and the
+ * FIRST entry is the shipped default that an unknown stored value falls back
+ * to.
+ */
+export const GIT_FETCH_MODES = ['all-prune', 'all', 'current'] as const;
+export type GitFetchMode = (typeof GIT_FETCH_MODES)[number];
+
+export const GIT_PULL_MODES = ['ff-only', 'rebase', 'merge'] as const;
+export type GitPullMode = (typeof GIT_PULL_MODES)[number];
+
+export const GIT_MERGE_MODES = ['ff', 'no-ff', 'squash'] as const;
+export type GitMergeMode = (typeof GIT_MERGE_MODES)[number];
+
+/**
+ * Push is the odd one out: its variants are not one command each but a flow.
+ * `push` sends the current branch straight away (setting the upstream when
+ * there is none to set, which is the only thing that could stop it); `dialog`
+ * opens the options window every time. Force and deleting a remote branch are
+ * NOT here on purpose — they exist in the dropdown, behind their confirmation,
+ * and nothing destructive may become what a button does by default.
+ */
+export const GIT_PUSH_MODES = ['push', 'dialog'] as const;
+export type GitPushMode = (typeof GIT_PUSH_MODES)[number];
+
 export interface GitFetchRequest {
   remote?: string;
-  all?: boolean;
-  prune?: boolean;
+  /** Omitted means "whatever the settings say" — the setting is the default, not the UI. */
+  mode?: GitFetchMode;
 }
 
 export interface GitPullRequest {
-  /** Replay your commits on top of theirs. */
-  rebase?: boolean;
-  /** Join the histories with a merge commit. */
-  merge?: boolean;
-  // Neither: `--ff-only`, which refuses rather than inventing a commit.
+  /**
+   * `ff-only` refuses rather than inventing a commit, `rebase` replays your
+   * commits on top of theirs, `merge` joins the histories. Omitted means
+   * whatever the settings say.
+   */
+  mode?: GitPullMode;
 }
 
 export interface GitPushRequest {
@@ -513,8 +545,12 @@ export interface GitPushRequest {
 
 export interface GitMergeRequest {
   ref: string;
-  noFf?: boolean;
-  squash?: boolean;
+  /**
+   * `ff` lets git fast-forward when it can, `no-ff` always leaves a merge
+   * commit, `squash` stages the result without committing. Omitted means
+   * whatever the settings say.
+   */
+  mode?: GitMergeMode;
   message?: string;
 }
 

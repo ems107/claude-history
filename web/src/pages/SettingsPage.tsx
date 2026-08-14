@@ -336,6 +336,53 @@ function AutoReloadStatusPanel() {
 }
 
 /** A setting and its "changed from default" marker, aligned on the first line. */
+/**
+ * The four git buttons whose main click is a preference, with the command each
+ * choice runs written into the label — the same text the dropdown shows, so
+ * choosing here and choosing there are visibly the same act.
+ */
+const GIT_BUTTON_SETTINGS: {
+  field: 'gitFetchDefault' | 'gitPullDefault' | 'gitPushDefault' | 'gitMergeDefault';
+  verb: string;
+  choices: [string, string][];
+}[] = [
+  {
+    field: 'gitFetchDefault',
+    verb: 'Fetch',
+    choices: [
+      ['all-prune', 'git fetch --prune --all — every remote, stale branches dropped'],
+      ['all', 'git fetch --all — every remote, keep stale branches'],
+      ['current', "git fetch --prune <remote> — only this branch's remote"],
+    ],
+  },
+  {
+    field: 'gitPullDefault',
+    verb: 'Pull',
+    choices: [
+      ['ff-only', 'git pull --ff-only — refuse rather than invent a commit'],
+      ['rebase', 'git pull --rebase — replay my commits on top'],
+      ['merge', 'git pull --no-rebase — join them with a merge commit'],
+    ],
+  },
+  {
+    field: 'gitPushDefault',
+    verb: 'Push',
+    choices: [
+      ['push', 'git push — send it, setting the upstream if there is none'],
+      ['dialog', 'Open the options dialog every time'],
+    ],
+  },
+  {
+    field: 'gitMergeDefault',
+    verb: 'Merge',
+    choices: [
+      ['ff', 'git merge — fast-forward when it can'],
+      ['no-ff', 'git merge --no-ff — always leave a merge commit'],
+      ['squash', 'git merge --squash — stage the result, commit nothing'],
+    ],
+  },
+];
+
 function Row({ children, badge }: { children: React.ReactNode; badge: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3">
@@ -721,6 +768,40 @@ export function SettingsPage() {
 
         {/* The id is what the repo picker's "Manage in Settings" link scrolls to. */}
         <Section title="Git" id="git" highlight={flashed === 'git'}>
+          <div>
+            <p className="mb-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">
+              What each button does when clicked
+            </p>
+            <div className="space-y-2">
+              {GIT_BUTTON_SETTINGS.map(({ field, verb, choices }) => (
+                <Row key={field} badge={<DefaultBadge field={field} value={s[field]} save={save} />}>
+                  <label className="flex items-center gap-2">
+                    <span className="w-12 shrink-0 text-[var(--text-dim)]">{verb}</span>
+                    <select
+                      value={s[field] as string}
+                      onChange={(e) => save({ [field]: e.target.value } as Partial<AppSettings>)}
+                      className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5"
+                    >
+                      {choices.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </Row>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
+              Only the main click. Every one of these buttons has a{' '}
+              <span className="text-[var(--text)]">▾</span> next to it that offers all the others without changing
+              anything here, each showing the exact git command it runs. The server applies the choice above whenever a
+              request does not name one, so there is a single answer to what Pull does in this app — not one per button.
+              Force pushing and deleting a remote branch are deliberately absent: they live in the menu, behind their
+              confirmation, and nothing destructive can become what a button does by default.
+            </p>
+          </div>
+
           <GitSettings />
         </Section>
 

@@ -14,6 +14,10 @@ import {
   CLAUDE_MODELS,
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
+  GIT_FETCH_MODES,
+  GIT_MERGE_MODES,
+  GIT_PULL_MODES,
+  GIT_PUSH_MODES,
   LOG_LEVEL_CHOICES,
   MIN_CHAT_IDLE_MINUTES,
   MIN_LOG_RETENTION_DAYS,
@@ -52,6 +56,24 @@ function readStoredPaths(raw: (GitStoredPath | string)[] | undefined): GitStored
     }
   }
   return out;
+}
+
+/**
+ * A setting whose value is one of a fixed list. Anything else is refused back
+ * to the SHIPPED value rather than to the current one: the stored value is
+ * itself suspect once something unknown has been written over it, and these
+ * end up as flags on a git command line.
+ */
+function oneOf<T extends string>(
+  choices: readonly T[],
+  patched: T | undefined,
+  current: T,
+  field: string,
+): T {
+  const value = patched ?? current;
+  if (choices.includes(value)) return value;
+  log.warn(`${field} was ${JSON.stringify(value)} — not one of ${choices.join(', ')}`);
+  return choices[0];
 }
 
 function clampInt(patched: number | undefined, current: number, min: number): number {
@@ -463,6 +485,12 @@ export class SessionIndex {
       ),
       // Windows' "Copy as path" wraps the path in quotes; keep them out of the cwd.
       autoReloadCwd: (patch.autoReloadCwd ?? this.settings.autoReloadCwd).trim().replace(/^"(.*)"$/, '$1'),
+      // Each git button's main click. An unknown value falls back to the
+      // shipped one rather than being stored: these reach `runGit` as flags.
+      gitFetchDefault: oneOf(GIT_FETCH_MODES, patch.gitFetchDefault, this.settings.gitFetchDefault, 'gitFetchDefault'),
+      gitPullDefault: oneOf(GIT_PULL_MODES, patch.gitPullDefault, this.settings.gitPullDefault, 'gitPullDefault'),
+      gitPushDefault: oneOf(GIT_PUSH_MODES, patch.gitPushDefault, this.settings.gitPushDefault, 'gitPushDefault'),
+      gitMergeDefault: oneOf(GIT_MERGE_MODES, patch.gitMergeDefault, this.settings.gitMergeDefault, 'gitMergeDefault'),
       logLevel: (LOG_LEVEL_CHOICES as readonly string[]).includes(patch.logLevel ?? this.settings.logLevel)
         ? (patch.logLevel ?? this.settings.logLevel)
         : DEFAULT_SETTINGS.logLevel,

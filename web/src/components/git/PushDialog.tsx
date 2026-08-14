@@ -15,17 +15,20 @@ export function PushDialog({
   status,
   remotes,
   busy,
+  initialForce = false,
   onPush,
   onCancel,
 }: {
   status: GitStatus;
   remotes: GitRemote[];
   busy: boolean;
+  /** Opened from the "Force push…" entry, which is the choice already made. */
+  initialForce?: boolean;
   onPush: (body: { remote: string; setUpstream: boolean; forceWithLease: boolean; tags: boolean; confirm: boolean }) => void;
   onCancel: () => void;
 }) {
   const [remote, setRemote] = useState(remotes.find((r) => r.name === 'origin')?.name ?? remotes[0]?.name ?? 'origin');
-  const [force, setForce] = useState(false);
+  const [force, setForce] = useState(initialForce);
   const [tags, setTags] = useState(false);
   const [typed, setTyped] = useState('');
 

@@ -397,7 +397,11 @@ A visual git client over the repositories on this machine (`/git`, `core/gitServ
 - **`fs.watch` on the gitdir needs its quiet period set BEFORE the command as well as after, and checked again when the debounce fires.** git touches the gitdir while it works, so our own first event arrives with the timer already armed; testing only on arrival let every commit echo straight back at the page (measured, then measured again at zero).
 - **The word-diff pairs only 1:1 runs** (`n` removals immediately followed by `n` additions) and requires a quarter of the shorter line to survive as shared non-whitespace. `alpha beta` and `!!! ???` share a space, and a space is not a resemblance — without that test every unrelated pair was marked end to end.
 - **A remote must be one the repository already has** (checked against `git remote`), which makes "push to a URL of my choosing" structurally impossible rather than merely unlikely. There is no plain `--force` and there must never be: `--force-with-lease` refuses when the remote moved since the last fetch, and that is the entire difference between overwriting your own mistake and overwriting somebody else's work (verified — a stale lease IS refused, and only a fetch makes it go through).
-- **`pull` defaults to `--ff-only`**: it refuses and explains rather than writing a merge commit nobody asked for, and the UI offers rebase or merge next to the refusal. *(Open question, deliberately: whether that is the right default is still to be settled with the user.)*
+- **Fetch, pull, push and merge each have a variant the user picks, and the SETTING is what runs.** `gitFetchDefault` / `gitPullDefault` / `gitPushDefault` / `gitMergeDefault` are ordinary `AppSettings` keys, and `GitService.mode()` applies them whenever a request names none — so a bare `POST /api/git/repos/:id/pull` from anywhere does what the user chose, and there is one answer to "what does Pull do in this app" instead of one per caller. The lists live in `shared/src/git.ts` and their ORDER is load-bearing twice: it is the menu order, and the FIRST entry is the shipped value that a stored garbage value falls back to (`oneOf` in `core/index.ts` falls back to the shipped one, never to the stored one — once something unknown has been written there, the stored value is itself suspect).
+  - Shipped: `fetch --prune --all`, `pull --ff-only`, push straight away, `merge` letting git fast-forward. The conservative reading in each case — `--ff-only` refuses rather than writing a merge commit nobody asked for, and pruning only ever drops remote-tracking refs, never a local branch. **Never `--prune-tags`**: it deletes local tags that are not on the remote, including ones made here and never pushed.
+  - **The alternatives are one click away, not behind a refusal or a settings page.** `SplitButton`: the main click runs the configured variant, the `▾` lists them all with **the exact git command under each label** — the command panel's contract moved to before the click — and marks which one the settings point at. The main button grows a `(rebase)`-style suffix exactly when it is not doing the shipped thing, the same "lit when something is off its default" rule the search panel and `ViewButton` follow.
+  - **Nothing destructive can be a default.** Force pushing and deleting a remote branch exist only as menu entries behind their confirmation; the settings cannot name them.
+  - Push's variants are a flow rather than a command (`push` sends straight away, setting the upstream when there is none; `dialog` opens the options window), which is why its setting is the odd one and why the server has no push mode to apply.
 - **The auth-failure pattern is MEASURED, not guessed, and the first draft was wrong.** Git for Windows with Credential Manager says `Cannot prompt because user interactivity has been disabled`; with no helper it says `unable to get password from user`. Neither contains "could not read Username" or "terminal prompts disabled", which is what the pattern originally looked for — so the one case the whole lockdown exists for would have shown raw git output instead of the sentence telling you what to do. Re-measure before editing that regex.
 - **A rebase is never reported as "interactive".** `.git/rebase-merge/interactive` sounds like the discriminator and is not: git writes it for every rebase since the merge backend became the default (verified on 2.55 with a plain `pull --rebase`), so keying on it labelled every rebase interactive.
 - **A repository with no commits is an ordinary state, and it used to be un-addable.** `rev-parse … --abbrev-ref HEAD` fails on an unborn HEAD and fails the WHOLE invocation, so the probe reported "not a repository". HEAD is asked separately with `symbolic-ref --short -q`, which answers on an unborn branch and exits non-zero exactly when HEAD is detached. `log` needs the same forgiveness: an empty clone says `bad revision 'HEAD'`, not "does not have any commits yet".
@@ -553,6 +557,19 @@ No automated test suite (personal tool). Verify against real data:
     on both sides, `foo(bar)`/`foo(baz)` must share their parentheses, an inserted
     phrase must mark only itself, accented words must tokenize whole, and
     `alpha beta` against `!!! ???` must give no marks at all.
+    The button variants are checked by reading the argv back out of the command
+    panel, which is the only place that says what really ran (note it records
+    the args WITHOUT the executable): each of the three fetch modes, three pull
+    modes and three merge modes must produce its own command line, an unknown
+    mode must be a 400 naming the list, and a request with NO mode must follow
+    `PUT /api/settings` — change `gitPullDefault` to `rebase` and a bare pull
+    must run `--rebase` a moment later. A garbage value saved into one of those
+    keys must come back as the SHIPPED one. In the browser: the `▾` must list
+    every variant with its command, mark the configured one `default`, close on
+    an outside **mousedown** (a synthetic `.click()` does not reach that
+    listener, which is a test bug and not a UI one), and clicking an entry must
+    be visible as that exact command in the panel seconds later. With a
+    non-shipped default configured, the main button must read `Pull (rebase)`.
     The network, all against the bench's own bare remote and `remote-worker`:
     fetch moves the tracking refs, and `--prune` drops a branch **somebody else**
     deleted (deleting it yourself cleans up on the way out, so that version of

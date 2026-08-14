@@ -1,5 +1,6 @@
 // REST API contract shared between server and web.
 
+import type { GitFetchMode, GitMergeMode, GitPullMode, GitPushMode } from './git.ts';
 import type {
   LiveInfo,
   ProjectInfo,
@@ -303,6 +304,22 @@ export interface AppSettings {
    * slot and a `claude` process, and a forgotten tab should not own either.
    */
   chatIdleTimeoutMinutes: number;
+  /**
+   * What the main click of each git button does; its dropdown always offers the
+   * rest. These are defaults in the real sense — the SERVER applies them when a
+   * request names no mode — rather than a habit of the toolbar, so the command
+   * that runs is the one the setting names wherever it was asked for.
+   *
+   * The shipped values are the conservative ones: `--all --prune` keeps the
+   * remote branch list truthful without touching a local branch, and `--ff-only`
+   * never writes a merge commit nobody asked for — it refuses and offers rebase
+   * or merge next to the refusal.
+   */
+  gitFetchDefault: GitFetchMode;
+  gitPullDefault: GitPullMode;
+  /** Whether Push sends straight away or opens the options dialog every time. */
+  gitPushDefault: GitPushMode;
+  gitMergeDefault: GitMergeMode;
   /** Lowest level actually written to the log files. */
   logLevel: LogLevel;
   /** Daily log files older than this are deleted (minimum 1). */
@@ -328,6 +345,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadHideSessions: false,
   chatEnabled: false,
   chatIdleTimeoutMinutes: 10,
+  gitFetchDefault: 'all-prune',
+  gitPullDefault: 'ff-only',
+  gitPushDefault: 'push',
+  gitMergeDefault: 'ff',
   logLevel: 'info',
   logRetentionDays: 14,
 };

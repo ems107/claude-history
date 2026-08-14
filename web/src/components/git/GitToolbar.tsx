@@ -1,11 +1,19 @@
-import type { GitOverview, GitStatus } from '@claude-history/shared';
+import {
+  DEFAULT_SETTINGS,
+  GIT_FETCH_MODES,
+  GIT_PULL_MODES,
+  type GitOverview,
+  type GitStatus,
+} from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { btn } from '../../lib/ui.ts';
 import { toggleClass } from '../viewer/SessionHeader.tsx';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
+import { SplitButton, type SplitOption } from './SplitButton.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 /**
@@ -39,7 +47,7 @@ export function GitToolbar({
   onTab: (tab: 'commits' | 'work') => void;
 }) {
   const [opening, setOpening] = useState(false);
-  const [pushing, setPushing] = useState(false);
+  const [pushing, setPushing] = useState<null | { force: boolean }>(null);
   const action = useGitAction(repoId);
   const repo = overview?.repos.find((r) => r.id === repoId) ?? null;
 
@@ -47,8 +55,14 @@ export function GitToolbar({
   const remotesQ = useQuery({
     queryKey: ['git', 'remotes', repoId],
     queryFn: () => gitApi.remotes(repoId as string),
-    enabled: !!repoId && pushing,
+    enabled: !!repoId && !!pushing,
   });
+
+  // What each button's main click does. The server applies the same settings
+  // when a request names no mode, so this only decides which entry is on the
+  // outside of the menu — the two can never disagree about what runs.
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const s = settings.data?.settings ?? DEFAULT_SETTINGS;
 
   // The two failures worth answering in place rather than just reporting.
   const diverged = /fast-forward/i.test(action.error ?? '');
@@ -65,6 +79,120 @@ export function GitToolbar({
       .catch(() => undefined)
       .finally(() => setOpening(false));
   };
+
+  // The remote of the branch's upstream, for the labels only — `origin/main`
+  // splits at the first slash, and the server resolves the real one anyway.
+  const remote = status?.upstream?.split('/')[0] ?? 'origin';
+  const branch = status?.branch ?? 'HEAD';
+  // The buttons these belong to are only rendered with a repository open, so
+  // the closures below cannot run without one.
+  const id = repoId as string;
+
+  const fetchOptions: SplitOption[] = [
+    {
+      key: GIT_FETCH_MODES[0],
+      label: 'Fetch every remote',
+      command: 'git fetch --prune --all',
+      hint: 'Pruning drops the origin/x entries whose branch is gone. No local branch is touched.',
+      short: 'all, pruned',
+      blocked: status?.blocked.fetch ?? null,
+      run: () => void action.run(() => gitApi.fetch(id, { mode: 'all-prune' })),
+    },
+    {
+      key: 'all',
+      label: 'Fetch every remote, keeping stale branches',
+      command: 'git fetch --all',
+      hint: 'The list of remote branches grows for ever, including ones deleted months ago.',
+      short: 'no prune',
+      blocked: status?.blocked.fetch ?? null,
+      run: () => void action.run(() => gitApi.fetch(id, { mode: 'all' })),
+    },
+    {
+      key: 'current',
+      label: `Fetch only ${remote}`,
+      command: `git fetch --prune ${remote}`,
+      hint: 'Quicker where there are several remotes; the others stay behind without saying so.',
+      short: remote,
+      blocked: status?.blocked.fetch ?? null,
+      run: () => void action.run(() => gitApi.fetch(id, { mode: 'current' })),
+    },
+  ];
+
+  const pullOptions: SplitOption[] = [
+    {
+      key: GIT_PULL_MODES[0],
+      label: 'Pull, fast-forward only',
+      command: 'git pull --ff-only',
+      hint: 'Refuses if both sides have moved, and offers the other two here rather than choosing for you.',
+      short: 'ff-only',
+      blocked: status?.blocked.pull ?? null,
+      run: () => void action.run(() => gitApi.pull(id, { mode: 'ff-only' })),
+    },
+    {
+      key: 'rebase',
+      label: 'Pull with rebase',
+      command: 'git pull --rebase',
+      hint: 'Replays your commits on top of theirs. A conflict stops mid-rebase, which you then have to finish.',
+      short: 'rebase',
+      blocked: status?.blocked.pull ?? null,
+      run: () => void action.run(() => gitApi.pull(id, { mode: 'rebase' })),
+    },
+    {
+      key: 'merge',
+      label: 'Pull with merge',
+      command: 'git pull --no-rebase',
+      hint: 'Never fails, but leaves a “Merge branch…” commit every time the two sides have both moved.',
+      short: 'merge',
+      blocked: status?.blocked.pull ?? null,
+      run: () => void action.run(() => gitApi.pull(id, { mode: 'merge' })),
+    },
+  ];
+
+  const needsUpstream = !!status && !status.upstream;
+  const pushOptions: SplitOption[] = [
+    {
+      key: 'push',
+      label: needsUpstream ? 'Push and set the upstream' : 'Push this branch',
+      command: `git push${needsUpstream ? ' --set-upstream' : ''} ${remote} ${branch}`,
+      hint: needsUpstream ? 'This branch is not on the remote yet; this is what puts it there.' : undefined,
+      short: 'direct',
+      // A branch with no upstream is not blocked, it is the case --set-upstream
+      // exists for; the two refusals are different and so are their reasons.
+      blocked: (needsUpstream ? status?.blocked.pushUpstream : status?.blocked.push) ?? null,
+      run: () =>
+        void action.run(() =>
+          gitApi.push(id, { setUpstream: needsUpstream, forceWithLease: false, tags: false, confirm: false }),
+        ),
+    },
+    {
+      key: 'dialog',
+      label: 'Push with options…',
+      command: 'git push …',
+      hint: 'Choose the remote, the tags and the force, and read the exact command before it runs.',
+      short: 'dialog',
+      run: () => setPushing({ force: false }),
+    },
+    {
+      key: 'tags',
+      label: 'Push, tags included',
+      command: `git push --tags ${remote} ${branch}`,
+      hint: 'Publishes every local tag, not only the ones on this branch.',
+      blocked: status?.blocked.push ?? null,
+      run: () =>
+        void action.run(() =>
+          gitApi.push(id, { setUpstream: false, forceWithLease: false, tags: true, confirm: false }),
+        ),
+    },
+    {
+      key: 'force',
+      label: 'Force push, with lease…',
+      command: `git push --force-with-lease ${remote} ${branch}`,
+      hint: 'Refused if the remote moved since your last fetch. Asks for confirmation, and for the name on shared branches.',
+      danger: true,
+      blocked: status?.blocked.pushForce ?? null,
+      run: () => setPushing({ force: true }),
+    },
+  ];
 
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-1.5">
@@ -162,33 +290,27 @@ export function GitToolbar({
 
       {repoId && (
         <span className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => void action.run(() => gitApi.fetch(repoId))}
-            disabled={action.busy || !!status?.blocked.fetch}
-            title={status?.blocked.fetch ?? 'Update the remote-tracking branches (--all --prune)'}
-            className={btn}
-          >
-            {action.busy ? '…' : 'Fetch'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void action.run(() => gitApi.pull(repoId))}
-            disabled={action.busy || !!status?.blocked.pull}
-            title={status?.blocked.pull ?? 'Fast-forward onto the upstream'}
-            className={btn}
-          >
-            Pull{status && status.behind > 0 ? ` ↓${status.behind}` : ''}
-          </button>
-          <button
-            type="button"
-            onClick={() => setPushing(true)}
-            disabled={action.busy || !status}
-            title={status?.blocked.push ?? status?.blocked.pushUpstream ?? 'Send commits to the remote'}
-            className={btn}
-          >
-            Push{status && status.ahead > 0 ? ` ↑${status.ahead}` : ''}
-          </button>
+          <SplitButton
+            label="Fetch"
+            busy={action.busy}
+            defaultKey={s.gitFetchDefault}
+            options={fetchOptions}
+            title="Update the remote-tracking branches"
+          />
+          <SplitButton
+            label={`Pull${status && status.behind > 0 ? ` ↓${status.behind}` : ''}`}
+            busy={action.busy}
+            defaultKey={s.gitPullDefault}
+            options={pullOptions}
+            title="Bring the upstream's commits in"
+          />
+          <SplitButton
+            label={`Push${status && status.ahead > 0 ? ` ↑${status.ahead}` : ''}`}
+            busy={action.busy}
+            defaultKey={s.gitPushDefault}
+            options={pushOptions}
+            title="Send commits to the remote"
+          />
         </span>
       )}
 
@@ -202,10 +324,20 @@ export function GitToolbar({
           <span className="mt-1 flex flex-wrap items-center gap-1.5">
             {diverged && repoId && (
               <>
-                <button type="button" className={btn} onClick={() => void action.run(() => gitApi.pull(repoId, { rebase: true }))}>
+                <button
+                  type="button"
+                  className={btn}
+                  title="git pull --rebase"
+                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'rebase' }))}
+                >
                   Pull with rebase
                 </button>
-                <button type="button" className={btn} onClick={() => void action.run(() => gitApi.pull(repoId, { merge: true }))}>
+                <button
+                  type="button"
+                  className={btn}
+                  title="git pull --no-rebase"
+                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'merge' }))}
+                >
                   Pull with merge
                 </button>
               </>
@@ -232,9 +364,10 @@ export function GitToolbar({
           status={status}
           remotes={remotesQ.data ?? []}
           busy={action.busy}
-          onCancel={() => setPushing(false)}
+          initialForce={pushing.force}
+          onCancel={() => setPushing(null)}
           onPush={(body) => {
-            setPushing(false);
+            setPushing(null);
             if (repoId) void action.run(() => gitApi.push(repoId, body));
           }}
         />

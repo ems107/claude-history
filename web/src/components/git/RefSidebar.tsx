@@ -1,10 +1,23 @@
-import type { GitBranch, GitBranchesResponse, GitStash, GitStatus, GitTag, GitWorktree } from '@claude-history/shared';
+import {
+  DEFAULT_SETTINGS,
+  GIT_MERGE_MODES,
+  type GitBranch,
+  type GitBranchesResponse,
+  type GitMergeMode,
+  type GitStash,
+  type GitStatus,
+  type GitTag,
+  type GitWorktree,
+} from '@claude-history/shared';
+import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
+import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { relativeTime } from '../../lib/format.ts';
 import { btn, inputClass } from '../../lib/ui.ts';
 import { FoldHeader } from '../viewer/FoldHeader.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { MenuButton, type SplitOption } from './SplitButton.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 /**
@@ -71,6 +84,10 @@ function Section({
  * disabled that title is the server's reason rather than the action's name —
  * a dead control that cannot say why is the bug this whole pattern avoids.
  */
+/** Shared with the merge caret beside it, so the two read as one control. */
+const ACT_CLASS =
+  'cursor-pointer px-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-30';
+
 function Act({
   label,
   title,
@@ -92,9 +109,7 @@ function Act({
       onClick={onClick}
       disabled={disabled}
       title={disabled ? (reason ?? title) : title}
-      className={`cursor-pointer px-1 text-[11px] ${
-        danger ? 'text-[var(--text-dim)] hover:text-red-300' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
-      } disabled:cursor-default disabled:opacity-30`}
+      className={`${ACT_CLASS} ${danger ? 'hover:text-red-300' : ''}`}
     >
       {label}
     </button>
@@ -142,13 +157,47 @@ export function RefSidebar({
 
   const local = branches?.local ?? [];
   const remote = branches?.remote ?? [];
+  // Which merge the glyph runs. The server reads the same setting when the
+  // request names no mode, so the label and the command cannot disagree.
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const mergeDefault = settings.data?.settings.gitMergeDefault ?? DEFAULT_SETTINGS.gitMergeDefault;
 
   const run = (work: () => Promise<unknown>): void => {
     if (!repoId) return;
     void action.run(work as () => Promise<never>);
   };
   const checkout = (ref: string) => run(() => gitApi.checkout(repoId as string, { ref }));
-  const merge = (ref: string) => run(() => gitApi.merge(repoId as string, { ref }));
+  const merge = (ref: string, mode?: GitMergeMode) => run(() => gitApi.merge(repoId as string, { ref, mode }));
+
+  // The three ways to merge, next to the branch rather than in a dialog. The
+  // glyph runs the configured one — the server picks the same one when the
+  // request names none — and the caret beside it offers the others.
+  const mergeOptions = (name: string): SplitOption[] => [
+    {
+      key: GIT_MERGE_MODES[0],
+      label: `Merge ${name}`,
+      command: `git merge --no-edit ${name}`,
+      hint: 'Moves the pointer when it can, and leaves a merge commit only when the two sides really diverged.',
+      blocked: status?.blocked.merge ?? null,
+      run: () => merge(name, 'ff'),
+    },
+    {
+      key: 'no-ff',
+      label: `Merge ${name}, always with a commit`,
+      command: `git merge --no-ff --no-edit ${name}`,
+      hint: 'The branch stays visible in the graph for ever, at the cost of a commit each time.',
+      blocked: status?.blocked.merge ?? null,
+      run: () => merge(name, 'no-ff'),
+    },
+    {
+      key: 'squash',
+      label: `Squash ${name} into the index`,
+      command: `git merge --squash ${name}`,
+      hint: 'Stages the whole result as your own change and commits nothing — the branch is not recorded as merged.',
+      blocked: status?.blocked.merge ?? null,
+      run: () => merge(name, 'squash'),
+    },
+  ];
 
   // Remote branches grouped by their remote, which is how anyone reads them.
   const byRemote = new Map<string, typeof remote>();
@@ -277,6 +326,14 @@ export function RefSidebar({
                   disabled={action.busy || !!status?.blocked.merge}
                   reason={status?.blocked.merge}
                   onClick={() => merge(branch.name)}
+                />
+                <MenuButton
+                  label="▾"
+                  title="The other ways to merge it"
+                  className={`${ACT_CLASS} px-0.5`}
+                  disabled={action.busy}
+                  options={mergeOptions(branch.name)}
+                  mainKey={mergeDefault}
                 />
                 <Act label="✕" title={`Delete ${branch.name}`} danger onClick={() => setDeleting(branch)} />
               </span>
