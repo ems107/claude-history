@@ -396,6 +396,12 @@ A visual git client over the repositories on this machine (`/git`, `core/gitServ
 - **Paths reach git only if they were in the status we just read**, NUL-separated on stdin (`--pathspec-from-file=- --pathspec-file-nul`): no argv limit, no quoting, and 400 files stage in one call. `git clean` is the exception — it will not read a pathspec from stdin, so deletions go in argv in batches of 100.
 - **`fs.watch` on the gitdir needs its quiet period set BEFORE the command as well as after, and checked again when the debounce fires.** git touches the gitdir while it works, so our own first event arrives with the timer already armed; testing only on arrival let every commit echo straight back at the page (measured, then measured again at zero).
 - **The word-diff pairs only 1:1 runs** (`n` removals immediately followed by `n` additions) and requires a quarter of the shorter line to survive as shared non-whitespace. `alpha beta` and `!!! ???` share a space, and a space is not a resemblance — without that test every unrelated pair was marked end to end.
+- **A remote must be one the repository already has** (checked against `git remote`), which makes "push to a URL of my choosing" structurally impossible rather than merely unlikely. There is no plain `--force` and there must never be: `--force-with-lease` refuses when the remote moved since the last fetch, and that is the entire difference between overwriting your own mistake and overwriting somebody else's work (verified — a stale lease IS refused, and only a fetch makes it go through).
+- **`pull` defaults to `--ff-only`**: it refuses and explains rather than writing a merge commit nobody asked for, and the UI offers rebase or merge next to the refusal. *(Open question, deliberately: whether that is the right default is still to be settled with the user.)*
+- **The auth-failure pattern is MEASURED, not guessed, and the first draft was wrong.** Git for Windows with Credential Manager says `Cannot prompt because user interactivity has been disabled`; with no helper it says `unable to get password from user`. Neither contains "could not read Username" or "terminal prompts disabled", which is what the pattern originally looked for — so the one case the whole lockdown exists for would have shown raw git output instead of the sentence telling you what to do. Re-measure before editing that regex.
+- **A rebase is never reported as "interactive".** `.git/rebase-merge/interactive` sounds like the discriminator and is not: git writes it for every rebase since the merge backend became the default (verified on 2.55 with a plain `pull --rebase`), so keying on it labelled every rebase interactive.
+- **A repository with no commits is an ordinary state, and it used to be un-addable.** `rev-parse … --abbrev-ref HEAD` fails on an unborn HEAD and fails the WHOLE invocation, so the probe reported "not a repository". HEAD is asked separately with `symbolic-ref --short -q`, which answers on an unborn branch and exits non-zero exactly when HEAD is detached. `log` needs the same forgiveness: an empty clone says `bad revision 'HEAD'`, not "does not have any commits yet".
+- **Cloning an empty repository configures an upstream that does not exist yet**, so `status.upstream` is set from the first moment. Configured and existing are not the same thing.
 - Network policy is unchanged and applies here: `fetch`/`pull`/`push` are user-triggered only. The `.git` watcher is local and invalidates local state — **it must never lead to a fetch**.
 - `ctx.git.busy` joins `ctx.chat.busy` in the three 409 sites (`/api/server/stop`, `/api/uninstall`, `/api/update/apply`): going away mid-rebase leaves a repository in a state nothing in this app put it in, and nothing here could finish for the user.
 
@@ -528,3 +534,28 @@ No automated test suite (personal tool). Verify against real data:
     on both sides, `foo(bar)`/`foo(baz)` must share their parentheses, an inserted
     phrase must mark only itself, accented words must tokenize whole, and
     `alpha beta` against `!!! ???` must give no marks at all.
+    The network, all against the bench's own bare remote and `remote-worker`:
+    fetch moves the tracking refs, and `--prune` drops a branch **somebody else**
+    deleted (deleting it yourself cleans up on the way out, so that version of
+    the test proves nothing). A fast-forward pull works; a diverged one refuses
+    with both ways out named; rebase replays cleanly, and on a real conflict
+    stops at step 1 of 1 with Continue blocked. Push moves the bare — read it
+    with `git --git-dir` rather than trusting the reply — and `push -u` sets the
+    upstream. **The one that matters most**: with the remote moved since the last
+    fetch, `--force-with-lease` must be REFUSED and the remote must keep their
+    commit; only after a fetch does it go through. A plain `--force` would pass
+    that test, which is why it is written this way.
+    Credentials, offline: `node serve-401.mjs` and a remote pointing at it. The
+    fetch must fail in **under a second** with the "run it once in a terminal"
+    sentence, never hang. Started with `--delay-ms`, the same server gives a slow
+    fetch: during it a status read must answer in milliseconds marked `stale`
+    rather than queueing, `POST /api/server/stop` must 409 naming the fetch, and
+    closing the request must take the git process tree with it (count
+    `Get-Process git` before, during and after).
+    A real remote is the only thing the bench cannot fake, and the user created
+    `github.com/ems107/AITestRepository` for exactly that: clone it, commit and
+    push through the API, and confirm with `git ls-remote` that GitHub really has
+    the commit. That is the check that the credential manager's stored
+    credentials work from a server with **no console** — measured at ~2.3 s.
+    Note it cannot be emptied again afterwards (GitHub will not delete a default
+    branch), so the empty-repository checks belong against a local `git init`.
