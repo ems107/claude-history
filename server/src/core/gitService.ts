@@ -1,10 +1,13 @@
 import {
+  GIT_LOG_PAGE,
   GIT_STATUS_MAX_ENTRIES,
+  isValidRefName,
   type GitBranchesResponse,
   type GitCommandLogEntry,
   type GitCommandLogResponse,
   type GitInProgress,
   type GitInProgressKind,
+  type GitLogResponse,
   type GitOp,
   type GitOverview,
   type GitRemote,
@@ -28,10 +31,12 @@ import {
 import { findGitExe } from '../util/launcher.ts';
 import {
   BRANCH_FORMAT,
+  LOG_FORMAT,
   REMOTE_BRANCH_FORMAT,
   STASH_FORMAT,
   TAG_FORMAT,
   parseLocalBranches,
+  parseLogRecords,
   parseRemoteBranches,
   parseRemotes,
   parseStashList,
@@ -686,6 +691,77 @@ export class GitService {
       const current = local.find((b) => b.current) ?? null;
       return { current: current?.name ?? null, detached: !current, local, remote };
     });
+  }
+
+  /**
+   * A page of commits, as edges rather than as a drawing.
+   *
+   * `git log --graph` is never used: its ASCII art is meant for people, it has
+   * changed shape between versions, and it cannot be turned back into the edges
+   * a renderer needs. `%P` is the graph; everything else on the row is text
+   * beside it, and the lane layout happens in the browser.
+   *
+   * `--date-order` rather than `--topo-order` on purpose. Topo order draws
+   * tidier lanes but has to walk the whole history before it can emit the first
+   * commit, which makes page one slow exactly where it matters; date order
+   * streams and pages stably.
+   */
+  async log(
+    repo: ResolvedRepo,
+    opts: { limit: number; offset: number; ref?: string | null; path?: string | null },
+    signal?: AbortSignal,
+  ): Promise<GitLogResponse> {
+    const limit = Math.min(GIT_LOG_PAGE * 5, Math.max(1, Math.floor(opts.limit)));
+    const offset = Math.max(0, Math.floor(opts.offset));
+
+    const args = [
+      'log',
+      '--no-color',
+      '--date-order',
+      '--decorate=full',
+      // A stash is a commit with a ref, and it would appear as a mystery row.
+      '--decorate-refs-exclude=refs/stash',
+      `--format=${LOG_FORMAT}`,
+      '-n',
+      // One more than asked: its arrival is what `hasMore` means.
+      String(limit + 1),
+      '--skip',
+      String(offset),
+    ];
+
+    if (opts.ref) {
+      if (!isValidRefName(opts.ref)) throw new GitBadInput('That is not a valid ref name.');
+      args.push(opts.ref);
+    } else {
+      // Not `--all`: that also drags in refs/notes and other namespaces, which
+      // would show up as commits nobody recognises.
+      args.push('--branches', '--tags', '--remotes', 'HEAD');
+    }
+    args.push('--');
+    if (opts.path) args.push(opts.path);
+
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'log',
+      args,
+      // A page of 200 subjects is small; a repository with enormous messages
+      // should still not be able to hand us tens of megabytes.
+      maxBytes: 16 * 1024 * 1024,
+    });
+    if (!res.ok) {
+      // An empty repository has no HEAD to walk, which is not a failure.
+      if (/does not have any commits yet|unknown revision/i.test(res.stderr)) {
+        return { commits: [], hasMore: false, offset };
+      }
+      throw new GitFailed(res);
+    }
+
+    const all = parseLogRecords(res.stdout);
+    const hasMore = all.length > limit;
+    return { commits: hasMore ? all.slice(0, limit) : all, hasMore, offset };
   }
 
   async stashes(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitStash[]> {

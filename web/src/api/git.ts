@@ -1,6 +1,7 @@
 import type {
   GitBranchesResponse,
   GitCommandLogResponse,
+  GitLogResponse,
   GitOpenTarget,
   GitOverview,
   GitRemote,
@@ -42,6 +43,15 @@ export const gitApi = {
   setHidden: (id: string, hidden: boolean) =>
     post<{ ok: true; overview: GitOverview }>(`/api/git/repos/${id}/hidden`, { hidden }),
   open: (id: string, target: GitOpenTarget) => post<{ ok: true }>(`/api/git/repos/${id}/open`, { target }),
+
+  log: (id: string, opts: { offset?: number; ref?: string | null; path?: string | null } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.offset) params.set('offset', String(opts.offset));
+    if (opts.ref) params.set('ref', opts.ref);
+    if (opts.path) params.set('path', opts.path);
+    const query = params.toString();
+    return getJson<GitLogResponse>(`/api/git/repos/${id}/log${query ? `?${query}` : ''}`);
+  },
 
   status: (id: string) => getJson<GitStatus>(`/api/git/repos/${id}/status`),
   branches: (id: string) => getJson<GitBranchesResponse>(`/api/git/repos/${id}/branches`),

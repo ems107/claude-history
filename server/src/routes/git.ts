@@ -1,4 +1,4 @@
-import type { GitAddRepoRequest, GitOpenRequest, GitOverview } from '@claude-history/shared';
+import { GIT_LOG_PAGE, type GitAddRepoRequest, type GitOpenRequest, type GitOverview } from '@claude-history/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { GitBadInput, GitBlocked, GitFailed } from '../core/gitService.ts';
@@ -138,6 +138,30 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
       return sendGitError(reply, err);
     }
   });
+
+  app.get<{ Params: { id: string }; Querystring: { limit?: string; offset?: string; ref?: string; path?: string } }>(
+    '/api/git/repos/:id/log',
+    async (request, reply) => {
+      const repo = repoOf(request.params.id, reply);
+      if (!repo) return reply;
+      const limit = Number(request.query.limit ?? GIT_LOG_PAGE);
+      const offset = Number(request.query.offset ?? 0);
+      try {
+        return await ctx.git.log(
+          repo,
+          {
+            limit: Number.isFinite(limit) ? limit : GIT_LOG_PAGE,
+            offset: Number.isFinite(offset) ? offset : 0,
+            ref: request.query.ref ?? null,
+            path: request.query.path ?? null,
+          },
+          abortSignalOf(reply),
+        );
+      } catch (err) {
+        return sendGitError(reply, err);
+      }
+    },
+  );
 
   app.get<{ Params: { id: string } }>('/api/git/repos/:id/branches', async (request, reply) => {
     const repo = repoOf(request.params.id, reply);

@@ -3,6 +3,7 @@ import { useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { gitApi } from '../api/git.ts';
 import { GitToolbar } from '../components/git/GitToolbar.tsx';
+import { GraphList } from '../components/git/GraphList.tsx';
 import { RefSidebar } from '../components/git/RefSidebar.tsx';
 import { RepoStateBanner } from '../components/git/RepoStateBanner.tsx';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
@@ -22,6 +23,7 @@ const LAST_REPO_KEY = 'git.lastRepo';
 export function GitPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const sidebar = useDragSize({ key: 'git.sidebarWidth', axis: 'x', min: 180, max: 520, initial: 240 });
+  const graph = useDragSize({ key: 'git.graphHeight', axis: 'y', min: 120, max: 900, initial: 340 });
 
   const overviewQ = useQuery({ queryKey: ['git', 'repos'], queryFn: () => gitApi.overview() });
 
@@ -55,6 +57,8 @@ export function GitPage() {
   }, [repoId, urlRepo, setParam]);
 
   const selectedRef = searchParams.get('ref');
+  // The full sha, not the short one: seven characters are not a safe anchor.
+  const selectedSha = searchParams.get('c');
 
   const enabled = !!repoId;
   const statusQ = useQuery({
@@ -122,44 +126,65 @@ export function GitPage() {
         />
         <RepoStateBanner status={status} />
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {!repoId && (
+        {!repoId ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 text-xs">
             <p className="text-[var(--text-dim)]">
               No repository selected. Add a folder to scan from the picker above — one root covering where you keep
               your clones is usually all it takes.
             </p>
-          )}
-
-          {repoId && statusQ.isError && (
-            <p className="text-red-400">Could not read this repository: {String(statusQ.error)}</p>
-          )}
-
-          {status && (
-            <div className="max-w-3xl space-y-3 text-xs">
-              <div className="rounded border border-[var(--border)] bg-[var(--bg-raised)]/50 p-3">
-                <p className="text-[10px] tracking-wider text-[var(--text-dim)] uppercase">Head</p>
-                {status.headSha ? (
-                  <>
-                    <p className="mt-1">
-                      <span className="font-mono text-[var(--text-dim)]">{status.headSha.slice(0, 7)}</span>{' '}
-                      <span>{status.headSubject}</span>
-                    </p>
-                    <p className="mt-1 text-[11px] text-[var(--text-dim)]">
-                      read {relativeTime(status.readAt)}
-                      <span title={formatDateTime(status.readAt)}> · {formatDateTime(status.readAt)}</span>
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-1 text-[var(--text-dim)]">No commits yet.</p>
-                )}
+          </div>
+        ) : (
+          <>
+            {selectedRef && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-1 text-[11px]">
+                <span className="text-[var(--text-dim)]">Showing only</span>
+                <span className="font-mono text-[var(--accent)]">{selectedRef}</span>
+                <button
+                  type="button"
+                  onClick={() => setParam('ref', null)}
+                  className="cursor-pointer text-[var(--text-dim)] hover:text-[var(--text)]"
+                >
+                  show everything
+                </button>
               </div>
+            )}
 
-              <p className="text-[var(--text-dim)]">
-                The commit graph, the working tree and the diff viewer land in this pane next.
-              </p>
+            <div style={{ height: graph.size }} className="min-h-0 shrink-0 overflow-hidden">
+              <GraphList
+                repoId={repoId}
+                refFilter={selectedRef}
+                selected={selectedSha}
+                onSelect={(sha) => setParam('c', sha)}
+              />
             </div>
-          )}
-        </div>
+            <div
+              onMouseDown={graph.onMouseDown}
+              className="h-1 w-full shrink-0 cursor-row-resize border-y border-[var(--border)] hover:bg-[var(--accent-dim)]"
+              title="Drag to resize"
+            />
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-3 text-xs">
+              {statusQ.isError && <p className="text-red-400">Could not read this repository: {String(statusQ.error)}</p>}
+              {selectedSha ? (
+                <p className="text-[var(--text-dim)]">
+                  <span className="font-mono">{selectedSha.slice(0, 7)}</span> — the commit's files and its diff land
+                  in this pane next.
+                </p>
+              ) : (
+                <p className="text-[var(--text-dim)]">
+                  Pick a commit above to see what it changed.
+                  {status?.headSha && (
+                    <>
+                      {' '}
+                      HEAD is <span className="font-mono">{status.headSha.slice(0, 7)}</span>, read{' '}
+                      <span title={formatDateTime(status.readAt)}>{relativeTime(status.readAt)}</span>.
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
