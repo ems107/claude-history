@@ -1,6 +1,7 @@
 import type { AppConfig } from './config.ts';
 import type { AutoReloadService } from './core/autoReload.ts';
 import type { DeepSearchService } from './core/deepSearch.ts';
+import type { GitService } from './core/gitService.ts';
 import type { SessionIndex } from './core/index.ts';
 import type { SearchService } from './core/search.ts';
 import type { SessionChatService } from './core/sessionChat.ts';
@@ -16,4 +17,5 @@ export interface AppContext {
   usage: UsageService;
   autoReload: AutoReloadService;
   chat: SessionChatService;
+  git: GitService;
 }

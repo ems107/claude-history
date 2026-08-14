@@ -10,6 +10,12 @@ const HEARTBEAT_MS = 25_000;
  * for a screen a person is reading.
  */
 const LOGS_THROTTLE_MS = 1_000;
+/**
+ * Git commands burst too — opening a repository fires half a dozen reads in a
+ * few milliseconds. The event carries only the newest seq, so one notice a
+ * second is plenty and a panel nobody has open costs nothing at all.
+ */
+const GIT_THROTTLE_MS = 1_000;
 
 export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/events', (request, reply) => {
@@ -30,6 +36,15 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });
     const onChat = (id: string) => send({ type: 'chat-changed', id });
+    const onGitRepo = (id: string) => send({ type: 'git-repo-changed', id });
+    let gitTimer: NodeJS.Timeout | null = null;
+    const onGitCommand = () => {
+      if (gitTimer) return;
+      gitTimer = setTimeout(() => {
+        gitTimer = null;
+        send({ type: 'git-commands', seq: ctx.git.commandSeq });
+      }, GIT_THROTTLE_MS);
+    };
     let logsTimer: NodeJS.Timeout | null = null;
     const onLogAppended = () => {
       if (logsTimer) return;
@@ -45,6 +60,8 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.index.events.on('index-progress', onProgress);
     ctx.updates.events.on('update-status', onUpdateStatus);
     ctx.chat.events.on('chat-changed', onChat);
+    ctx.git.events.on('command', onGitCommand);
+    ctx.git.events.on('repo-changed', onGitRepo);
     logEvents.on('appended', onLogAppended);
 
     const heartbeat = setInterval(() => reply.raw.write(': hb\n\n'), HEARTBEAT_MS);
@@ -52,7 +69,10 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     request.raw.on('close', () => {
       clearInterval(heartbeat);
       if (logsTimer) clearTimeout(logsTimer);
+      if (gitTimer) clearTimeout(gitTimer);
       logEvents.off('appended', onLogAppended);
+      ctx.git.events.off('command', onGitCommand);
+      ctx.git.events.off('repo-changed', onGitRepo);
       ctx.index.events.off('session-updated', onUpdated);
       ctx.index.events.off('sessions-changed', onChanged);
       ctx.index.events.off('live-changed', onLive);

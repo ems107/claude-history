@@ -23,6 +23,7 @@ import {
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
+import type { GitStoredPath } from './gitRepos.ts';
 import { appendedText, safeParse, str } from './jsonl.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
 import { readLiveSessions } from './live.ts';
@@ -39,6 +40,20 @@ const log = createLogger('index');
  * input is NaN — and a NaN floor compares false against everything, quietly
  * turning "at most one read every N seconds" into "read every time".
  */
+/** Stored repository paths, tolerating the plain-string form as well as the record. */
+function readStoredPaths(raw: (GitStoredPath | string)[] | undefined): GitStoredPath[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GitStoredPath[] = [];
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      if (entry.trim()) out.push({ path: entry, addedAt: '' });
+    } else if (entry && typeof entry.path === 'string' && entry.path.trim()) {
+      out.push({ path: entry.path, addedAt: typeof entry.addedAt === 'string' ? entry.addedAt : '' });
+    }
+  }
+  return out;
+}
+
 function clampInt(patched: number | undefined, current: number, min: number): number {
   const value = Math.round(patched ?? current);
   if (!Number.isFinite(value)) return Math.max(min, Number.isFinite(current) ? current : min);
@@ -109,6 +124,14 @@ export class SessionIndex {
   private prices: PriceTable | null = null;
   /** User settings — stored in userdata.json alongside renames and pins. */
   private settings: AppSettings = { ...DEFAULT_SETTINGS };
+  /**
+   * The GIT tab's repository lists. Data, not settings: they are lists rather
+   * than validated scalars, and the DEFAULT_SETTINGS pruning below would fight
+   * them. Stored in userdata.json like everything else the user owns.
+   */
+  private gitRepos: GitStoredPath[] = [];
+  private gitScanRoots: GitStoredPath[] = [];
+  private gitHidden = new Set<string>();
   state: IndexState = 'scanning';
   cacheHits = 0;
   private enriching = false;
@@ -128,10 +151,19 @@ export class SessionIndex {
       pins?: string[];
       prices?: PriceTable;
       settings?: Partial<AppSettings>;
+      gitRepos?: (GitStoredPath | string)[];
+      gitScanRoots?: (GitStoredPath | string)[];
+      gitHidden?: string[];
     }>(this.config.userdataFile);
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
     this.prices = userdata?.prices ?? null;
+    // Objects rather than bare strings, so a future alias or pin needs no
+    // migration — but a plain string is still read, in case one was ever
+    // written by hand.
+    this.gitRepos = readStoredPaths(userdata?.gitRepos);
+    this.gitScanRoots = readStoredPaths(userdata?.gitScanRoots);
+    this.gitHidden = new Set(userdata?.gitHidden ?? []);
     // Only keys we still have: a setting that is retired would otherwise live
     // on in userdata.json forever, be served by /api/settings and read as
     // current — which is exactly what happened to chatModel/chatEffort.
@@ -337,13 +369,44 @@ export class SessionIndex {
     };
   }
 
+  /**
+   * The whole file is rewritten on every save, so ANY key that lives here must
+   * appear in both the read type above and this literal. One that is only read
+   * survives exactly until the next rename or pin, then vanishes.
+   */
   private async saveUserdata(): Promise<void> {
     await writeJsonAtomic(this.config.userdataFile, {
       titleOverrides: this.titleOverrides,
       pins: [...this.pins],
       settings: this.settings,
+      gitRepos: this.gitRepos,
+      gitScanRoots: this.gitScanRoots,
+      gitHidden: [...this.gitHidden],
       ...(this.prices ? { prices: this.prices } : {}),
     });
+  }
+
+  getGitRepos(): GitStoredPath[] {
+    return this.gitRepos;
+  }
+
+  getGitScanRoots(): GitStoredPath[] {
+    return this.gitScanRoots;
+  }
+
+  getGitHidden(): Set<string> {
+    return this.gitHidden;
+  }
+
+  async setGitPaths(next: {
+    repos?: GitStoredPath[];
+    scanRoots?: GitStoredPath[];
+    hidden?: Set<string>;
+  }): Promise<void> {
+    if (next.repos) this.gitRepos = next.repos;
+    if (next.scanRoots) this.gitScanRoots = next.scanRoots;
+    if (next.hidden) this.gitHidden = next.hidden;
+    await this.saveUserdata();
   }
 
   get priceTable(): PriceTable {

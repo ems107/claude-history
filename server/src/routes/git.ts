@@ -1,0 +1,126 @@
+import type { GitAddRepoRequest, GitOpenRequest, GitOverview } from '@claude-history/shared';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { AppContext } from '../context.ts';
+import { GitBadInput, GitBlocked, GitFailed } from '../core/gitService.ts';
+import { createLogger } from '../core/logger.ts';
+import { GIT_AUTH_HINT, GitSpawnError, gitErrorLine, isAuthFailure, isNonFastForward } from '../util/git.ts';
+import { launchShell, openInExplorer, openInVsCode } from '../util/launcher.ts';
+
+const log = createLogger('git');
+
+/** Entries a single command-panel page may carry. */
+const COMMANDS_LIMIT = 500;
+
+/**
+ * The one place a git failure becomes an HTTP answer.
+ *
+ * Every case here is a real answer rather than a crash, so none of them is a
+ * 500: a refusal the repository's own state produced is a 409 carrying the
+ * exact string the disabled button shows, a bad body is a 400, and a command
+ * that ran and said no is a 409 with git's own words — translated only where
+ * git's words are useless on their own.
+ */
+export function sendGitError(reply: FastifyReply, err: unknown): FastifyReply {
+  if (err instanceof GitBlocked) return reply.code(409).send({ error: err.message });
+  if (err instanceof GitBadInput) return reply.code(400).send({ error: err.message });
+  if (err instanceof GitSpawnError) return reply.code(500).send({ error: err.message });
+  if (err instanceof GitFailed) {
+    const { result } = err;
+    if (isAuthFailure(result.stderr)) {
+      return reply.code(409).send({ error: GIT_AUTH_HINT, gitStderr: result.stderr.trim().slice(0, 2_000) });
+    }
+    if (isNonFastForward(result.stderr)) {
+      return reply.code(409).send({
+        error: 'The remote has commits you do not have — fetch and rebase, then push again.',
+        gitStderr: result.stderr.trim().slice(0, 2_000),
+      });
+    }
+    return reply.code(409).send({ error: gitErrorLine(result), gitStderr: result.stderr.trim().slice(0, 2_000) });
+  }
+  return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+}
+
+export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
+  // ---------------------------------------------------------------- overview
+
+  app.get<{ Querystring: { refresh?: string } }>('/api/git', async (request): Promise<GitOverview> => {
+    return ctx.git.overview(request.query.refresh === '1');
+  });
+
+  // ---------------------------------------------------------------- the list
+
+  // POST rather than PUT/DELETE because everything mutating in this app is a
+  // POST, and because only non-GET requests pass the same-origin hook at all.
+  app.post<{ Body: GitAddRepoRequest }>('/api/git/repos', async (request, reply) => {
+    const body = request.body ?? { path: '' };
+    if (typeof body.path !== 'string') return reply.code(400).send({ error: 'path is required' });
+    try {
+      const stored = await ctx.git.addPath(body.path, body.asRoot === true);
+      return { ok: true, path: stored, overview: await ctx.git.overview() };
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.post<{ Body: { path?: unknown; asRoot?: unknown } }>('/api/git/repos/remove', async (request, reply) => {
+    const target = request.body?.path;
+    if (typeof target !== 'string' || !target) return reply.code(400).send({ error: 'path is required' });
+    try {
+      await ctx.git.removePath(target, request.body?.asRoot === true);
+      return { ok: true, overview: await ctx.git.overview() };
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.post('/api/git/repos/refresh', async () => ({ ok: true, overview: await ctx.git.overview(true) }));
+
+  app.post<{ Params: { id: string }; Body: { hidden?: unknown } }>(
+    '/api/git/repos/:id/hidden',
+    async (request, reply) => {
+      try {
+        await ctx.git.setHidden(request.params.id, request.body?.hidden === true);
+        return { ok: true, overview: await ctx.git.overview() };
+      } catch (err) {
+        return sendGitError(reply, err);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------- escape hatch
+
+  /**
+   * Open the repository outside the app. This is what makes "resolve the
+   * conflict elsewhere" and "store your credentials once in a terminal" real
+   * answers instead of dead ends — and the folder comes from the resolved repo,
+   * never from the request.
+   */
+  app.post<{ Params: { id: string }; Body: GitOpenRequest }>('/api/git/repos/:id/open', async (request, reply) => {
+    const repo = ctx.git.repo(request.params.id);
+    if (!repo) return reply.code(404).send({ error: 'Repository not found' });
+    const target = request.body?.target;
+    if (target !== 'explorer' && target !== 'vscode' && target !== 'terminal') {
+      return reply.code(400).send({ error: 'target must be explorer, vscode or terminal' });
+    }
+    try {
+      if (target === 'explorer') await openInExplorer(repo.path);
+      else if (target === 'vscode') await openInVsCode(repo.path);
+      else await launchShell(repo.path);
+      log.info(`opened ${repo.name} in ${target}`);
+      return { ok: true };
+    } catch (err) {
+      return reply.code(500).send({ error: `Could not open ${target}: ${String(err)}` });
+    }
+  });
+
+  // ---------------------------------------------------------------- command panel
+
+  app.get<{ Querystring: { since?: string; limit?: string } }>('/api/git/commands', async (request) => {
+    const since = Number(request.query.since ?? 0);
+    const limit = Number(request.query.limit ?? COMMANDS_LIMIT);
+    return ctx.git.commands(
+      Number.isFinite(since) && since > 0 ? Math.floor(since) : 0,
+      Math.min(COMMANDS_LIMIT, Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : COMMANDS_LIMIT),
+    );
+  });
+}

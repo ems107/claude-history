@@ -4,6 +4,7 @@ import { AutoReloadService } from './core/autoReload.ts';
 import { SessionIndex } from './core/index.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
+import { GitService } from './core/gitService.ts';
 import { SearchService } from './core/search.ts';
 import { SessionChatService } from './core/sessionChat.ts';
 import { startUpdateLogImport } from './core/updateLogImport.ts';
@@ -42,13 +43,19 @@ async function main(): Promise<void> {
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const chat = new SessionChatService(index, () => index.getSettings());
-  const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload, chat });
+  const git = new GitService(index);
+  const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload, chat, git });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
   chat.start();
+  // Installs the command recorder. It deliberately discovers nothing here:
+  // the repository list is not needed until the tab is opened, and startup
+  // time is the one delay a user actually feels.
+  git.start();
   // The `claude` processes it owns outlive this one unless something kills
   // them; the logger runs this on every exit path there is.
   onShutdown(() => chat.shutdown());
+  onShutdown(() => git.shutdown());
 
   const watcher = new Watcher(config, index);
   watcher.start();
