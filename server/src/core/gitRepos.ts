@@ -128,14 +128,30 @@ async function probe(dir: string): Promise<{
   branch: string | null;
 } | null> {
   let res;
+  let branchRes;
   try {
+    // HEAD is asked for SEPARATELY, and not with `rev-parse --abbrev-ref`.
+    // A repository with no commits yet has an unborn HEAD, which makes that
+    // form fail — and since one failure fails the whole invocation, a freshly
+    // created repository looked like "not a repository at all" and could not
+    // even be added. `symbolic-ref` answers happily on an unborn branch, and
+    // exits non-zero exactly when HEAD is detached, which is the honest null.
     res = await runGit({
       cwd: dir,
-      args: ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--is-bare-repository', '--abbrev-ref', 'HEAD'],
+      args: ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--is-bare-repository'],
       readOnly: true,
       timeoutMs: 10_000,
       label: 'probe',
       // "Not a repository" is the answer this question exists to get.
+      expectFailure: true,
+    });
+    if (!res.ok) return null;
+    branchRes = await runGit({
+      cwd: dir,
+      args: ['symbolic-ref', '--short', '-q', 'HEAD'],
+      readOnly: true,
+      timeoutMs: 10_000,
+      label: 'probe-branch',
       expectFailure: true,
     });
   } catch {
@@ -143,18 +159,16 @@ async function probe(dir: string): Promise<{
     // an answer too, and it must not sink the whole discovery pass.
     return null;
   }
-  if (!res.ok) return null;
   const lines = res.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
   if (lines.length < 3) return null;
-  const [top, gitDir, bare, head] = lines;
+  const [top, gitDir, bare] = lines;
   return {
     // rev-parse answers with forward slashes on Windows; everything downstream
     // compares paths, so normalise here and only here.
     top: path.normalize(top),
     gitDir: path.normalize(gitDir),
     bare: bare === 'true',
-    // A repository with no commits answers HEAD, and a detached one answers the sha.
-    branch: !head || head === 'HEAD' ? null : head,
+    branch: branchRes.ok ? (branchRes.stdout.trim() || null) : null,
   };
 }
 

@@ -897,8 +897,11 @@ export class GitService {
       maxBytes: 16 * 1024 * 1024,
     });
     if (!res.ok) {
-      // An empty repository has no HEAD to walk, which is not a failure.
-      if (/does not have any commits yet|unknown revision/i.test(res.stderr)) {
+      // A repository with no commits has no HEAD to walk. That is not a
+      // failure, it is what an empty repository looks like — and git says so
+      // in several different ways depending on which argument it choked on
+      // ("bad revision 'HEAD'" is the one a freshly cloned empty repo gives).
+      if (/does not have any commits yet|unknown revision|bad revision|bad default revision/i.test(res.stderr)) {
         return { commits: [], hasMore: false, offset };
       }
       throw new GitFailed(res);
