@@ -73,6 +73,7 @@ import {
   type ResolvedRepo,
 } from './gitRepos.ts';
 import type { SessionIndex } from './index.ts';
+import type { GitUndoStore } from './gitUndo.ts';
 import { createLogger, localIso } from './logger.ts';
 
 const log = createLogger('git');
@@ -270,7 +271,10 @@ export class GitService {
   private watchers = new Map<string, { lastRead: number; close: () => void }>();
   private sweepTimer: NodeJS.Timeout | null = null;
 
-  constructor(private readonly index: SessionIndex) {
+  constructor(
+    private readonly index: SessionIndex,
+    readonly undo: GitUndoStore,
+  ) {
     this.events.setMaxListeners(100); // one set of listeners per SSE client
   }
 
@@ -1048,6 +1052,30 @@ export class GitService {
   }
 
   /**
+   * Copy what is about to be destroyed, do the destroying, and drop the copy
+   * again if it never happened.
+   *
+   * Both halves matter. Without the copy there is no way back from a discard —
+   * the content only ever existed in the working file. And a copy left behind
+   * by an operation git refused would be an entry in the bin for work nobody
+   * lost, in the one list that has to be read literally.
+   */
+  private async withUndo<T>(
+    repo: ResolvedRepo,
+    files: string[],
+    what: string,
+    work: () => Promise<T>,
+  ): Promise<{ value: T; undoId: string | null }> {
+    const undoId = await this.undo.keep(repo, files, what);
+    try {
+      return { value: await work(), undoId };
+    } catch (err) {
+      if (undoId) await this.undo.forget(repo.key, undoId);
+      throw err;
+    }
+  }
+
+  /**
    * Stage, unstage or discard ONE hunk.
    *
    * The patch handed to `git apply` is git's own bytes: the file is re-diffed
@@ -1066,7 +1094,7 @@ export class GitService {
   async applyHunk(
     repo: ResolvedRepo,
     body: { path?: unknown; hunkIndex?: unknown; staged?: unknown; discard?: unknown; confirm?: unknown },
-  ): Promise<{ status: GitStatus; message: string }> {
+  ): Promise<{ status: GitStatus; message: string; undoId?: string | null }> {
     const discard = body.discard === true;
     if (discard) GitService.requireConfirm(body.confirm, 'Discarding a hunk');
     const fromIndex = body.staged === true;
@@ -1077,37 +1105,43 @@ export class GitService {
       const index = Number(body.hunkIndex);
       if (!Number.isInteger(index) || index < 0) throw new GitBadInput('That is not a hunk.');
 
-      const res = await runGit({
-        cwd: repo.path,
-        repoKey: repo.key,
-        readOnly: true,
-        label: 'hunk-diff',
-        args: ['diff', '--no-color', '-U3', '--find-renames', ...(fromIndex ? ['--cached'] : []), '--', filePath],
-      });
-      if (!res.ok && res.exitCode !== 1) throw new GitFailed(res);
+      const work = async (): Promise<number> => {
+        const res = await runGit({
+          cwd: repo.path,
+          repoKey: repo.key,
+          readOnly: true,
+          label: 'hunk-diff',
+          args: ['diff', '--no-color', '-U3', '--find-renames', ...(fromIndex ? ['--cached'] : []), '--', filePath],
+        });
+        if (!res.ok && res.exitCode !== 1) throw new GitFailed(res);
 
-      const { header, hunks } = splitRawHunks(res.stdout);
-      if (!hunks[index]) throw new GitBadInput('That hunk is no longer there — reload and try again.');
-      // A trailing newline is part of the patch format, not decoration.
-      const patch = `${header}\n${hunks[index]}\n`.replace(/\n{2,}$/, '\n');
+        const { header, hunks } = splitRawHunks(res.stdout);
+        if (!hunks[index]) throw new GitBadInput('That hunk is no longer there — reload and try again.');
+        // A trailing newline is part of the patch format, not decoration.
+        const patch = `${header}\n${hunks[index]}\n`.replace(/\n{2,}$/, '\n');
 
-      const args = ['apply'];
-      // --cached touches only the index; without it the working tree changes.
-      if (!discard) args.push('--cached');
-      if (fromIndex || discard) args.push('--reverse');
-      args.push('-');
-      const applied = await runGit({
-        cwd: repo.path,
-        repoKey: repo.key,
-        mutation: true,
-        label: `hunk:${op}`,
-        args,
-        stdin: patch,
-      });
-      if (!applied.ok) throw new GitFailed(applied);
-      return hunks.length;
+        const args = ['apply'];
+        // --cached touches only the index; without it the working tree changes.
+        if (!discard) args.push('--cached');
+        if (fromIndex || discard) args.push('--reverse');
+        args.push('-');
+        const applied = await runGit({
+          cwd: repo.path,
+          repoKey: repo.key,
+          mutation: true,
+          label: `hunk:${op}`,
+          args,
+          stdin: patch,
+        });
+        if (!applied.ok) throw new GitFailed(applied);
+        return hunks.length;
+      };
+
+      // A hunk discard rewrites the file, so a copy goes to the bin first.
+      if (!discard) return { value: await work(), undoId: null };
+      return this.withUndo(repo, [filePath], `a hunk of ${filePath}`, work);
     });
-    return { status, message: `Hunk ${Number(body.hunkIndex) + 1} of ${result}.` };
+    return { status, message: `Hunk ${Number(body.hunkIndex) + 1} of ${result.value}.`, undoId: result.undoId };
   }
 
   /**
@@ -1141,16 +1175,21 @@ export class GitService {
    * apply on top of the first. A check that cannot fail is worse than no check:
    * it invites trust it has not earned.
    *
-   * There is deliberately no line-level DISCARD. Staging writes the index and is
-   * undoable; discarding writes the file and is not. Discarding stays at
-   * whole-hunk granularity, where the patch is git's own bytes.
+   * Discarding lines goes down the same path and cannot borrow any of that:
+   * `--cached` is exactly what it must not pass, so the patch reaches the file
+   * on disk and a wrong one destroys work. Nothing here can promise it is
+   * right, so the promise made instead is that it can be taken back — the
+   * file's bytes go to the bin before the patch is handed over, and if that
+   * copy cannot be made the discard does not happen.
    */
   async applyLines(
     repo: ResolvedRepo,
-    body: { path?: unknown; hunkIndex?: unknown; lines?: unknown; staged?: unknown },
-  ): Promise<{ status: GitStatus; message: string }> {
-    const fromIndex = body.staged === true;
-    const op: GitOp = fromIndex ? 'unstage' : 'stage';
+    body: { path?: unknown; hunkIndex?: unknown; lines?: unknown; staged?: unknown; discard?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string; undoId?: string | null }> {
+    const discard = body.discard === true;
+    if (discard) GitService.requireConfirm(body.confirm, 'Discarding lines');
+    const fromIndex = !discard && body.staged === true;
+    const op: GitOp = discard ? 'discard' : fromIndex ? 'unstage' : 'stage';
 
     const { result, status } = await this.mutate(repo, op, async (before) => {
       const [filePath] = this.validPaths(before, [body.path]);
@@ -1163,34 +1202,50 @@ export class GitService {
         chosen.add(n as number);
       }
 
-      const diffArgs = ['diff', '--no-color', '-U3', '--find-renames', ...(fromIndex ? ['--cached'] : []), '--', filePath];
-      const diffRes = await runGit({ cwd: repo.path, repoKey: repo.key, readOnly: true, label: 'lines-diff', args: diffArgs });
-      if (!diffRes.ok && diffRes.exitCode !== 1) throw new GitFailed(diffRes);
+      const work = async (): Promise<number> => {
+        const diffArgs = ['diff', '--no-color', '-U3', '--find-renames', ...(fromIndex ? ['--cached'] : []), '--', filePath];
+        const diffRes = await runGit({ cwd: repo.path, repoKey: repo.key, readOnly: true, label: 'lines-diff', args: diffArgs });
+        if (!diffRes.ok && diffRes.exitCode !== 1) throw new GitFailed(diffRes);
 
-      const { header, hunks } = splitRawHunks(diffRes.stdout);
-      const hunkRaw = hunks[hunkIndex];
-      if (!hunkRaw) throw new GitBadInput('That hunk is no longer there — reload and try again.');
+        const { header, hunks } = splitRawHunks(diffRes.stdout);
+        const hunkRaw = hunks[hunkIndex];
+        if (!hunkRaw) throw new GitBadInput('That hunk is no longer there — reload and try again.');
 
-      const patch = buildLineSelectionPatch(header, hunkRaw, chosen);
-      if (!patch) throw new GitBadInput('Pick at least one added or removed line — context lines never move.');
+        // Staging matches the patch against the index, which still holds the
+        // old side; unstaging and discarding are applied in reverse, against
+        // the new one — the index as staged, or the file as it is on disk.
+        const patch = buildLineSelectionPatch(header, hunkRaw, chosen, fromIndex || discard ? 'new' : 'old');
+        if (!patch) throw new GitBadInput('Pick at least one added or removed line — context lines never move.');
 
-      // `--cached`: the index, and nothing on disk. `git apply` checks the old
-      // side against the index itself, so a stale selection is refused here
-      // rather than applied somewhere it does not belong.
-      const applied = await runGit({
-        cwd: repo.path,
-        repoKey: repo.key,
-        mutation: true,
-        label: `lines:${op}`,
-        args: ['apply', '--cached', ...(fromIndex ? ['--reverse'] : []), '-'],
-        stdin: patch,
-      });
-      if (!applied.ok) throw new GitFailed(applied);
-      return chosen.size;
+        // Staging touches `--cached`, the index, and nothing on disk.
+        // Discarding deliberately does NOT pass it: the reverse patch goes to
+        // the working file, which is the whole point and the reason for the
+        // bin. Either way `git apply` checks the side it is applying to, so a
+        // stale selection is refused rather than applied somewhere it does not
+        // belong.
+        const applied = await runGit({
+          cwd: repo.path,
+          repoKey: repo.key,
+          mutation: true,
+          label: `lines:${op}`,
+          args: ['apply', ...(discard ? [] : ['--cached']), ...(fromIndex || discard ? ['--reverse'] : []), '-'],
+          stdin: patch,
+        });
+        if (!applied.ok) throw new GitFailed(applied);
+        return chosen.size;
+      };
+
+      // Discarding is the one direction that rewrites the file, so a copy goes
+      // to the bin first — and if the copy cannot be made, nothing happens.
+      if (!discard) return { value: await work(), undoId: null };
+      const n = chosen.size;
+      return this.withUndo(repo, [filePath], `${n} line${n === 1 ? '' : 's'} of ${filePath}`, work);
     });
+    const verb = discard ? 'thrown away' : fromIndex ? 'taken out of the next commit' : 'added to the next commit';
     return {
       status,
-      message: `${result} line${result === 1 ? '' : 's'} ${fromIndex ? 'taken out of' : 'added to'} the next commit.`,
+      message: `${result.value} line${result.value === 1 ? '' : 's'} ${verb}.`,
+      undoId: result.undoId,
     };
   }
 
@@ -1448,29 +1503,54 @@ export class GitService {
    * stdin, so its paths go in argv, in batches — deleting untracked files is a
    * handful at a time in practice, and a command line has a length limit.
    */
-  async discard(repo: ResolvedRepo, paths: unknown, confirm: unknown): Promise<{ status: GitStatus }> {
+  async discard(
+    repo: ResolvedRepo,
+    paths: unknown,
+    confirm: unknown,
+  ): Promise<{ status: GitStatus; undoId?: string | null }> {
     GitService.requireConfirm(confirm, 'Discarding changes');
-    const { status } = await this.mutate(repo, 'discard', async (before) => {
+    const { result, status } = await this.mutate(repo, 'discard', async (before) => {
       const list = this.validPaths(before, paths);
       const byPath = new Map(before.entries.map((e) => [e.path, e]));
       const untracked = list.filter((p) => byPath.get(p)?.unstaged === 'untracked');
       const tracked = list.filter((p) => byPath.get(p)?.unstaged !== 'untracked');
 
-      if (tracked.length > 0) {
-        await this.write(
-          repo,
-          'discard',
-          ['restore', '--source=HEAD', '--staged', '--worktree', '--pathspec-from-file=-', '--pathspec-file-nul', '--'],
-          GitService.pathspecStdin(tracked),
-        );
-      }
-      for (let i = 0; i < untracked.length; i += CLEAN_BATCH) {
-        // -d because an untracked DIRECTORY is one status entry, and that entry
-        // is what the user chose.
-        await this.write(repo, 'discard', ['clean', '-f', '-d', '--', ...untracked.slice(i, i + CLEAN_BATCH)]);
-      }
+      // The copy comes before anything is overwritten. If it cannot be made the
+      // discard does not happen: an undo that might not be there is worse than
+      // none.
+      return this.withUndo(repo, list, `${list.length} file${list.length === 1 ? '' : 's'}`, async () => {
+        if (tracked.length > 0) {
+          await this.write(
+            repo,
+            'discard',
+            ['restore', '--source=HEAD', '--staged', '--worktree', '--pathspec-from-file=-', '--pathspec-file-nul', '--'],
+            GitService.pathspecStdin(tracked),
+          );
+        }
+        for (let i = 0; i < untracked.length; i += CLEAN_BATCH) {
+          // -d because an untracked DIRECTORY is one status entry, and that
+          // entry is what the user chose.
+          await this.write(repo, 'discard', ['clean', '-f', '-d', '--', ...untracked.slice(i, i + CLEAN_BATCH)]);
+        }
+      });
     });
-    return { status };
+    return { status, undoId: result.undoId };
+  }
+
+  /** Put back a set of files exactly as they were before a discard. */
+  async restoreDiscard(repo: ResolvedRepo, id: string): Promise<{ status: GitStatus; message: string }> {
+    const { result, status } = await this.mutate(repo, 'discard', async () => {
+      if (!/^[a-z0-9-]{1,64}$/i.test(id)) throw new GitBadInput('That is not a discarded copy.');
+      const restored = await this.undo.restore(repo, id);
+      // Pruned, or a page left open past it. Either way it is an answer, not a
+      // crash: the user gets the sentence rather than "unexpected error".
+      if (!restored) throw new GitBadInput('That copy is no longer in the bin.');
+      return restored;
+    });
+    return {
+      status,
+      message: `Put back ${result.length} file${result.length === 1 ? '' : 's'}: ${result.join(', ')}`,
+    };
   }
 
   async createCommit(

@@ -617,24 +617,41 @@ function stripPrefix(p: string): string {
  * exit 0 and an index reading `line 5, line 7, line 6 CHANGED` — two lines
  * transposed, in a file nobody had asked to reorder.
  *
- * So the emission is driven by the OLD FILE, not by the hunk's line order: each
- * removal is paired with the addition at the same position in its run, and each
- * old line is dealt with where it actually sits. A selected pair becomes
- * `-`/`+` together; an unselected removal stays as context in its own place.
- * That also makes a non-contiguous selection come out right, which the naive
- * version cannot do at all.
+ * So the emission is driven by ONE SIDE OF THE FILE, not by the hunk's line
+ * order: each removal is paired with the addition at the same position in its
+ * run, and each line of that side is dealt with where it actually sits. A
+ * selected pair becomes `-`/`+` together; an unselected line stays as context in
+ * its own place. That also makes a non-contiguous selection come out right,
+ * which the naive version cannot do at all.
  *
- * A file with no trailing newline works out on its own, and it is worth knowing
- * why rather than assuming: git puts a `\ No newline at end of file` marker
- * after the last line of EACH side, and that marker also cuts the run in two.
- * The removals become one group and the additions another, so each half keeps
- * its own marker and neither side quietly gains a newline. Checked both as a
- * patch and against a real repository.
+ * **Which side must be `against` the thing being patched**, and getting this
+ * wrong is not a corruption but a flat refusal — `git apply` checks it. The
+ * patch is matched against whichever side the target currently holds: the index
+ * before staging holds the OLD side, so unselected removals become context;
+ * the index before unstaging and the working file before discarding hold the
+ * NEW one, so it is unselected ADDITIONS that become context and unselected
+ * removals that disappear. Both of those are applied with `--reverse`, which
+ * matches the patch's new side and hands back its old one.
+ *
+ * A file with no trailing newline needs care: git puts a `\ No newline at end of
+ * file` marker after the last line of EACH side, and the marker belongs to the
+ * line above it — so it travels with that line rather than being emitted where
+ * it was found. Left in place it cuts the run in two, which breaks the pairing
+ * (a selection of the first pair emitted the addition after the marker, in the
+ * wrong place), and a dropped line would leave its marker dangling behind a line
+ * it does not describe.
  *
  * `selected` holds indices into the hunk body as the diff endpoint numbers them.
- * Returns null when nothing was selected.
+ * Returns null when nothing that can move was selected.
  */
-export function buildLineSelectionPatch(header: string, hunkRaw: string, selected: Set<number>): string | null {
+export type PatchAgainst = 'old' | 'new';
+
+export function buildLineSelectionPatch(
+  header: string,
+  hunkRaw: string,
+  selected: Set<number>,
+  against: PatchAgainst = 'old',
+): string | null {
   const lines = hunkRaw.split('\n');
   const at = lines[0];
   const body = lines.slice(1);
@@ -655,7 +672,18 @@ export function buildLineSelectionPatch(header: string, hunkRaw: string, selecte
   const kind = (line: string): '+' | '-' | ' ' | '\\' =>
     line.startsWith('+') ? '+' : line.startsWith('-') ? '-' : line.startsWith('\\') ? '\\' : ' ';
 
+  interface Entry {
+    text: string;
+    index: number;
+    /** The `\ No newline at end of file` that describes this line, if any. */
+    marker?: string;
+  }
   const out: string[] = [];
+  const emit = (entry: Entry, text: string): void => {
+    out.push(text);
+    if (entry.marker) out.push(entry.marker);
+  };
+
   let i = 0;
   while (i < body.length) {
     const k = kind(body[i]);
@@ -667,37 +695,69 @@ export function buildLineSelectionPatch(header: string, hunkRaw: string, selecte
 
     // One run of removals followed by its run of additions: git's way of
     // writing "these old lines became those new ones".
-    const dels: { text: string; index: number }[] = [];
-    while (i < body.length && kind(body[i]) === '-') {
-      dels.push({ text: body[i], index: i });
-      i++;
-    }
-    const adds: { text: string; index: number }[] = [];
-    while (i < body.length && kind(body[i]) === '+') {
-      adds.push({ text: body[i], index: i });
-      i++;
-    }
+    const take = (sign: '+' | '-'): Entry[] => {
+      const entries: Entry[] = [];
+      while (i < body.length && kind(body[i]) === sign) {
+        const entry: Entry = { text: body[i], index: i };
+        i++;
+        if (i < body.length && kind(body[i]) === '\\') {
+          entry.marker = body[i];
+          i++;
+        }
+        entries.push(entry);
+      }
+      return entries;
+    };
+    const dels = take('-');
+    const adds = take('+');
 
-    // Walk the OLD lines. Each one is either dropped (its removal was picked,
-    // and the addition that replaces it goes in its place) or kept as context.
-    for (let n = 0; n < dels.length; n++) {
-      const del = dels[n];
-      const paired = adds[n];
-      if (selected.has(del.index)) {
-        out.push(del.text);
-        if (paired && selected.has(paired.index)) out.push(paired.text);
-      } else {
-        out.push(` ${del.text.slice(1)}`);
-        // Its replacement without it would be an insertion the user did not ask
-        // for, so a lone selected addition here is ignored on purpose.
+    if (against === 'old') {
+      // Walk the OLD lines. Each one is either dropped (its removal was picked,
+      // and the addition that replaces it goes in its place) or kept as context.
+      for (let n = 0; n < dels.length; n++) {
+        const del = dels[n];
+        const paired = adds[n];
+        if (selected.has(del.index)) {
+          emit(del, del.text);
+          if (paired && selected.has(paired.index)) emit(paired, paired.text);
+        } else {
+          emit(del, ` ${del.text.slice(1)}`);
+          // Its replacement without it would be an insertion the user did not
+          // ask for, so a lone selected addition here is ignored on purpose.
+        }
+      }
+      // Additions beyond the removals they replaced are pure insertions; they
+      // belong at the end of the run.
+      for (let n = dels.length; n < adds.length; n++) {
+        if (selected.has(adds[n].index)) emit(adds[n], adds[n].text);
+      }
+    } else {
+      // The mirror image: the file being patched holds the NEW side, so the
+      // walk is over the lines that are there now. An unselected one stays as
+      // context; a selected one is written as the change that put it there, so
+      // reversing the patch takes it back out.
+      for (let n = 0; n < adds.length; n++) {
+        const add = adds[n];
+        const paired = dels[n];
+        if (selected.has(add.index)) {
+          if (paired && selected.has(paired.index)) emit(paired, paired.text);
+          emit(add, add.text);
+        } else {
+          emit(add, ` ${add.text.slice(1)}`);
+        }
+      }
+      // Removals beyond the additions are lines that are simply not there any
+      // more; picking one brings it back, and the rest stay gone.
+      for (let n = adds.length; n < dels.length; n++) {
+        if (selected.has(dels[n].index)) emit(dels[n], dels[n].text);
       }
     }
-    // Additions beyond the removals they replaced are pure insertions; they
-    // belong at the end of the run.
-    for (let n = dels.length; n < adds.length; n++) {
-      if (selected.has(adds[n].index)) out.push(adds[n].text);
-    }
   }
+
+  // A selection that moves nothing — a lone addition whose removal was left
+  // behind, say — builds a patch of pure context, which git rejects as garbage.
+  // Saying so here gets the user the sentence about what to pick instead.
+  if (!out.some((line) => kind(line) === '+' || kind(line) === '-')) return null;
 
   const oldCount = out.filter((line) => kind(line) === ' ' || kind(line) === '-').length;
   const newCount = out.filter((line) => kind(line) === ' ' || kind(line) === '+').length;

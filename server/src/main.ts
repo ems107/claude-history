@@ -5,6 +5,7 @@ import { SessionIndex } from './core/index.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
 import { GitService } from './core/gitService.ts';
+import { GitUndoStore } from './core/gitUndo.ts';
 import { SearchService } from './core/search.ts';
 import { SessionChatService } from './core/sessionChat.ts';
 import { startUpdateLogImport } from './core/updateLogImport.ts';
@@ -43,7 +44,7 @@ async function main(): Promise<void> {
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const chat = new SessionChatService(index, () => index.getSettings());
-  const git = new GitService(index);
+  const git = new GitService(index, new GitUndoStore(config.gitUndoDir));
   const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload, chat, git });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);

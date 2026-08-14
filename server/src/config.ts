@@ -12,6 +12,12 @@ export interface AppConfig {
   userdataFile: string;
   /** Daily JSONL log files. Same place for every way of running the server. */
   logsDir: string;
+  /**
+   * Copies of files the Git tab is about to overwrite. Discarding is the one
+   * thing this app does that destroys work which exists in no commit and no
+   * index, so it keeps the bytes for a few days first.
+   */
+  gitUndoDir: string;
   host: string;
   port: number;
   /** Absolute path to built web assets, or null in dev (Vite serves the UI). */
@@ -86,6 +92,10 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     cacheDir,
     userdataFile: path.resolve(cacheDir, '..', 'userdata.json'),
     logsDir: args.get('logs-dir') ? path.resolve(args.get('logs-dir') as string) : path.resolve(cacheDir, '..', 'logs'),
+    // Beside userdata.json rather than inside the cache: it holds work that
+    // exists nowhere else for a few days, and "Clear cache" must not be a way
+    // to lose it.
+    gitUndoDir: path.resolve(cacheDir, '..', 'git-undo'),
     host: '127.0.0.1',
     port: Number(process.env.PORT || args.get('port') || 7433),
     staticDir,

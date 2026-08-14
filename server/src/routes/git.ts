@@ -34,6 +34,7 @@ import { GitBadInput, GitBlocked, GitFailed } from '../core/gitService.ts';
 interface GitMutationResult {
   status: GitStatus;
   message?: string;
+  undoId?: string | null;
 }
 import { createLogger } from '../core/logger.ts';
 import { GIT_AUTH_HINT, GitSpawnError, gitErrorLine, isAuthFailure, isNonFastForward } from '../util/git.ts';
@@ -312,8 +313,8 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
       const repo = repoOf(request.params.id, reply);
       if (!repo) return reply;
       try {
-        const { status, message } = await run(repo, (request.body ?? {}) as B, reply);
-        return { ok: true as const, status, ...(message ? { message } : {}) };
+        const { status, message, undoId } = await run(repo, (request.body ?? {}) as B, reply);
+        return { ok: true as const, status, ...(message ? { message } : {}), ...(undoId ? { undoId } : {}) };
       } catch (err) {
         return sendGitError(reply, err);
       }
@@ -376,9 +377,20 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
   );
   // Individual lines. No `discard` here on purpose: staging only writes to the
   // index and is undoable, discarding writes the file and is not.
-  mutation<{ path?: string; hunkIndex?: number; lines?: number[]; staged?: boolean }>(
+  mutation<{ path?: string; hunkIndex?: number; lines?: number[]; staged?: boolean; discard?: boolean; confirm?: boolean }>(
     '/api/git/repos/:id/lines',
     (repo, body) => ctx.git.applyLines(repo, body),
+  );
+
+  // The bin. Everything discarded is copied here first, and this is how it
+  // comes back — git cannot help, because the content was never in a commit.
+  app.get<{ Params: { id: string } }>('/api/git/repos/:id/discards', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    return ctx.git.undo.list(repo.key);
+  });
+  mutation<{ undoId?: string }>('/api/git/repos/:id/discards/restore', (repo, body) =>
+    ctx.git.restoreDiscard(repo, String(body.undoId ?? '')),
   );
 
   for (const action of ['continue', 'abort', 'skip'] as const) {

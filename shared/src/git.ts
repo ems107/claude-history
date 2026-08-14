@@ -336,6 +336,21 @@ export interface GitDiffResponse {
   truncated: boolean;
 }
 
+/**
+ * A copy kept before something was discarded.
+ *
+ * Discarding is the only thing this tab does that git cannot undo — the content
+ * was in the working file and nowhere else. So the bytes are kept for a few
+ * days and this is how they are offered back.
+ */
+export interface GitDiscardEntry {
+  id: string;
+  at: string;
+  /** What was thrown away, in the words the user saw: "3 lines of src/app.ts". */
+  what: string;
+  files: { path: string; bytes: number; missing: boolean }[];
+}
+
 /** The three sides of a conflicted file, for the guide. */
 export interface GitConflictSides {
   path: string;
@@ -428,6 +443,8 @@ export interface GitMutationResponse {
   status: GitStatus;
   /** What git printed, when it is worth showing (a push's summary, a merge's report). */
   message?: string;
+  /** Set when something was discarded: the copy that can put it back. */
+  undoId?: string | null;
 }
 
 export interface GitPathsRequest {
