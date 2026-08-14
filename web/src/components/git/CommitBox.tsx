@@ -85,12 +85,6 @@ export function CommitBox({
         spellCheck={false}
         placeholder="Summary, then a blank line and the details…"
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            commit();
-          }
-        }}
         className="w-full resize-none rounded border border-[var(--border)] bg-transparent p-2 font-mono text-[11px] focus:border-[var(--text-dim)] focus:outline-none"
         rows={3}
       />
@@ -113,7 +107,7 @@ export function CommitBox({
           type="button"
           onClick={commit}
           disabled={!canCommit}
-          title={blocked ?? 'Ctrl+Enter'}
+          title={blocked ?? 'Commit what is staged'}
           className={`${btn} ml-auto ${canCommit ? 'border-[var(--accent-dim)] text-[var(--accent)]' : ''}`}
         >
           {action.busy ? 'Committing…' : amend ? 'Amend the last commit' : 'Commit'}
@@ -132,7 +126,6 @@ export function CommitBox({
           {status.headSha?.slice(0, 7)} is already on {status.upstream} — amending it will need a force push.
         </p>
       )}
-      <p className="mt-1 text-[11px] text-[var(--text-dim)] opacity-70">Ctrl+Enter commits; Enter adds a line.</p>
       {action.error && (
         <p className="mt-1 rounded border border-red-500/40 bg-red-500/10 p-1.5 text-[11px] text-red-300">
           {action.error}

@@ -54,32 +54,10 @@ export function GitPage() {
     [setSearchParams],
   );
 
-  // Shortcuts, guarded the way every other page in the app guards them, so
-  // typing a path into the picker never toggles a panel behind it.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
-        if (e.key === 'Escape') target.blur();
-        return;
-      }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'd') {
-        e.preventDefault();
-        toggleLog();
-      }
-      if (e.key === 'w') {
-        e.preventDefault();
-        setParam('tab', 'work');
-      }
-      if (e.key === 'g') {
-        e.preventDefault();
-        setParam('tab', null);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggleLog, setParam]);
+  // This page has NO bare-key shortcuts, deliberately. Everything here can
+  // change a repository, and a stray keypress that switches panes or runs
+  // something is not a trade worth making for a keystroke saved: every action
+  // has a control you can see, and that is the only way to reach it.
 
   const repos = overviewQ.data?.repos.filter((r) => !r.hidden) ?? [];
   const urlRepo = searchParams.get('repo');

@@ -94,14 +94,14 @@ export function GitToolbar({
 
       <span className="ml-auto flex items-center gap-1.5">
         <span className="flex items-center gap-0.5">
-          <button type="button" onClick={() => onTab('commits')} className={toggleClass(tab === 'commits')} title="The history (g)">
+          <button type="button" onClick={() => onTab('commits')} className={toggleClass(tab === 'commits')} title="The history">
             Commits
           </button>
           <button
             type="button"
             onClick={() => onTab('work')}
             className={toggleClass(tab === 'work')}
-            title="What has changed and is not committed (w)"
+            title="What has changed and is not committed"
           >
             Working tree
             {changed > 0 && <span className="ml-1 tabular-nums text-[var(--accent)]">{changed}</span>}
@@ -111,7 +111,7 @@ export function GitToolbar({
           type="button"
           onClick={onToggleLog}
           className={toggleClass(logOpen)}
-          title="Every git command this app runs (d)"
+          title="Every git command this app runs"
         >
           ⌘ log
         </button>

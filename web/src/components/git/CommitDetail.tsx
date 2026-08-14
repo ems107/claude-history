@@ -75,21 +75,31 @@ function CommitActions({ repoId, sha, status }: { repoId: string; sha: string; s
             value={name}
             placeholder="feature/from-here"
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setBranching(false);
-                setName('');
-              }
-              if (e.key === 'Enter' && name.trim()) {
-                const branch = name.trim();
-                setBranching(false);
-                setName('');
-                void action.run(() => gitApi.branchCreate(repoId, { name: branch, from: sha, checkout: true }));
-              }
-            }}
             className={`${inputClass} w-56 font-mono text-[11px]`}
           />
-          <span className="text-[10px] text-[var(--text-dim)]">Enter creates it from {short}</span>
+          <button
+            type="button"
+            className={btn}
+            disabled={!name.trim() || action.busy}
+            onClick={() => {
+              const branch = name.trim();
+              setBranching(false);
+              setName('');
+              void action.run(() => gitApi.branchCreate(repoId, { name: branch, from: sha, checkout: true }));
+            }}
+          >
+            Create from {short}
+          </button>
+          <button
+            type="button"
+            className={btn}
+            onClick={() => {
+              setBranching(false);
+              setName('');
+            }}
+          >
+            Cancel
+          </button>
         </span>
       )}
 

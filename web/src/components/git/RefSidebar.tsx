@@ -2,7 +2,7 @@ import type { GitBranch, GitBranchesResponse, GitStash, GitStatus, GitTag, GitWo
 import { useState, type ReactNode } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { relativeTime } from '../../lib/format.ts';
-import { inputClass } from '../../lib/ui.ts';
+import { btn, inputClass } from '../../lib/ui.ts';
 import { FoldHeader } from '../viewer/FoldHeader.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { useGitAction } from './useGitAction.ts';
@@ -180,23 +180,34 @@ export function RefSidebar({
               value={newName}
               placeholder="feature/something"
               onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setCreating(false);
-                  setNewName('');
-                }
-                if (e.key === 'Enter' && newName.trim() && repoId) {
+              className={`${inputClass} font-mono text-[11px]`}
+            />
+            <div className="mt-1 flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={!newName.trim() || action.busy || !repoId}
+                onClick={() => {
                   const name = newName.trim();
                   setCreating(false);
                   setNewName('');
-                  run(() => gitApi.branchCreate(repoId, { name, checkout: true }));
-                }
-              }}
-              className={`${inputClass} font-mono text-[11px]`}
-            />
-            <p className="mt-0.5 text-[10px] text-[var(--text-dim)]">
-              Enter creates it from HEAD and checks it out. Escape cancels.
-            </p>
+                  if (repoId) run(() => gitApi.branchCreate(repoId, { name, checkout: true }));
+                }}
+                className={btn}
+              >
+                Create
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreating(false);
+                  setNewName('');
+                }}
+                className={btn}
+              >
+                Cancel
+              </button>
+              <span className="text-[10px] text-[var(--text-dim)]">from HEAD, and checks it out</span>
+            </div>
           </div>
         )}
         {local.length === 0 && <Empty>No local branches.</Empty>}
@@ -272,27 +283,37 @@ export function RefSidebar({
           <div key={name}>
             <p className="px-2 pt-1 text-[10px] tracking-wide text-[var(--text-dim)]">{name}</p>
             {group.map((branch) => (
-              <button
+              <div
                 key={branch.fullRef}
-                type="button"
-                onClick={() => pick(`${branch.remote}/${branch.name}`)}
-                onDoubleClick={() => branch.localMissing && checkout(branch.name)}
-                title={
-                  branch.localMissing
-                    ? `Double-click to create a local ${branch.name} tracking ${branch.remote}/${branch.name}`
-                    : `${branch.remote}/${branch.name}`
-                }
-                className={`${rowClass} cursor-pointer pl-4 ${
+                className={`group ${rowClass} pl-4 ${
                   selectedRef === `${branch.remote}/${branch.name}` ? 'bg-[var(--bg-hover)]' : ''
                 }`}
               >
-                <span className="min-w-0 flex-1 truncate text-sky-300/85">{branch.name}</span>
-                {branch.localMissing && (
-                  <span className="shrink-0 text-[10px] text-[var(--text-dim)]" title="No local branch of this name">
-                    remote only
+                <button
+                  type="button"
+                  onClick={() => pick(`${branch.remote}/${branch.name}`)}
+                  title={`${branch.remote}/${branch.name}`}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sky-300/85">{branch.name}</span>
+                  {branch.localMissing && (
+                    <span className="shrink-0 text-[10px] text-[var(--text-dim)]" title="No local branch of this name">
+                      remote only
+                    </span>
+                  )}
+                </button>
+                {branch.localMissing && repoId && (
+                  <span className="shrink-0 opacity-0 group-hover:opacity-100">
+                    <Act
+                      label="→"
+                      title={`Create a local ${branch.name} tracking ${branch.remote}/${branch.name}`}
+                      disabled={action.busy || !!status?.blocked.checkout}
+                      reason={status?.blocked.checkout}
+                      onClick={() => checkout(branch.name)}
+                    />
                   </span>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         ))}

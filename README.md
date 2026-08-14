@@ -141,6 +141,6 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 ## Keyboard shortcuts
 
 - `/` focus search · `j`/`k` or arrows move selection · `Enter` open session · `Esc` back / close drawer.
-- In the Git tab: `g` the history · `w` the working tree · `d` shows or hides the command log · `Ctrl+Enter` commits.
+- The Git tab has **no keyboard shortcuts by design**: everything there can change a repository, and a stray keypress is not a trade worth making for a keystroke saved. Every action has a control you can see.
 
 See `CLAUDE.md` for architecture and the verified Claude Code data-format rules.
