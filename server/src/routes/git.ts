@@ -5,12 +5,21 @@ import {
   type GitBranchDeleteRequest,
   type GitBranchRenameRequest,
   type GitCheckoutRequest,
+  type GitCherryPickRequest,
   type GitCommitRequest,
   type GitFetchRequest,
   type GitMergeRequest,
   type GitPullRequest,
   type GitPushRequest,
+  type GitRebaseRequest,
+  type GitRevertRequest,
+  type GitStashActionRequest,
+  type GitStashRequest,
+  type GitTagCreateRequest,
+  type GitTagDeleteRequest,
   type GitTagPushRequest,
+  type GitWorktreeAddRequest,
+  type GitWorktreeRemoveRequest,
   type GitOpenRequest,
   type GitOverview,
   type GitPathsRequest,
@@ -217,6 +226,16 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (mode !== 'worktree' && mode !== 'staged' && mode !== 'commit' && mode !== 'range' && mode !== 'conflict') {
       return reply.code(400).send({ error: 'Unknown diff mode' });
     }
+    // A conflicted file is not a diff at all — it is three files git is
+    // holding, and a plain diff of it shows the markers as content.
+    if (mode === 'conflict') {
+      if (!request.query.path) return reply.code(400).send({ error: 'path is required for a conflict' });
+      try {
+        return await ctx.git.conflictSides(repo, request.query.path, abortSignalOf(reply));
+      } catch (err) {
+        return sendGitError(reply, err);
+      }
+    }
     const context = Number(request.query.context ?? 3);
     try {
       return await ctx.git.diff(
@@ -333,6 +352,27 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
   );
   mutation<GitTagPushRequest>('/api/git/repos/:id/tag/push', (repo, body, reply) =>
     ctx.git.pushTag(repo, body, abortSignalOf(reply)),
+  );
+
+  // Rewriting history, and the rest of the verbs.
+  mutation<GitRebaseRequest>('/api/git/repos/:id/rebase', (repo, body) => ctx.git.rebase(repo, body));
+  mutation<GitCherryPickRequest>('/api/git/repos/:id/cherry-pick', (repo, body) => ctx.git.cherryPick(repo, body));
+  mutation<GitRevertRequest>('/api/git/repos/:id/revert', (repo, body) => ctx.git.revert(repo, body));
+  mutation<GitStashRequest>('/api/git/repos/:id/stash', (repo, body) => ctx.git.stashPush(repo, body));
+  for (const action of ['apply', 'pop', 'drop'] as const) {
+    mutation<GitStashActionRequest>(`/api/git/repos/:id/stash/${action}`, (repo, body) =>
+      ctx.git.stashAction(repo, action, body),
+    );
+  }
+  mutation<GitTagCreateRequest>('/api/git/repos/:id/tag/create', (repo, body) => ctx.git.tagCreate(repo, body));
+  mutation<GitTagDeleteRequest>('/api/git/repos/:id/tag/delete', (repo, body) => ctx.git.tagDelete(repo, body));
+  mutation<GitWorktreeAddRequest>('/api/git/repos/:id/worktree/add', (repo, body) => ctx.git.worktreeAdd(repo, body));
+  mutation<GitWorktreeRemoveRequest>('/api/git/repos/:id/worktree/remove', (repo, body) =>
+    ctx.git.worktreeRemove(repo, body),
+  );
+  mutation<{ path?: string; hunkIndex?: number; staged?: boolean; discard?: boolean; confirm?: boolean }>(
+    '/api/git/repos/:id/hunk',
+    (repo, body) => ctx.git.applyHunk(repo, body),
   );
 
   for (const action of ['continue', 'abort', 'skip'] as const) {

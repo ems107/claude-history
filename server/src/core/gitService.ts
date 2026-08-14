@@ -12,6 +12,7 @@ import {
   type GitCommandLogResponse,
   type GitCommitDetail,
   type GitCommitFile,
+  type GitConflictSides,
   type GitDiffMode,
   type GitDiffResponse,
   type GitInProgress,
@@ -52,6 +53,7 @@ import {
   parseLogRecords,
   parseNameStatusZ,
   parseNumstatZ,
+  splitRawHunks,
   parseRemoteBranches,
   parseRemotes,
   parseStashList,
@@ -1042,6 +1044,103 @@ export class GitService {
     };
   }
 
+  /**
+   * Stage, unstage or discard ONE hunk.
+   *
+   * The patch handed to `git apply` is git's own bytes: the file is re-diffed
+   * and its raw output split, rather than re-emitted from the parsed structure.
+   * A patch one byte off from what git expects is one git refuses — or, worse,
+   * one it applies somewhere else.
+   *
+   * The index is resolved against a diff taken NOW, so a file that changed
+   * since the page drew it produces a patch that will not apply, and git says
+   * so. That is the desired outcome: better a refusal than the right hunk
+   * number in the wrong file.
+   */
+  async applyHunk(
+    repo: ResolvedRepo,
+    body: { path?: unknown; hunkIndex?: unknown; staged?: unknown; discard?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const discard = body.discard === true;
+    if (discard) GitService.requireConfirm(body.confirm, 'Discarding a hunk');
+    const fromIndex = body.staged === true;
+    const op: GitOp = discard ? 'discard' : fromIndex ? 'unstage' : 'stage';
+
+    const { result, status } = await this.mutate(repo, op, async (before) => {
+      const [filePath] = this.validPaths(before, [body.path]);
+      const index = Number(body.hunkIndex);
+      if (!Number.isInteger(index) || index < 0) throw new GitBadInput('That is not a hunk.');
+
+      const res = await runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        label: 'hunk-diff',
+        args: ['diff', '--no-color', '-U3', '--find-renames', ...(fromIndex ? ['--cached'] : []), '--', filePath],
+      });
+      if (!res.ok && res.exitCode !== 1) throw new GitFailed(res);
+
+      const { header, hunks } = splitRawHunks(res.stdout);
+      if (!hunks[index]) throw new GitBadInput('That hunk is no longer there — reload and try again.');
+      // A trailing newline is part of the patch format, not decoration.
+      const patch = `${header}\n${hunks[index]}\n`.replace(/\n{2,}$/, '\n');
+
+      const args = ['apply'];
+      // --cached touches only the index; without it the working tree changes.
+      if (!discard) args.push('--cached');
+      if (fromIndex || discard) args.push('--reverse');
+      args.push('-');
+      const applied = await runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        mutation: true,
+        label: `hunk:${op}`,
+        args,
+        stdin: patch,
+      });
+      if (!applied.ok) throw new GitFailed(applied);
+      return hunks.length;
+    });
+    return { status, message: `Hunk ${Number(body.hunkIndex) + 1} of ${result}.` };
+  }
+
+  /**
+   * The three sides of a conflicted file: the common ancestor, ours and theirs.
+   *
+   * A plain `git diff` answers a conflicted file badly — it shows the merge
+   * markers as content. These are the actual stages git is holding, and any of
+   * them can be absent (a file added on one side has no ancestor).
+   */
+  async conflictSides(repo: ResolvedRepo, filePath: string, signal?: AbortSignal): Promise<GitConflictSides> {
+    const status = await this.status(repo, signal);
+    const entry = status.entries.find((e) => e.path === filePath && e.conflicted);
+    if (!entry) throw new GitBadInput('That file is not conflicted.');
+
+    const stage = async (n: 1 | 2 | 3): Promise<string | null> => {
+      const res = await runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: `conflict:${n}`,
+        expectFailure: true,
+        args: ['show', `:${n}:${filePath}`],
+        maxBytes: 2 * 1024 * 1024,
+      });
+      if (!res.ok) return null;
+      return res.truncated ? null : res.stdout;
+    };
+
+    const [base, ours, theirs] = await Promise.all([stage(1), stage(2), stage(3)]);
+    return {
+      path: filePath,
+      base,
+      ours,
+      theirs,
+      tooLarge: base === null && ours === null && theirs === null,
+    };
+  }
+
   async stashes(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitStash[]> {
     const res = await runGit({
       cwd: repo.path,
@@ -1423,6 +1522,226 @@ export class GitService {
       return (res.stdout.trim() || res.stderr.trim()).slice(0, 500);
     });
     return { status, message: result };
+  }
+
+  // ------------------------------------------------------------- rewriting
+
+  async rebase(repo: ResolvedRepo, body: { onto?: unknown }): Promise<{ status: GitStatus; message: string }> {
+    const onto = typeof body.onto === 'string' ? body.onto : '';
+    const { result, status } = await this.mutate(repo, 'rebase', async () => {
+      const target = await this.assertRef(repo, onto);
+      return this.writeAllowingConflict(repo, 'rebase', ['-c', 'core.editor=true', 'rebase', '--', target], {
+        GIT_EDITOR: 'true',
+      });
+    });
+    return {
+      status,
+      message: result.conflicted
+        ? `The rebase stopped on conflicts. Resolve them, stage the files, then continue.\n${result.message}`
+        : result.message,
+    };
+  }
+
+  /**
+   * Copy commits onto the current branch.
+   *
+   * A merge commit has no single "the change it made", so git refuses one
+   * without being told which parent to treat as the mainline. Rather than
+   * passing 1 quietly, that refusal is turned into a sentence the user can act
+   * on: it is a real question about what they meant.
+   */
+  async cherryPick(
+    repo: ResolvedRepo,
+    body: { shas?: unknown; mainline?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const { result, status } = await this.mutate(repo, 'cherryPick', async () => {
+      const shas = await this.validShas(repo, body.shas);
+      const args = ['-c', 'core.editor=true', 'cherry-pick'];
+      if (typeof body.mainline === 'number' && body.mainline > 0) args.push('-m', String(Math.floor(body.mainline)));
+      args.push('--', ...shas);
+      return this.writeAllowingConflict(repo, 'cherryPick', args, { GIT_EDITOR: 'true' });
+    });
+    return {
+      status,
+      message: result.conflicted
+        ? `The cherry-pick stopped on conflicts. Resolve them, stage the files, then continue.\n${result.message}`
+        : result.message,
+    };
+  }
+
+  async revert(
+    repo: ResolvedRepo,
+    body: { shas?: unknown; mainline?: unknown; noCommit?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const { result, status } = await this.mutate(repo, 'revert', async () => {
+      const shas = await this.validShas(repo, body.shas);
+      const args = ['-c', 'core.editor=true', 'revert', '--no-edit'];
+      if (typeof body.mainline === 'number' && body.mainline > 0) args.push('-m', String(Math.floor(body.mainline)));
+      if (body.noCommit === true) args.push('--no-commit');
+      args.push('--', ...shas);
+      return this.writeAllowingConflict(repo, 'revert', args, { GIT_EDITOR: 'true' });
+    });
+    return {
+      status,
+      message: result.conflicted
+        ? `The revert stopped on conflicts. Resolve them, stage the files, then continue.\n${result.message}`
+        : result.message,
+    };
+  }
+
+  private async validShas(repo: ResolvedRepo, raw: unknown): Promise<string[]> {
+    if (!Array.isArray(raw) || raw.length === 0) throw new GitBadInput('No commits were given.');
+    if (raw.length > 100) throw new GitBadInput('That is too many commits for one go.');
+    const out: string[] = [];
+    for (const sha of raw) {
+      if (typeof sha !== 'string' || !isValidSha(sha)) throw new GitBadInput('That is not a commit id.');
+      const res = await runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        label: 'verify-sha',
+        expectFailure: true,
+        args: ['rev-parse', '--verify', '--quiet', `${sha}^{commit}`, '--'],
+      });
+      if (!res.ok) throw new GitBadInput(`There is no commit ${sha.slice(0, 7)} here.`);
+      out.push(sha);
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------- stashes
+
+  async stashPush(
+    repo: ResolvedRepo,
+    body: { message?: unknown; includeUntracked?: unknown; keepIndex?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const { result, status } = await this.mutate(repo, 'stash', async () => {
+      const args = ['stash', 'push'];
+      if (body.includeUntracked === true) args.push('--include-untracked');
+      if (body.keepIndex === true) args.push('--keep-index');
+      const text = typeof body.message === 'string' ? body.message.trim().slice(0, 500) : '';
+      // The message goes after `-m`, and a message starting with a dash would
+      // otherwise be read as a flag.
+      if (text) args.push('-m', text);
+      const res = await this.write(repo, 'stash', args);
+      return res.stdout.trim() || 'Saved.';
+    });
+    return { status, message: result };
+  }
+
+  /**
+   * `stash@{n}` is built here from a number, never taken as a string: a ref
+   * arriving from a request is the one place an index could become something
+   * else entirely.
+   */
+  private static stashRef(index: unknown): string {
+    const n = Number(index);
+    if (!Number.isInteger(n) || n < 0 || n > 1_000) throw new GitBadInput('That is not a stash.');
+    return `stash@{${n}}`;
+  }
+
+  async stashAction(
+    repo: ResolvedRepo,
+    action: 'apply' | 'pop' | 'drop',
+    body: { index?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    // Dropping is the only one that destroys: apply and pop put the work back
+    // into the tree, and pop only removes the stash once it has landed.
+    if (action === 'drop') GitService.requireConfirm(body.confirm, 'Dropping a stash');
+    const op: GitOp = action === 'apply' ? 'stashApply' : action === 'pop' ? 'stashPop' : 'stashDrop';
+
+    const { result, status } = await this.mutate(repo, op, async () => {
+      const ref = GitService.stashRef(body.index);
+      if (action === 'drop') {
+        const res = await this.write(repo, op, ['stash', 'drop', '--', ref]);
+        return { conflicted: false, message: res.stdout.trim() };
+      }
+      // Applying a stash can conflict exactly like a merge can.
+      return this.writeAllowingConflict(repo, op, ['stash', action, '--', ref]);
+    });
+    return {
+      status,
+      message: result.conflicted
+        ? `The stash came back with conflicts. Resolve them and stage the files.\n${result.message}`
+        : result.message,
+    };
+  }
+
+  // ------------------------------------------------------------- tags & worktrees
+
+  async tagCreate(
+    repo: ResolvedRepo,
+    body: { name?: unknown; sha?: unknown; message?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const name = typeof body.name === 'string' ? body.name : '';
+    const { status } = await this.mutate(repo, 'tagCreate', async () => {
+      if (!isValidRefName(name)) throw new GitBadInput('That is not a valid tag name.');
+      const args = ['tag'];
+      const text = typeof body.message === 'string' ? body.message.trim() : '';
+      // A message makes it an annotated tag, which is a different object.
+      if (text) args.push('-a', '-m', text.slice(0, GIT_MESSAGE_MAX));
+      args.push('--', name);
+      if (typeof body.sha === 'string' && body.sha) {
+        if (!isValidSha(body.sha)) throw new GitBadInput('That is not a commit id.');
+        args.push(body.sha);
+      }
+      await this.write(repo, 'tagCreate', args);
+    });
+    return { status, message: `Created ${name}.` };
+  }
+
+  async tagDelete(
+    repo: ResolvedRepo,
+    body: { name?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    GitService.requireConfirm(body.confirm, 'Deleting a tag');
+    const name = typeof body.name === 'string' ? body.name : '';
+    const { status } = await this.mutate(repo, 'tagDelete', async () => {
+      await this.assertRef(repo, `refs/tags/${name}`);
+      await this.write(repo, 'tagDelete', ['tag', '-d', '--', name]);
+    });
+    return { status, message: `Deleted ${name} locally. It may still be on a remote.` };
+  }
+
+  async worktreeAdd(
+    repo: ResolvedRepo,
+    body: { path?: unknown; ref?: unknown; create?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const target = typeof body.path === 'string' ? body.path.trim().replace(/^"(.*)"$/, '$1') : '';
+    const { status } = await this.mutate(repo, 'worktreeAdd', async () => {
+      if (!path.isAbsolute(target)) throw new GitBadInput('Give an absolute path for the new worktree.');
+      if (fs.existsSync(target)) throw new GitBadInput('Something is there already — give a path that does not exist.');
+      const args = ['worktree', 'add'];
+      if (body.create === true) {
+        const name = typeof body.ref === 'string' ? body.ref : '';
+        args.push('-b', await this.assertNewBranchName(repo, name), target);
+      } else {
+        args.push(target, await this.assertRef(repo, typeof body.ref === 'string' ? body.ref : ''));
+      }
+      await this.write(repo, 'worktreeAdd', args);
+    });
+    return { status, message: `Added a worktree at ${target}.` };
+  }
+
+  async worktreeRemove(
+    repo: ResolvedRepo,
+    body: { path?: unknown; force?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    GitService.requireConfirm(body.confirm, 'Removing a worktree');
+    const target = typeof body.path === 'string' ? body.path : '';
+    const { status } = await this.mutate(repo, 'worktreeRemove', async () => {
+      // The path must be one git already lists, so this can never delete an
+      // arbitrary folder.
+      const known = await this.worktrees(repo);
+      const match = known.find((w) => w.path.toLowerCase() === path.normalize(target).toLowerCase());
+      if (!match) throw new GitBadInput('That is not one of this repository\'s worktrees.');
+      if (match.isMain) throw new GitBadInput('That is the main working tree — it cannot be removed.');
+      const args = ['worktree', 'remove'];
+      if (body.force === true) args.push('--force');
+      args.push('--', match.path);
+      await this.write(repo, 'worktreeRemove', args);
+    });
+    return { status, message: `Removed the worktree at ${target}.` };
   }
 
   // ------------------------------------------------------------- the network

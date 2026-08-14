@@ -601,6 +601,41 @@ function stripPrefix(p: string): string {
   return p.replace(/^[ab]\//, '');
 }
 
+/**
+ * Split a single file's raw diff into its header and its hunks, keeping git's
+ * own bytes.
+ *
+ * This exists so a single hunk can be handed back to `git apply` exactly as git
+ * wrote it. Rebuilding a patch from the parsed structure would mean
+ * re-deriving the `@@` counts and re-emitting every line, and a patch that is
+ * one byte different from what git expects is a patch git refuses — or worse,
+ * one it applies to the wrong place.
+ *
+ * A hunk header is matched at the start of a line and by shape; a context line
+ * that happens to contain `@@` is prefixed with a space and cannot collide.
+ */
+export function splitRawHunks(text: string): { header: string; hunks: string[] } {
+  const lines = text.split('\n');
+  const isHunkStart = (line: string): boolean => /^@@ -\d+(,\d+)? \+\d+(,\d+)? @@/.test(line);
+
+  const headerLines: string[] = [];
+  const hunks: string[] = [];
+  let current: string[] | null = null;
+
+  for (const line of lines) {
+    if (isHunkStart(line)) {
+      if (current) hunks.push(current.join('\n'));
+      current = [line];
+      continue;
+    }
+    if (current) current.push(line);
+    else headerLines.push(line);
+  }
+  if (current) hunks.push(current.join('\n'));
+
+  return { header: headerLines.join('\n'), hunks };
+}
+
 // ---------------------------------------------------------------- numstat
 
 export interface NumStatEntry {
