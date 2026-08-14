@@ -8,6 +8,7 @@ import { GitToolbar } from '../components/git/GitToolbar.tsx';
 import { GraphList } from '../components/git/GraphList.tsx';
 import { RefSidebar } from '../components/git/RefSidebar.tsx';
 import { RepoStateBanner } from '../components/git/RepoStateBanner.tsx';
+import { WorkingTree } from '../components/git/WorkingTree.tsx';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
 import { useDragSize } from '../lib/useDragSize.ts';
 
@@ -36,24 +37,6 @@ export function GitPage() {
     });
   }, []);
 
-  // `d` for the command log — guarded like every other shortcut in the app, so
-  // typing a path into the picker never toggles a panel.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
-        if (e.key === 'Escape') target.blur();
-        return;
-      }
-      if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        toggleLog();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggleLog]);
-
   const overviewQ = useQuery({ queryKey: ['git', 'repos'], queryFn: () => gitApi.overview() });
 
   const setParam = useCallback(
@@ -70,6 +53,33 @@ export function GitPage() {
     },
     [setSearchParams],
   );
+
+  // Shortcuts, guarded the way every other page in the app guards them, so
+  // typing a path into the picker never toggles a panel behind it.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape') target.blur();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'd') {
+        e.preventDefault();
+        toggleLog();
+      }
+      if (e.key === 'w') {
+        e.preventDefault();
+        setParam('tab', 'work');
+      }
+      if (e.key === 'g') {
+        e.preventDefault();
+        setParam('tab', null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleLog, setParam]);
 
   const repos = overviewQ.data?.repos.filter((r) => !r.hidden) ?? [];
   const urlRepo = searchParams.get('repo');
@@ -88,6 +98,7 @@ export function GitPage() {
   const selectedRef = searchParams.get('ref');
   // The full sha, not the short one: seven characters are not a safe anchor.
   const selectedSha = searchParams.get('c');
+  const tab: 'commits' | 'work' = searchParams.get('tab') === 'work' ? 'work' : 'commits';
 
   const enabled = !!repoId;
   const statusQ = useQuery({
@@ -154,6 +165,8 @@ export function GitPage() {
           onChanged={() => void overviewQ.refetch()}
           logOpen={logOpen}
           onToggleLog={toggleLog}
+          tab={tab}
+          onTab={(next) => setParam('tab', next === 'work' ? 'work' : null)}
         />
         <RepoStateBanner status={status} />
 
@@ -164,6 +177,12 @@ export function GitPage() {
               your clones is usually all it takes.
             </p>
           </div>
+        ) : tab === 'work' ? (
+          status ? (
+            <WorkingTree repoId={repoId} status={status} />
+          ) : (
+            <div className="min-h-0 flex-1 p-4 text-xs text-[var(--text-dim)]">Reading the working tree…</div>
+          )
         ) : (
           <>
             {selectedRef && (

@@ -22,6 +22,8 @@ export function GitToolbar({
   onChanged,
   logOpen,
   onToggleLog,
+  tab,
+  onTab,
 }: {
   overview: GitOverview | undefined;
   repoId: string | null;
@@ -30,6 +32,8 @@ export function GitToolbar({
   onChanged: () => void;
   logOpen: boolean;
   onToggleLog: () => void;
+  tab: 'commits' | 'work';
+  onTab: (tab: 'commits' | 'work') => void;
 }) {
   const [opening, setOpening] = useState(false);
   const repo = overview?.repos.find((r) => r.id === repoId) ?? null;
@@ -89,6 +93,20 @@ export function GitToolbar({
       )}
 
       <span className="ml-auto flex items-center gap-1.5">
+        <span className="flex items-center gap-0.5">
+          <button type="button" onClick={() => onTab('commits')} className={toggleClass(tab === 'commits')} title="The history (g)">
+            Commits
+          </button>
+          <button
+            type="button"
+            onClick={() => onTab('work')}
+            className={toggleClass(tab === 'work')}
+            title="What has changed and is not committed (w)"
+          >
+            Working tree
+            {changed > 0 && <span className="ml-1 tabular-nums text-[var(--accent)]">{changed}</span>}
+          </button>
+        </span>
         <button
           type="button"
           onClick={onToggleLog}

@@ -1,13 +1,21 @@
 import type {
+  GitBranchCreateRequest,
+  GitBranchDeleteRequest,
+  GitBranchRenameRequest,
   GitBranchesResponse,
+  GitCheckoutRequest,
   GitCommandLogResponse,
   GitCommitDetail,
+  GitCommitRequest,
   GitDiffMode,
   GitDiffResponse,
   GitLogResponse,
+  GitMergeRequest,
+  GitMutationResponse,
   GitOpenTarget,
   GitOverview,
   GitRemote,
+  GitResetRequest,
   GitStash,
   GitStatus,
   GitTag,
@@ -78,4 +86,24 @@ export const gitApi = {
 
   commands: (since: number, limit: number) =>
     getJson<GitCommandLogResponse>(`/api/git/commands?since=${since}&limit=${limit}`),
+
+  // Mutations. Every one answers with the freshly re-read status, so the caller
+  // never needs a second request and cannot render a stale one.
+  stage: (id: string, paths: string[]) => post<GitMutationResponse>(`/api/git/repos/${id}/stage`, { paths }),
+  unstage: (id: string, paths: string[]) => post<GitMutationResponse>(`/api/git/repos/${id}/unstage`, { paths }),
+  discard: (id: string, paths: string[]) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/discard`, { paths, confirm: true }),
+  commitChanges: (id: string, body: GitCommitRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/commit`, body),
+  checkout: (id: string, body: GitCheckoutRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/checkout`, body),
+  branchCreate: (id: string, body: GitBranchCreateRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/branch/create`, body),
+  branchDelete: (id: string, body: GitBranchDeleteRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/branch/delete`, body),
+  branchRename: (id: string, body: GitBranchRenameRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/branch/rename`, body),
+  merge: (id: string, body: GitMergeRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/merge`, body),
+  reset: (id: string, body: GitResetRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/reset`, body),
+  continuation: (id: string, action: 'continue' | 'abort' | 'skip') =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/${action}`, {}),
 };
