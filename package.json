@@ -12,7 +12,8 @@
     "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7433 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force; Write-Host ('claude-history stopped (pid ' + $_ + ')') }\"",
     "typecheck": "pnpm -r typecheck",
     "package": "node scripts/package.mjs",
-    "release": "node scripts/release.mjs"
+    "release": "node scripts/release.mjs",
+    "git-fixture": "node scripts/git-fixture.mjs"
   },
   "devDependencies": {
     "adm-zip": "^0.6.0",

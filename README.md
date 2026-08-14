@@ -115,7 +115,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - `logs\` holds one file per day, written by every way of running the app (installed, from source, portable) so the trail is never split across builds. Files older than the retention window (14 days by default) are deleted automatically, and **Settings → Logs** sets the level written and opens the viewer: filter by day, level and subsystem, search the text, and read the installer's `update.log` from the same screen.
 - Minor UI state lives in the browser, not in files: `localStorage` (thinking toggle, sidebar width) and per-tab `sessionStorage` (list filters/scroll for back-navigation). Active filters are also reflected in the URL.
 - An **installed** instance additionally keeps app files (never your data) in its install folder: `versions\` (the app versions themselves), the `current` junction, `install.json` (install marker) and `update.log`. Reinstalling or updating never touches `%LOCALAPPDATA%\claude-history`.
-- Guarantees: the tool **never writes** into `~/.claude` (read-only consumer) nor into its own repo folder; the server's index is in-memory only and is rebuilt on every start.
+- Guarantees: the tool **never writes** into `~/.claude` (read-only consumer) nor into its own repo folder; the server's index is in-memory only and is rebuilt on every start. The Git tab is the one place the app touches anything else, and only the repositories you list for it — every command it runs is shown in its command log.
 
 ## Features
 
@@ -134,9 +134,12 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - Export any conversation to Markdown (tool calls / thinking / system optional).
 - Resume lineage view and a per-session file-changes viewer (which files each session edited, with before/after diffs).
 - Self-update from GitHub releases: automatic availability check (10 min), explicit-confirmation install with checksum verification and automatic rollback.
+- **Git tab (`/git`)**: a visual client over your repositories — commit graph with branch lanes, branches, remotes, tags, stashes and worktrees, per-commit files and a unified diff viewer. Repositories come from the projects your sessions run in, from folders you point it at to scan (one root usually covers all your clones), and from paths you add by hand. Currently read-only; writing (staging, committing, branching, fetch/pull/push) is being added in phases.
+- **Git command log**: a dock at the foot of the Git tab listing every git command the app runs, with its folder, exit code, duration and output, and a one-click copy that pastes straight into a terminal. Every invocation goes through a single runner that records it, so what the app does is never a mystery.
 
 ## Keyboard shortcuts
 
 - `/` focus search · `j`/`k` or arrows move selection · `Enter` open session · `Esc` back / close drawer.
+- In the Git tab: `d` shows or hides the command log.
 
 See `CLAUDE.md` for architecture and the verified Claude Code data-format rules.
