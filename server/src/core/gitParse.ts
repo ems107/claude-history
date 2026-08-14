@@ -624,6 +624,13 @@ function stripPrefix(p: string): string {
  * That also makes a non-contiguous selection come out right, which the naive
  * version cannot do at all.
  *
+ * A file with no trailing newline works out on its own, and it is worth knowing
+ * why rather than assuming: git puts a `\ No newline at end of file` marker
+ * after the last line of EACH side, and that marker also cuts the run in two.
+ * The removals become one group and the additions another, so each half keeps
+ * its own marker and neither side quietly gains a newline. Checked both as a
+ * patch and against a real repository.
+ *
  * `selected` holds indices into the hunk body as the diff endpoint numbers them.
  * Returns null when nothing was selected.
  */
