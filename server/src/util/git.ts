@@ -301,9 +301,33 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
  * The stderr shapes that mean "git wanted credentials and we would not let it
  * ask". They are answered with one sentence and a terminal, never with a retry:
  * nothing about running it again would make the prompt possible.
+ *
+ * The first two lines are MEASURED on this machine against a local server that
+ * answers 401, not guessed — and the first draft of this pattern had neither of
+ * them, so the very case it exists for would have fallen through to git's raw
+ * output. Git for Windows with Credential Manager configured says "Cannot
+ * prompt because user interactivity has been disabled"; with no helper at all
+ * it says "unable to get password from user". Neither contains the words the
+ * documentation led me to expect.
  */
-const AUTH_PATTERNS =
-  /could not read (Username|Password)|terminal prompts disabled|Authentication failed|Permission denied \(publickey\)|Host key verification failed|no supported authentication|could not read from remote repository/i;
+const AUTH_PATTERNS = new RegExp(
+  [
+    'Cannot prompt because user interactivity has been disabled',
+    'unable to get password from user',
+    'could not read (Username|Password)',
+    'terminal prompts disabled',
+    'Authentication failed',
+    'Invalid username or (token|password)',
+    'Support for password authentication was removed',
+    'Permission denied \\(publickey\\)',
+    'Host key verification failed',
+    'no supported authentication',
+    'could not read from remote repository',
+    'Repository not found',
+    'The requested URL returned error: 40[13]',
+  ].join('|'),
+  'i',
+);
 
 export const GIT_AUTH_HINT =
   'Git needs credentials and this server has no way to ask you for them. ' +

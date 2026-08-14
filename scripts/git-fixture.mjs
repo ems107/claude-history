@@ -21,10 +21,17 @@
 //   repos/odd-names    foo[1].txt, accents, spaces, 400 files to stage at once
 //   repos/big          ~5,000 commits and 60 branches (graph performance)
 //   repos/withsub      one submodule, pointing at the local bare remote
-//   remote/origin.git  bare repo standing in for a remote — the whole network
-//                      phase is verified against this, never against GitHub
+//   remote/origin.git  bare repo standing in for a remote — most of the network
+//                      phase is verified against this, offline
+//   remote-worker/     a second clone of that bare, so "somebody else pushed"
+//                      is a situation this bench can actually produce
 //   scan/              a tree for the scan-root discovery rules
 //   bin-nn/git.exe     a "git" under a path with n-tilde, for findGitExe()
+//   serve-401.mjs      a local HTTP server that answers 401 (optionally after a
+//                      delay). It provokes git's credential path with no network
+//                      and no real remote, which is the only way to check that a
+//                      push needing credentials FAILS rather than hanging — and
+//                      a delayed one gives a slow fetch to cancel.
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -359,6 +366,63 @@ function buildScanTree(dir, remote) {
 }
 
 /**
+ * A second working copy of the bare remote.
+ *
+ * Half the interesting network cases are "somebody else pushed while you were
+ * working", and without a second clone the bench cannot produce one: a push
+ * rejected as non-fast-forward, a stale `--force-with-lease`, a branch that
+ * disappeared and has to be pruned. This is that somebody else.
+ */
+function buildRemoteWorker(dir, remote) {
+  fs.mkdirSync(path.dirname(dir), { recursive: true });
+  git(path.dirname(dir), ['clone', '-q', remote, path.basename(dir)]);
+  git(dir, ['config', 'user.name', 'Other Person']);
+  git(dir, ['config', 'user.email', 'other@example.invalid']);
+  git(dir, ['config', 'core.autocrlf', 'false']);
+  return dir;
+}
+
+/** The 401 server, written out rather than run: the checks start and stop it themselves. */
+function writeAuthServer(root) {
+  const file = path.join(root, 'serve-401.mjs');
+  fs.writeFileSync(
+    file,
+    `// A remote that always asks for credentials, and never accepts any.
+//
+// git's credential path is otherwise unreachable offline, and it is the one
+// path whose failure mode is a process that HANGS rather than one that fails —
+// invisibly, holding the repository lock. Started with a delay it also gives a
+// slow fetch, which is what a cancellation test needs.
+//
+// Usage: node serve-401.mjs [--port 0] [--delay-ms 0]
+import http from 'node:http';
+
+const arg = (name, fallback) => {
+  const i = process.argv.indexOf('--' + name);
+  return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+};
+const delay = Number(arg('delay-ms', 0));
+
+const server = http.createServer((req, res) => {
+  const answer = () => {
+    res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git"' });
+    res.end('authentication required\\n');
+  };
+  process.stdout.write('request ' + req.method + ' ' + req.url + '\\n');
+  if (delay > 0) setTimeout(answer, delay);
+  else answer();
+});
+
+server.listen(Number(arg('port', 0)), '127.0.0.1', () => {
+  process.stdout.write('listening ' + server.address().port + '\\n');
+});
+`,
+    'utf8',
+  );
+  return file;
+}
+
+/**
  * A "git" living under a path with a tilde-n, for the executable-resolution
  * check. It is a copy of the running node binary rather than of git.exe: the
  * point is that the resolved string survives byte-identical and that spawning
@@ -413,11 +477,17 @@ const big = buildBig(path.join(reposDir, 'big'));
 log('repos/withsub');
 const withSub = buildWithSub(path.join(reposDir, 'withsub'), remoteDir);
 
+log('remote-worker/');
+const worker = buildRemoteWorker(path.join(ROOT, 'remote-worker'), remoteDir);
+
 log('scan/');
 buildScanTree(scanDir, remoteDir);
 
 log('bin-ñ/git.exe');
 const accentedExe = buildAccentedExe(ROOT);
+
+log('serve-401.mjs');
+const authServer = writeAuthServer(ROOT);
 
 const bigCommits = Number(git(big, ['rev-list', '--count', '--all']).stdout.trim());
 const bigRefs = git(big, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/tags'])
@@ -428,6 +498,8 @@ const summary = {
   root: ROOT,
   gitVersion,
   remote: remoteDir,
+  worker,
+  authServer,
   repos: { linear, branchy, conflict, oddNames, big, withSub },
   scanRoot: scanDir,
   accentedExe,
@@ -447,5 +519,7 @@ if (JSON_OUT) {
   console.log(`[git-fixture]   big: ${bigCommits} commits, ${bigRefs} refs`);
   console.log(`[git-fixture]   scan root: ${scanDir} (must find 4 repos, skip 2)`);
   console.log(`[git-fixture]   remote: ${remoteDir}`);
+  console.log(`[git-fixture]   worker: ${worker} (push from here to move the remote)`);
+  console.log(`[git-fixture]   auth:   node ${authServer} --delay-ms 0`);
   console.log('[git-fixture] Nothing here points outside this folder. Never verify against a real repo.');
 }

@@ -30,7 +30,14 @@ import {
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { redact, runGit, setGitCommandSink, type GitRunOptions, type GitRunResult } from '../util/git.ts';
+import {
+  GIT_NETWORK_TIMEOUT_MS,
+  redact,
+  runGit,
+  setGitCommandSink,
+  type GitRunOptions,
+  type GitRunResult,
+} from '../util/git.ts';
 import { findGitExe } from '../util/launcher.ts';
 import {
   BRANCH_FORMAT,
@@ -750,7 +757,13 @@ export class GitService {
     });
 
     if (exists('rebase-merge')) {
-      return make(exists('rebase-merge', 'interactive') ? 'rebase-interactive' : 'rebase', {
+      // NOT checked against `rebase-merge/interactive`, however much that file
+      // sounds like the answer. Since the merge backend became the default git
+      // writes it for EVERY rebase — verified on 2.55 with a plain
+      // `pull --rebase` — so keying on it labelled every rebase "interactive",
+      // which is a claim about what the user asked for that we cannot support.
+      // A rebase is a rebase here.
+      return make('rebase', {
         step: num(read('rebase-merge', 'msgnum')),
         total: num(read('rebase-merge', 'end')),
         headName: read('rebase-merge', 'head-name')?.replace(/^refs\/heads\//, '') ?? null,
@@ -1405,6 +1418,174 @@ export class GitService {
       if (!verify.ok) throw new GitBadInput('There is no commit with that id here.');
       const res = await this.write(repo, 'reset', ['reset', `--${mode}`, sha]);
       return (res.stdout.trim() || res.stderr.trim()).slice(0, 500);
+    });
+    return { status, message: result };
+  }
+
+  // ------------------------------------------------------------- the network
+
+  /**
+   * A remote must be one this repository actually has.
+   *
+   * That is not a formality: it is what makes "push to some URL of my choosing"
+   * structurally impossible, so a page that got a body past the same-origin
+   * check still cannot send anybody's code anywhere.
+   */
+  private async validRemote(repo: ResolvedRepo, name: unknown): Promise<string> {
+    const known = await this.remotes(repo);
+    if (known.length === 0) throw new GitBadInput('This repository has no remotes.');
+    if (name === undefined || name === null || name === '') {
+      return known.find((r) => r.name === 'origin')?.name ?? known[0].name;
+    }
+    if (typeof name !== 'string' || !known.some((r) => r.name === name)) {
+      throw new GitBadInput(`This repository has no remote called ${String(name)}.`);
+    }
+    return name;
+  }
+
+  /** A network command: longer timeout, and cancellable by the caller going away. */
+  private async network(
+    repo: ResolvedRepo,
+    op: GitOp,
+    args: string[],
+    signal?: AbortSignal,
+  ): Promise<GitRunResult> {
+    return runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      mutation: true,
+      label: op,
+      args,
+      timeoutMs: GIT_NETWORK_TIMEOUT_MS,
+      signal,
+    });
+  }
+
+  /**
+   * Update the remote-tracking refs. Never automatic — the app's network policy
+   * allows exactly two background calls and this is not one of them.
+   */
+  async fetch(
+    repo: ResolvedRepo,
+    body: { remote?: unknown; all?: unknown; prune?: unknown },
+    signal?: AbortSignal,
+  ): Promise<{ status: GitStatus; message: string }> {
+    const { result, status } = await this.mutate(repo, 'fetch', async () => {
+      const args = ['fetch'];
+      if (body.prune !== false) args.push('--prune');
+      if (body.all === false) args.push(await this.validRemote(repo, body.remote));
+      else args.push('--all');
+      const res = await this.network(repo, 'fetch', args, signal);
+      if (!res.ok) throw new GitFailed(res);
+      // fetch says nothing when nothing moved, which IS the answer.
+      return (res.stderr.trim() || res.stdout.trim() || 'Already up to date.').slice(0, 2_000);
+    });
+    return { status, message: result };
+  }
+
+  /**
+   * Bring the upstream's commits in.
+   *
+   * `--ff-only` by default: the alternative silently writes a merge commit
+   * nobody asked for, and the whole point of this tab is that nothing happens
+   * to a repository without somebody choosing it. Rebase and merge are both
+   * available, spelled out.
+   */
+  async pull(
+    repo: ResolvedRepo,
+    body: { rebase?: unknown; merge?: unknown },
+    signal?: AbortSignal,
+  ): Promise<{ status: GitStatus; message: string }> {
+    const { result, status } = await this.mutate(repo, 'pull', async () => {
+      const args = ['pull'];
+      if (body.rebase === true) args.push('--rebase');
+      else if (body.merge === true) args.push('--no-rebase', '--no-edit');
+      else args.push('--ff-only');
+      const res = await this.network(repo, 'pull', args, signal);
+      const output = `${res.stdout}\n${res.stderr}`;
+      if (res.ok) return { conflicted: false, message: (res.stdout.trim() || res.stderr.trim()).slice(0, 2_000) };
+      if (/CONFLICT|Automatic merge failed|could not apply/i.test(output)) {
+        return { conflicted: true, message: output.trim().slice(0, 2_000) };
+      }
+      // The one refusal worth translating: --ff-only saying the histories have
+      // diverged is not an error, it is a decision waiting to be made.
+      if (/Not possible to fast-forward|diverging|divergent/i.test(output)) {
+        throw new GitBlocked(
+          'Your branch and its upstream have both moved on, so this cannot be a fast-forward. ' +
+            'Pull with rebase to replay your commits on top, or with merge to join them.',
+        );
+      }
+      throw new GitFailed(res);
+    });
+    return {
+      status,
+      message: result.conflicted
+        ? `The pull stopped on conflicts. Resolve them, stage the files, then continue.\n${result.message}`
+        : result.message,
+    };
+  }
+
+  /**
+   * Send commits to a remote.
+   *
+   * There is no plain `--force` here and there never will be: `--force-with-lease`
+   * refuses when the remote has moved since you last looked, which is the only
+   * difference between overwriting your own mistake and overwriting somebody
+   * else's work.
+   */
+  async push(
+    repo: ResolvedRepo,
+    body: {
+      remote?: unknown;
+      branch?: unknown;
+      setUpstream?: unknown;
+      forceWithLease?: unknown;
+      delete?: unknown;
+      tags?: unknown;
+      confirm?: unknown;
+    },
+    signal?: AbortSignal,
+  ): Promise<{ status: GitStatus; message: string }> {
+    const force = body.forceWithLease === true;
+    const remove = body.delete === true;
+    if (force) GitService.requireConfirm(body.confirm, 'A force push');
+    if (remove) GitService.requireConfirm(body.confirm, 'Deleting a branch on the remote');
+
+    const op: GitOp = remove ? 'pushDelete' : force ? 'pushForce' : body.setUpstream === true ? 'pushUpstream' : 'push';
+    const { result, status } = await this.mutate(repo, op, async (before) => {
+      const remote = await this.validRemote(repo, body.remote);
+      const branch = typeof body.branch === 'string' && body.branch ? body.branch : before.branch;
+      if (!branch) throw new GitBadInput('HEAD is detached — there is no branch to push.');
+      await this.assertRef(repo, remove ? branch : branch);
+
+      const args = ['push', '--porcelain'];
+      if (body.setUpstream === true) args.push('--set-upstream');
+      if (force) args.push('--force-with-lease');
+      if (remove) args.push('--delete');
+      if (body.tags === true) args.push('--tags');
+      args.push('--', remote, branch);
+
+      const res = await this.network(repo, op, args, signal);
+      if (!res.ok) throw new GitFailed(res);
+      return (res.stdout.trim() || res.stderr.trim()).slice(0, 2_000);
+    });
+    return { status, message: result };
+  }
+
+  /** Publish one tag. Separate from a branch push: `--tags` sends all of them. */
+  async pushTag(
+    repo: ResolvedRepo,
+    body: { name?: unknown; remote?: unknown },
+    signal?: AbortSignal,
+  ): Promise<{ status: GitStatus; message: string }> {
+    const name = typeof body.name === 'string' ? body.name : '';
+    const { result, status } = await this.mutate(repo, 'tagPush', async () => {
+      const remote = await this.validRemote(repo, body.remote);
+      if (!isValidRefName(name)) throw new GitBadInput('That is not a valid tag name.');
+      await this.assertRef(repo, `refs/tags/${name}`);
+      const res = await this.network(repo, 'tagPush', ['push', '--porcelain', '--', remote, `refs/tags/${name}`], signal);
+      if (!res.ok) throw new GitFailed(res);
+      return (res.stdout.trim() || res.stderr.trim()).slice(0, 2_000);
     });
     return { status, message: result };
   }

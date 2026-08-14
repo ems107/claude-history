@@ -6,7 +6,11 @@ import {
   type GitBranchRenameRequest,
   type GitCheckoutRequest,
   type GitCommitRequest,
+  type GitFetchRequest,
   type GitMergeRequest,
+  type GitPullRequest,
+  type GitPushRequest,
+  type GitTagPushRequest,
   type GitOpenRequest,
   type GitOverview,
   type GitPathsRequest,
@@ -281,12 +285,15 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
    * They all answer `{ok: true, status, message?}` with the freshly re-read
    * status, so the page cannot draw a stale one and needs no second request.
    */
-  const mutation = <B>(path: string, run: (repo: ResolvedRepo, body: B) => Promise<GitMutationResult>) => {
+  const mutation = <B>(
+    path: string,
+    run: (repo: ResolvedRepo, body: B, reply: FastifyReply) => Promise<GitMutationResult>,
+  ) => {
     app.post<{ Params: { id: string }; Body: B }>(path, async (request, reply) => {
       const repo = repoOf(request.params.id, reply);
       if (!repo) return reply;
       try {
-        const { status, message } = await run(repo, (request.body ?? {}) as B);
+        const { status, message } = await run(repo, (request.body ?? {}) as B, reply);
         return { ok: true as const, status, ...(message ? { message } : {}) };
       } catch (err) {
         return sendGitError(reply, err);
@@ -312,6 +319,21 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
   );
   mutation<GitMergeRequest>('/api/git/repos/:id/merge', (repo, body) => ctx.git.merge(repo, body));
   mutation<GitResetRequest>('/api/git/repos/:id/reset', (repo, body) => ctx.git.reset(repo, body));
+
+  // The network ones. They can take a while, so each is cancellable by the
+  // caller going away — the signal is the RESPONSE closing, never the request's.
+  mutation<GitFetchRequest>('/api/git/repos/:id/fetch', (repo, body, reply) =>
+    ctx.git.fetch(repo, body, abortSignalOf(reply)),
+  );
+  mutation<GitPullRequest>('/api/git/repos/:id/pull', (repo, body, reply) =>
+    ctx.git.pull(repo, body, abortSignalOf(reply)),
+  );
+  mutation<GitPushRequest>('/api/git/repos/:id/push', (repo, body, reply) =>
+    ctx.git.push(repo, body, abortSignalOf(reply)),
+  );
+  mutation<GitTagPushRequest>('/api/git/repos/:id/tag/push', (repo, body, reply) =>
+    ctx.git.pushTag(repo, body, abortSignalOf(reply)),
+  );
 
   for (const action of ['continue', 'abort', 'skip'] as const) {
     mutation<Record<string, never>>(`/api/git/repos/:id/${action}`, (repo) => ctx.git.continuation(repo, action));

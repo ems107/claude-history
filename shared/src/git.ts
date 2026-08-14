@@ -107,14 +107,12 @@ export interface GitFileEntry {
   submodule: boolean;
 }
 
-export type GitInProgressKind =
-  | 'merge'
-  | 'rebase'
-  | 'rebase-interactive'
-  | 'am'
-  | 'cherry-pick'
-  | 'revert'
-  | 'bisect';
+/**
+ * No `rebase-interactive`: git's own `rebase-merge/interactive` marker is
+ * written for every rebase since the merge backend became the default, so it
+ * cannot tell one apart, and guessing would be worse than not saying.
+ */
+export type GitInProgressKind = 'merge' | 'rebase' | 'am' | 'cherry-pick' | 'revert' | 'bisect';
 
 /**
  * A multi-step operation the repository is sitting in the middle of. Detected
@@ -477,7 +475,11 @@ export interface GitFetchRequest {
 }
 
 export interface GitPullRequest {
+  /** Replay your commits on top of theirs. */
   rebase?: boolean;
+  /** Join the histories with a merge commit. */
+  merge?: boolean;
+  // Neither: `--ff-only`, which refuses rather than inventing a commit.
 }
 
 export interface GitPushRequest {

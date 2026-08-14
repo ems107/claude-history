@@ -8,7 +8,6 @@ import { useGitAction } from './useGitAction.ts';
 const KIND_LABEL: Record<string, string> = {
   merge: 'Merging',
   rebase: 'Rebasing',
-  'rebase-interactive': 'Rebasing (interactive)',
   am: 'Applying patches',
   'cherry-pick': 'Cherry-picking',
   revert: 'Reverting',
