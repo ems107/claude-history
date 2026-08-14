@@ -1,4 +1,5 @@
-import type { CompactBoundary, MessageItem, Turn } from '@claude-history/shared';
+import type { CompactBoundary, MessageItem, MessageUsage, RecacheCause, Turn } from '@claude-history/shared';
+import { recacheOf } from '@claude-history/shared';
 
 /**
  * The context window, per request, from what the transcript already records.
@@ -27,6 +28,13 @@ export interface ContextPoint {
   /** Ordinal of the request within the conversation. */
   index: number;
   timestamp: string | null;
+  /** Last streamed chunk of the answer — where the gap to the next request starts. */
+  endTimestamp: string | null;
+  model: string | null;
+  /** The run that wrote it: a change means a fresh CLI re-sent the conversation. */
+  runId: string | null;
+  /** Kept whole because pricing a re-cache needs the 1h/5m write split. */
+  usage: MessageUsage;
   input: number;
   read: number;
   write: number;
@@ -35,12 +43,15 @@ export interface ContextPoint {
   total: number;
   /** Change against the previous request; null on the first. */
   delta: number | null;
+  /** From the end of the previous answer to the start of this request. */
+  gapMs: number | null;
   /**
-   * Nothing was read from cache although this is not the first request: the
-   * whole prompt was re-written, which bills at the write rate instead of a
-   * tenth of it.
+   * Context that was already cached and had to be written again here, billed at
+   * the write rate instead of a tenth of it. Zero on a carried-over message: a
+   * fork's copies were paid for in the parent.
    */
-  cacheMiss: boolean;
+  recached: number;
+  recacheCause: RecacheCause | null;
   /** Set when the context shrank into this request. */
   shrink: { from: number; to: number; compacted: CompactBoundary | null } | null;
 }
@@ -51,6 +62,9 @@ export interface ContextTurn {
   requests: number;
   /** Every request inside the turn where the context shrank. */
   shrinks: ContextPoint[];
+  /** Every request inside the turn that had to re-write cached context. */
+  recaches: ContextPoint[];
+  recached: number;
 }
 
 export interface ContextIndex {
@@ -59,6 +73,8 @@ export interface ContextIndex {
   perTurn: Array<ContextTurn | null>;
   max: number;
   shrinks: ContextPoint[];
+  recaches: ContextPoint[];
+  recachedTotal: number;
 }
 
 function pointOf(item: MessageItem, index: number): ContextPoint | null {
@@ -68,15 +84,28 @@ function pointOf(item: MessageItem, index: number): ContextPoint | null {
     uuid: item.uuid,
     index,
     timestamp: item.timestamp,
+    endTimestamp: item.endTimestamp,
+    model: item.model,
+    runId: item.runId,
+    usage: u,
     input: u.input,
     read: u.cacheRead,
     write: u.cacheCreate,
     output: u.output,
     total: u.input + u.cacheRead + u.cacheCreate,
     delta: null,
-    cacheMiss: false,
+    gapMs: null,
+    recached: 0,
+    recacheCause: null,
     shrink: null,
   };
+}
+
+/** Idle time between two requests: from the end of one answer to the start of the next. */
+function gapBetween(previous: ContextPoint, point: ContextPoint): number | null {
+  const from = Date.parse(previous.endTimestamp ?? previous.timestamp ?? '');
+  const to = Date.parse(point.timestamp ?? '');
+  return Number.isNaN(from) || Number.isNaN(to) ? null : Math.max(0, to - from);
 }
 
 export function buildContextIndex(turns: Turn[]): ContextIndex {
@@ -84,6 +113,7 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
   const byUuid = new Map<string, ContextPoint>();
   const perTurn: ContextIndex['perTurn'] = [];
   const shrinks: ContextPoint[] = [];
+  const recaches: ContextPoint[] = [];
   // A compaction line sits between two requests: it belongs to the next one.
   let pendingCompaction: CompactBoundary | null = null;
   let previous: ContextPoint | null = null;
@@ -93,6 +123,7 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
     let last: ContextPoint | null = null;
     let requests = 0;
     const turnShrinks: ContextPoint[] = [];
+    const turnRecaches: ContextPoint[] = [];
 
     for (const item of turn.items) {
       const boundary = item.blocks.find((b) => b.kind === 'compact');
@@ -104,7 +135,25 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
 
       if (previous) {
         point.delta = point.total - previous.total;
-        point.cacheMiss = point.read === 0;
+        point.gapMs = gapBetween(previous, point);
+        // A fork's copies were billed in the parent, so whatever they re-wrote
+        // is the parent's story, not this session's.
+        const event = item.carriedOver
+          ? null
+          : recacheOf(previous, point, {
+              compactedBetween: pendingCompaction !== null,
+              modelChanged: previous.model !== point.model,
+              // Only a change between two KNOWN ids is a change: older
+              // transcripts carry no `session_id` at all.
+              runChanged: previous.runId !== null && point.runId !== null && previous.runId !== point.runId,
+              gapMs: point.gapMs,
+            });
+        if (event) {
+          point.recached = event.tokens;
+          point.recacheCause = event.cause;
+          recaches.push(point);
+          turnRecaches.push(point);
+        }
         if (point.delta <= -SHRINK_MIN) {
           point.shrink = { from: previous.total, to: point.total, compacted: pendingCompaction };
           shrinks.push(point);
@@ -120,10 +169,29 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
       previous = point;
     }
 
-    perTurn.push(first && last ? { first, last, requests, shrinks: turnShrinks } : null);
+    perTurn.push(
+      first && last
+        ? {
+            first,
+            last,
+            requests,
+            shrinks: turnShrinks,
+            recaches: turnRecaches,
+            recached: turnRecaches.reduce((n, p) => n + p.recached, 0),
+          }
+        : null,
+    );
   }
 
-  return { points, byUuid, perTurn, max: points.reduce((m, p) => Math.max(m, p.total), 0), shrinks };
+  return {
+    points,
+    byUuid,
+    perTurn,
+    max: points.reduce((m, p) => Math.max(m, p.total), 0),
+    shrinks,
+    recaches,
+    recachedTotal: recaches.reduce((n, p) => n + p.recached, 0),
+  };
 }
 
 export function formatContextTokens(n: number): string {
@@ -131,6 +199,41 @@ export function formatContextTokens(n: number): string {
   if (n >= 10_000) return `${(n / 1000).toFixed(0)}k`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
+}
+
+/** A gap between two requests, read at a glance: "17 s", "82 min", "3 h 26 min". */
+export function formatGap(ms: number): string {
+  if (ms < 60_000) return `${Math.round(ms / 1000)} s`;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 120) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+/**
+ * Why the cached context had to be written again.
+ *
+ * `unknown` says so outright instead of reaching for the likeliest-sounding
+ * cause: 11 events in this corpus have no local explanation at all, and
+ * Anthropic's cache is best-effort. A plausible wrong reason would be worse
+ * than an admitted unknown, and this is the line the user reads to decide
+ * whether their own habits caused it.
+ */
+export function recacheCauseText(cause: RecacheCause | null, gapMs: number | null): string | null {
+  const gap = gapMs === null ? null : formatGap(gapMs);
+  switch (cause) {
+    case 'ttl-expired':
+      return `The 1-hour cache had expired${gap ? ` — ${gap} since the previous request` : ''}.`;
+    case 'new-run':
+      return 'The session was resumed from a fresh CLI, which re-sent the whole conversation.';
+    case 'model-changed':
+      return 'The model changed, and a cache entry belongs to one model.';
+    case 'unknown':
+      return gap
+        ? `The cached prefix was invalidated — only ${gap} had passed, so the 1-hour cache had not expired.`
+        : 'The cached prefix was invalidated, with the 1-hour cache still in date.';
+    default:
+      return null;
+  }
 }
 
 /** "+21.7k" / "-785k" — a context delta always carries its sign. */

@@ -409,6 +409,8 @@ export async function parseTranscript(
     const fork = isRec(o.forkedFrom) ? str(o.forkedFrom.sessionId) : null;
     if (fork) forkedFrom ??= fork;
     const carriedOver = fork !== null;
+    // The run that wrote this line, not an ancestor — see `MessageItem.runId`.
+    const runId = str(o.session_id);
 
     if (type === 'user') {
       if (!isRec(o.message)) continue;
@@ -430,6 +432,7 @@ export async function parseTranscript(
             isCompactSummary: false,
             systemSubtype: 'context',
             carriedOver,
+            runId,
             discardedBranch: null,
             usage: null,
             effort: null,
@@ -458,6 +461,7 @@ export async function parseTranscript(
             isCompactSummary: false,
             systemSubtype: injected,
             carriedOver,
+            runId,
             discardedBranch: null,
             usage: null,
             effort: null,
@@ -495,6 +499,7 @@ export async function parseTranscript(
           isCompactSummary: o.isCompactSummary === true,
           systemSubtype: null,
           carriedOver,
+          runId,
           discardedBranch: null,
           usage: null,
           effort: null,
@@ -545,6 +550,7 @@ export async function parseTranscript(
             isCompactSummary: false,
             systemSubtype: null,
             carriedOver,
+            runId,
             discardedBranch: null,
             usage: null,
             effort: null,
@@ -570,6 +576,7 @@ export async function parseTranscript(
           isCompactSummary: false,
           systemSubtype: null,
           carriedOver,
+          runId,
           discardedBranch: null,
           // A synthetic message was not produced by a model and is excluded from
           // every total; an id-less line has no dedupe key, so counting it could
@@ -635,6 +642,7 @@ export async function parseTranscript(
           isCompactSummary: false,
           systemSubtype: subtype,
           carriedOver,
+          runId,
           discardedBranch: null,
           usage: null,
           effort: null,
@@ -672,6 +680,7 @@ export async function parseTranscript(
         isCompactSummary: false,
         systemSubtype: subtype,
         carriedOver,
+        runId,
         discardedBranch: null,
         usage: null,
         effort: null,

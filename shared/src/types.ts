@@ -292,6 +292,14 @@ export interface MessageItem {
    */
   carriedOver: boolean;
   /**
+   * The RUN that wrote this line (`session_id`), NOT an ancestor — resuming from
+   * a fresh CLI stamps that CLI's id on everything it appends here. Two
+   * consecutive requests carrying different ids mean a new process re-sent the
+   * whole conversation, which is why the cache went with it: the second-biggest
+   * cause of a re-cache in this corpus, and unknowable without this field.
+   */
+  runId: string | null;
+  /**
    * Set on a message a `/rewind` cut away: it stays in the file forever, but
    * nothing descends from it any more, so Claude Code stops showing it. It was
    * really said and really billed, so the viewer folds it away rather than

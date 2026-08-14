@@ -32,15 +32,33 @@ export function CardLine({ label, value, tone }: { label: string; value: string;
  * It is `pointer-events-none` — nothing in a card is clickable, and it must
  * never eat a click meant for the conversation.
  */
+const PILL_BASE = 'shrink-0 cursor-default font-mono text-[10px] font-normal normal-case tabular-nums';
+const PILL_TONE = {
+  default: {
+    inline: 'text-[var(--text-dim)] hover:text-[var(--text)]',
+    badge:
+      'rounded border border-[var(--border)] px-1.5 py-px text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]',
+  },
+  // Amber, the colour this app already spends on "true, and you would not have
+  // guessed": carried-over tokens, a rewound branch, a compaction.
+  warn: {
+    inline: 'text-amber-400/90 hover:text-amber-300',
+    badge: 'rounded border border-amber-500/40 px-1.5 py-px text-amber-400/90 hover:border-amber-400 hover:text-amber-300',
+  },
+} as const;
+
 export function HoverCard({
   pill,
   children,
   variant = 'inline',
+  tone = 'default',
   title,
 }: {
   pill: ReactNode;
   children: ReactNode;
   variant?: 'inline' | 'badge';
+  /** `warn` marks a pill whose figure needs explaining, not merely reading. */
+  tone?: 'default' | 'warn';
   title?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -64,11 +82,7 @@ export function HoverCard({
       title={title}
       onMouseEnter={open}
       onMouseLeave={() => setAnchor(null)}
-      className={
-        variant === 'badge'
-          ? 'shrink-0 cursor-default rounded border border-[var(--border)] px-1.5 py-px font-mono text-[10px] font-normal text-[var(--text-dim)] normal-case tabular-nums hover:border-[var(--text-dim)] hover:text-[var(--text)]'
-          : 'shrink-0 cursor-default font-mono text-[10px] font-normal text-[var(--text-dim)] normal-case tabular-nums hover:text-[var(--text)]'
-      }
+      className={`${PILL_BASE} ${PILL_TONE[tone][variant]}`}
     >
       {pill}
       {/* Portalled to the body, not rendered in place: the card is positioned

@@ -3,6 +3,7 @@ import type {
   MessageUsage,
   ModelPrices,
   PriceTable,
+  RecacheCause,
   SessionSummary,
   Turn,
   UsageTotals,
@@ -64,6 +65,97 @@ export function computeMessageCost(usage: MessageUsage, prices: ModelPrices | un
       usage.cacheCreate5m * cacheWrite5mRate(prices)) /
     1_000_000
   );
+}
+
+// ---- re-cached context ----
+
+/**
+ * What re-writing already-cached context cost, in the two forms that have to be
+ * shown together.
+ *
+ * `billed` alone suggests the tokens would otherwise have been free; `extra`
+ * alone hides how big the event was. The money fields are null when the model
+ * has no price — an unknown cost never renders as $0.
+ */
+export interface RecacheCost {
+  tokens: number;
+  /** What those tokens cost as a cache write. */
+  billed: number | null;
+  /** What they would have cost had the cache held. */
+  ifRead: number | null;
+  /** `billed - ifRead`: the part the re-write alone is responsible for. */
+  extra: number | null;
+}
+
+/**
+ * The rate a message's cache writes actually billed at, blending the TTLs it
+ * used. A subagent writes 5-minute caches (1.25x input) and a session 1-hour
+ * ones (2x), so a fixed rate would overcharge one of them by 60% of the write.
+ * Tokens with no TTL recorded fall back to 1h, the way `computeMessageCost` does.
+ */
+function blendedWriteRate(usage: MessageUsage, prices: ModelPrices): number {
+  if (usage.cacheCreate <= 0) return prices.cacheWrite;
+  const unattributed = Math.max(0, usage.cacheCreate - usage.cacheCreate1h - usage.cacheCreate5m);
+  const total =
+    (usage.cacheCreate1h + unattributed) * prices.cacheWrite + usage.cacheCreate5m * cacheWrite5mRate(prices);
+  return total / usage.cacheCreate;
+}
+
+export function recacheCost(usage: MessageUsage, recached: number, prices: ModelPrices | undefined): RecacheCost {
+  if (!prices) return { tokens: recached, billed: null, ifRead: null, extra: null };
+  const billed = (recached * blendedWriteRate(usage, prices)) / 1_000_000;
+  const ifRead = (recached * prices.cacheRead) / 1_000_000;
+  return { tokens: recached, billed, ifRead, extra: billed - ifRead };
+}
+
+/** One re-cached request, structurally — so this file and `context.ts` need not know each other. */
+export interface RecachedRequest {
+  model: string | null;
+  usage: MessageUsage;
+  recached: number;
+  recacheCause: RecacheCause | null;
+  gapMs: number | null;
+}
+
+/** What a pill shows about a re-cache: the money, and the reason for it. */
+export interface RecacheSummary {
+  cost: RecacheCost;
+  /**
+   * The cause of the LARGEST event in the group. A run of tool calls can lose
+   * its cache twice for different reasons, and naming the small one would
+   * explain the wrong thing.
+   */
+  cause: RecacheCause | null;
+  gapMs: number | null;
+}
+
+/** Null when nothing in `requests` was re-cached, which is the usual case. */
+export function summariseRecache(requests: RecachedRequest[], prices: PriceTable): RecacheSummary | null {
+  const cost = sumRecacheCost(requests, prices);
+  if (!cost) return null;
+  const worst = requests.reduce<RecachedRequest | null>(
+    (best, r) => (r.recached > 0 && (!best || r.recached > best.recached) ? r : best),
+    null,
+  );
+  return { cost, cause: worst?.recacheCause ?? null, gapMs: worst?.gapMs ?? null };
+}
+
+/** The re-cache across several requests, each priced at its own model's rates. */
+export function sumRecacheCost(requests: RecachedRequest[], prices: PriceTable): RecacheCost | null {
+  let tokens = 0;
+  let billed: number | null = null;
+  let ifRead: number | null = null;
+  for (const r of requests) {
+    if (r.recached <= 0) continue;
+    tokens += r.recached;
+    const one = recacheCost(r.usage, r.recached, resolvePrices(r.model, prices));
+    if (one.billed !== null && one.ifRead !== null) {
+      billed = (billed ?? 0) + one.billed;
+      ifRead = (ifRead ?? 0) + one.ifRead;
+    }
+  }
+  if (tokens === 0) return null;
+  return { tokens, billed, ifRead, extra: billed === null || ifRead === null ? null : billed - ifRead };
 }
 
 export function formatUsd(n: number | null): string {

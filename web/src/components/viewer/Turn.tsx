@@ -1,7 +1,7 @@
 import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@claude-history/shared';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
-import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
+import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { foldedCounts } from '../../lib/folding.ts';
 import { isPromptItem } from '../../lib/segments.ts';
@@ -47,6 +47,23 @@ interface CostContext {
   sessionTotal: number | null;
   /** Context window per request, keyed by the assistant item's uuid. */
   context: Map<string, ContextPoint>;
+}
+
+/**
+ * The requests these messages made, deduped the way `costEntries` dedupes them:
+ * a message counted twice would have its re-cache billed twice, and the whole
+ * point of the three pill levels is that each message appears in exactly one.
+ */
+function pointsOf(items: MessageItem[], costs: CostContext): ContextPoint[] {
+  const seen = new Set<string>();
+  const points: ContextPoint[] = [];
+  for (const item of items) {
+    if (seen.has(item.uuid)) continue;
+    seen.add(item.uuid);
+    const point = costs.context.get(item.uuid);
+    if (point) points.push(point);
+  }
+  return points;
 }
 
 function Anchors({ item }: { item: MessageItem }) {
@@ -166,12 +183,16 @@ function ToolGroup({
   const owners = tools.filter((t) => t.costOwner).map((t) => t.item);
   const entries = costEntries(owners, costs.prices);
   const lastUuid = entries.length > 0 ? entries[entries.length - 1].uuid : null;
+  // Six of the 55 re-caches in this corpus land on a tool-only message, which
+  // prints no header of its own — without this they would only ever show up in
+  // the turn total, with nothing saying which part of the run paid for them.
   const runPill = (
     <CostPill
       entries={entries}
       prices={costs.prices}
       cumulative={lastUuid ? costs.cumulative.get(lastUuid) : undefined}
       sessionTotal={costs.sessionTotal}
+      recache={summariseRecache(pointsOf(owners, costs), costs.prices)}
     />
   );
 
@@ -263,6 +284,7 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
             prices={costs.prices}
             cumulative={costs.cumulative.get(entry.uuid)}
             sessionTotal={costs.sessionTotal}
+            recache={summariseRecache(pointsOf([item], costs), costs.prices)}
           />
         )}
         <ContextPill point={costs.context.get(item.uuid)} />
@@ -558,6 +580,10 @@ export function TurnView({
             sessionTotal={costs.sessionTotal}
             label="turn"
             variant="badge"
+            // The badge sits on the prompt that paid for it, and 53 of the 59
+            // re-caches here land on a turn's first request — so this is the one
+            // place the marker had to be.
+            recache={summariseRecache(turnContext?.recaches ?? [], costs.prices)}
           />
         )}
         {turnContext && <ContextPill turn={turnContext} variant="badge" />}
