@@ -56,7 +56,7 @@ function pathDirs(): string[] {
  * this app has to launch. It also returns the on-disk casing, which is what
  * ends up in the log and in the settings panel.
  */
-function dirEntry(dir: string, file: string): string | null {
+export function dirEntry(dir: string, file: string): string | null {
   const target = file.toLowerCase();
   try {
     return fs.readdirSync(dir).find((name) => name.toLowerCase() === target) ?? null;
@@ -176,6 +176,60 @@ export function forgetClaudeCli(): void {
   claudeCliPath = null;
 }
 
+/**
+ * Where Git for Windows leaves its CLI when PATH has yet to hear about it —
+ * the same logon-snapshot problem as the Claude CLI above, and the same answer.
+ *
+ * `cmd\git.exe` rather than `bin\git.exe` or the mingw64 one: that is the
+ * wrapper Git for Windows intends to be invoked programmatically.
+ */
+function gitFallbacks(): string[] {
+  const out: string[] = [];
+  const programFiles = process.env.ProgramFiles;
+  const programFilesX86 = process.env['ProgramFiles(x86)'];
+  if (programFiles) out.push(path.join(programFiles, 'Git', 'cmd', 'git.exe'));
+  if (programFilesX86) out.push(path.join(programFilesX86, 'Git', 'cmd', 'git.exe'));
+  const local = process.env.LOCALAPPDATA;
+  if (local) {
+    out.push(path.join(local, 'Programs', 'Git', 'cmd', 'git.exe'));
+    const winget = path.join(local, 'Microsoft', 'WinGet');
+    out.push(path.join(winget, 'Links', 'git.exe'));
+    try {
+      const packages = path.join(winget, 'Packages');
+      for (const pkg of fs.readdirSync(packages)) {
+        if (/^Git\.Git/i.test(pkg)) out.push(path.join(packages, pkg, 'cmd', 'git.exe'));
+      }
+    } catch {
+      // no winget here
+    }
+  }
+  return out;
+}
+
+/**
+ * Resolve the git CLI. PATH first, then the known install locations. Like the
+ * Claude CLI, a HIT is remembered and a MISS never is: git may be installed
+ * while this server is running, and PATH is frozen at logon for a server the
+ * scheduled task started.
+ */
+let gitExePath: string | null = null;
+export function findGitExe(): string | null {
+  if (gitExePath) return gitExePath;
+  gitExePath =
+    whichExe('git') ??
+    gitFallbacks().find((p) => dirEntry(path.dirname(p), path.basename(p)) !== null) ??
+    null;
+  return gitExePath;
+}
+
+/**
+ * Drop the cached git path. For the one case a cache cannot survive: a path
+ * that resolved and then answered ENOENT when spawned.
+ */
+export function forgetGitExe(): void {
+  gitExePath = null;
+}
+
 /** Prefer PowerShell 7 (pwsh) — the user's default shell — over Windows PowerShell. */
 let shellPath: string | undefined;
 function findShell(): string {
@@ -198,6 +252,29 @@ export async function openInExplorer(cwd: string): Promise<void> {
 /** Open VS Code at the project folder (`code` is a .cmd shim — go through cmd). */
 export async function openInVsCode(cwd: string): Promise<void> {
   await trySpawn('cmd', ['/c', 'code', cwd]);
+}
+
+/**
+ * Open a terminal sitting in `cwd`, with nothing running in it.
+ *
+ * This is the git tab's escape hatch: conflicts are resolved outside the app,
+ * and an authentication failure is answered by running the command once by
+ * hand. Handing someone a shell already in the right folder is the difference
+ * between a guide and a dead end.
+ */
+export async function launchShell(cwd: string): Promise<{ method: 'wt' | 'cmd' }> {
+  const shell = findShell();
+  const wt = findWt();
+  if (wt) {
+    try {
+      await trySpawn(wt, ['-d', cwd, shell, '-NoExit']);
+      return { method: 'wt' };
+    } catch {
+      // fall through to the plain console window
+    }
+  }
+  await trySpawn('cmd', ['/c', 'start', 'Git', '/D', cwd, shell, '-NoExit']);
+  return { method: 'cmd' };
 }
 
 export async function launchResume(cwd: string, sessionId: string): Promise<{ method: 'wt' | 'cmd'; command: string }> {

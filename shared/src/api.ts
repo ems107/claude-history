@@ -756,6 +756,8 @@ export const LOG_SOURCES = [
   'auto-reload',
   /** The Claude Code processes the composer talks to. */
   'chat',
+  /** Every git invocation the GIT tab makes: mutations at info, reads at debug. */
+  'git',
   /** Reading Claude Code's own `cleanupPeriodDays` out of its settings files. */
   'retention',
   'updates',
@@ -850,4 +852,16 @@ export type ServerEvent =
    * they started a turn or finished one.
    */
   | { type: 'chat-changed'; id: string }
+  /**
+   * New rows in the git command panel. A NOTICE carrying only the newest seq,
+   * never the entries: a panel nobody has open should cost nothing, and one
+   * that is open fetches from `since` and learns what it missed.
+   */
+  | { type: 'git-commands'; seq: number }
+  /**
+   * A repository's gitdir changed — branch switched, index written, a merge
+   * started. LOCAL only: it invalidates status and refs, and must NEVER be
+   * wired to a fetch. The whole network policy depends on that staying true.
+   */
+  | { type: 'git-repo-changed'; id: string }
   | { type: 'logs-appended' };
