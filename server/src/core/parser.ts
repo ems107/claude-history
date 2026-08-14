@@ -89,10 +89,26 @@ function toProjectsRelative(absPath: string, projectsDir: string): string | null
   return rel.replaceAll('\\', '/');
 }
 
+/**
+ * The `AskUserQuestion` answers off the carrying line, question -> chosen.
+ *
+ * Only strings survive: the field is read straight from a transcript, and the
+ * card that renders it must never be handed a shape it did not ask for.
+ */
+function toAnswers(raw: unknown): Record<string, string> | null {
+  if (!isRec(raw)) return null;
+  const answers: Record<string, string> = {};
+  for (const [question, answer] of Object.entries(raw)) {
+    if (typeof answer === 'string') answers[question] = answer;
+  }
+  return Object.keys(answers).length > 0 ? answers : null;
+}
+
 function buildResult(
   c: Record<string, unknown>,
   projectsDir: string,
   persistedOutputPath: string | null,
+  answers: Record<string, string> | null,
 ): ToolResultInfo {
   let text = extractResultText(c.content);
   const totalChars = text.length;
@@ -111,7 +127,7 @@ function buildResult(
     const m = /output saved to: (.+?[\\/]tool-results[\\/][^\s\\/"]+\.txt)/i.exec(text);
     if (m) offloadedFile = toProjectsRelative(m[1], projectsDir);
   }
-  return { text, truncated, totalChars, isError: c.is_error === true, offloadedFile };
+  return { text, truncated, totalChars, isError: c.is_error === true, offloadedFile, answers };
 }
 
 /** One-line human summary of a tool invocation for the collapsed header. */
@@ -486,13 +502,24 @@ export async function parseTranscript(
         });
       } else if (Array.isArray(content)) {
         const persistedOutputPath = isRec(o.toolUseResult) ? str(o.toolUseResult.persistedOutputPath) : null;
+        // Guarded by tool name below: `answers` means what it means only on an
+        // AskUserQuestion result, and a decline writes the line's whole prose
+        // into `toolUseResult` as a character-keyed object (2 lines here).
+        const askedAnswers = isRec(o.toolUseResult) ? toAnswers(o.toolUseResult.answers) : null;
         const userBlocks: ContentBlock[] = [];
         for (const c of content) {
           if (!isRec(c)) continue;
           if (c.type === 'tool_result') {
             const toolUseId = str(c.tool_use_id);
             const tool = toolUseId ? toolBlocksById.get(toolUseId) : undefined;
-            if (tool) tool.result = buildResult(c, projectsDir, persistedOutputPath);
+            if (tool) {
+              tool.result = buildResult(
+                c,
+                projectsDir,
+                persistedOutputPath,
+                tool.toolName === 'AskUserQuestion' ? askedAnswers : null,
+              );
+            }
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             userBlocks.push({ kind: 'text', text: c.text });
           } else if (c.type === 'image') {

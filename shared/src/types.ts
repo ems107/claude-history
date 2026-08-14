@@ -202,6 +202,21 @@ export interface ToolResultInfo {
    * when a subagent report quotes it). Fetch via /api/tool-results?path=.
    */
   offloadedFile: string | null;
+  /**
+   * `AskUserQuestion` only: the answers as Claude Code recorded them
+   * STRUCTURALLY (`toolUseResult.answers`, question text -> what was chosen),
+   * which is the only unambiguous form of them.
+   *
+   * The prose in `text` says the same thing as `"question"="answer"` pairs, and
+   * reading it back is guesswork the moment either half contains a quote — 7 of
+   * the 64 questions in this corpus do. One of them ("¿Quieres poder marcar
+   * repos como "solo lectura"?") lost its answer entirely that way, and an
+   * answer carrying a quote was truncated at it.
+   *
+   * Null for the transcripts that never wrote it (a declined question records
+   * no answers at all), where the prose stays the fallback.
+   */
+  answers: Record<string, string> | null;
 }
 
 export type ContentBlock =

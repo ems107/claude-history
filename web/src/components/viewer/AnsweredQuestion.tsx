@@ -7,22 +7,102 @@ interface AskedQuestion {
   header: string;
   options: { label: string; description: string }[];
   multiSelect: boolean;
+  /** The options the user marked, in the order the answer named them. */
+  picked: string[];
+  /** What was typed under "Other" — alongside the picks, or instead of them. */
+  typed: string | null;
+  /** Whether an answer to this question was recorded at all. */
+  answered: boolean;
 }
 
 export interface AnsweredQuestions {
   questions: AskedQuestion[];
-  /** Question text -> what was chosen. Empty when the user declined. */
-  answers: Record<string, string>;
   declined: boolean;
+}
+
+/**
+ * Split one recorded answer into the options it names and the rest.
+ *
+ * The answer is ONE string: Claude Code joins the picks of a multiSelect with
+ * ", " and appends any free text last. So the obvious `split(',')` is wrong the
+ * moment a label carries a comma — and labels do, constantly ("Stash, tags y
+ * worktrees", "Detectar y guiar, resolver fuera"). It broke the card both ways:
+ * an option really picked drew as unpicked because only half its label was
+ * looked for, and a single-choice answer whose label held a comma matched
+ * nothing at all and was then announced as typed by hand. 12 of the 64
+ * questions in this corpus rendered wrongly, and 2 free-text answers were
+ * dropped from the page entirely (they only show when NOTHING matched).
+ *
+ * So the answer is consumed from the front instead: at each position take the
+ * longest label that fits — a label can be a prefix of another — eat the
+ * joiner, repeat. Whatever is left never matched an option, and that is exactly
+ * what "Other" is.
+ */
+function splitAnswer(answer: string, options: { label: string }[]): { picked: string[]; typed: string | null } {
+  const labels = options.map((o) => o.label).sort((a, b) => b.length - a.length);
+  const picked: string[] = [];
+  let rest = answer.trim();
+  while (rest) {
+    const label = labels.find((l) => rest === l || rest.startsWith(`${l},`));
+    if (!label) break;
+    if (!picked.includes(label)) picked.push(label);
+    rest = rest.slice(label.length).replace(/^\s*,\s*/, '');
+  }
+  const typed = rest.trim();
+  return { picked, typed: typed || null };
+}
+
+/**
+ * What may follow an answer's closing quote — and nothing else can, which is
+ * what lets a quote INSIDE the answer be told apart from the one ending it.
+ * Beyond the joiner and the tool's own closing sentence, the prose appends the
+ * annotations a question can carry (`selected preview:`, `notes:`).
+ */
+const AFTER_ANSWER = /^(\s*,?\s*|\s+selected preview:[\s\S]*|\s+notes:[\s\S]*|\.\s[\s\S]*)$/;
+
+/**
+ * The answers as prose, for a transcript that recorded them no other way.
+ *
+ * Anchored on the question texts we already hold rather than on a blind
+ * `"…"="…"` scan: a quote inside a question ended that scan on the wrong pair
+ * and cost the question its whole answer (7 questions here carry one), and a
+ * quote inside an answer truncated it there. Each value is bounded by the next
+ * question's marker — an end no quote can fake — and closed at the first quote
+ * with nothing but a joiner or an annotation behind it.
+ *
+ * A question answered with notes alone is written `"…"=(no option selected)`,
+ * with no marker to find: it stays unanswered here, which is the truth the
+ * prose holds. The structured answers say more, and are why they come first.
+ */
+function answersFromProse(text: string, questions: string[]): Record<string, string> {
+  const found = questions
+    .map((question) => ({ question, at: text.indexOf(`"${question}"="`) }))
+    .filter((m) => m.at >= 0)
+    .sort((a, b) => a.at - b.at);
+  const answers: Record<string, string> = {};
+  found.forEach((m, i) => {
+    const from = m.at + m.question.length + 4; // "…"="
+    const next = found[i + 1];
+    const slice = next ? text.slice(from, next.at) : text.slice(from);
+    for (let end = slice.indexOf('"'); end >= 0; end = slice.indexOf('"', end + 1)) {
+      if (AFTER_ANSWER.test(slice.slice(end + 1))) {
+        answers[m.question] = slice.slice(0, end);
+        return;
+      }
+    }
+    answers[m.question] = slice;
+  });
+  return answers;
 }
 
 /**
  * Recover an `AskUserQuestion` exchange from the transcript.
  *
  * The two halves live apart: the questions are the tool's input, and the answer
- * only exists as prose in its result — `Your questions have been answered:
- * "…"="…"` — because that is what Claude Code writes. Rendering the raw JSON of
- * both, which is what a generic tool block does, buries the one line a reader
+ * comes back on the result — structurally when Claude Code recorded it that way
+ * (`ToolResultInfo.answers`, the only unambiguous form), otherwise as the prose
+ * `Your questions have been answered: "…"="…"`. Rendering the raw JSON of both,
+ * which is what a generic tool block does, buries the one line a reader
  * actually wants: which option was picked.
  */
 export function parseAskUserQuestion(block: ToolBlockType): AnsweredQuestions | null {
@@ -31,12 +111,12 @@ export function parseAskUserQuestion(block: ToolBlockType): AnsweredQuestions | 
   const raw = input?.questions;
   if (!Array.isArray(raw) || raw.length === 0) return null;
 
-  const questions: AskedQuestion[] = [];
+  const asked: Omit<AskedQuestion, 'picked' | 'typed' | 'answered'>[] = [];
   for (const q of raw) {
     if (typeof q !== 'object' || q === null) continue;
     const item = q as Partial<AskedQuestion>;
     if (typeof item.question !== 'string' || !Array.isArray(item.options)) continue;
-    questions.push({
+    asked.push({
       question: item.question,
       header: typeof item.header === 'string' ? item.header : '',
       options: item.options.filter(
@@ -46,14 +126,24 @@ export function parseAskUserQuestion(block: ToolBlockType): AnsweredQuestions | 
       multiSelect: item.multiSelect === true,
     });
   }
-  if (questions.length === 0) return null;
+  if (asked.length === 0) return null;
 
-  const answers: Record<string, string> = {};
   const text = block.result?.text ?? '';
-  for (const m of text.matchAll(/"([^"]+)"="([^"]*)"/g)) answers[m[1]] = m[2];
-  // A refusal leaves no pairs, and the tool says so in its own words.
-  const declined = Object.keys(answers).length === 0 && /declin|denied|stopped/i.test(text);
-  return { questions, answers, declined };
+  const answers =
+    block.result?.answers ??
+    answersFromProse(
+      text,
+      asked.map((q) => q.question),
+    );
+  const questions: AskedQuestion[] = asked.map((q) => {
+    const answer = answers[q.question];
+    const answered = typeof answer === 'string' && answer.trim().length > 0;
+    const { picked, typed } = answered ? splitAnswer(answer, q.options) : { picked: [], typed: null };
+    return { ...q, picked, typed, answered };
+  });
+  // A refusal leaves no answers, and the tool says so in its own words.
+  const declined = questions.every((q) => !q.answered) && /declin|denied|stopped/i.test(text);
+  return { questions, declined };
 }
 
 /**
@@ -82,10 +172,10 @@ export function AnsweredQuestionCard({ parsed }: { parsed: AnsweredQuestions }) 
 /** One-line summary of what was chosen. */
 export function answerSummary(parsed: AnsweredQuestions): string {
   if (parsed.declined) return 'declined';
-  const picked = parsed.questions
-    .map((q) => parsed.answers[q.question])
-    .filter((a): a is string => typeof a === 'string' && a.length > 0);
-  return picked.length ? picked.join(' · ') : 'no answer recorded';
+  const answered = parsed.questions
+    .map((q) => [...q.picked, ...(q.typed ? [q.typed] : [])].join(', '))
+    .filter((a) => a.length > 0);
+  return answered.length ? answered.join(' · ') : 'no answer recorded';
 }
 
 /**
@@ -97,11 +187,6 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
   return (
     <div className="space-y-2.5">
       {parsed.questions.map((q) => {
-        const answer = parsed.answers[q.question] ?? '';
-        // multiSelect answers arrive joined; a free-typed one matches nothing.
-        const chosen = answer.split(',').map((a) => a.trim()).filter(Boolean);
-        const matched = q.options.filter((o) => chosen.includes(o.label));
-        const freeText = answer && matched.length === 0 ? answer : null;
         return (
           <div key={q.question}>
             <div className="mb-1 flex items-baseline gap-2">
@@ -114,7 +199,7 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
             </div>
             <div className="space-y-0.5">
               {q.options.map((o) => {
-                const picked = chosen.includes(o.label);
+                const picked = q.picked.includes(o.label);
                 return (
                   <div
                     key={o.label}
@@ -134,13 +219,24 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
                   </div>
                 );
               })}
-              {freeText && (
+              {/* "Other": text that matched no option. It shows even when
+                  options WERE picked — a multiSelect answer can be several
+                  boxes plus a sentence, and dropping that sentence deleted a
+                  requirement the user had actually stated. */}
+              {q.typed && (
                 <div className="flex items-baseline gap-2 rounded border border-[var(--accent-dim)] bg-[var(--accent)]/10 px-2 py-1 text-xs text-[var(--text)]">
                   <span aria-hidden className="shrink-0 text-[var(--accent)]">
                     ✎
                   </span>
-                  <span className="font-medium">{freeText}</span>
-                  <span className="text-[11px] opacity-70">typed instead</span>
+                  <span className="font-medium">{q.typed}</span>
+                  <span className="shrink-0 text-[11px] opacity-70">
+                    {q.picked.length > 0 ? 'typed as well' : 'typed instead'}
+                  </span>
+                </div>
+              )}
+              {!q.answered && !parsed.declined && (
+                <div className="px-2 py-1 text-[11px] text-[var(--text-dim)] italic">
+                  No answer to this question was recorded.
                 </div>
               )}
             </div>
