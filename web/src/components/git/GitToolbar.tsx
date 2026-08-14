@@ -2,6 +2,7 @@ import type { GitOverview, GitStatus } from '@claude-history/shared';
 import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { btn } from '../../lib/ui.ts';
+import { toggleClass } from '../viewer/SessionHeader.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
 
 /**
@@ -19,12 +20,16 @@ export function GitToolbar({
   status,
   onPick,
   onChanged,
+  logOpen,
+  onToggleLog,
 }: {
   overview: GitOverview | undefined;
   repoId: string | null;
   status: GitStatus | undefined;
   onPick: (id: string) => void;
   onChanged: () => void;
+  logOpen: boolean;
+  onToggleLog: () => void;
 }) {
   const [opening, setOpening] = useState(false);
   const repo = overview?.repos.find((r) => r.id === repoId) ?? null;
@@ -84,6 +89,14 @@ export function GitToolbar({
       )}
 
       <span className="ml-auto flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onToggleLog}
+          className={toggleClass(logOpen)}
+          title="Every git command this app runs (d)"
+        >
+          ⌘ log
+        </button>
         <button
           type="button"
           disabled={!repoId || opening}

@@ -76,5 +76,6 @@ export const gitApi = {
   remotes: (id: string) => getJson<GitRemote[]>(`/api/git/repos/${id}/remotes`),
   worktrees: (id: string) => getJson<GitWorktree[]>(`/api/git/repos/${id}/worktrees`),
 
-  commands: (since: number) => getJson<GitCommandLogResponse>(`/api/git/commands?since=${since}`),
+  commands: (since: number, limit: number) =>
+    getJson<GitCommandLogResponse>(`/api/git/commands?since=${since}&limit=${limit}`),
 };

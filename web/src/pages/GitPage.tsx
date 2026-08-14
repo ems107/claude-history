@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { gitApi } from '../api/git.ts';
+import { CommandLogDock } from '../components/git/CommandLogDock.tsx';
 import { CommitDetail } from '../components/git/CommitDetail.tsx';
 import { GitToolbar } from '../components/git/GitToolbar.tsx';
 import { GraphList } from '../components/git/GraphList.tsx';
@@ -25,6 +26,33 @@ export function GitPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const sidebar = useDragSize({ key: 'git.sidebarWidth', axis: 'x', min: 180, max: 520, initial: 240 });
   const graph = useDragSize({ key: 'git.graphHeight', axis: 'y', min: 120, max: 900, initial: 340 });
+  // Dragging the dock's top edge upwards makes it taller, so this one inverts.
+  const dock = useDragSize({ key: 'git.logHeight', axis: 'y', min: 80, max: 600, initial: 200, invert: true });
+  const [logOpen, setLogOpen] = useState(() => localStorage.getItem('git.logOpen') === '1');
+  const toggleLog = useCallback(() => {
+    setLogOpen((prev) => {
+      localStorage.setItem('git.logOpen', prev ? '0' : '1');
+      return !prev;
+    });
+  }, []);
+
+  // `d` for the command log — guarded like every other shortcut in the app, so
+  // typing a path into the picker never toggles a panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
+        if (e.key === 'Escape') target.blur();
+        return;
+      }
+      if (e.key === 'd' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        toggleLog();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleLog]);
 
   const overviewQ = useQuery({ queryKey: ['git', 'repos'], queryFn: () => gitApi.overview() });
 
@@ -124,6 +152,8 @@ export function GitPage() {
           status={status}
           onPick={(id) => setParam('repo', id)}
           onChanged={() => void overviewQ.refetch()}
+          logOpen={logOpen}
+          onToggleLog={toggleLog}
         />
         <RepoStateBanner status={status} />
 
@@ -199,6 +229,13 @@ export function GitPage() {
             </div>
           </>
         )}
+
+        <CommandLogDock
+          open={logOpen}
+          onToggle={toggleLog}
+          height={dock.size}
+          onResizeStart={dock.onMouseDown}
+        />
       </div>
     </div>
   );
