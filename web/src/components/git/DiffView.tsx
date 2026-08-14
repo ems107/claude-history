@@ -67,6 +67,43 @@ export interface HunkActions {
 
 export const lineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
 
+/**
+ * The line on the other side of the same edit, or null when there is none.
+ *
+ * git writes a replaced run as every removal followed by every addition, and
+ * both the server's patch builder and this pair them by position within the
+ * run. Discarding needs it: taking back an added line without restoring the one
+ * it replaced would delete content the user never picked, so the counterpart
+ * goes with it — and the dialog then lists exactly the pair that moves.
+ *
+ * A `\ No newline at end of file` is transparent here for the same reason it is
+ * on the server: it describes the line above it and does not break the run.
+ */
+export function pairedWith(kinds: readonly GitDiffLineKind[], index: number): number | null {
+  let i = 0;
+  while (i < kinds.length) {
+    if (kinds[i] !== 'del' && kinds[i] !== 'add') {
+      i++;
+      continue;
+    }
+    const dels: number[] = [];
+    const adds: number[] = [];
+    while (i < kinds.length && (kinds[i] === 'del' || kinds[i] === 'meta')) {
+      if (kinds[i] === 'del') dels.push(i);
+      i++;
+    }
+    while (i < kinds.length && (kinds[i] === 'add' || kinds[i] === 'meta')) {
+      if (kinds[i] === 'add') adds.push(i);
+      i++;
+    }
+    const asDel = dels.indexOf(index);
+    if (asDel >= 0) return adds[asDel] ?? null;
+    const asAdd = adds.indexOf(index);
+    if (asAdd >= 0) return dels[asAdd] ?? null;
+  }
+  return null;
+}
+
 function Hunk({
   hunk,
   index,

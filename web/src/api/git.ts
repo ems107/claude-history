@@ -9,6 +9,7 @@ import type {
   GitCommitDetail,
   GitCommitRequest,
   GitConflictSides,
+  GitDiscardEntry,
   GitDiffMode,
   GitDiffResponse,
   GitFetchRequest,
@@ -149,9 +150,16 @@ export const gitApi = {
   hunk: (id: string, body: { path: string; hunkIndex: number; staged?: boolean; discard?: boolean; confirm?: boolean }) =>
     post<GitMutationResponse>(`/api/git/repos/${id}/hunk`, body),
 
-  /** Stage or unstage individual lines of one hunk. Never discards — see the server. */
-  lines: (id: string, body: { path: string; hunkIndex: number; lines: number[]; staged?: boolean }) =>
-    post<GitMutationResponse>(`/api/git/repos/${id}/lines`, body),
+  /** Stage, unstage or discard individual lines of one hunk. */
+  lines: (
+    id: string,
+    body: { path: string; hunkIndex: number; lines: number[]; staged?: boolean; discard?: boolean; confirm?: boolean },
+  ) => post<GitMutationResponse>(`/api/git/repos/${id}/lines`, body),
+
+  /** The bin: what was discarded from this repo, newest first, and putting one back. */
+  discards: (id: string) => getJson<GitDiscardEntry[]>(`/api/git/repos/${id}/discards`),
+  restoreDiscard: (id: string, undoId: string) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/discards/restore`, { undoId }),
 
   conflictSides: (id: string, filePath: string) =>
     getJson<GitConflictSides>(`/api/git/repos/${id}/diff?mode=conflict&path=${encodeURIComponent(filePath)}`),

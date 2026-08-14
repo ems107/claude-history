@@ -20,7 +20,8 @@ export function useGitAction(repoId: string | null): {
   error: string | null;
   note: string | null;
   clear: () => void;
-  run: (work: () => Promise<GitMutationResponse | void>) => Promise<void>;
+  /** The server's answer, or null if it refused — so a caller can read `undoId` off it. */
+  run: (work: () => Promise<GitMutationResponse | void>) => Promise<GitMutationResponse | null>;
 } {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
@@ -40,8 +41,10 @@ export function useGitAction(repoId: string | null): {
           queryClient.setQueryData(['git', 'status', repoId], result.status);
           if (result.message) setNote(result.message);
         }
+        return result ?? null;
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+        return null;
       } finally {
         setBusy(false);
         // Everything else this could have moved: branches, the graph, the log.
