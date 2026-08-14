@@ -402,7 +402,11 @@ A visual git client over the repositories on this machine (`/git`, `core/gitServ
 - **A rebase is never reported as "interactive".** `.git/rebase-merge/interactive` sounds like the discriminator and is not: git writes it for every rebase since the merge backend became the default (verified on 2.55 with a plain `pull --rebase`), so keying on it labelled every rebase interactive.
 - **A repository with no commits is an ordinary state, and it used to be un-addable.** `rev-parse … --abbrev-ref HEAD` fails on an unborn HEAD and fails the WHOLE invocation, so the probe reported "not a repository". HEAD is asked separately with `symbolic-ref --short -q`, which answers on an unborn branch and exits non-zero exactly when HEAD is detached. `log` needs the same forgiveness: an empty clone says `bad revision 'HEAD'`, not "does not have any commits yet".
 - **Cloning an empty repository configures an upstream that does not exist yet**, so `status.upstream` is set from the first moment. Configured and existing are not the same thing.
+- **A hunk is staged with git's OWN bytes.** The file is re-diffed and its raw output split on the `@@` lines (`splitRawHunks`), never re-emitted from the parsed structure: re-deriving the counts and re-printing the lines produces a patch that is one byte different, which git either refuses or — worse — applies somewhere else. The index is resolved against a diff taken at that moment, so a file that moved on since the page drew it fails to apply, which is the right answer.
+- **A conflicted file is three files, not a diff.** `:1:`/`:2:`/`:3:` are the ancestor, ours and theirs; any of them can be absent (added on one side has no ancestor). Diffing it instead renders the merge markers as content.
+- **Arguments that could stop being arguments**: a stash index is turned into `stash@{n}` from a NUMBER, never taken as a string, and a worktree path must match one `git worktree list` already reports — so removing one cannot delete an arbitrary folder. Both are covered by checks that pass a shell-injection-shaped index and a system path.
 - Network policy is unchanged and applies here: `fetch`/`pull`/`push` are user-triggered only. The `.git` watcher is local and invalidates local state — **it must never lead to a fetch**.
+- **The Git tab has no keyboard shortcuts, deliberately** (the user asked for none): everything there can change a repository, and a stray keypress is not worth a saved keystroke. Escape closing a confirmation and Enter submitting a path field are the only key handlers, and neither can run git. Do not add more.
 - `ctx.git.busy` joins `ctx.chat.busy` in the three 409 sites (`/api/server/stop`, `/api/uninstall`, `/api/update/apply`): going away mid-rebase leaves a repository in a state nothing in this app put it in, and nothing here could finish for the user.
 
 ## Testing
@@ -559,3 +563,15 @@ No automated test suite (personal tool). Verify against real data:
     credentials work from a server with **no console** — measured at ~2.3 s.
     Note it cannot be emptied again afterwards (GitHub will not delete a default
     branch), so the empty-repository checks belong against a local `git init`.
+    Hunks are the check that catches a patch built the wrong way: make two edits
+    thirty lines apart in a forty-line file, stage hunk 0, and the INDEX must
+    hold exactly the first edit while the tree still holds the second — a patch
+    reconstructed from the parsed structure passes "it applied" and fails this.
+    Unstaging must bring both back; discarding hunk 1 must remove only that edit
+    from the file. A hunk index that no longer exists must be refused.
+    The rest: `stash@{0}; rm -rf` as a stash index must be refused, a worktree
+    removal pointed at a system folder must be refused, a duplicate tag comes
+    back as git's own 409, and cherry-pick and revert must keep and name their
+    subject. In the browser, a conflicted file must show three panels with real
+    contents and NO diff, and the context strips must be buttons that shrink the
+    gaps when pressed.
