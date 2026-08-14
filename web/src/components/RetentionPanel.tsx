@@ -6,9 +6,8 @@ import { api } from '../api/client.ts';
 import { copyPlain } from '../lib/clipboard.ts';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
 import { retentionLabel, retentionView } from '../lib/retention.ts';
+import { btn } from '../lib/ui.ts';
 
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 
 /** What one settings file has to say, in the one word that matters. */
 function sourceValue(s: RetentionSource): { text: string; tone: string } {

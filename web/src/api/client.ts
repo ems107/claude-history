@@ -41,7 +41,8 @@ export interface SettingsResponse {
   version: string;
 }
 
-async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+/** Exported for api/git.ts, so the failed-GET error string exists exactly once. */
+export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${url}`);
   return res.json() as Promise<T>;

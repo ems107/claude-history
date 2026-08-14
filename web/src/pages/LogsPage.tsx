@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
 import { hasSelection } from '../lib/selection.ts';
+import { btn } from '../lib/ui.ts';
 
 /** Diagnostics, so the whole thing lives under Settings rather than the nav. */
 
@@ -16,8 +17,6 @@ const LEVEL_STYLE: Record<LogLevel, string> = {
   fatal: 'text-red-400 font-semibold',
 };
 
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 
 /** Time only: the day is already the thing you picked on the left. */
 function clockTime(t: string): string {

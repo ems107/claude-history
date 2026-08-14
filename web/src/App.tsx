@@ -6,6 +6,7 @@ import { useEvents } from './api/useEvents.ts';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
+import { GitPage } from './pages/GitPage.tsx';
 import { LogsPage } from './pages/LogsPage.tsx';
 import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
@@ -65,6 +66,7 @@ export function App() {
         <nav className="ml-4 flex items-center gap-1">
           <NavItem to="/prompts" label="Prompts" />
           <NavItem to="/stats" label="Stats" />
+          <NavItem to="/git" label="Git" />
         </nav>
         <span className="ml-auto flex items-center gap-2">
           <UsageWidget />
@@ -89,6 +91,7 @@ export function App() {
           <Route path="/session/:id" element={<SessionViewPage />} />
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/stats" element={<StatsPage />} />
+          <Route path="/git" element={<GitPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           {/* Diagnostics, reached from Settings — deliberately not in the nav. */}
           <Route path="/logs" element={<LogsPage />} />

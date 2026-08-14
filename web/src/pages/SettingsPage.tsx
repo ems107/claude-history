@@ -12,8 +12,10 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
+import { GitSettings } from '../components/git/GitSettings.tsx';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
+import { btn, inputClass } from '../lib/ui.ts';
 
 function Section({
   title,
@@ -70,8 +72,6 @@ function Toggle({
   );
 }
 
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 
 /** Must match the `anchor-flash` animation in styles.css. */
 const ANCHOR_FLASH_MS = 2_500;
@@ -82,8 +82,6 @@ const asText = (v: boolean | number | string): string => {
   return String(v);
 };
 
-const inputClass =
-  'w-full rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
 
 /**
  * A text setting. Unlike the toggles and number inputs above it does NOT save
@@ -719,6 +717,11 @@ export function SettingsPage() {
             you — and then it asks in the conversation, above the box. Your MCP servers are loaded as usual, so the
             first prompt of a session takes a moment longer than the ones after it.
           </div>
+        </Section>
+
+        {/* The id is what the repo picker's "Manage in Settings" link scrolls to. */}
+        <Section title="Git" id="git" highlight={flashed === 'git'}>
+          <GitSettings />
         </Section>
 
         {/* Claude Code's setting, not ours — shown and explained, never written.
