@@ -1049,8 +1049,11 @@ export class GitService {
    *
    * The patch handed to `git apply` is git's own bytes: the file is re-diffed
    * and its raw output split, rather than re-emitted from the parsed structure.
-   * A patch one byte off from what git expects is one git refuses — or, worse,
-   * one it applies somewhere else.
+   * Measured rather than assumed — git forgives a wrong `@@` count, but not a
+   * context line that lost its leading space, not a hunk that lost its trailing
+   * newline, and not line endings altered in transit, which make the whole file
+   * read as changed. Hence: assembled in memory, handed over on stdin, never
+   * rebuilt from parsed lines and never through a shell pipeline.
    *
    * The index is resolved against a diff taken NOW, so a file that changed
    * since the page drew it produces a patch that will not apply, and git says
