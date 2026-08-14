@@ -127,13 +127,22 @@ async function probe(dir: string): Promise<{
   bare: boolean;
   branch: string | null;
 } | null> {
-  const res = await runGit({
-    cwd: dir,
-    args: ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--is-bare-repository', '--abbrev-ref', 'HEAD'],
-    readOnly: true,
-    timeoutMs: 10_000,
-    label: 'probe',
-  });
+  let res;
+  try {
+    res = await runGit({
+      cwd: dir,
+      args: ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--is-bare-repository', '--abbrev-ref', 'HEAD'],
+      readOnly: true,
+      timeoutMs: 10_000,
+      label: 'probe',
+      // "Not a repository" is the answer this question exists to get.
+      expectFailure: true,
+    });
+  } catch {
+    // The folder went away between being listed and being asked about. That is
+    // an answer too, and it must not sink the whole discovery pass.
+    return null;
+  }
   if (!res.ok) return null;
   const lines = res.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
   if (lines.length < 3) return null;
@@ -150,14 +159,20 @@ async function probe(dir: string): Promise<{
 }
 
 async function remoteOf(dir: string): Promise<string | null> {
-  const res = await runGit({
-    cwd: dir,
-    args: ['remote', 'get-url', 'origin'],
-    readOnly: true,
-    timeoutMs: 10_000,
-    label: 'remote',
-  });
-  return res.ok ? (res.stdout.trim() || null) : null;
+  try {
+    const res = await runGit({
+      cwd: dir,
+      args: ['remote', 'get-url', 'origin'],
+      readOnly: true,
+      timeoutMs: 10_000,
+      label: 'remote',
+      // Plenty of repositories have no `origin`, and that is not news.
+      expectFailure: true,
+    });
+    return res.ok ? (res.stdout.trim() || null) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Run `work` over `items`, `limit` at a time. Fifty repos serially is a second of nothing. */

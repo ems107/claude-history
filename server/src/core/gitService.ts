@@ -3,6 +3,7 @@ import {
   GIT_DIFF_MAX_FILES,
   GIT_DIFF_MAX_LINES,
   GIT_LOG_PAGE,
+  GIT_MESSAGE_MAX,
   GIT_STATUS_MAX_ENTRIES,
   isValidRefName,
   isValidSha,
@@ -29,13 +30,7 @@ import {
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import {
-  redact,
-  runGit,
-  setGitCommandSink,
-  type GitRunOptions,
-  type GitRunResult,
-} from '../util/git.ts';
+import { redact, runGit, setGitCommandSink, type GitRunOptions, type GitRunResult } from '../util/git.ts';
 import { findGitExe } from '../util/launcher.ts';
 import {
   BRANCH_FORMAT,
@@ -86,6 +81,28 @@ const DISCOVERY_TTL_MS = 10 * 60 * 1000;
 
 /** Manually remembered paths. A list, not a database. */
 const MAX_STORED_PATHS = 100;
+
+/**
+ * How long our own writes are ignored by the `.git` watcher. Without it every
+ * commit provokes a refetch of the change it just made.
+ */
+const WATCH_QUIET_MS = 600;
+
+/**
+ * Paths per `git clean` invocation. It is the one command here that will not
+ * read a pathspec from stdin, so its paths go in argv — and a command line has
+ * a length limit that a hundred paths will not reach.
+ */
+const CLEAN_BATCH = 100;
+
+/** The same figure `core/watcher.ts` settled on for `~/.claude`. */
+const WATCH_DEBOUNCE_MS = 300;
+/** Repositories watched at once. A handle each is cheap; sixty clones is not. */
+const MAX_WATCHERS = 8;
+/** Stop watching a repository nobody has read for this long. */
+const WATCH_IDLE_MS = 5 * 60 * 1000;
+/** How often the idle sweep runs. */
+const WATCH_SWEEP_MS = 60 * 1000;
 
 /** Operations that CHANGE a repository. Everything else is a read. */
 export const MUTATING_OPS = new Set<GitOp>([
@@ -236,6 +253,10 @@ export class GitService {
   private droppedTotal = 0;
 
   private locks = new Map<string, LockEntry>();
+  /** Repo key -> the moment its own-write quiet period ends. */
+  private quietUntil = new Map<string, number>();
+  private watchers = new Map<string, { lastRead: number; close: () => void }>();
+  private sweepTimer: NodeJS.Timeout | null = null;
 
   constructor(private readonly index: SessionIndex) {
     this.events.setMaxListeners(100); // one set of listeners per SSE client
@@ -248,10 +269,14 @@ export class GitService {
    */
   start(): void {
     setGitCommandSink((result, opts) => this.record(result, opts));
+    this.sweepTimer = setInterval(() => this.sweepWatchers(), WATCH_SWEEP_MS);
+    this.sweepTimer.unref();
   }
 
   shutdown(): void {
     setGitCommandSink(null);
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+    for (const key of [...this.watchers.keys()]) this.unwatch(key);
   }
 
   // ------------------------------------------------------------- command panel
@@ -293,6 +318,7 @@ export class GitService {
     const line = `${entry.argv.join(' ')} in ${where} -> ${result.exitCode} in ${result.durationMs} ms`;
     if (result.timedOut) log.error(`timed out: ${line}`);
     else if (result.aborted) log.debug(`cancelled: ${line}`);
+    else if (!result.ok && opts.expectFailure) log.debug(line);
     else if (!result.ok) log.warn(`${line} :: ${entry.stderr.slice(0, 500)}`);
     else if (opts.mutation) log.info(line);
     else log.debug(line);
@@ -525,6 +551,8 @@ export class GitService {
       const cached = this.statusCache.get(repo.key);
       if (cached) return { ...cached, stale: true };
     }
+    // Someone is looking at this repository, which is what a watcher is for.
+    this.watchRepo(repo);
     return this.withRepoLock(repo.key, 'read', async () => {
       const status = await this.readStatus(repo, signal);
       this.statusCache.set(repo.key, status);
@@ -535,6 +563,97 @@ export class GitService {
   /** Drop the cached figures for a repository — after a mutation, or a change on disk. */
   invalidate(repoKey: string): void {
     this.statusCache.delete(repoKey);
+  }
+
+  // ------------------------------------------------------------- watching .git
+
+  /**
+   * Notice when a repository changes underneath us.
+   *
+   * The concrete case is the ordinary one: you work in a terminal with this tab
+   * open. Without this the page shows a branch you switched five minutes ago,
+   * and a git client that lies about the current branch is worse than none. It
+   * is also what turns "resolve the conflict outside the app" from an
+   * instruction into a workflow — fix the file in an editor and the banner
+   * updates itself.
+   *
+   * Scoped hard: the GITDIR only, NOT recursive, and only while someone is
+   * looking. That way it fires on HEAD, index, MERGE_HEAD, ORIG_HEAD and the
+   * refs directory, and never on a working-tree edit — watching a large tree
+   * recursively means thousands of handles and an event per write inside
+   * node_modules. Working-tree edits are picked up by the ordinary refetch.
+   *
+   * The event invalidates LOCAL state. It must never lead to a fetch: that
+   * would turn a file being saved into network traffic, which the app's network
+   * policy forbids outright.
+   */
+  private watchRepo(repo: ResolvedRepo): void {
+    const existing = this.watchers.get(repo.key);
+    if (existing) {
+      existing.lastRead = Date.now();
+      return;
+    }
+    // A handle per open repository is cheap; sixty clones' worth is not.
+    while (this.watchers.size >= MAX_WATCHERS) {
+      let oldestKey: string | null = null;
+      let oldest = Infinity;
+      for (const [key, watch] of this.watchers) {
+        if (watch.lastRead < oldest) {
+          oldest = watch.lastRead;
+          oldestKey = key;
+        }
+      }
+      if (!oldestKey) break;
+      this.unwatch(oldestKey);
+    }
+
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      const isQuiet = (): boolean => Date.now() < (this.quietUntil.get(repo.key) ?? 0);
+      const watcher = fs.watch(repo.gitDir, { recursive: false }, () => {
+        if (isQuiet()) return;
+        if (timer) return;
+        timer = setTimeout(() => {
+          timer = null;
+          // Checked AGAIN here, and this is the check that does the work: a
+          // write of ours fires its first event before the command has
+          // finished, so the timer is already armed by the time the quiet
+          // period is set. Testing only on arrival let every commit echo
+          // straight back at the page.
+          if (isQuiet()) return;
+          this.invalidate(repo.key);
+          this.events.emit('repo-changed', repo.id);
+        }, WATCH_DEBOUNCE_MS);
+      });
+      watcher.on('error', () => this.unwatch(repo.key));
+      this.watchers.set(repo.key, {
+        lastRead: Date.now(),
+        close: () => {
+          if (timer) clearTimeout(timer);
+          watcher.close();
+        },
+      });
+      log.debug(`watching ${repo.name}`);
+    } catch (err) {
+      // A folder that cannot be watched is not a failure worth surfacing: the
+      // page simply refetches the ordinary way.
+      log.debug(`could not watch ${repo.name}`, err);
+    }
+  }
+
+  private unwatch(key: string): void {
+    const watch = this.watchers.get(key);
+    if (!watch) return;
+    watch.close();
+    this.watchers.delete(key);
+  }
+
+  /** Let go of repositories nobody has looked at for a while. */
+  private sweepWatchers(): void {
+    const cutoff = Date.now() - WATCH_IDLE_MS;
+    for (const [key, watch] of this.watchers) {
+      if (watch.lastRead < cutoff) this.unwatch(key);
+    }
   }
 
   private async readStatus(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitStatus> {
@@ -784,7 +903,7 @@ export class GitService {
    * nothing by default, which reads as "this commit changed no files" — the
    * one thing that is certainly untrue about it.
    */
-  async commit(repo: ResolvedRepo, sha: string, signal?: AbortSignal): Promise<GitCommitDetail> {
+  async commitDetail(repo: ResolvedRepo, sha: string, signal?: AbortSignal): Promise<GitCommitDetail> {
     if (!isValidSha(sha)) throw new GitBadInput('That is not a commit id.');
 
     const [metaRes, numstatRes, nameRes] = await Promise.all([
@@ -956,6 +1075,381 @@ export class GitService {
     });
     if (!res.ok) throw new GitFailed(res);
     return parseWorktreeList(res.stdout);
+  }
+
+  // ------------------------------------------------------------- writing
+
+  /**
+   * Run something that CHANGES the repository.
+   *
+   * Refuses first, with the same string the disabled button showed — the check
+   * and the tooltip are literally the same function, so they cannot drift. Then
+   * holds the repository for the duration, drops the cached status, and reads a
+   * fresh one AFTER the lock is released (reading inside it would wait on
+   * itself). The caller gets that status back, so the UI never has to ask twice
+   * and can never draw a stale one.
+   */
+  private async mutate<T>(
+    repo: ResolvedRepo,
+    op: GitOp,
+    fn: (status: GitStatus) => Promise<T>,
+  ): Promise<{ result: T; status: GitStatus }> {
+    const before = await this.status(repo);
+    const blocked = this.blockedFor(repo, op, before);
+    if (blocked) {
+      log.warn(`${op} refused in ${repo.name} — ${blocked}`);
+      throw new GitBlocked(blocked);
+    }
+    let result: T;
+    // Set BEFORE the command runs, not only after: git touches the gitdir while
+    // it works, so the watcher's first event arrives long before this returns.
+    this.quietUntil.set(repo.key, Date.now() + WATCH_QUIET_MS);
+    try {
+      result = await this.withRepoLock(repo.key, op, () => fn(before));
+    } finally {
+      // And extended past the end of it, because that is when the last write
+      // lands. Ignoring our own echo is what stops every commit provoking a
+      // refetch of the change it just made.
+      this.quietUntil.set(repo.key, Date.now() + WATCH_QUIET_MS);
+      this.invalidate(repo.key);
+    }
+    const status = await this.status(repo);
+    return { result, status };
+  }
+
+  /** A mutating command that must succeed. */
+  private async write(repo: ResolvedRepo, op: GitOp, args: string[], stdin?: string): Promise<GitRunResult> {
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      mutation: true,
+      label: op,
+      args,
+      stdin,
+    });
+    if (!res.ok) throw new GitFailed(res);
+    return res;
+  }
+
+  /**
+   * A mutating command where a non-zero exit can be the ANSWER rather than a
+   * failure: a merge that conflicts did exactly what it was asked to, and the
+   * repository is now in a state the UI has to show rather than an error it has
+   * to report.
+   */
+  private async writeAllowingConflict(
+    repo: ResolvedRepo,
+    op: GitOp,
+    args: string[],
+    env?: NodeJS.ProcessEnv,
+  ): Promise<{ conflicted: boolean; message: string }> {
+    const res = await runGit({ cwd: repo.path, repoKey: repo.key, mutation: true, label: op, args, env });
+    const output = `${res.stdout}\n${res.stderr}`;
+    if (res.ok) return { conflicted: false, message: res.stdout.trim() || res.stderr.trim() };
+    if (/CONFLICT|Automatic merge failed|could not apply|error: could not apply/i.test(output)) {
+      return { conflicted: true, message: output.trim().slice(0, 2_000) };
+    }
+    throw new GitFailed(res);
+  }
+
+  /**
+   * Paths must appear in the status we just read. Anything else is refused
+   * rather than passed on: it is the only way a path can reach git at all, and
+   * it means a stale page cannot act on a file that has since changed.
+   */
+  private validPaths(status: GitStatus, raw: unknown): string[] {
+    if (!Array.isArray(raw) || raw.length === 0) throw new GitBadInput('No files were given.');
+    if (raw.length > GIT_STATUS_MAX_ENTRIES) throw new GitBadInput('That is too many files for one call.');
+    const known = new Set(status.entries.map((e) => e.path));
+    const out: string[] = [];
+    for (const path of raw) {
+      if (typeof path !== 'string' || !known.has(path)) {
+        throw new GitBadInput('Some of those files are not in the current status — reload and try again.');
+      }
+      out.push(path);
+    }
+    return out;
+  }
+
+  /** NUL-joined for `--pathspec-from-file=- --pathspec-file-nul`: no argv limit, no quoting. */
+  private static pathspecStdin(paths: string[]): string {
+    return `${paths.join('\0')}\0`;
+  }
+
+  /** A ref that must already exist. Checked against the repository, not just its shape. */
+  private async assertRef(repo: ResolvedRepo, ref: string): Promise<string> {
+    if (!isValidRefName(ref)) throw new GitBadInput('That is not a valid ref name.');
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      label: 'verify-ref',
+      args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`, '--'],
+    });
+    if (!res.ok) throw new GitBadInput(`There is no ref called ${ref}.`);
+    return ref;
+  }
+
+  /** A name for a branch that does not exist yet. git's own grammar is the authority. */
+  private async assertNewBranchName(repo: ResolvedRepo, name: string): Promise<string> {
+    if (!isValidRefName(name)) throw new GitBadInput('That is not a valid branch name.');
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      label: 'check-ref-format',
+      args: ['check-ref-format', '--branch', name],
+    });
+    if (!res.ok) throw new GitBadInput(`git will not accept "${name}" as a branch name.`);
+    return name;
+  }
+
+  private static requireConfirm(confirm: unknown, what: string): void {
+    if (confirm !== true) throw new GitBadInput(`${what} cannot be undone — confirm it to go ahead.`);
+  }
+
+  async stage(repo: ResolvedRepo, paths: unknown): Promise<{ status: GitStatus }> {
+    const { status } = await this.mutate(repo, 'stage', async (before) => {
+      const list = this.validPaths(before, paths);
+      await this.write(
+        repo,
+        'stage',
+        ['add', '--pathspec-from-file=-', '--pathspec-file-nul', '--'],
+        GitService.pathspecStdin(list),
+      );
+    });
+    return { status };
+  }
+
+  async unstage(repo: ResolvedRepo, paths: unknown): Promise<{ status: GitStatus }> {
+    const { status } = await this.mutate(repo, 'unstage', async (before) => {
+      const list = this.validPaths(before, paths);
+      await this.write(
+        repo,
+        'unstage',
+        ['restore', '--staged', '--pathspec-from-file=-', '--pathspec-file-nul', '--'],
+        GitService.pathspecStdin(list),
+      );
+    });
+    return { status };
+  }
+
+  /**
+   * Put files back the way HEAD has them, index and working tree both.
+   *
+   * Tracked and untracked files need different commands, and untracked ones are
+   * the dangerous half: `git clean` deletes, and there is nothing to undo it
+   * with. It is also the one command here that will NOT take a pathspec on
+   * stdin, so its paths go in argv, in batches — deleting untracked files is a
+   * handful at a time in practice, and a command line has a length limit.
+   */
+  async discard(repo: ResolvedRepo, paths: unknown, confirm: unknown): Promise<{ status: GitStatus }> {
+    GitService.requireConfirm(confirm, 'Discarding changes');
+    const { status } = await this.mutate(repo, 'discard', async (before) => {
+      const list = this.validPaths(before, paths);
+      const byPath = new Map(before.entries.map((e) => [e.path, e]));
+      const untracked = list.filter((p) => byPath.get(p)?.unstaged === 'untracked');
+      const tracked = list.filter((p) => byPath.get(p)?.unstaged !== 'untracked');
+
+      if (tracked.length > 0) {
+        await this.write(
+          repo,
+          'discard',
+          ['restore', '--source=HEAD', '--staged', '--worktree', '--pathspec-from-file=-', '--pathspec-file-nul', '--'],
+          GitService.pathspecStdin(tracked),
+        );
+      }
+      for (let i = 0; i < untracked.length; i += CLEAN_BATCH) {
+        // -d because an untracked DIRECTORY is one status entry, and that entry
+        // is what the user chose.
+        await this.write(repo, 'discard', ['clean', '-f', '-d', '--', ...untracked.slice(i, i + CLEAN_BATCH)]);
+      }
+    });
+    return { status };
+  }
+
+  async createCommit(
+    repo: ResolvedRepo,
+    body: { message?: unknown; amend?: unknown; noVerify?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+    if (!message) throw new GitBadInput('The commit message is empty.');
+    if (message.length > GIT_MESSAGE_MAX) throw new GitBadInput('That commit message is far too long.');
+    const amend = body.amend === true;
+
+    const { result, status } = await this.mutate(repo, amend ? 'amend' : 'commit', async (before) => {
+      // Amending something already pushed rewrites published history; it is
+      // allowed, but not by accident.
+      if (amend && before.upstream && before.ahead === 0) {
+        GitService.requireConfirm(body.confirm, 'Amending a commit that is already on the remote');
+      }
+      const args = ['commit', '-F', '-', '--cleanup=whitespace'];
+      if (amend) args.push('--amend');
+      // Never on by default: a hook that fails is telling you something, and
+      // when it IS skipped the panel shows the flag that skipped it.
+      if (body.noVerify === true) args.push('--no-verify');
+      const res = await this.write(repo, amend ? 'amend' : 'commit', args, message);
+      return res.stdout.trim();
+    });
+    return { status, message: result };
+  }
+
+  async checkout(
+    repo: ResolvedRepo,
+    body: { ref?: unknown; create?: unknown; from?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const ref = typeof body.ref === 'string' ? body.ref : '';
+    const create = body.create === true;
+
+    const { result, status } = await this.mutate(repo, 'checkout', async () => {
+      const args = ['checkout'];
+      if (create) {
+        args.push('-b', await this.assertNewBranchName(repo, ref));
+        if (typeof body.from === 'string' && body.from) args.push(await this.assertRef(repo, body.from));
+      } else {
+        args.push(await this.assertRef(repo, ref));
+      }
+      args.push('--');
+      const res = await this.write(repo, 'checkout', args);
+      return (res.stderr.trim() || res.stdout.trim()).slice(0, 500);
+    });
+    return { status, message: result };
+  }
+
+  async branchCreate(
+    repo: ResolvedRepo,
+    body: { name?: unknown; from?: unknown; checkout?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    if (body.checkout === true) {
+      return this.checkout(repo, { ref: body.name, create: true, from: body.from });
+    }
+    const name = typeof body.name === 'string' ? body.name : '';
+    const { status } = await this.mutate(repo, 'branchCreate', async () => {
+      const args = ['branch', '--', await this.assertNewBranchName(repo, name)];
+      if (typeof body.from === 'string' && body.from) args.push(await this.assertRef(repo, body.from));
+      await this.write(repo, 'branchCreate', args);
+    });
+    return { status, message: `Created ${name}.` };
+  }
+
+  async branchDelete(
+    repo: ResolvedRepo,
+    body: { name?: unknown; force?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const name = typeof body.name === 'string' ? body.name : '';
+    const force = body.force === true;
+    // `-d` refuses an unmerged branch on its own, so only `-D` throws work away.
+    if (force) GitService.requireConfirm(body.confirm, 'Deleting a branch that is not merged');
+
+    const { result, status } = await this.mutate(repo, 'branchDelete', async (before) => {
+      if (name === before.branch) throw new GitBadInput('That is the branch you are on — check out another first.');
+      await this.assertRef(repo, name);
+      const res = await this.write(repo, 'branchDelete', ['branch', force ? '-D' : '-d', '--', name]);
+      return res.stdout.trim();
+    });
+    return { status, message: result };
+  }
+
+  async branchRename(
+    repo: ResolvedRepo,
+    body: { from?: unknown; to?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const from = typeof body.from === 'string' ? body.from : '';
+    const to = typeof body.to === 'string' ? body.to : '';
+    const { status } = await this.mutate(repo, 'branchRename', async () => {
+      await this.assertRef(repo, from);
+      await this.write(repo, 'branchRename', ['branch', '-m', '--', from, await this.assertNewBranchName(repo, to)]);
+    });
+    return { status, message: `Renamed ${from} to ${to}.` };
+  }
+
+  async merge(
+    repo: ResolvedRepo,
+    body: { ref?: unknown; noFf?: unknown; squash?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const ref = typeof body.ref === 'string' ? body.ref : '';
+    const { result, status } = await this.mutate(repo, 'merge', async () => {
+      const target = await this.assertRef(repo, ref);
+      const args = ['merge', '--no-edit'];
+      if (body.noFf === true) args.push('--no-ff');
+      if (body.squash === true) args.push('--squash');
+      args.push('--', target);
+      return this.writeAllowingConflict(repo, 'merge', args);
+    });
+    return {
+      status,
+      message: result.conflicted
+        ? `The merge stopped on conflicts. Resolve them, stage the files, then continue.\n${result.message}`
+        : result.message,
+    };
+  }
+
+  async reset(
+    repo: ResolvedRepo,
+    body: { sha?: unknown; mode?: unknown; confirm?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const sha = typeof body.sha === 'string' ? body.sha : '';
+    const mode = body.mode === 'soft' || body.mode === 'hard' ? body.mode : 'mixed';
+    // Only --hard destroys work; soft and mixed leave every change on disk.
+    if (mode === 'hard') GitService.requireConfirm(body.confirm, 'A hard reset');
+
+    const { result, status } = await this.mutate(repo, 'reset', async () => {
+      if (!isValidSha(sha)) throw new GitBadInput('That is not a commit id.');
+      const verify = await runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        label: 'verify-sha',
+        args: ['rev-parse', '--verify', '--quiet', `${sha}^{commit}`, '--'],
+      });
+      if (!verify.ok) throw new GitBadInput('There is no commit with that id here.');
+      const res = await this.write(repo, 'reset', ['reset', `--${mode}`, sha]);
+      return (res.stdout.trim() || res.stderr.trim()).slice(0, 500);
+    });
+    return { status, message: result };
+  }
+
+  /**
+   * Continue, abort or skip whatever is in progress.
+   *
+   * The trap here is `core.editor=false` in BASE_FLAGS: `false` exits non-zero,
+   * so a `--continue` that wants to open an editor fails with something nobody
+   * can act on. Continuations put a working editor back — `true` accepts
+   * whatever message is already there, which is what --no-edit would do anyway.
+   */
+  async continuation(repo: ResolvedRepo, action: 'continue' | 'abort' | 'skip'): Promise<{ status: GitStatus; message: string }> {
+    const op: GitOp = action;
+    const { result, status } = await this.mutate(repo, op, async (before) => {
+      const kind = before.inProgress?.kind;
+      if (!kind) throw new GitBadInput('Nothing is in progress.');
+      const command =
+        kind === 'merge'
+          ? 'merge'
+          : kind === 'cherry-pick'
+            ? 'cherry-pick'
+            : kind === 'revert'
+              ? 'revert'
+              : kind === 'am'
+                ? 'am'
+                : kind === 'bisect'
+                  ? 'bisect'
+                  : 'rebase';
+      if (command === 'merge' && action !== 'abort') {
+        throw new GitBadInput('A merge is finished by committing it, not by continuing.');
+      }
+      return this.writeAllowingConflict(
+        repo,
+        op,
+        ['-c', 'core.editor=true', command, `--${action}`],
+        { GIT_EDITOR: 'true' },
+      );
+    });
+    return {
+      status,
+      message: result.conflicted
+        ? `It stopped again on conflicts. Resolve them, stage the files, then continue.\n${result.message}`
+        : result.message,
+    };
   }
 
   // ------------------------------------------------------------- shared checks

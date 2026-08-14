@@ -19,6 +19,13 @@ export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): voi
         error: 'Claude is answering a prompt sent from the app — updating would cut it off. Wait for it to finish.',
       });
     }
+    // An update replaces this server outright; a rebase halfway through it would
+    // simply stop, with nobody left to finish it.
+    if (ctx.git.busy) {
+      return reply.code(409).send({
+        error: `There is ${ctx.git.busyDescription} — updating would cut it off. Wait for it to finish.`,
+      });
+    }
     try {
       const started = ctx.updates.apply(ctx.config.port, request.body?.version);
       return { ok: true, ...started };

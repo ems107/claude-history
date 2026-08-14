@@ -121,6 +121,12 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn('uninstall refused: a prompt is being answered');
       return reply.code(409).send({ error: 'Claude is answering a prompt sent from the app. Wait for it to finish.' });
     }
+    // Going away mid-rebase would leave a repository in a state nothing in this
+    // app put it in, and nothing here could finish for you.
+    if (ctx.git.busy) {
+      log.warn(`uninstall refused: ${ctx.git.busyDescription}`);
+      return reply.code(409).send({ error: `There is ${ctx.git.busyDescription} right now. Wait for it to finish.` });
+    }
     const script = path.join(install.versionDir, 'uninstall.ps1');
     if (!fs.existsSync(script)) {
       return reply.code(500).send({ error: `uninstall.ps1 not found in ${install.versionDir}` });
@@ -163,6 +169,12 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn('stop refused: a prompt is being answered');
       return reply.code(409).send({
         error: 'Claude is answering a prompt sent from the app — stopping the server would cut it off. Wait for it to finish.',
+      });
+    }
+    if (ctx.git.busy) {
+      log.warn(`stop refused: ${ctx.git.busyDescription}`);
+      return reply.code(409).send({
+        error: `There is ${ctx.git.busyDescription} — stopping the server now would leave it half done. Wait for it to finish.`,
       });
     }
     void reply.send({ ok: true });

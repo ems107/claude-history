@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import { cleanEnv, findGitExe, forgetGitExe } from './launcher.ts';
 
 /**
@@ -123,6 +124,13 @@ export interface GitRunOptions {
   mutation?: boolean;
   repoKey?: string | null;
   label?: string;
+  /**
+   * A non-zero exit is an ordinary answer here, not something worth a warning
+   * in the daily log — `remote get-url origin` on a repository with no remote
+   * is the case this exists for. The command panel still shows it in full: the
+   * panel's promise is completeness, the log's is signal.
+   */
+  expectFailure?: boolean;
 }
 
 export interface GitRunResult {
@@ -179,6 +187,13 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
   const exe = findGitExe();
   if (!exe) {
     return Promise.reject(new GitSpawnError('Git could not be found on this machine.'));
+  }
+  // A missing `cwd` makes Node report ENOENT for the EXECUTABLE, which is a lie
+  // with consequences: taken at face value it condemns a perfectly good git.exe
+  // and tells the user git is broken when what actually happened is that a
+  // repository folder was deleted or renamed while the app had it open.
+  if (!fs.existsSync(opts.cwd)) {
+    return Promise.reject(new GitSpawnError(`That folder no longer exists: ${opts.cwd}`));
   }
 
   const argv = [...BASE_FLAGS, ...(opts.readOnly ? READ_ONLY_FLAGS : []), ...opts.args];
@@ -249,7 +264,9 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
       if (settled) return;
       settled = true;
       cleanup();
-      // A path that resolved and then would not spawn must not stay cached.
+      // Only now is the executable genuinely suspect — the cwd was checked
+      // above. A path that resolved and then would not spawn must not stay
+      // cached.
       forgetGitExe();
       reject(new GitSpawnError(`git could not be started: ${error.message}`));
     });

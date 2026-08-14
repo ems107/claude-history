@@ -1,7 +1,27 @@
-import { GIT_LOG_PAGE, type GitAddRepoRequest, type GitOpenRequest, type GitOverview } from '@claude-history/shared';
+import {
+  GIT_LOG_PAGE,
+  type GitAddRepoRequest,
+  type GitBranchCreateRequest,
+  type GitBranchDeleteRequest,
+  type GitBranchRenameRequest,
+  type GitCheckoutRequest,
+  type GitCommitRequest,
+  type GitMergeRequest,
+  type GitOpenRequest,
+  type GitOverview,
+  type GitPathsRequest,
+  type GitResetRequest,
+  type GitStatus,
+} from '@claude-history/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { AppContext } from '../context.ts';
+import type { ResolvedRepo } from '../core/gitRepos.ts';
 import { GitBadInput, GitBlocked, GitFailed } from '../core/gitService.ts';
+
+interface GitMutationResult {
+  status: GitStatus;
+  message?: string;
+}
 import { createLogger } from '../core/logger.ts';
 import { GIT_AUTH_HINT, GitSpawnError, gitErrorLine, isAuthFailure, isNonFastForward } from '../util/git.ts';
 import { launchShell, openInExplorer, openInVsCode } from '../util/launcher.ts';
@@ -177,7 +197,7 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     const repo = repoOf(request.params.id, reply);
     if (!repo) return reply;
     try {
-      return await ctx.git.commit(repo, request.params.sha, abortSignalOf(reply));
+      return await ctx.git.commitDetail(repo, request.params.sha, abortSignalOf(reply));
     } catch (err) {
       return sendGitError(reply, err);
     }
@@ -250,6 +270,52 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
       return sendGitError(reply, err);
     }
   });
+
+  // ---------------------------------------------------------------- writing
+
+  /**
+   * Every one of these is a POST, and not for style: the same-origin hook in
+   * app.ts exempts GET/HEAD/OPTIONS, so a mutating GET would have no CSRF
+   * protection at all — and these rewrite people's repositories.
+   *
+   * They all answer `{ok: true, status, message?}` with the freshly re-read
+   * status, so the page cannot draw a stale one and needs no second request.
+   */
+  const mutation = <B>(path: string, run: (repo: ResolvedRepo, body: B) => Promise<GitMutationResult>) => {
+    app.post<{ Params: { id: string }; Body: B }>(path, async (request, reply) => {
+      const repo = repoOf(request.params.id, reply);
+      if (!repo) return reply;
+      try {
+        const { status, message } = await run(repo, (request.body ?? {}) as B);
+        return { ok: true as const, status, ...(message ? { message } : {}) };
+      } catch (err) {
+        return sendGitError(reply, err);
+      }
+    });
+  };
+
+  mutation<GitPathsRequest>('/api/git/repos/:id/stage', (repo, body) => ctx.git.stage(repo, body.paths));
+  mutation<GitPathsRequest>('/api/git/repos/:id/unstage', (repo, body) => ctx.git.unstage(repo, body.paths));
+  mutation<GitPathsRequest>('/api/git/repos/:id/discard', (repo, body) =>
+    ctx.git.discard(repo, body.paths, body.confirm),
+  );
+  mutation<GitCommitRequest>('/api/git/repos/:id/commit', (repo, body) => ctx.git.createCommit(repo, body));
+  mutation<GitCheckoutRequest>('/api/git/repos/:id/checkout', (repo, body) => ctx.git.checkout(repo, body));
+  mutation<GitBranchCreateRequest>('/api/git/repos/:id/branch/create', (repo, body) =>
+    ctx.git.branchCreate(repo, body),
+  );
+  mutation<GitBranchDeleteRequest>('/api/git/repos/:id/branch/delete', (repo, body) =>
+    ctx.git.branchDelete(repo, body),
+  );
+  mutation<GitBranchRenameRequest>('/api/git/repos/:id/branch/rename', (repo, body) =>
+    ctx.git.branchRename(repo, body),
+  );
+  mutation<GitMergeRequest>('/api/git/repos/:id/merge', (repo, body) => ctx.git.merge(repo, body));
+  mutation<GitResetRequest>('/api/git/repos/:id/reset', (repo, body) => ctx.git.reset(repo, body));
+
+  for (const action of ['continue', 'abort', 'skip'] as const) {
+    mutation<Record<string, never>>(`/api/git/repos/:id/${action}`, (repo) => ctx.git.continuation(repo, action));
+  }
 
   // ---------------------------------------------------------------- command panel
 
