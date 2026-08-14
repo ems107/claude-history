@@ -5,6 +5,7 @@ import { GitBadInput, GitBlocked, GitFailed } from '../core/gitService.ts';
 import { createLogger } from '../core/logger.ts';
 import { GIT_AUTH_HINT, GitSpawnError, gitErrorLine, isAuthFailure, isNonFastForward } from '../util/git.ts';
 import { launchShell, openInExplorer, openInVsCode } from '../util/launcher.ts';
+import { abortSignalOf } from '../util/replyAbort.ts';
 
 const log = createLogger('git');
 
@@ -110,6 +111,81 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
       return { ok: true };
     } catch (err) {
       return reply.code(500).send({ error: `Could not open ${target}: ${String(err)}` });
+    }
+  });
+
+  // ---------------------------------------------------------------- reading
+
+  /**
+   * Resolve `:id` to a repository, or answer 404. This is the ONLY way a path
+   * is ever obtained: nothing downstream reads one from the request.
+   */
+  const repoOf = (id: string, reply: FastifyReply) => {
+    const repo = ctx.git.repo(id);
+    if (!repo) {
+      void reply.code(404).send({ error: 'Repository not found' });
+      return null;
+    }
+    return repo;
+  };
+
+  app.get<{ Params: { id: string } }>('/api/git/repos/:id/status', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    try {
+      return await ctx.git.status(repo, abortSignalOf(reply));
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/git/repos/:id/branches', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    try {
+      return await ctx.git.branches(repo, abortSignalOf(reply));
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/git/repos/:id/stashes', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    try {
+      return await ctx.git.stashes(repo, abortSignalOf(reply));
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/git/repos/:id/tags', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    try {
+      return await ctx.git.tags(repo, abortSignalOf(reply));
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/git/repos/:id/remotes', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    try {
+      return await ctx.git.remotes(repo, abortSignalOf(reply));
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/git/repos/:id/worktrees', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    try {
+      return await ctx.git.worktrees(repo, abortSignalOf(reply));
+    } catch (err) {
+      return sendGitError(reply, err);
     }
   });
 

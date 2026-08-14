@@ -1,13 +1,23 @@
 import {
+  GIT_STATUS_MAX_ENTRIES,
+  type GitBranchesResponse,
   type GitCommandLogEntry,
   type GitCommandLogResponse,
+  type GitInProgress,
+  type GitInProgressKind,
   type GitOp,
   type GitOverview,
+  type GitRemote,
   type GitRepo,
   type GitRepoRoot,
+  type GitStash,
+  type GitStatus,
+  type GitTag,
+  type GitWorktree,
 } from '@claude-history/shared';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
+import path from 'node:path';
 import {
   redact,
   runGit,
@@ -16,6 +26,19 @@ import {
   type GitRunResult,
 } from '../util/git.ts';
 import { findGitExe } from '../util/launcher.ts';
+import {
+  BRANCH_FORMAT,
+  REMOTE_BRANCH_FORMAT,
+  STASH_FORMAT,
+  TAG_FORMAT,
+  parseLocalBranches,
+  parseRemoteBranches,
+  parseRemotes,
+  parseStashList,
+  parseStatusV2,
+  parseTags,
+  parseWorktreeList,
+} from './gitParse.ts';
 import {
   checkPath,
   discoverRepos,
@@ -81,6 +104,66 @@ export const MUTATING_OPS = new Set<GitOp>([
   'abort',
   'skip',
 ]);
+
+/** Finishing what the repository is already in the middle of. */
+const CONTINUATION_OPS = new Set<GitOp>(['continue', 'abort', 'skip']);
+
+/**
+ * What has to wait for a merge/rebase/cherry-pick to end. Staging, discarding
+ * and committing are deliberately absent: staging is how a conflict gets
+ * resolved, and a commit is how a merge is concluded.
+ */
+const BLOCKED_WHILE_IN_PROGRESS = new Set<GitOp>([
+  'checkout',
+  'merge',
+  'rebase',
+  'cherryPick',
+  'revert',
+  'reset',
+  'pull',
+  'push',
+  'pushUpstream',
+  'pushDelete',
+  'pushForce',
+  'branchCreate',
+  'branchDelete',
+  'branchRename',
+  'stash',
+  'stashApply',
+  'stashPop',
+  'worktreeAdd',
+  'worktreeRemove',
+]);
+
+/** The operations whose reason travels with every status, for the controls that show them. */
+const REPORTED_OPS: GitOp[] = [
+  'stage',
+  'unstage',
+  'discard',
+  'commit',
+  'amend',
+  'checkout',
+  'branchCreate',
+  'branchDelete',
+  'fetch',
+  'pull',
+  'push',
+  'pushUpstream',
+  'pushDelete',
+  'merge',
+  'rebase',
+  'cherryPick',
+  'revert',
+  'reset',
+  'stash',
+  'stashApply',
+  'stashPop',
+  'stashDrop',
+  'tagCreate',
+  'continue',
+  'abort',
+  'skip',
+];
 
 const OP_LABELS: Partial<Record<GitOp, string>> = {
   read: 'read',
@@ -404,6 +487,258 @@ export class GitService {
     return null;
   }
 
+  // ------------------------------------------------------------- reading state
+
+  private statusCache = new Map<string, GitStatus>();
+
+  /**
+   * The working tree, the branch and what is blocked.
+   *
+   * A read arriving while the repository is held by a MUTATION does not queue
+   * behind it — a two-minute fetch would freeze the page — it answers with the
+   * last figures it had, marked `stale`. That is the usage service's rule
+   * ("a failed read never discards the last good figures") applied to a lock
+   * instead of to a failure. With nothing cached there is no choice but to
+   * wait, which is at least honest.
+   */
+  async status(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitStatus> {
+    const held = this.lockOn(repo.key);
+    if (held && MUTATING_OPS.has(held)) {
+      const cached = this.statusCache.get(repo.key);
+      if (cached) return { ...cached, stale: true };
+    }
+    return this.withRepoLock(repo.key, 'read', async () => {
+      const status = await this.readStatus(repo, signal);
+      this.statusCache.set(repo.key, status);
+      return status;
+    });
+  }
+
+  /** Drop the cached figures for a repository — after a mutation, or a change on disk. */
+  invalidate(repoKey: string): void {
+    this.statusCache.delete(repoKey);
+  }
+
+  private async readStatus(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitStatus> {
+    const [statusRes, subjectRes, stashRes] = await Promise.all([
+      runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: 'status',
+        // `normal` collapses an untracked directory into one entry. `all` on a
+        // repository with an untracked node_modules is seconds and tens of
+        // thousands of rows, so it stays an explicit choice nobody makes here.
+        args: ['status', '--porcelain=v2', '--branch', '--untracked-files=normal', '-z'],
+      }),
+      runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: 'head-subject',
+        args: ['log', '-1', '--format=%s'],
+      }),
+      runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: 'stash-count',
+        args: ['stash', 'list', '--format=%gd'],
+      }),
+    ]);
+
+    if (!statusRes.ok) throw new GitFailed(statusRes);
+    const parsed = parseStatusV2(statusRes.stdout);
+    const truncated = parsed.entries.length > GIT_STATUS_MAX_ENTRIES;
+    const entries = truncated ? parsed.entries.slice(0, GIT_STATUS_MAX_ENTRIES) : parsed.entries;
+
+    const status: GitStatus = {
+      repoId: repo.id,
+      branch: parsed.branch,
+      detachedAt: parsed.detachedAt,
+      upstream: parsed.upstream,
+      ahead: parsed.ahead,
+      behind: parsed.behind,
+      headSha: parsed.headSha,
+      // A repository with no commits at all answers non-zero here; that is not
+      // an error, it just has no subject yet.
+      headSubject: subjectRes.ok ? subjectRes.stdout.trim() || null : null,
+      entries,
+      truncated,
+      inProgress: this.readInProgress(repo),
+      stashCount: stashRes.ok ? stashRes.stdout.split('\n').filter((l) => l.trim()).length : 0,
+      blocked: {},
+      readAt: localIso(),
+      stale: false,
+    };
+    status.blocked = this.blockedMap(repo, status);
+    // The branch may have moved since discovery; the picker shows it.
+    repo.currentBranch = parsed.branch;
+    return status;
+  }
+
+  /**
+   * What the repository is in the middle of, read from the gitdir rather than
+   * from git's English. `--absolute-git-dir` already answered with the right
+   * directory for a linked worktree, so these are plain file reads.
+   */
+  private readInProgress(repo: ResolvedRepo): GitInProgress | null {
+    const at = (...parts: string[]): string => path.join(repo.gitDir, ...parts);
+    const read = (...parts: string[]): string | null => {
+      try {
+        return fs.readFileSync(at(...parts), 'utf8').trim();
+      } catch {
+        return null;
+      }
+    };
+    const exists = (...parts: string[]): boolean => fs.existsSync(at(...parts));
+    const num = (value: string | null): number | null => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    const make = (kind: GitInProgressKind, extra: Partial<GitInProgress> = {}): GitInProgress => ({
+      kind,
+      step: null,
+      total: null,
+      headName: null,
+      ontoSha: null,
+      canContinue: true,
+      canAbort: true,
+      canSkip: false,
+      ...extra,
+    });
+
+    if (exists('rebase-merge')) {
+      return make(exists('rebase-merge', 'interactive') ? 'rebase-interactive' : 'rebase', {
+        step: num(read('rebase-merge', 'msgnum')),
+        total: num(read('rebase-merge', 'end')),
+        headName: read('rebase-merge', 'head-name')?.replace(/^refs\/heads\//, '') ?? null,
+        ontoSha: read('rebase-merge', 'onto'),
+        canSkip: true,
+      });
+    }
+    if (exists('rebase-apply')) {
+      // The same directory serves `git am`; only `applying` tells them apart.
+      const isAm = exists('rebase-apply', 'applying');
+      return make(isAm ? 'am' : 'rebase', {
+        step: num(read('rebase-apply', 'next')),
+        total: num(read('rebase-apply', 'last')),
+        headName: read('rebase-apply', 'head-name')?.replace(/^refs\/heads\//, '') ?? null,
+        ontoSha: read('rebase-apply', 'onto'),
+        canSkip: true,
+      });
+    }
+    if (exists('MERGE_HEAD')) return make('merge');
+    if (exists('CHERRY_PICK_HEAD')) return make('cherry-pick', { canSkip: true });
+    if (exists('REVERT_HEAD')) return make('revert');
+    if (exists('BISECT_LOG')) return make('bisect', { canContinue: false });
+    return null;
+  }
+
+  async branches(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitBranchesResponse> {
+    return this.withRepoLock(repo.key, 'read', async () => {
+      const [localRes, remoteRes, worktreeRes] = await Promise.all([
+        runGit({
+          cwd: repo.path,
+          repoKey: repo.key,
+          readOnly: true,
+          signal,
+          label: 'branches',
+          args: ['for-each-ref', `--format=${BRANCH_FORMAT}`, 'refs/heads'],
+        }),
+        runGit({
+          cwd: repo.path,
+          repoKey: repo.key,
+          readOnly: true,
+          signal,
+          label: 'remote-branches',
+          args: ['for-each-ref', `--format=${REMOTE_BRANCH_FORMAT}`, 'refs/remotes'],
+        }),
+        runGit({
+          cwd: repo.path,
+          repoKey: repo.key,
+          readOnly: true,
+          signal,
+          label: 'worktrees',
+          args: ['worktree', 'list', '--porcelain'],
+        }),
+      ]);
+      if (!localRes.ok) throw new GitFailed(localRes);
+
+      // A branch checked out in a linked worktree cannot be checked out here,
+      // and saying so beforehand beats git's error after the click.
+      const worktreeBranches = new Map<string, string>();
+      if (worktreeRes.ok) {
+        for (const wt of parseWorktreeList(worktreeRes.stdout)) {
+          if (wt.branch && path.normalize(wt.path).toLowerCase() !== repo.path.toLowerCase()) {
+            worktreeBranches.set(wt.branch, wt.path);
+          }
+        }
+      }
+
+      const local = parseLocalBranches(localRes.stdout, worktreeBranches);
+      const localNames = new Set(local.map((b) => b.name));
+      const remote = remoteRes.ok ? parseRemoteBranches(remoteRes.stdout, localNames) : [];
+      const current = local.find((b) => b.current) ?? null;
+      return { current: current?.name ?? null, detached: !current, local, remote };
+    });
+  }
+
+  async stashes(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitStash[]> {
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'stashes',
+      args: ['stash', 'list', `--format=${STASH_FORMAT}`],
+    });
+    return res.ok ? parseStashList(res.stdout) : [];
+  }
+
+  async tags(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitTag[]> {
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'tags',
+      args: ['for-each-ref', `--format=${TAG_FORMAT}`, '--sort=-creatordate', 'refs/tags'],
+    });
+    if (!res.ok) throw new GitFailed(res);
+    return parseTags(res.stdout);
+  }
+
+  async remotes(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitRemote[]> {
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'remotes',
+      args: ['remote', '-v'],
+    });
+    if (!res.ok) throw new GitFailed(res);
+    return parseRemotes(res.stdout);
+  }
+
+  async worktrees(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitWorktree[]> {
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'worktrees',
+      args: ['worktree', 'list', '--porcelain'],
+    });
+    if (!res.ok) throw new GitFailed(res);
+    return parseWorktreeList(res.stdout);
+  }
+
   // ------------------------------------------------------------- shared checks
 
   /**
@@ -419,6 +754,112 @@ export class GitService {
       return `A ${opLabel(held)} is running in this repository right now.`;
     }
     return null;
+  }
+
+  /**
+   * Why `op` cannot run, given this status — or null.
+   *
+   * Deliberately NOT stricter than git. Blocking a checkout because some
+   * unrelated file is modified would refuse an everyday, safe operation, and
+   * when git does refuse it names the exact files, which is an answer we could
+   * not produce. So the pre-checks here are only the rules git states outright:
+   * a rebase with unstaged changes, a pull with no upstream, a commit with
+   * nothing staged. Everything else is allowed to run and its refusal is
+   * reported in git's own words.
+   */
+  blockedFor(repo: ResolvedRepo, op: GitOp, st: GitStatus): string | null {
+    const base = this.baseBlockedReason(repo, op);
+    if (base) return base;
+
+    const conflicted = st.entries.filter((e) => e.conflicted).length;
+    const staged = st.entries.filter((e) => e.staged && !e.conflicted).length;
+    const dirty = st.entries.some((e) => !e.conflicted && (e.staged || e.unstaged === 'modified' || e.unstaged === 'deleted'));
+
+    if (CONTINUATION_OPS.has(op)) {
+      if (!st.inProgress) return 'Nothing is in progress.';
+      if (op === 'continue') {
+        if (!st.inProgress.canContinue) return `A ${st.inProgress.kind} is not continued that way.`;
+        if (conflicted > 0) {
+          return conflicted === 1
+            ? '1 file is still conflicted — resolve it, then stage it.'
+            : `${conflicted} files are still conflicted — resolve them, then stage them.`;
+        }
+      }
+      if (op === 'skip' && !st.inProgress.canSkip) return `A ${st.inProgress.kind} has nothing to skip.`;
+      return null;
+    }
+
+    // What must wait for the operation in flight to end. Staging and committing
+    // are NOT on the list: staging is how a conflict is resolved, and a commit
+    // is how a merge is concluded.
+    if (st.inProgress && BLOCKED_WHILE_IN_PROGRESS.has(op)) {
+      return `A ${st.inProgress.kind} is in progress — finish it or abort it first.`;
+    }
+
+    switch (op) {
+      case 'commit':
+        if (conflicted > 0) {
+          return conflicted === 1
+            ? '1 file is still conflicted — resolve it, then stage it.'
+            : `${conflicted} files are still conflicted — resolve them, then stage them.`;
+        }
+        // Concluding a merge commits what git already staged, so an empty index
+        // is only a problem outside one.
+        if (staged === 0 && !st.inProgress) return 'Nothing is staged.';
+        return null;
+
+      case 'amend':
+        if (conflicted > 0) return 'Resolve the conflicts first.';
+        if (!st.headSha) return 'There is nothing to amend yet.';
+        return null;
+
+      case 'rebase':
+        // git refuses this one outright, so saying it first costs nothing.
+        if (dirty) return 'The working tree has changes — commit or stash them first.';
+        return null;
+
+      case 'pull':
+        if (!st.branch) return 'HEAD is detached — check out a branch first.';
+        if (!st.upstream) return 'This branch is not tracking anything yet.';
+        return null;
+
+      case 'push':
+      case 'pushForce':
+        if (!st.branch) return 'HEAD is detached — there is no branch to push.';
+        if (!st.upstream) return 'This branch has no upstream yet — use "Push and set upstream".';
+        return null;
+
+      case 'pushUpstream':
+        if (!st.branch) return 'HEAD is detached — there is no branch to push.';
+        return null;
+
+      case 'pushDelete':
+        if (!st.upstream) return 'This branch is not on a remote.';
+        return null;
+
+      case 'stashApply':
+      case 'stashPop':
+      case 'stashDrop':
+        if (st.stashCount === 0) return 'There are no stashes.';
+        return null;
+
+      case 'stash':
+        if (!dirty && !st.entries.some((e) => e.unstaged === 'untracked')) return 'There is nothing to stash.';
+        return null;
+
+      default:
+        return null;
+    }
+  }
+
+  /** Every blocked operation, for the status payload. Only the blocked ones appear. */
+  private blockedMap(repo: ResolvedRepo, st: GitStatus): Partial<Record<GitOp, string>> {
+    const out: Partial<Record<GitOp, string>> = {};
+    for (const op of REPORTED_OPS) {
+      const reason = this.blockedFor(repo, op, st);
+      if (reason) out[op] = reason;
+    }
+    return out;
   }
 }
 
