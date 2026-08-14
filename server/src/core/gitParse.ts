@@ -602,6 +602,110 @@ function stripPrefix(p: string): string {
 }
 
 /**
+ * Build a patch containing only the lines the user picked out of one hunk.
+ *
+ * git has no "stage these lines" command, so the only way to say it is to hand
+ * `git apply` a patch that describes exactly that — a patch git never wrote.
+ * Unselected removals become context (the line survives), unselected additions
+ * disappear, and the `@@` counts are recomputed for what is left.
+ *
+ * **The order is the whole difficulty, and getting it wrong corrupts the file
+ * silently.** git emits a replaced run as every `-` followed by every `+`, so
+ * walking the hunk in order and converting in place puts a surviving old line
+ * *before* the addition that should precede it. Measured on a real repository:
+ * selecting one line out of a three-line run produced a patch git accepted with
+ * exit 0 and an index reading `line 5, line 7, line 6 CHANGED` — two lines
+ * transposed, in a file nobody had asked to reorder.
+ *
+ * So the emission is driven by the OLD FILE, not by the hunk's line order: each
+ * removal is paired with the addition at the same position in its run, and each
+ * old line is dealt with where it actually sits. A selected pair becomes
+ * `-`/`+` together; an unselected removal stays as context in its own place.
+ * That also makes a non-contiguous selection come out right, which the naive
+ * version cannot do at all.
+ *
+ * `selected` holds indices into the hunk body as the diff endpoint numbers them.
+ * Returns null when nothing was selected.
+ */
+export function buildLineSelectionPatch(header: string, hunkRaw: string, selected: Set<number>): string | null {
+  const lines = hunkRaw.split('\n');
+  const at = lines[0];
+  const body = lines.slice(1);
+  // Only the LAST piece can be the split of the final newline. Anything else
+  // empty would be a line of the file, and dropping those would silently
+  // rewrite it — an empty context line is `" "`, but be careful all the same.
+  if (body.length > 0 && body[body.length - 1] === '') body.pop();
+  if (selected.size === 0) return null;
+  // Context lines are not changes. A selection of nothing but those would build
+  // a patch that changes nothing, which git rejects as corrupt — a confusing
+  // way to say "you picked lines that were never going to move".
+  const picksAChange = [...selected].some((i) => {
+    const line = body[i];
+    return line !== undefined && (line.startsWith('+') || line.startsWith('-'));
+  });
+  if (!picksAChange) return null;
+
+  const kind = (line: string): '+' | '-' | ' ' | '\\' =>
+    line.startsWith('+') ? '+' : line.startsWith('-') ? '-' : line.startsWith('\\') ? '\\' : ' ';
+
+  const out: string[] = [];
+  let i = 0;
+  while (i < body.length) {
+    const k = kind(body[i]);
+    if (k === ' ' || k === '\\') {
+      out.push(body[i]);
+      i++;
+      continue;
+    }
+
+    // One run of removals followed by its run of additions: git's way of
+    // writing "these old lines became those new ones".
+    const dels: { text: string; index: number }[] = [];
+    while (i < body.length && kind(body[i]) === '-') {
+      dels.push({ text: body[i], index: i });
+      i++;
+    }
+    const adds: { text: string; index: number }[] = [];
+    while (i < body.length && kind(body[i]) === '+') {
+      adds.push({ text: body[i], index: i });
+      i++;
+    }
+
+    // Walk the OLD lines. Each one is either dropped (its removal was picked,
+    // and the addition that replaces it goes in its place) or kept as context.
+    for (let n = 0; n < dels.length; n++) {
+      const del = dels[n];
+      const paired = adds[n];
+      if (selected.has(del.index)) {
+        out.push(del.text);
+        if (paired && selected.has(paired.index)) out.push(paired.text);
+      } else {
+        out.push(` ${del.text.slice(1)}`);
+        // Its replacement without it would be an insertion the user did not ask
+        // for, so a lone selected addition here is ignored on purpose.
+      }
+    }
+    // Additions beyond the removals they replaced are pure insertions; they
+    // belong at the end of the run.
+    for (let n = dels.length; n < adds.length; n++) {
+      if (selected.has(adds[n].index)) out.push(adds[n].text);
+    }
+  }
+
+  const oldCount = out.filter((line) => kind(line) === ' ' || kind(line) === '-').length;
+  const newCount = out.filter((line) => kind(line) === ' ' || kind(line) === '+').length;
+  if (oldCount === 0 && newCount === 0) return null;
+
+  const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(at);
+  if (!m) return null;
+  const rebuilt = `@@ -${m[1]},${oldCount} +${m[2]},${newCount} @@${m[3]}`;
+  // Assembled by hand and left exactly so: no tidying pass over the finished
+  // text, because a blank line in the file is a line and collapsing it would
+  // change the patch into one about a different file.
+  return `${header}\n${rebuilt}\n${out.join('\n')}\n`;
+}
+
+/**
  * Split a single file's raw diff into its header and its hunks, keeping git's
  * own bytes.
  *

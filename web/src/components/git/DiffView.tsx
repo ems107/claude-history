@@ -56,7 +56,16 @@ export interface HunkActions {
   onApply: (hunkIndex: number) => void;
   onDiscard?: (hunkIndex: number) => void;
   busy?: boolean;
+  /**
+   * Line picking. A key is `hunkIndex:lineIndex` so a selection cannot leak
+   * from one hunk into another — the server takes lines for ONE hunk at a time,
+   * and a patch mixing two of them would describe a file that never existed.
+   */
+  picked?: Set<string>;
+  onPick?: (hunkIndex: number, lineIndex: number, extend: boolean) => void;
 }
+
+export const lineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
 
 function Hunk({
   hunk,
@@ -128,8 +137,27 @@ function Hunk({
       </div>
       {hunk.lines.map((line, i) => {
         const spans = marks.get(i);
+        const changed = line.kind === 'add' || line.kind === 'del';
+        const pickable = !!actions?.onPick && changed;
+        const isPicked = actions?.picked?.has(lineKey(index, i)) === true;
         return (
-          <div key={i} className={`flex font-mono text-[11px] leading-[18px] ${TONE[line.kind]}`}>
+          <div
+            key={i}
+            data-line={changed ? lineKey(index, i) : undefined}
+            data-picked={isPicked ? '1' : undefined}
+            onClick={pickable ? (e) => actions?.onPick?.(index, i, e.shiftKey) : undefined}
+            title={pickable ? 'Click to pick this line; shift-click to reach from the last one' : undefined}
+            className={`flex font-mono text-[11px] leading-[18px] ${TONE[line.kind]} ${
+              pickable ? 'cursor-pointer' : ''
+            } ${isPicked ? 'outline outline-1 -outline-offset-1 outline-[var(--accent)]' : ''}`}
+          >
+            {/* A checkbox column only where there is something to pick, so the
+                gutters stay put and an unchanged line reads as unpickable. */}
+            {actions?.onPick && (
+              <span className="w-4 shrink-0 text-center opacity-70 select-none">
+                {changed ? (isPicked ? '☑' : '☐') : ''}
+              </span>
+            )}
             {/* The gutters are select-none so copying a hunk does not drag line
                 numbers along with the code. */}
             <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">{line.oldNo ?? ''}</span>

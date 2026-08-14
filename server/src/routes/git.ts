@@ -374,6 +374,12 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     '/api/git/repos/:id/hunk',
     (repo, body) => ctx.git.applyHunk(repo, body),
   );
+  // Individual lines. No `discard` here on purpose: staging only writes to the
+  // index and is undoable, discarding writes the file and is not.
+  mutation<{ path?: string; hunkIndex?: number; lines?: number[]; staged?: boolean }>(
+    '/api/git/repos/:id/lines',
+    (repo, body) => ctx.git.applyLines(repo, body),
+  );
 
   for (const action of ['continue', 'abort', 'skip'] as const) {
     mutation<Record<string, never>>(`/api/git/repos/:id/${action}`, (repo) => ctx.git.continuation(repo, action));

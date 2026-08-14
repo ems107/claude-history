@@ -1,6 +1,6 @@
 import type { GitFileEntry, GitStatus } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { useDragSize } from '../../lib/useDragSize.ts';
 import { btn } from '../../lib/ui.ts';
@@ -121,6 +121,10 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   // time rather than all-or-nothing: "show me a bit more" is the actual
   // question, and a whole file dumped into the pane answers a different one.
   const [context, setContext] = useState(3);
+  // Picked lines, keyed `hunk:line`. Cleared whenever the file or the side
+  // changes: an index into one diff means nothing in another.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const lastPick = useRef<{ hunk: number; line: number } | null>(null);
   const selectedEntry = selected ? status.entries.find((e) => e.path === selected.path) : undefined;
   const selectedIsConflicted = selectedEntry?.conflicted === true;
 
@@ -147,7 +151,13 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
       >
         <button
           type="button"
-          onClick={() => setSelected({ path: entry.path, staged })}
+          onClick={() => {
+            setSelected({ path: entry.path, staged });
+            // A line index belongs to one diff of one file; carrying it across
+            // would point at something else entirely.
+            setPicked(new Set());
+            lastPick.current = null;
+          }}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
           title={entry.origPath ? `${entry.origPath} → ${entry.path}` : entry.path}
         >
@@ -309,23 +319,103 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
         ) : diffQ.isError ? (
           <p className="text-[11px] text-red-400">Could not read the diff: {String(diffQ.error)}</p>
         ) : diffQ.data ? (
-          <DiffView
-            files={diffQ.data.files}
-            truncated={diffQ.data.truncated}
-            selectedPath={selected.path}
-            onExpand={() => setContext((c) => Math.min(50, c + 12))}
-            actions={{
-              staged: selected.staged,
-              busy: action.busy,
-              onApply: (hunkIndex) =>
-                void action.run(() =>
-                  gitApi.hunk(repoId, { path: selected.path, hunkIndex, staged: selected.staged }),
-                ),
-              onDiscard: selected.staged
-                ? undefined
-                : (hunkIndex) => setDiscardingHunk({ path: selected.path, hunkIndex }),
-            }}
-          />
+          <>
+            {picked.size > 0 && (
+              <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center gap-2 rounded border border-[var(--accent-dim)] bg-[var(--bg-raised)] px-2 py-1.5 text-[11px]">
+                <span className="tabular-nums">
+                  {picked.size} line{picked.size === 1 ? '' : 's'} picked
+                </span>
+                <button
+                  type="button"
+                  disabled={action.busy}
+                  className={`${btn} border-[var(--accent-dim)] text-[var(--accent)]`}
+                  onClick={() => {
+                    // One hunk at a time: the server takes lines for a single
+                    // hunk, and a patch mixing two would describe a file that
+                    // never existed.
+                    const byHunk = new Map<number, number[]>();
+                    for (const key of picked) {
+                      const [h, l] = key.split(':').map(Number);
+                      byHunk.set(h, [...(byHunk.get(h) ?? []), l]);
+                    }
+                    const runs = [...byHunk.entries()];
+                    void action
+                      .run(async () => {
+                        let last;
+                        for (const [hunkIndex, lines] of runs) {
+                          last = await gitApi.lines(repoId, {
+                            path: selected.path,
+                            hunkIndex,
+                            lines,
+                            staged: selected.staged,
+                          });
+                        }
+                        return last;
+                      })
+                      .then(() => {
+                        setPicked(new Set());
+                        lastPick.current = null;
+                      });
+                  }}
+                >
+                  {selected.staged ? 'Unstage them' : 'Stage them'}
+                </button>
+                <button
+                  type="button"
+                  className={btn}
+                  onClick={() => {
+                    setPicked(new Set());
+                    lastPick.current = null;
+                  }}
+                >
+                  Clear
+                </button>
+                <span className="text-[var(--text-dim)]">
+                  Staging lines only ever writes what the next commit will contain — never the file itself.
+                </span>
+              </div>
+            )}
+            <DiffView
+              files={diffQ.data.files}
+              truncated={diffQ.data.truncated}
+              selectedPath={selected.path}
+              onExpand={() => setContext((c) => Math.min(50, c + 12))}
+              actions={{
+                staged: selected.staged,
+                busy: action.busy,
+                picked,
+                onPick: (hunkIndex, lineIndex, extend) => {
+                  setPicked((prev) => {
+                    const next = new Set(prev);
+                    const from = lastPick.current;
+                    // Shift extends only within the same hunk, because that is
+                    // the only run the server can be handed as one patch.
+                    if (extend && from && from.hunk === hunkIndex) {
+                      const [a, b] = from.line < lineIndex ? [from.line, lineIndex] : [lineIndex, from.line];
+                      const hunk = diffQ.data?.files[0]?.hunks[hunkIndex];
+                      for (let i = a; i <= b; i++) {
+                        const line = hunk?.lines[i];
+                        if (line && (line.kind === 'add' || line.kind === 'del')) next.add(`${hunkIndex}:${i}`);
+                      }
+                    } else {
+                      const key = `${hunkIndex}:${lineIndex}`;
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                    }
+                    return next;
+                  });
+                  lastPick.current = { hunk: hunkIndex, line: lineIndex };
+                },
+                onApply: (hunkIndex) =>
+                  void action.run(() =>
+                    gitApi.hunk(repoId, { path: selected.path, hunkIndex, staged: selected.staged }),
+                  ),
+                onDiscard: selected.staged
+                  ? undefined
+                  : (hunkIndex) => setDiscardingHunk({ path: selected.path, hunkIndex }),
+              }}
+            />
+          </>
         ) : null}
       </div>
 

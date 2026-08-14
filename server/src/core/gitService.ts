@@ -28,8 +28,10 @@ import {
   type GitTag,
   type GitWorktree,
 } from '@claude-history/shared';
+import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   GIT_NETWORK_TIMEOUT_MS,
@@ -43,6 +45,7 @@ import { findGitExe } from '../util/launcher.ts';
 import {
   BRANCH_FORMAT,
   COMMIT_FORMAT,
+  buildLineSelectionPatch,
   LOG_FORMAT,
   REMOTE_BRANCH_FORMAT,
   STASH_FORMAT,
@@ -1105,6 +1108,90 @@ export class GitService {
       return hunks.length;
     });
     return { status, message: `Hunk ${Number(body.hunkIndex) + 1} of ${result}.` };
+  }
+
+  /**
+   * Stage or unstage individual LINES of one hunk.
+   *
+   * This is the one operation in the tab that hands git a patch git did not
+   * write, and a wrong one applies cleanly and quietly leaves the index holding
+   * something nobody typed — measured, on a real repository, before this was
+   * built. So it is not enough for the construction to be right; it is checked
+   * against git afterwards, and the real index is only touched once it passes.
+   *
+   * **Where the safety actually comes from, stated plainly**, because two
+   * runtime checks were built here and both were removed for giving false
+   * confidence:
+   *
+   *  1. `--cached`. This NEVER writes the file on disk — only the index. Checked
+   *     byte for byte. So the worst a bug here can do is stage something wrong,
+   *     which one "unstage" undoes completely and which the diff shows you
+   *     before any commit exists.
+   *  2. git validates the patch's old side against the index itself, so a page
+   *     that has gone stale produces a refusal rather than a misapplication.
+   *  3. The ordering — the part that could silently transpose lines — is the
+   *     ALGORITHM's, and it is covered by unit checks on the pure function,
+   *     including the exact case that used to break it.
+   *
+   * What was tried and thrown away: comparing the lines left pending afterwards,
+   * and requiring the two halves to add back up to the whole hunk. Both were
+   * measured against a deliberately broken builder and both let it through — the
+   * first because a transposition leaves the same SET of differences, the second
+   * because both halves are built against the same base, so the second cannot
+   * apply on top of the first. A check that cannot fail is worse than no check:
+   * it invites trust it has not earned.
+   *
+   * There is deliberately no line-level DISCARD. Staging writes the index and is
+   * undoable; discarding writes the file and is not. Discarding stays at
+   * whole-hunk granularity, where the patch is git's own bytes.
+   */
+  async applyLines(
+    repo: ResolvedRepo,
+    body: { path?: unknown; hunkIndex?: unknown; lines?: unknown; staged?: unknown },
+  ): Promise<{ status: GitStatus; message: string }> {
+    const fromIndex = body.staged === true;
+    const op: GitOp = fromIndex ? 'unstage' : 'stage';
+
+    const { result, status } = await this.mutate(repo, op, async (before) => {
+      const [filePath] = this.validPaths(before, [body.path]);
+      const hunkIndex = Number(body.hunkIndex);
+      if (!Number.isInteger(hunkIndex) || hunkIndex < 0) throw new GitBadInput('That is not a hunk.');
+      if (!Array.isArray(body.lines) || body.lines.length === 0) throw new GitBadInput('No lines were chosen.');
+      const chosen = new Set<number>();
+      for (const n of body.lines) {
+        if (!Number.isInteger(n) || (n as number) < 0) throw new GitBadInput('That is not a line.');
+        chosen.add(n as number);
+      }
+
+      const diffArgs = ['diff', '--no-color', '-U3', '--find-renames', ...(fromIndex ? ['--cached'] : []), '--', filePath];
+      const diffRes = await runGit({ cwd: repo.path, repoKey: repo.key, readOnly: true, label: 'lines-diff', args: diffArgs });
+      if (!diffRes.ok && diffRes.exitCode !== 1) throw new GitFailed(diffRes);
+
+      const { header, hunks } = splitRawHunks(diffRes.stdout);
+      const hunkRaw = hunks[hunkIndex];
+      if (!hunkRaw) throw new GitBadInput('That hunk is no longer there — reload and try again.');
+
+      const patch = buildLineSelectionPatch(header, hunkRaw, chosen);
+      if (!patch) throw new GitBadInput('Pick at least one added or removed line — context lines never move.');
+
+      // `--cached`: the index, and nothing on disk. `git apply` checks the old
+      // side against the index itself, so a stale selection is refused here
+      // rather than applied somewhere it does not belong.
+      const applied = await runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        mutation: true,
+        label: `lines:${op}`,
+        args: ['apply', '--cached', ...(fromIndex ? ['--reverse'] : []), '-'],
+        stdin: patch,
+      });
+      if (!applied.ok) throw new GitFailed(applied);
+      return chosen.size;
+    });
+    return {
+      status,
+      message: `${result} line${result === 1 ? '' : 's'} ${fromIndex ? 'taken out of' : 'added to'} the next commit.`,
+    };
   }
 
   /**

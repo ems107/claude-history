@@ -149,6 +149,10 @@ export const gitApi = {
   hunk: (id: string, body: { path: string; hunkIndex: number; staged?: boolean; discard?: boolean; confirm?: boolean }) =>
     post<GitMutationResponse>(`/api/git/repos/${id}/hunk`, body),
 
+  /** Stage or unstage individual lines of one hunk. Never discards — see the server. */
+  lines: (id: string, body: { path: string; hunkIndex: number; lines: number[]; staged?: boolean }) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/lines`, body),
+
   conflictSides: (id: string, filePath: string) =>
     getJson<GitConflictSides>(`/api/git/repos/${id}/diff?mode=conflict&path=${encodeURIComponent(filePath)}`),
 };
