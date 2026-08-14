@@ -392,7 +392,12 @@ A visual git client over the repositories on this machine (`/git`, `core/gitServ
 - **An operation in progress is read from the gitdir**, never by matching git's English: `MERGE_HEAD`, `rebase-merge/`, `rebase-apply/` (whose `applying` file is the only thing separating a rebase from an `am`), `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `BISECT_LOG` — via `--absolute-git-dir`, so a linked worktree reads its own.
 - **The command panel is the feature's own audit.** One global ring of 300 (global, not per repo: the failures worth returning to are the ones where you no longer remember which repository it was). `redact()` runs on argv, stdout, stderr and the stdin preview before anything is stored or logged — the realistic leak is a remote URL carrying a token, which shows up in `git remote -v` and in a push's argv. The SSE event carries only the newest seq, never the entries, so a closed panel costs nothing. In the daily log the split is: mutations at `info`, failures at `warn`, reads at `debug` — so at the default level the log reads as everything that CHANGED a repository and nothing else.
 - **`--continue` needs `core.editor` back.** `BASE_FLAGS` sets it to `false`, which exits non-zero and aborts the continue; continuation operations must override it (`GIT_EDITOR=true`, or `--no-edit` where the subcommand takes it). Get this wrong and every "Continue" button fails inexplicably.
+- **A conflicting merge is a 200, not an error.** It did what it was asked; the repository is now in a state the UI must render, not a failure it must report. Same for a rebase or a cherry-pick that stops — `writeAllowingConflict` is where that distinction lives.
+- **Paths reach git only if they were in the status we just read**, NUL-separated on stdin (`--pathspec-from-file=- --pathspec-file-nul`): no argv limit, no quoting, and 400 files stage in one call. `git clean` is the exception — it will not read a pathspec from stdin, so deletions go in argv in batches of 100.
+- **`fs.watch` on the gitdir needs its quiet period set BEFORE the command as well as after, and checked again when the debounce fires.** git touches the gitdir while it works, so our own first event arrives with the timer already armed; testing only on arrival let every commit echo straight back at the page (measured, then measured again at zero).
+- **The word-diff pairs only 1:1 runs** (`n` removals immediately followed by `n` additions) and requires a quarter of the shorter line to survive as shared non-whitespace. `alpha beta` and `!!! ???` share a space, and a space is not a resemblance — without that test every unrelated pair was marked end to end.
 - Network policy is unchanged and applies here: `fetch`/`pull`/`push` are user-triggered only. The `.git` watcher is local and invalidates local state — **it must never lead to a fetch**.
+- `ctx.git.busy` joins `ctx.chat.busy` in the three 409 sites (`/api/server/stop`, `/api/uninstall`, `/api/update/apply`): going away mid-rebase leaves a repository in a state nothing in this app put it in, and nothing here could finish for the user.
 
 ## Testing
 
@@ -507,3 +512,19 @@ No automated test suite (personal tool). Verify against real data:
     expanded — a command missing from the panel means `runGit` was bypassed. Add a
     fake remote carrying a token and it must appear in neither the panel nor the
     daily log.
+    Writing: staging all 400 files in `bulk/` must be ONE call; a path that is not
+    in the status must be refused; discard, a hard reset, `branch -D` and amending
+    something already pushed must each refuse without `confirm`. The rule that ties
+    the two halves together is checkable exactly: press Continue mid-conflict and
+    the 409's `error` must equal `status.blocked.continue` **character for
+    character**. A conflicting merge must answer 200 with the conflict in the
+    status, staging the resolution must clear the block, and `--abort` must leave a
+    clean tree.
+    The watcher: with a repository open, switch branch from a terminal — a
+    `git-repo-changed` event must arrive naming it, and the next status must show
+    the new branch. Then do the same thing THROUGH the app: zero events, because
+    our own write must not echo back.
+    The word-diff needs no browser: one token changing must mark only that token
+    on both sides, `foo(bar)`/`foo(baz)` must share their parentheses, an inserted
+    phrase must mark only itself, accented words must tokenize whole, and
+    `alpha beta` against `!!! ???` must give no marks at all.

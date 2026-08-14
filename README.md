@@ -134,12 +134,13 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - Export any conversation to Markdown (tool calls / thinking / system optional).
 - Resume lineage view and a per-session file-changes viewer (which files each session edited, with before/after diffs).
 - Self-update from GitHub releases: automatic availability check (10 min), explicit-confirmation install with checksum verification and automatic rollback.
-- **Git tab (`/git`)**: a visual client over your repositories — commit graph with branch lanes, branches, remotes, tags, stashes and worktrees, per-commit files and a unified diff viewer. Repositories come from the projects your sessions run in, from folders you point it at to scan (one root usually covers all your clones), and from paths you add by hand. Currently read-only; writing (staging, committing, branching, fetch/pull/push) is being added in phases.
+- **Git tab (`/git`)**: a visual client over your repositories — commit graph with branch lanes, branches, remotes, tags, stashes and worktrees, per-commit files and a unified diff viewer with the changed words marked inside each line. Repositories come from the projects your sessions run in, from folders you point it at to scan (one root usually covers all your clones), and from paths you add by hand.
+- **Working tree tab**: stage and unstage by file or by group, discard changes, commit and amend, check out and create branches, merge, and reset — with a banner that guides you out of a merge or rebase in progress. Anything that cannot be undone asks first and shows the exact command; anything that cannot run right now says why, in the same words the server would refuse with. Remote operations (fetch, pull, push) are still to come.
 - **Git command log**: a dock at the foot of the Git tab listing every git command the app runs, with its folder, exit code, duration and output, and a one-click copy that pastes straight into a terminal. Every invocation goes through a single runner that records it, so what the app does is never a mystery.
 
 ## Keyboard shortcuts
 
 - `/` focus search · `j`/`k` or arrows move selection · `Enter` open session · `Esc` back / close drawer.
-- In the Git tab: `d` shows or hides the command log.
+- In the Git tab: `g` the history · `w` the working tree · `d` shows or hides the command log · `Ctrl+Enter` commits.
 
 See `CLAUDE.md` for architecture and the verified Claude Code data-format rules.
