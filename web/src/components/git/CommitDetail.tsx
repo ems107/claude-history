@@ -33,11 +33,22 @@ const STATUS_TONE: Record<string, string> = {
  * carries its own confirmation, spelling out what a hard reset takes with it —
  * the modes differ in exactly that, and the difference is the whole decision.
  */
-function CommitActions({ repoId, sha, status }: { repoId: string; sha: string; status: GitStatus | undefined }) {
+function CommitActions({
+  repoId,
+  sha,
+  status,
+  isMerge,
+}: {
+  repoId: string;
+  sha: string;
+  status: GitStatus | undefined;
+  isMerge: boolean;
+}) {
   const action = useGitAction(repoId);
   const [branching, setBranching] = useState(false);
   const [name, setName] = useState('');
   const [resetting, setResetting] = useState<'soft' | 'mixed' | 'hard' | null>(null);
+  const [rebasing, setRebasing] = useState(false);
   const short = sha.slice(0, 7);
   const dirty = (status?.entries.length ?? 0) > 0;
 
@@ -58,6 +69,33 @@ function CommitActions({ repoId, sha, status }: { repoId: string; sha: string; s
       <button
         type="button"
         className={btn}
+        disabled={action.busy || !!status?.blocked.cherryPick}
+        title={status?.blocked.cherryPick ?? `Copy ${short} onto ${status?.branch ?? 'HEAD'}`}
+        onClick={() => void action.run(() => gitApi.cherryPick(repoId, { shas: [sha], mainline: isMerge ? 1 : undefined }))}
+      >
+        Cherry-pick
+      </button>
+      <button
+        type="button"
+        className={btn}
+        disabled={action.busy || !!status?.blocked.revert}
+        title={status?.blocked.revert ?? `Add a commit undoing ${short}`}
+        onClick={() => void action.run(() => gitApi.revert(repoId, { shas: [sha], mainline: isMerge ? 1 : undefined }))}
+      >
+        Revert
+      </button>
+      <button
+        type="button"
+        className={btn}
+        disabled={action.busy || !!status?.blocked.rebase}
+        title={status?.blocked.rebase ?? `Replay ${status?.branch ?? 'HEAD'} on top of ${short}`}
+        onClick={() => setRebasing(true)}
+      >
+        Rebase onto…
+      </button>
+      <button
+        type="button"
+        className={btn}
         disabled={action.busy || !!status?.blocked.reset}
         title={status?.blocked.reset ?? `Move ${status?.branch ?? 'HEAD'} to ${short}`}
         onClick={() => setResetting('mixed')}
@@ -65,6 +103,29 @@ function CommitActions({ repoId, sha, status }: { repoId: string; sha: string; s
         Reset here…
       </button>
       {action.error && <span className="text-[11px] text-red-300">{action.error}</span>}
+      {action.note && <span className="truncate text-[11px] text-emerald-400">{action.note.split('\n')[0]}</span>}
+
+      {rebasing && (
+        <ConfirmDialog
+          title={`Rebase ${status?.branch ?? 'HEAD'} onto ${short}`}
+          body={
+            <>
+              Every commit on {status?.branch ?? 'this branch'} that is not already on {short} is replayed on top of
+              it, as a NEW commit each. The old ones stay reachable only through the reflog, and anyone who has pulled
+              this branch will have to reconcile.
+              {isMerge && <p className="mt-1 text-amber-400">This is a merge commit, which makes it an unusual base.</p>}
+            </>
+          }
+          command={`git rebase ${short}`}
+          confirmLabel="Rebase"
+          busy={action.busy}
+          onCancel={() => setRebasing(false)}
+          onConfirm={() => {
+            setRebasing(false);
+            void action.run(() => gitApi.rebase(repoId, { onto: sha }));
+          }}
+        />
+      )}
 
       {branching && (
         <span className="flex items-center gap-1.5">
@@ -197,7 +258,7 @@ export function CommitDetail({
           ))}
         </div>
 
-        <CommitActions repoId={repoId} sha={commit.sha} status={status} />
+        <CommitActions repoId={repoId} sha={commit.sha} status={status} isMerge={commit.parents.length > 1} />
 
         <p className="mt-1.5 text-sm">{commit.subject}</p>
         {detail.body && (

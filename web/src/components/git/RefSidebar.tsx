@@ -131,6 +131,14 @@ export function RefSidebar({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [deleting, setDeleting] = useState<GitBranch | null>(null);
+  const [tagging, setTagging] = useState(false);
+  const [tagName, setTagName] = useState('');
+  const [tagMessage, setTagMessage] = useState('');
+  const [deletingTag, setDeletingTag] = useState<GitTag | null>(null);
+  const [droppingStash, setDroppingStash] = useState<GitStash | null>(null);
+  const [addingWorktree, setAddingWorktree] = useState(false);
+  const [worktreePath, setWorktreePath] = useState('');
+  const [removingWorktree, setRemovingWorktree] = useState<GitWorktree | null>(null);
 
   const local = branches?.local ?? [];
   const remote = branches?.remote ?? [];
@@ -319,45 +327,225 @@ export function RefSidebar({
         ))}
       </Section>
 
-      <Section id="tags" title="Tags" count={tags?.length ?? 0} initial={false}>
+      <Section
+        id="tags"
+        title="Tags"
+        count={tags?.length ?? 0}
+        initial={false}
+        actions={
+          repoId && (
+            <button
+              type="button"
+              onClick={() => setTagging(true)}
+              className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-[var(--text)]"
+            >
+              + new
+            </button>
+          )
+        }
+      >
+        {tagging && repoId && (
+          <div className="px-2 py-1">
+            <input
+              autoFocus
+              type="text"
+              spellCheck={false}
+              value={tagName}
+              placeholder="v1.2.3"
+              onChange={(e) => setTagName(e.target.value)}
+              className={`${inputClass} font-mono text-[11px]`}
+            />
+            <input
+              type="text"
+              spellCheck={false}
+              value={tagMessage}
+              placeholder="Message (optional — makes it annotated)"
+              onChange={(e) => setTagMessage(e.target.value)}
+              className={`${inputClass} mt-1 text-[11px]`}
+            />
+            <div className="mt-1 flex gap-1.5">
+              <button
+                type="button"
+                disabled={!tagName.trim() || action.busy}
+                className={btn}
+                onClick={() => {
+                  const name = tagName.trim();
+                  const message = tagMessage.trim();
+                  setTagging(false);
+                  setTagName('');
+                  setTagMessage('');
+                  run(() => gitApi.tagCreate(repoId, { name, message: message || undefined }));
+                }}
+              >
+                Create at HEAD
+              </button>
+              <button
+                type="button"
+                className={btn}
+                onClick={() => {
+                  setTagging(false);
+                  setTagName('');
+                  setTagMessage('');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {(tags?.length ?? 0) === 0 && <Empty>No tags.</Empty>}
         {tags?.map((tag) => (
-          <button
-            key={tag.name}
-            type="button"
-            onClick={() => pick(tag.name)}
-            title={tag.subject ?? tag.name}
-            className={`${rowClass} cursor-pointer ${selectedRef === tag.name ? 'bg-[var(--bg-hover)]' : ''}`}
-          >
-            <span className="min-w-0 flex-1 truncate text-amber-400/90">{tag.name}</span>
-            {tag.annotated && (
-              <span className="shrink-0 text-[10px] text-[var(--text-dim)]" title="Annotated tag">
-                a
+          <div key={tag.name} className={`group ${rowClass} ${selectedRef === tag.name ? 'bg-[var(--bg-hover)]' : ''}`}>
+            <button
+              type="button"
+              onClick={() => pick(tag.name)}
+              title={tag.subject ?? tag.name}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+            >
+              <span className="min-w-0 flex-1 truncate text-amber-400/90">{tag.name}</span>
+              {tag.annotated && (
+                <span className="shrink-0 text-[10px] text-[var(--text-dim)]" title="Annotated tag">
+                  a
+                </span>
+              )}
+              {tag.at && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(tag.at)}</span>}
+            </button>
+            {repoId && (
+              <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                <Act
+                  label="↑"
+                  title={`Publish ${tag.name} to the remote`}
+                  disabled={action.busy}
+                  onClick={() => run(() => gitApi.pushTag(repoId, { name: tag.name }))}
+                />
+                <Act label="✕" title={`Delete ${tag.name}`} danger onClick={() => setDeletingTag(tag)} />
               </span>
             )}
-            {tag.at && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(tag.at)}</span>}
-          </button>
-        ))}
-      </Section>
-
-      <Section id="stashes" title="Stashes" count={stashes?.length ?? 0} initial={false}>
-        {(stashes?.length ?? 0) === 0 && <Empty>No stashes.</Empty>}
-        {stashes?.map((stash) => (
-          <div key={stash.ref} className={rowClass} title={`${stash.ref} on ${stash.branch ?? '?'}`}>
-            <span className="shrink-0 font-mono text-[10px] text-purple-400">{stash.index}</span>
-            <span className="min-w-0 flex-1 truncate">{stash.message}</span>
-            <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(stash.at)}</span>
           </div>
         ))}
       </Section>
 
-      <Section id="worktrees" title="Worktrees" count={worktrees?.length ?? 0} initial={false}>
+      <Section
+        id="stashes"
+        title="Stashes"
+        count={stashes?.length ?? 0}
+        initial={false}
+        actions={
+          repoId && (
+            <button
+              type="button"
+              disabled={action.busy || !!status?.blocked.stash}
+              title={status?.blocked.stash ?? 'Put everything aside and clean the tree'}
+              onClick={() => run(() => gitApi.stash(repoId, { includeUntracked: true }))}
+              className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-30"
+            >
+              + stash all
+            </button>
+          )
+        }
+      >
+        {(stashes?.length ?? 0) === 0 && <Empty>No stashes.</Empty>}
+        {stashes?.map((stash) => (
+          <div key={stash.ref} className={`group ${rowClass}`} title={`${stash.ref} on ${stash.branch ?? '?'}`}>
+            <span className="shrink-0 font-mono text-[10px] text-purple-400">{stash.index}</span>
+            <span className="min-w-0 flex-1 truncate">{stash.message}</span>
+            <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(stash.at)}</span>
+            {repoId && (
+              <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                <Act
+                  label="↓"
+                  title="Apply it and keep it"
+                  disabled={action.busy}
+                  onClick={() => run(() => gitApi.stashAction(repoId, 'apply', { index: stash.index }))}
+                />
+                <Act
+                  label="⤓"
+                  title="Apply it and remove it"
+                  disabled={action.busy}
+                  onClick={() => run(() => gitApi.stashAction(repoId, 'pop', { index: stash.index }))}
+                />
+                <Act label="✕" title="Throw it away" danger onClick={() => setDroppingStash(stash)} />
+              </span>
+            )}
+          </div>
+        ))}
+      </Section>
+
+      <Section
+        id="worktrees"
+        title="Worktrees"
+        count={worktrees?.length ?? 0}
+        initial={false}
+        actions={
+          repoId && (
+            <button
+              type="button"
+              onClick={() => setAddingWorktree(true)}
+              className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-[var(--text)]"
+            >
+              + new
+            </button>
+          )
+        }
+      >
+        {addingWorktree && repoId && (
+          <div className="px-2 py-1">
+            <input
+              autoFocus
+              type="text"
+              spellCheck={false}
+              value={worktreePath}
+              placeholder="C:\Users\you\Git\project-feature"
+              onChange={(e) => setWorktreePath(e.target.value)}
+              className={`${inputClass} font-mono text-[11px]`}
+            />
+            <p className="mt-0.5 text-[10px] text-[var(--text-dim)]">
+              A second working tree of this repository, checked out at{' '}
+              <span className="font-mono">{selectedRef ?? 'HEAD'}</span>. The folder must not exist yet.
+            </p>
+            <div className="mt-1 flex gap-1.5">
+              <button
+                type="button"
+                disabled={!worktreePath.trim() || action.busy}
+                className={btn}
+                onClick={() => {
+                  const target = worktreePath.trim();
+                  setAddingWorktree(false);
+                  setWorktreePath('');
+                  run(() => gitApi.worktreeAdd(repoId, { path: target, ref: selectedRef ?? 'HEAD' }));
+                }}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                className={btn}
+                onClick={() => {
+                  setAddingWorktree(false);
+                  setWorktreePath('');
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {(worktrees?.length ?? 0) === 0 && <Empty>No worktrees.</Empty>}
         {worktrees?.map((wt) => (
-          <div key={wt.path} className={rowClass} title={wt.path}>
+          <div key={wt.path} className={`group ${rowClass}`} title={wt.path}>
             <span className="min-w-0 flex-1 truncate font-mono text-[10px]">{wt.path}</span>
+            {wt.branch && (
+              <span className="shrink-0 text-[10px] text-[var(--accent)]">
+                {wt.branch.replace(/^refs\/heads\//, '')}
+              </span>
+            )}
             {wt.isMain && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">main</span>}
             {wt.locked && <span className="shrink-0 text-[10px] text-amber-400">locked</span>}
+            {repoId && !wt.isMain && (
+              <span className="shrink-0 opacity-0 group-hover:opacity-100">
+                <Act label="✕" title="Remove this worktree" danger onClick={() => setRemovingWorktree(wt)} />
+              </span>
+            )}
           </div>
         ))}
       </Section>
@@ -394,6 +582,69 @@ export function RefSidebar({
             const name = deleting.name;
             setDeleting(null);
             if (repoId) run(() => gitApi.branchDelete(repoId, { name, force: true, confirm: true }));
+          }}
+        />
+      )}
+
+      {deletingTag && repoId && (
+        <ConfirmDialog
+          title={`Delete the tag ${deletingTag.name}`}
+          body={
+            <>
+              This removes it here only. If it has been published, the remote still has it — deleting it there is a
+              separate act.
+            </>
+          }
+          command={`git tag -d ${deletingTag.name}`}
+          confirmLabel="Delete"
+          busy={action.busy}
+          onCancel={() => setDeletingTag(null)}
+          onConfirm={() => {
+            const name = deletingTag.name;
+            setDeletingTag(null);
+            run(() => gitApi.tagDelete(repoId, { name, confirm: true }));
+          }}
+        />
+      )}
+
+      {droppingStash && repoId && (
+        <ConfirmDialog
+          title="Throw this stash away"
+          body={
+            <>
+              <span className="font-mono">{droppingStash.message}</span> — stashed{' '}
+              {relativeTime(droppingStash.at)}. Nothing in this app can bring it back, and it is not on any branch.
+            </>
+          }
+          command={`git stash drop ${droppingStash.ref}`}
+          confirmLabel="Drop"
+          busy={action.busy}
+          onCancel={() => setDroppingStash(null)}
+          onConfirm={() => {
+            const index = droppingStash.index;
+            setDroppingStash(null);
+            run(() => gitApi.stashAction(repoId, 'drop', { index, confirm: true }));
+          }}
+        />
+      )}
+
+      {removingWorktree && repoId && (
+        <ConfirmDialog
+          title="Remove this worktree"
+          body={
+            <>
+              The folder <span className="font-mono">{removingWorktree.path}</span> is deleted. Commits made in it stay
+              in the repository — anything uncommitted there does not.
+            </>
+          }
+          command={`git worktree remove ${removingWorktree.path}`}
+          confirmLabel="Remove"
+          busy={action.busy}
+          onCancel={() => setRemovingWorktree(null)}
+          onConfirm={() => {
+            const target = removingWorktree.path;
+            setRemovingWorktree(null);
+            run(() => gitApi.worktreeRemove(repoId, { path: target, force: true, confirm: true }));
           }}
         />
       )}

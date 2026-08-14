@@ -6,6 +6,7 @@ import { useDragSize } from '../../lib/useDragSize.ts';
 import { btn } from '../../lib/ui.ts';
 import { FoldHeader } from '../viewer/FoldHeader.tsx';
 import { CommitBox } from './CommitBox.tsx';
+import { ConflictSides } from './ConflictSides.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView } from './DiffView.tsx';
 import { useGitAction } from './useGitAction.ts';
@@ -108,6 +109,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   const files = useDragSize({ key: 'git.filesWidth', axis: 'x', min: 220, max: 640, initial: 340 });
   const [selected, setSelected] = useState<{ path: string; staged: boolean } | null>(null);
   const [confirming, setConfirming] = useState<{ paths: string[]; label: string } | null>(null);
+  const [discardingHunk, setDiscardingHunk] = useState<{ path: string; hunkIndex: number } | null>(null);
   const action = useGitAction(repoId);
 
   const conflicted = status.entries.filter((e) => e.conflicted);
@@ -115,11 +117,18 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   const changed = status.entries.filter((e) => !e.conflicted && e.unstaged && e.unstaged !== 'untracked');
   const untracked = status.entries.filter((e) => !e.conflicted && e.unstaged === 'untracked');
 
+  // How much unchanged context the diff carries. Expanding is one step at a
+  // time rather than all-or-nothing: "show me a bit more" is the actual
+  // question, and a whole file dumped into the pane answers a different one.
+  const [context, setContext] = useState(3);
+  const selectedEntry = selected ? status.entries.find((e) => e.path === selected.path) : undefined;
+  const selectedIsConflicted = selectedEntry?.conflicted === true;
+
   const diffQ = useQuery({
-    queryKey: ['git', 'workingDiff', repoId, selected?.path ?? null, selected?.staged ?? false, status.readAt],
+    queryKey: ['git', 'workingDiff', repoId, selected?.path ?? null, selected?.staged ?? false, context, status.readAt],
     queryFn: () =>
-      gitApi.diff(repoId, { mode: selected?.staged ? 'staged' : 'worktree', path: selected?.path ?? null }),
-    enabled: !!selected,
+      gitApi.diff(repoId, { mode: selected?.staged ? 'staged' : 'worktree', path: selected?.path ?? null, context }),
+    enabled: !!selected && !selectedIsConflicted,
   });
 
   const stage = (paths: string[]) => void action.run(() => gitApi.stage(repoId, paths));
@@ -293,14 +302,53 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
         )}
         {!selected ? (
           <p className="text-[11px] text-[var(--text-dim)]">Pick a file to see what changed in it.</p>
+        ) : selectedIsConflicted ? (
+          <ConflictSides repoId={repoId} path={selected.path} />
         ) : diffQ.isLoading ? (
           <p className="text-[11px] text-[var(--text-dim)]">Reading the diff…</p>
         ) : diffQ.isError ? (
           <p className="text-[11px] text-red-400">Could not read the diff: {String(diffQ.error)}</p>
         ) : diffQ.data ? (
-          <DiffView files={diffQ.data.files} truncated={diffQ.data.truncated} selectedPath={selected.path} />
+          <DiffView
+            files={diffQ.data.files}
+            truncated={diffQ.data.truncated}
+            selectedPath={selected.path}
+            onExpand={() => setContext((c) => Math.min(50, c + 12))}
+            actions={{
+              staged: selected.staged,
+              busy: action.busy,
+              onApply: (hunkIndex) =>
+                void action.run(() =>
+                  gitApi.hunk(repoId, { path: selected.path, hunkIndex, staged: selected.staged }),
+                ),
+              onDiscard: selected.staged
+                ? undefined
+                : (hunkIndex) => setDiscardingHunk({ path: selected.path, hunkIndex }),
+            }}
+          />
         ) : null}
       </div>
+
+      {discardingHunk && (
+        <ConfirmDialog
+          title="Discard this hunk"
+          body={
+            <>
+              Just this part of <span className="font-mono">{discardingHunk.path}</span> goes back to how it was. The
+              rest of your changes to the file stay, and there is no undo for the part that goes.
+            </>
+          }
+          command={`git apply --reverse   (hunk ${discardingHunk.hunkIndex + 1} only)`}
+          confirmLabel="Discard the hunk"
+          busy={action.busy}
+          onCancel={() => setDiscardingHunk(null)}
+          onConfirm={() => {
+            const { path: p, hunkIndex } = discardingHunk;
+            setDiscardingHunk(null);
+            void action.run(() => gitApi.hunk(repoId, { path: p, hunkIndex, discard: true, confirm: true }));
+          }}
+        />
+      )}
 
       {confirming && (
         <ConfirmDialog

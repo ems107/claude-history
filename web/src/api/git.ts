@@ -4,9 +4,11 @@ import type {
   GitBranchRenameRequest,
   GitBranchesResponse,
   GitCheckoutRequest,
+  GitCherryPickRequest,
   GitCommandLogResponse,
   GitCommitDetail,
   GitCommitRequest,
+  GitConflictSides,
   GitDiffMode,
   GitDiffResponse,
   GitFetchRequest,
@@ -17,13 +19,21 @@ import type {
   GitOverview,
   GitPullRequest,
   GitPushRequest,
+  GitRebaseRequest,
   GitRemote,
   GitResetRequest,
-  GitTagPushRequest,
+  GitRevertRequest,
   GitStash,
+  GitStashActionRequest,
+  GitStashRequest,
   GitStatus,
   GitTag,
+  GitTagCreateRequest,
+  GitTagDeleteRequest,
+  GitTagPushRequest,
   GitWorktree,
+  GitWorktreeAddRequest,
+  GitWorktreeRemoveRequest,
 } from '@claude-history/shared';
 import { getJson } from './client.ts';
 
@@ -115,4 +125,30 @@ export const gitApi = {
   pull: (id: string, body: GitPullRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/pull`, body),
   push: (id: string, body: GitPushRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/push`, body),
   pushTag: (id: string, body: GitTagPushRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/tag/push`, body),
+
+  rebase: (id: string, body: GitRebaseRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/rebase`, body),
+  cherryPick: (id: string, body: GitCherryPickRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/cherry-pick`, body),
+  revert: (id: string, body: GitRevertRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/revert`, body),
+
+  stash: (id: string, body: GitStashRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/stash`, body),
+  stashAction: (id: string, action: 'apply' | 'pop' | 'drop', body: GitStashActionRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/stash/${action}`, body),
+
+  tagCreate: (id: string, body: GitTagCreateRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/tag/create`, body),
+  tagDelete: (id: string, body: GitTagDeleteRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/tag/delete`, body),
+
+  worktreeAdd: (id: string, body: GitWorktreeAddRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/worktree/add`, body),
+  worktreeRemove: (id: string, body: GitWorktreeRemoveRequest) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/worktree/remove`, body),
+
+  /** Stage, unstage or discard a single hunk of one file. */
+  hunk: (id: string, body: { path: string; hunkIndex: number; staged?: boolean; discard?: boolean; confirm?: boolean }) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/hunk`, body),
+
+  conflictSides: (id: string, filePath: string) =>
+    getJson<GitConflictSides>(`/api/git/repos/${id}/diff?mode=conflict&path=${encodeURIComponent(filePath)}`),
 };

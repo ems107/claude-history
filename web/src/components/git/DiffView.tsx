@@ -50,7 +50,25 @@ const MARK: Partial<Record<GitDiffLineKind, string>> = {
   del: 'rounded-[2px] bg-red-500/25',
 };
 
-function Hunk({ hunk }: { hunk: GitHunk }) {
+export interface HunkActions {
+  /** Whether these hunks are in the index (so the verb is "unstage") or in the tree. */
+  staged: boolean;
+  onApply: (hunkIndex: number) => void;
+  onDiscard?: (hunkIndex: number) => void;
+  busy?: boolean;
+}
+
+function Hunk({
+  hunk,
+  index,
+  actions,
+  onExpand,
+}: {
+  hunk: GitHunk;
+  index: number;
+  actions?: HunkActions;
+  onExpand?: () => void;
+}) {
   // Which lines pair up as one edit, and therefore what to mark inside them.
   const marks = useMemo(() => {
     const pairs = pairedRuns(hunk.lines.map((l) => l.kind));
@@ -66,12 +84,48 @@ function Hunk({ hunk }: { hunk: GitHunk }) {
 
   return (
     <>
-      {hunk.gapBefore > 0 && (
-        <div className="px-2 py-0.5 text-center text-[10px] text-[var(--text-dim)] select-none">
-          ⋮ {hunk.gapBefore} unchanged line{hunk.gapBefore === 1 ? '' : 's'}
-        </div>
-      )}
-      <div className="bg-[var(--bg-raised)] px-2 py-0.5 font-mono text-[11px] text-sky-300/70">{hunk.header}</div>
+      {hunk.gapBefore > 0 &&
+        (onExpand ? (
+          <button
+            type="button"
+            onClick={onExpand}
+            title="Show more of the surrounding lines"
+            className="w-full cursor-pointer py-0.5 text-center text-[10px] text-[var(--text-dim)] select-none hover:bg-[var(--bg-hover)]/50 hover:text-[var(--text)]"
+          >
+            ⋮ {hunk.gapBefore} unchanged line{hunk.gapBefore === 1 ? '' : 's'}
+          </button>
+        ) : (
+          <div className="px-2 py-0.5 text-center text-[10px] text-[var(--text-dim)] select-none">
+            ⋮ {hunk.gapBefore} unchanged line{hunk.gapBefore === 1 ? '' : 's'}
+          </div>
+        ))}
+      <div className="flex items-center gap-2 bg-[var(--bg-raised)] px-2 py-0.5">
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-sky-300/70">{hunk.header}</span>
+        {actions && (
+          <span className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              disabled={actions.busy}
+              onClick={() => actions.onApply(index)}
+              title={actions.staged ? 'Take just this hunk out of the index' : 'Put just this hunk in the index'}
+              className="cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-40"
+            >
+              {actions.staged ? '− unstage' : '+ stage'}
+            </button>
+            {actions.onDiscard && (
+              <button
+                type="button"
+                disabled={actions.busy}
+                onClick={() => actions.onDiscard?.(index)}
+                title="Throw just this hunk away"
+                className="cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-red-300 disabled:opacity-40"
+              >
+                ↺ discard
+              </button>
+            )}
+          </span>
+        )}
+      </div>
       {hunk.lines.map((line, i) => {
         const spans = marks.get(i);
         return (
@@ -101,7 +155,17 @@ function Hunk({ hunk }: { hunk: GitHunk }) {
   );
 }
 
-function FileDiff({ file, openByDefault }: { file: GitFileDiff; openByDefault: boolean }) {
+function FileDiff({
+  file,
+  openByDefault,
+  actions,
+  onExpand,
+}: {
+  file: GitFileDiff;
+  openByDefault: boolean;
+  actions?: HunkActions;
+  onExpand?: () => void;
+}) {
   const [open, setOpen] = useState(openByDefault);
   return (
     <div className="mb-2 overflow-hidden rounded border border-[var(--border)]">
@@ -140,7 +204,9 @@ function FileDiff({ file, openByDefault }: { file: GitFileDiff; openByDefault: b
               No textual changes — a mode change or a rename with identical content.
             </p>
           ) : (
-            file.hunks.map((hunk, i) => <Hunk key={i} hunk={hunk} />)
+            file.hunks.map((hunk, i) => (
+              <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} />
+            ))
           )}
         </div>
       )}
@@ -152,10 +218,16 @@ export function DiffView({
   files,
   truncated,
   selectedPath,
+  actions,
+  onExpand,
 }: {
   files: GitFileDiff[];
   truncated: boolean;
   selectedPath: string | null;
+  /** Per-hunk buttons. Only the working tree has them — a commit is history. */
+  actions?: HunkActions;
+  /** Show more surrounding lines. Absent when there is nothing more to show. */
+  onExpand?: () => void;
 }) {
   if (files.length === 0) {
     return <p className="text-[11px] text-[var(--text-dim)]">Nothing changed here.</p>;
@@ -168,7 +240,13 @@ export function DiffView({
         </p>
       )}
       {files.map((file) => (
-        <FileDiff key={file.path} file={file} openByDefault={files.length <= 6 || file.path === selectedPath} />
+        <FileDiff
+          key={file.path}
+          file={file}
+          openByDefault={files.length <= 6 || file.path === selectedPath}
+          actions={actions}
+          onExpand={onExpand}
+        />
       ))}
     </>
   );
