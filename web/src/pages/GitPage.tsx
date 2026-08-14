@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { gitApi } from '../api/git.ts';
+import { CommitDetail } from '../components/git/CommitDetail.tsx';
 import { GitToolbar } from '../components/git/GitToolbar.tsx';
 import { GraphList } from '../components/git/GraphList.tsx';
 import { RefSidebar } from '../components/git/RefSidebar.tsx';
@@ -154,7 +155,18 @@ export function GitPage() {
                 repoId={repoId}
                 refFilter={selectedRef}
                 selected={selectedSha}
-                onSelect={(sha) => setParam('c', sha)}
+                onSelect={(sha) => {
+                  // A file chosen inside one commit means nothing in the next.
+                  setSearchParams(
+                    (prev) => {
+                      const next = new URLSearchParams(prev);
+                      next.set('c', sha);
+                      next.delete('f');
+                      return next;
+                    },
+                    { replace: true },
+                  );
+                }}
               />
             </div>
             <div
@@ -166,10 +178,12 @@ export function GitPage() {
             <div className="min-h-0 flex-1 overflow-y-auto p-3 text-xs">
               {statusQ.isError && <p className="text-red-400">Could not read this repository: {String(statusQ.error)}</p>}
               {selectedSha ? (
-                <p className="text-[var(--text-dim)]">
-                  <span className="font-mono">{selectedSha.slice(0, 7)}</span> — the commit's files and its diff land
-                  in this pane next.
-                </p>
+                <CommitDetail
+                  repoId={repoId}
+                  sha={selectedSha}
+                  selectedPath={searchParams.get('f')}
+                  onSelectPath={(path) => setParam('f', path)}
+                />
               ) : (
                 <p className="text-[var(--text-dim)]">
                   Pick a commit above to see what it changed.

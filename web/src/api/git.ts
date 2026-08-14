@@ -1,6 +1,9 @@
 import type {
   GitBranchesResponse,
   GitCommandLogResponse,
+  GitCommitDetail,
+  GitDiffMode,
+  GitDiffResponse,
   GitLogResponse,
   GitOpenTarget,
   GitOverview,
@@ -51,6 +54,19 @@ export const gitApi = {
     if (opts.path) params.set('path', opts.path);
     const query = params.toString();
     return getJson<GitLogResponse>(`/api/git/repos/${id}/log${query ? `?${query}` : ''}`);
+  },
+
+  commit: (id: string, sha: string) => getJson<GitCommitDetail>(`/api/git/repos/${id}/commit/${sha}`),
+  diff: (
+    id: string,
+    opts: { mode: GitDiffMode; sha?: string | null; base?: string | null; path?: string | null; context?: number },
+  ) => {
+    const params = new URLSearchParams({ mode: opts.mode });
+    if (opts.sha) params.set('sha', opts.sha);
+    if (opts.base) params.set('base', opts.base);
+    if (opts.path) params.set('path', opts.path);
+    if (opts.context !== undefined) params.set('context', String(opts.context));
+    return getJson<GitDiffResponse>(`/api/git/repos/${id}/diff?${params}`);
   },
 
   status: (id: string) => getJson<GitStatus>(`/api/git/repos/${id}/status`),

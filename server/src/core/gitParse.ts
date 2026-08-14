@@ -352,6 +352,45 @@ export function parseWorktreeList(stdout: string): GitWorktree[] {
 export const LOG_FORMAT = '%x1e%H%x1f%P%x1f%D%x1f%an%x1f%ae%x1f%aI%x1f%cI%x1f%s';
 
 /**
+ * One commit in full. The body goes LAST because it is the only field that can
+ * contain anything at all, newlines included — with it at the end there is
+ * nothing after it to be confused by.
+ */
+export const COMMIT_FORMAT = `${LOG_FORMAT}%x1f%cn%x1f%ce%x1f%b`;
+
+export interface ParsedCommitDetail {
+  commit: GitCommit;
+  body: string;
+  committerName: string;
+  committerEmail: string;
+}
+
+export function parseCommitDetail(stdout: string): ParsedCommitDetail | null {
+  const record = stdout.split(REC)[1] ?? stdout.split(REC)[0];
+  if (!record) return null;
+  const fields = record.replace(/^\r?\n/, '').split(FLD);
+  if (fields.length < 11) return null;
+  const [sha, parents, decoration, authorName, authorEmail, authoredAt, committedAt, subject, cn, ce, body] = fields;
+  if (!sha) return null;
+  return {
+    commit: {
+      sha,
+      shortSha: sha.slice(0, 7),
+      parents: parents ? parents.split(' ').filter(Boolean) : [],
+      refs: parseDecoration(decoration ?? ''),
+      authorName: authorName ?? '',
+      authorEmail: authorEmail ?? '',
+      authoredAt: authoredAt ?? '',
+      committedAt: committedAt ?? '',
+      subject: subject ?? '',
+    },
+    body: (body ?? '').replace(/\s+$/, ''),
+    committerName: cn ?? '',
+    committerEmail: ce ?? '',
+  };
+}
+
+/**
  * `%D` with `--decorate=full`: "HEAD -> refs/heads/main, tag: refs/tags/v1.0.0,
  * refs/remotes/origin/main". Full refnames are the point — local, remote and
  * tag are then read off the namespace instead of guessed from the short form.
@@ -450,7 +489,11 @@ export function parseDiff(text: string, maxLines: number): GitFileDiff[] {
     for (const line of lines) {
       if (current) {
         const kind = line[0];
-        if (kind === '+' || kind === '-' || kind === ' ' || line === '') {
+        // Every line inside a hunk carries its marker: ' ', '+', '-' or '\'.
+        // An EMPTY string is never one of them — it is the artifact of
+        // splitting a block that ends with a newline, and counting it as a
+        // context line adds a phantom line to every diff.
+        if (kind === '+' || kind === '-' || kind === ' ') {
           if (total >= maxLines) {
             tooLarge = true;
             current = null;
@@ -464,7 +507,7 @@ export function parseDiff(text: string, maxLines: number): GitFileDiff[] {
             current.lines.push({ kind: 'del', oldNo: oldNo++, newNo: null, text: line.slice(1) });
             deletions++;
           } else {
-            const body = line === '' ? '' : line.slice(1);
+            const body = line.slice(1);
             // A conflicted file is diffed with its markers still in it; they
             // are context lines as far as git is concerned, and the reader
             // needs them to stand out.

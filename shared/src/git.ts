@@ -586,6 +586,12 @@ export const GIT_LOG_PAGE = 200;
 /** Diff lines kept for one file before it is reported as too large to show. */
 export const GIT_DIFF_MAX_LINES = 20_000;
 
+/** Files in one diff response. Past this the list is a prefix and says so. */
+export const GIT_DIFF_MAX_FILES = 500;
+
+/** Files listed for one commit. A generated-code commit can touch thousands. */
+export const GIT_COMMIT_MAX_FILES = 2_000;
+
 /** How deep a scan root is walked looking for repositories. */
 export const GIT_SCAN_DEPTH = 2;
 

@@ -1,10 +1,18 @@
 import {
+  GIT_COMMIT_MAX_FILES,
+  GIT_DIFF_MAX_FILES,
+  GIT_DIFF_MAX_LINES,
   GIT_LOG_PAGE,
   GIT_STATUS_MAX_ENTRIES,
   isValidRefName,
+  isValidSha,
   type GitBranchesResponse,
   type GitCommandLogEntry,
   type GitCommandLogResponse,
+  type GitCommitDetail,
+  type GitCommitFile,
+  type GitDiffMode,
+  type GitDiffResponse,
   type GitInProgress,
   type GitInProgressKind,
   type GitLogResponse,
@@ -31,12 +39,17 @@ import {
 import { findGitExe } from '../util/launcher.ts';
 import {
   BRANCH_FORMAT,
+  COMMIT_FORMAT,
   LOG_FORMAT,
   REMOTE_BRANCH_FORMAT,
   STASH_FORMAT,
   TAG_FORMAT,
+  parseCommitDetail,
+  parseDiff,
   parseLocalBranches,
   parseLogRecords,
+  parseNameStatusZ,
+  parseNumstatZ,
   parseRemoteBranches,
   parseRemotes,
   parseStashList,
@@ -762,6 +775,136 @@ export class GitService {
     const all = parseLogRecords(res.stdout);
     const hasMore = all.length > limit;
     return { commits: hasMore ? all.slice(0, limit) : all, hasMore, offset };
+  }
+
+  /**
+   * One commit: its message, and which files it touched.
+   *
+   * A merge is diffed against its FIRST parent. `git show` on a merge prints
+   * nothing by default, which reads as "this commit changed no files" — the
+   * one thing that is certainly untrue about it.
+   */
+  async commit(repo: ResolvedRepo, sha: string, signal?: AbortSignal): Promise<GitCommitDetail> {
+    if (!isValidSha(sha)) throw new GitBadInput('That is not a commit id.');
+
+    const [metaRes, numstatRes, nameRes] = await Promise.all([
+      runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: 'commit',
+        args: ['show', '--no-patch', `--format=${COMMIT_FORMAT}`, '--decorate=full', sha, '--'],
+      }),
+      runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: 'commit-numstat',
+        args: ['show', '--format=', '--numstat', '-z', '--find-renames', '--diff-merges=first-parent', sha, '--'],
+      }),
+      runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: 'commit-status',
+        args: ['show', '--format=', '--name-status', '-z', '--find-renames', '--diff-merges=first-parent', sha, '--'],
+      }),
+    ]);
+    if (!metaRes.ok) throw new GitFailed(metaRes);
+    const detail = parseCommitDetail(metaRes.stdout);
+    if (!detail) throw new GitBadInput('That commit could not be read.');
+
+    const statusByPath = new Map<string, string>();
+    if (nameRes.ok) {
+      for (const entry of parseNameStatusZ(nameRes.stdout)) statusByPath.set(entry.path, entry.status);
+    }
+
+    const stats = numstatRes.ok ? parseNumstatZ(numstatRes.stdout) : [];
+    const truncated = stats.length > GIT_COMMIT_MAX_FILES;
+    const files: GitCommitFile[] = (truncated ? stats.slice(0, GIT_COMMIT_MAX_FILES) : stats).map((entry) => ({
+      path: entry.path,
+      origPath: entry.origPath,
+      status: statusByPath.get(entry.path) ?? 'M',
+      additions: entry.additions,
+      deletions: entry.deletions,
+      binary: entry.binary,
+    }));
+
+    return {
+      commit: detail.commit,
+      body: detail.body,
+      committerName: detail.committerName,
+      committerEmail: detail.committerEmail,
+      files,
+      additions: stats.reduce((sum, f) => sum + (f.additions ?? 0), 0),
+      deletions: stats.reduce((sum, f) => sum + (f.deletions ?? 0), 0),
+      truncated,
+    };
+  }
+
+  /**
+   * A diff, already parsed into hunks.
+   *
+   * Parsing here rather than in the browser is what lets hunk-level staging
+   * post an index later instead of a patch the client reassembled — the client
+   * never has to be able to rebuild something git will accept.
+   */
+  async diff(
+    repo: ResolvedRepo,
+    opts: { mode: GitDiffMode; sha?: string | null; base?: string | null; path?: string | null; context?: number },
+    signal?: AbortSignal,
+  ): Promise<GitDiffResponse> {
+    const context = Math.min(50, Math.max(0, Math.floor(opts.context ?? 3)));
+    const args = ['--no-color', `-U${context}`, '--find-renames'];
+
+    let command: string[];
+    switch (opts.mode) {
+      case 'commit': {
+        if (!opts.sha || !isValidSha(opts.sha)) throw new GitBadInput('That is not a commit id.');
+        command = ['show', '--format=', '--diff-merges=first-parent', ...args, opts.sha];
+        break;
+      }
+      case 'range': {
+        if (!opts.sha || !isValidSha(opts.sha)) throw new GitBadInput('That is not a commit id.');
+        if (!opts.base || !isValidSha(opts.base)) throw new GitBadInput('That is not a commit id.');
+        command = ['diff', ...args, `${opts.base}..${opts.sha}`];
+        break;
+      }
+      case 'staged':
+        command = ['diff', '--cached', ...args];
+        break;
+      case 'worktree':
+      case 'conflict':
+      default:
+        command = ['diff', ...args];
+        break;
+    }
+
+    command.push('--');
+    if (opts.path) command.push(opts.path);
+
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: `diff:${opts.mode}`,
+      args: command,
+      maxBytes: 24 * 1024 * 1024,
+    });
+    // `diff` answers 1 when there ARE differences, which is the normal case.
+    if (!res.ok && res.exitCode !== 1) throw new GitFailed(res);
+
+    const files = parseDiff(res.stdout, GIT_DIFF_MAX_LINES);
+    const truncated = res.truncated || files.length > GIT_DIFF_MAX_FILES;
+    return {
+      mode: opts.mode,
+      files: truncated ? files.slice(0, GIT_DIFF_MAX_FILES) : files,
+      truncated,
+    };
   }
 
   async stashes(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitStash[]> {

@@ -173,6 +173,44 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
   });
 
+  app.get<{ Params: { id: string; sha: string } }>('/api/git/repos/:id/commit/:sha', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    try {
+      return await ctx.git.commit(repo, request.params.sha, abortSignalOf(reply));
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
+  app.get<{
+    Params: { id: string };
+    Querystring: { mode?: string; sha?: string; base?: string; path?: string; context?: string };
+  }>('/api/git/repos/:id/diff', async (request, reply) => {
+    const repo = repoOf(request.params.id, reply);
+    if (!repo) return reply;
+    const mode = request.query.mode ?? 'worktree';
+    if (mode !== 'worktree' && mode !== 'staged' && mode !== 'commit' && mode !== 'range' && mode !== 'conflict') {
+      return reply.code(400).send({ error: 'Unknown diff mode' });
+    }
+    const context = Number(request.query.context ?? 3);
+    try {
+      return await ctx.git.diff(
+        repo,
+        {
+          mode,
+          sha: request.query.sha ?? null,
+          base: request.query.base ?? null,
+          path: request.query.path ?? null,
+          context: Number.isFinite(context) ? context : 3,
+        },
+        abortSignalOf(reply),
+      );
+    } catch (err) {
+      return sendGitError(reply, err);
+    }
+  });
+
   app.get<{ Params: { id: string } }>('/api/git/repos/:id/stashes', async (request, reply) => {
     const repo = repoOf(request.params.id, reply);
     if (!repo) return reply;
