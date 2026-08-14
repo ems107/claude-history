@@ -9,13 +9,17 @@ import type {
   GitCommitRequest,
   GitDiffMode,
   GitDiffResponse,
+  GitFetchRequest,
   GitLogResponse,
   GitMergeRequest,
   GitMutationResponse,
   GitOpenTarget,
   GitOverview,
+  GitPullRequest,
+  GitPushRequest,
   GitRemote,
   GitResetRequest,
+  GitTagPushRequest,
   GitStash,
   GitStatus,
   GitTag,
@@ -106,4 +110,9 @@ export const gitApi = {
   reset: (id: string, body: GitResetRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/reset`, body),
   continuation: (id: string, action: 'continue' | 'abort' | 'skip') =>
     post<GitMutationResponse>(`/api/git/repos/${id}/${action}`, {}),
+
+  fetch: (id: string, body: GitFetchRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/fetch`, body),
+  pull: (id: string, body: GitPullRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/pull`, body),
+  push: (id: string, body: GitPushRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/push`, body),
+  pushTag: (id: string, body: GitTagPushRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/tag/push`, body),
 };

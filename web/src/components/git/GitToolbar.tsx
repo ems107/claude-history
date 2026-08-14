@@ -1,9 +1,12 @@
 import type { GitOverview, GitStatus } from '@claude-history/shared';
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { btn } from '../../lib/ui.ts';
 import { toggleClass } from '../viewer/SessionHeader.tsx';
+import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
+import { useGitAction } from './useGitAction.ts';
 
 /**
  * The repository's headline: which one, where its HEAD is, and how far it has
@@ -36,7 +39,20 @@ export function GitToolbar({
   onTab: (tab: 'commits' | 'work') => void;
 }) {
   const [opening, setOpening] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const action = useGitAction(repoId);
   const repo = overview?.repos.find((r) => r.id === repoId) ?? null;
+
+  // Only fetched when the push dialog needs them.
+  const remotesQ = useQuery({
+    queryKey: ['git', 'remotes', repoId],
+    queryFn: () => gitApi.remotes(repoId as string),
+    enabled: !!repoId && pushing,
+  });
+
+  // The two failures worth answering in place rather than just reporting.
+  const diverged = /fast-forward/i.test(action.error ?? '');
+  const needsCredentials = /credentials/i.test(action.error ?? '');
 
   const changed = status ? status.entries.filter((e) => e.unstaged !== 'ignored').length : 0;
   const conflicted = status ? status.entries.filter((e) => e.conflicted).length : 0;
@@ -144,7 +160,85 @@ export function GitToolbar({
         </button>
       </span>
 
+      {repoId && (
+        <span className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void action.run(() => gitApi.fetch(repoId))}
+            disabled={action.busy || !!status?.blocked.fetch}
+            title={status?.blocked.fetch ?? 'Update the remote-tracking branches (--all --prune)'}
+            className={btn}
+          >
+            {action.busy ? '…' : 'Fetch'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void action.run(() => gitApi.pull(repoId))}
+            disabled={action.busy || !!status?.blocked.pull}
+            title={status?.blocked.pull ?? 'Fast-forward onto the upstream'}
+            className={btn}
+          >
+            Pull{status && status.behind > 0 ? ` ↓${status.behind}` : ''}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPushing(true)}
+            disabled={action.busy || !status}
+            title={status?.blocked.push ?? status?.blocked.pushUpstream ?? 'Send commits to the remote'}
+            className={btn}
+          >
+            Push{status && status.ahead > 0 ? ` ↑${status.ahead}` : ''}
+          </button>
+        </span>
+      )}
+
       {repo?.error && <p className="w-full text-[11px] text-red-400">{repo.error}</p>}
+
+      {/* A refusal here is a decision waiting to be made, so the two ways out
+          sit next to it rather than in a menu somewhere else. */}
+      {action.error && (
+        <div className="w-full rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300">
+          <p>{action.error}</p>
+          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+            {diverged && repoId && (
+              <>
+                <button type="button" className={btn} onClick={() => void action.run(() => gitApi.pull(repoId, { rebase: true }))}>
+                  Pull with rebase
+                </button>
+                <button type="button" className={btn} onClick={() => void action.run(() => gitApi.pull(repoId, { merge: true }))}>
+                  Pull with merge
+                </button>
+              </>
+            )}
+            {needsCredentials && repoId && (
+              <button type="button" className={btn} onClick={() => open('terminal')}>
+                ❯ Open a terminal here
+              </button>
+            )}
+            <button type="button" className={btn} onClick={action.clear}>
+              Dismiss
+            </button>
+          </span>
+        </div>
+      )}
+      {action.note && (
+        <p className="w-full truncate text-[11px] text-emerald-400" title={action.note}>
+          {action.note.split('\n')[0]}
+        </p>
+      )}
+
+      {pushing && status && (
+        <PushDialog
+          status={status}
+          remotes={remotesQ.data ?? []}
+          busy={action.busy}
+          onCancel={() => setPushing(false)}
+          onPush={(body) => {
+            setPushing(false);
+            if (repoId) void action.run(() => gitApi.push(repoId, body));
+          }}
+        />
+      )}
     </div>
   );
 }
