@@ -11,7 +11,7 @@ import { createLogger } from './logger.ts';
  * carried-over tokens moved out of its own totals. 7: lines Claude Code injected
  * (background-task notifications) stopped being counted and indexed as prompts.
  */
-export const CACHE_VERSION = 7;
+export const CACHE_VERSION = 8;
 
 const cacheLog = createLogger('cache');
 

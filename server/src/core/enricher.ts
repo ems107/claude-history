@@ -1,4 +1,5 @@
-import type { DailyUsage, PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
+import type { CacheState, DailyUsage, PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
+import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { extractPrompt, injectedOrigin } from './summarizer.ts';
 
@@ -54,12 +55,21 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
   let assistantMessageCount = 0;
   let toolUseCount = 0;
   let compactionCount = 0;
+  // The previous REQUEST, for the cache arithmetic — see `shared/src/recache.ts`.
+  // It must stay in step with `buildContextIndex` in the viewer: both take a
+  // request to be the first line of a `message.id` that carries usage, both let
+  // a carried-over line be the predecessor of the next one, and neither counts
+  // an event on a carried-over line itself.
+  let previous: (CacheState & { messageId: string; model: string; runId: string | null; ts: number | null }) | null =
+    null;
+  let compactedSinceLastRequest = false;
 
   const dayOf = (o: Record<string, unknown>): string | null => {
     const ts = str(o.timestamp);
     return ts && ts.length >= 10 ? ts.slice(0, 10) : null;
   };
-  const dayBucket = (day: string): DailyUsage => (daily[day] ??= { prompts: 0, byModel: {} });
+  const dayBucket = (day: string): DailyUsage =>
+    (daily[day] ??= { prompts: 0, byModel: {}, recachedByModel: {}, recacheEvents: 0 });
 
   for await (const line of streamLines(filePath)) {
     const o = safeParse(line);
@@ -119,6 +129,7 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
       const model = str(o.message.model);
       const messageId = str(o.message.id);
       if (model && model !== '<synthetic>') models.add(model);
+      const lineTime = str(o.timestamp) ? Date.parse(str(o.timestamp) as string) : null;
       if (messageId && !seenMessageIds.has(messageId)) {
         seenMessageIds.add(messageId);
         assistantMessageCount++;
@@ -134,7 +145,44 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
               addUsage((bucket.byModel[model] ??= zeroUsage()), o.message.usage);
             }
           }
+
+          const current: CacheState = {
+            read: num(o.message.usage.cache_read_input_tokens) ?? 0,
+            write: num(o.message.usage.cache_creation_input_tokens) ?? 0,
+          };
+          // A fork's copies were billed in the parent, so what they re-wrote is
+          // the parent's story — but they still describe the cache the next
+          // request met, which is why they stay eligible as a predecessor.
+          const event =
+            previous && !carried
+              ? recacheOf(previous, current, {
+                  compactedBetween: compactedSinceLastRequest,
+                  modelChanged: previous.model !== model,
+                  // Only a change between two KNOWN runs is a change: a line
+                  // written before any request went out carries no `session_id`.
+                  runChanged: previous.runId !== null && runId !== null && previous.runId !== runId,
+                  gapMs:
+                    previous.ts !== null && lineTime !== null && !Number.isNaN(lineTime)
+                      ? Math.max(0, lineTime - previous.ts)
+                      : null,
+                })
+              : null;
+          if (event) {
+            const day = dayOf(o);
+            if (day) {
+              const bucket = dayBucket(day);
+              bucket.recachedByModel[model] = (bucket.recachedByModel[model] ?? 0) + event.tokens;
+              bucket.recacheEvents++;
+            }
+          }
+          previous = { ...current, messageId, model, runId, ts: Number.isNaN(lineTime) ? null : lineTime };
+          compactedSinceLastRequest = false;
         }
+      } else if (previous && messageId === previous.messageId && lineTime !== null && !Number.isNaN(lineTime)) {
+        // A later chunk of the same answer: the gap to the NEXT request starts
+        // when this one finished, not when its first line was written. Same as
+        // the viewer, which measures from `endTimestamp`.
+        previous.ts = lineTime;
       }
       // Streamed chunks of one message land on separate lines, each carrying
       // distinct content blocks — collect from every line (blocks never repeat).
@@ -150,6 +198,9 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
       }
     } else if (type === 'system' && str(o.subtype) === 'compact_boundary') {
       compactionCount++;
+      // The context after a boundary is new and smaller, not the old one written
+      // twice — charging it as a re-cache would bill the user for a saving.
+      compactedSinceLastRequest = true;
     }
   }
 

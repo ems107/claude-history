@@ -89,6 +89,10 @@ export function StatsPage() {
     };
     const perModel = new Map<string, { output: number; cost: number }>();
     let totals = { sessions: 0, prompts: 0, output: 0, cost: 0 };
+    // Context that was cached, expired and had to be written again. Priced here
+    // rather than stored: the enrichment keeps tokens only, so an edit to the
+    // price table moves this figure like it moves every other.
+    let recache = { tokens: 0, events: 0, billed: 0, ifRead: 0 };
 
     for (const s of sessions) {
       const createdDay = (s.createdAt ?? '').slice(0, 10);
@@ -119,6 +123,18 @@ export function StatsPage() {
           m.cost += cost;
           perModel.set(model, m);
         }
+        recache.events += du.recacheEvents;
+        for (const [model, tokens] of Object.entries(du.recachedByModel)) {
+          const rates = resolvePrices(model, prices);
+          recache.tokens += tokens;
+          // No rates for this model: count the tokens, price nothing. The
+          // enrichment does not keep the 1h/5m split, and every session
+          // transcript in this corpus writes 1h caches.
+          if (rates) {
+            recache.billed += (tokens * rates.cacheWrite) / 1_000_000;
+            recache.ifRead += (tokens * rates.cacheRead) / 1_000_000;
+          }
+        }
       }
     }
 
@@ -128,7 +144,7 @@ export function StatsPage() {
         ? daysBetween(cutoff && cutoff > chartDays[0] ? cutoff : chartDays[0], chartDays[chartDays.length - 1])
         : [];
 
-    return { chart, days, perProject, perModel, totals };
+    return { chart, days, perProject, perModel, totals, recache };
   }, [sessionsQ.data, pricesQ.data, range]);
 
   const series: ChartSeries[] = useMemo(() => {
@@ -178,6 +194,28 @@ export function StatsPage() {
             hint="API-equivalent value at the configured prices — not actual subscription spend"
           />
         </div>
+
+        {/* A full-width strip rather than a fifth card: the grid above is
+            `md:grid-cols-4` and a fifth would leave one orphan on its own row.
+            Hidden when nothing was re-cached, which is most short periods. */}
+        {agg.recache.tokens > 0 && (
+          <div className="rounded border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <div className="text-[11px] tracking-wider text-amber-400/80 uppercase">↺ Re-cached context</div>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+              <span className="text-2xl font-semibold text-amber-300">{formatUsd(agg.recache.billed)}</span>
+              <span className="text-xs text-[var(--text-dim)]">
+                {agg.totals.cost > 0 && <>{((agg.recache.billed / agg.totals.cost) * 100).toFixed(1)}% of spend · </>}
+                {formatTokens(agg.recache.tokens)} tokens over {agg.recache.events} request
+                {agg.recache.events !== 1 ? 's' : ''} · {formatUsd(agg.recache.billed - agg.recache.ifRead)} more than
+                reading them from cache would have cost
+              </span>
+            </div>
+            <div className="mt-1 text-[10px] text-[var(--text-dim)]">
+              Context that was already cached when a request went out and had to be written again — usually because the
+              1-hour cache expired while the session sat idle. Counted inside the cost above, not on top of it.
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="mb-1 flex items-center gap-2">

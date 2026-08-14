@@ -89,6 +89,21 @@ export interface DailyUsage {
   /** User-typed prompts that day. */
   prompts: number;
   byModel: Record<string, UsageTotals>;
+  /**
+   * Context that was already cached and had to be written again, per model — a
+   * SUBSET of `byModel[...].cacheCreate`, never an addition to it. Stored as
+   * tokens and never as an amount: the price table is user-editable, so a saved
+   * cost would freeze yesterday's rates. Carried-over lines are excluded, like
+   * every other aggregate here.
+   *
+   * It lives in the daily buckets rather than on the session because that is
+   * what the stats page filters by, and because a session-level copy would be a
+   * second source of truth for the number the viewer already computes from the
+   * parsed turns. Both go through `recacheOf` in `shared/src/recache.ts`.
+   */
+  recachedByModel: Record<string, number>;
+  /** Requests that day which had to re-write a cached prefix. */
+  recacheEvents: number;
 }
 
 export interface SessionEnrichment {
