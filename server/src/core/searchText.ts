@@ -27,6 +27,34 @@ export interface SearchOptions {
   wholeWord?: boolean;
 }
 
+/** The role of the block holding a session's own id — see `matchesSessionIds`. */
+export const ID_ROLE = 'id';
+
+/**
+ * Whether this query may look at session ids at all. The app writes ids as
+ * their first eight characters (fork chips, lineage, the log), so pasting one
+ * back has to find the session — but a uuid is 32 hex characters, and an
+ * ordinary word made of a-f and digits ("cafe", "cada", "added") would drag in
+ * whatever session happens to carry those letters somewhere inside its id, in a
+ * row nobody was looking for. So: hex only, dashes allowed (they are part of a
+ * pasted uuid) and four characters at the least.
+ */
+export function matchesSessionIds(terms: string[]): boolean {
+  return terms.some((t) => /^[0-9a-f-]+$/.test(t) && t.replace(/-/g, '').length >= 4);
+}
+
+/**
+ * Whether a scan must skip this block: the role restriction the request asked
+ * for, plus the id rule above. One predicate for all four scan loops — the
+ * search, the deep scan and the two paged match lists — because they have to
+ * agree to the unit: a hit counting an id that its own "+N more matches" page
+ * cannot find is a count that never reaches zero.
+ */
+export function skipBlock(role: string, roles: Set<string> | undefined, ids: boolean): boolean {
+  if (roles && !roles.has(role)) return true;
+  return role === ID_ROLE && !ids;
+}
+
 /** One place a query matched, as folded offsets, with the occurrences it accounts for. */
 export interface MatchWindow {
   from: number;

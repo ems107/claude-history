@@ -12,10 +12,13 @@ import type { SessionIndex } from './index.ts';
 import {
   buildSnippet,
   hasTerm,
+  ID_ROLE,
+  matchesSessionIds,
   matchWindows,
   occurrences,
   parseTerms,
   type SearchOptions,
+  skipBlock,
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
 } from './searchText.ts';
@@ -57,6 +60,12 @@ export class SearchService {
 
     const s = this.index.get(id);
     const blocks: SearchBlock[] = [];
+    // The session's own id, first, so pasting the eight characters the app puts
+    // on a fork chip or a log line finds the session it names. It is part of the
+    // corpus like any other block — which is what keeps the counts, the paged
+    // match list and the deep scan agreeing about it — but only a query that
+    // could BE an id is ever allowed to look at it (`matchesSessionIds`).
+    blocks.push({ uuid: null, role: ID_ROLE, text: id });
     // The (possibly locally-renamed) title is always searchable.
     if (s && s.titleSource !== 'uuid') blocks.push({ uuid: null, role: 'title', text: s.title });
     const entry = await this.index.loadTextBlocks(id);
@@ -109,6 +118,7 @@ export class SearchService {
     const mode = options.mode ?? 'phrase';
     const scope = options.scope ?? 'message';
     const terms = parseTerms(query, mode);
+    const ids = matchesSessionIds(terms);
     const echo: SearchQueryEcho = { terms, mode, scope, wholeWord };
     const snippets: SearchSnippet[] = [];
     let total = 0;
@@ -118,7 +128,7 @@ export class SearchService {
     const st = terms.length > 0 ? await this.ensureSession(id) : null;
     if (st) {
       for (let bi = 0; bi < st.blocks.length; bi++) {
-        if (roles && !roles.has(st.blocks[bi].role)) continue;
+        if (skipBlock(st.blocks[bi].role, roles, ids)) continue;
         const folded = st.folded[bi];
         if (scope === 'message' && !terms.every((t) => hasTerm(folded, t, wholeWord))) continue;
         let map: number[] | null = null;
@@ -153,6 +163,7 @@ export class SearchService {
     const mode = options.mode ?? 'phrase';
     const scope = options.scope ?? 'message';
     const terms = parseTerms(query, mode);
+    const ids = matchesSessionIds(terms);
     const echo: SearchQueryEcho = { terms, mode, scope, wholeWord };
     const hits: SearchHit[] = [];
     let scannedSessions = 0;
@@ -178,7 +189,7 @@ export class SearchService {
       let matchCount = 0;
 
       for (let bi = 0; bi < st.blocks.length; bi++) {
-        if (roles && !roles.has(st.blocks[bi].role)) continue;
+        if (skipBlock(st.blocks[bi].role, roles, ids)) continue;
         const folded = st.folded[bi];
         const found: number[][] = terms.map(() => []);
         const counts = terms.map(() => 0);

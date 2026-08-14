@@ -138,6 +138,30 @@ for 100 places a click there against 25.
   several occurrences, so a button promising matches would overpromise, while the
   footer has to speak in the same unit as the `+N` that was clicked.
 
+**A session's own id is one of the indexed blocks** (role `id`, text the bare
+uuid), so pasting the eight characters the app writes on a fork chip, in a log
+line or in a URL lands on the session they name — the one thing about a session
+that is on screen everywhere and used to be searchable nowhere.
+
+- **Only a query that could BE an id ever looks at it**: hex, dashes allowed,
+  four characters and up (`matchesSessionIds`). A uuid is 32 hex characters, so
+  an ordinary word made of a-f and digits — `cafe`, `cada`, `added` — would
+  otherwise drag in whatever session happens to carry those letters somewhere
+  inside its id, in a row nobody was looking for.
+- **It is a block like any other, and that is what keeps the counts honest.** The
+  search, the deep scan and both paged match lists share one predicate
+  (`skipBlock`), so a hit can never count an id that its own `+N more matches`
+  page cannot find — and the deep scan stays a superset of the plain one for id
+  queries too (checked: the id row appears exactly once in a 245-match deep page
+  set, 200 + 45 = 245).
+- A restriction to titles, prompts or responses **leaves it out**: an id is not
+  text anybody wrote, and `in=user` asking for it would answer a different
+  question from the one that was asked.
+- The results header counts **the hits the sidebar filters are holding back**
+  rather than dropping them in silence. Empty sessions are hidden by default and
+  a stub is exactly the kind of session looked up by id, so without that line the
+  lookup reads as "0 matches" while the session sits one checkbox away.
+
 Folding (`shared/src/fold.ts`, imported by both sides — there is exactly one
 `normalize('NFD')` in the repo and it must stay that way) is case-, diacritic-
 AND whitespace-insensitive, and
@@ -432,6 +456,17 @@ No automated test suite (personal tool). Verify against real data:
    (`toolu_01LnH4KFDcZ…` in `4a1483ba`, `NOTION_TOKEN`, which exists only in the
    90 KB file: no "Load full output" button may be left, and the marks must be
    inside the loaded text with the pre scrolled to the first one).
+   Session ids: `797db462` must hit `797db462-4f17-…` with an `id` row carrying
+   the whole uuid and a link with **no anchor**, alongside the sessions whose
+   prose mentions it (4 hits here) — and the same for a session named nowhere
+   (`5f6fa047` → 1 hit, 1 row), for the full uuid and for a 6-character prefix.
+   `in=user` must drop the row; a word made only of hex letters (`cada`, `deba`,
+   `add`) must produce none at all. Deep must stay a superset (`5f6fa047` deep →
+   the id hit is still there) and its paging must still close: `deep=1` on
+   `980751cb` gives 245 in 2 pages, 200 + 45, with the `id` row counted once.
+   The empty-session case is what the header line is for: `?q=e1eb30cf` reads
+   `0 matches in 0 sessions · 1 more hidden by the filters`, and `&empty=1`
+   turns it into the hit.
 10. Per-response cost: the pills must **reconcile**, and that is checkable without the UI — sum `usage` over every assistant item of `GET /api/sessions/:id` at the `/api/prices` rates and it must equal the token panel's total to the last decimal (verified: delta 0 on 89- and 831-message sessions). On a fork it reconciles in **two halves**: the items with `carriedOver: false` must add up to `enrichment.usage` and the ones with `carriedOver: true` to `enrichment.carriedOverUsage`, exactly (verified on `c0f70eda` and, with an empty second half, on `0f5b1c8b`). In the viewer, open a turn with a long tool run: the collapsed run carries its own pill (over half the spend lives there), expanding moves one pill onto the first call of each message, and the three levels must never show the same message twice. A session using `claude-haiku-4-5-20251001` must price at the `claude-haiku-4-5` rates, not "—" and never $0.000; a model with no row anywhere must read "—" and appear in the price editor in amber so it can be given one. Open a subagent (`?agent=`) → its own total in the drawer header, absent from the parent's session total by design, and its popover must read **cache write (5m)** at 1.25x input where a session's reads **(1h)** at 2x — a subagent pill showing the 1h rate means the TTL split was lost somewhere.
 11. Replayed lines: the three sessions that carry them are `0f5b1c8b` (2,072 lines), `cae7f9f5` (17,678) and `1decb824` (26, and no duplicated boundary — text only). The first must show **7 "earlier context" headers, not 9**, the second **19, not 42**, none of them dating backwards, none holding prompts with no answer, and every collapsed header must quote the compaction that really closed it (the last of `0f5b1c8b`: 12 prompts, 12/08 11:44:21 → 12/08 14:31:19, 642k → 9.0k). No assistant item may carry the same text block twice (108 did). And the check that says the fix took nothing real with it: the four token totals must be **identical** before and after, and no `message.id` may appear only in a replay.
 12. Context: open `f3384d17` (the only session with `/context`) — 4 snapshot panels, 2 compaction panels, and **no ANSI escapes anywhere** (the grid line must be dropped, not rendered). In each panel the non-deferred categories must sum to the reported total (gap 0 or ±100 from rounding) and the model must keep its `[1m]` marker. The curve in the token panel must show 3 shrinks, 2 tied to a boundary and one labelled as having none. On a plain session (`3b326b6c`): 0 panels, 0 shrinks, and the first three `ctx` pills read 54,612 → 55,416 (+804) → 65,736 (+10,320). No percentage of the window may appear outside a `/context` panel — if one does, someone assumed a limit.

@@ -19,10 +19,12 @@ import type { SearchService } from './search.ts';
 import {
   buildSnippet,
   hasTerm,
+  matchesSessionIds,
   matchWindows,
   occurrences,
   parseTerms,
   type SearchOptions,
+  skipBlock,
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
 } from './searchText.ts';
@@ -155,6 +157,7 @@ export class DeepSearchService {
     scan: DeepScanInfo,
   ): Promise<SearchHit | null> {
     const { roles, wholeWord, scope } = match;
+    const ids = matchesSessionIds(terms);
     const perTerm = terms.map(() => 0);
     const snippets: SearchSnippet[] = [];
     const shown = terms.map(() => false);
@@ -220,7 +223,7 @@ export class DeepSearchService {
     const indexed = await this.search.unitsOf(id);
     if (indexed) {
       for (let i = 0; i < indexed.blocks.length; i++) {
-        if (roles && !roles.has(indexed.blocks[i].role)) continue;
+        if (skipBlock(indexed.blocks[i].role, roles, ids)) continue;
         consume(indexed.blocks[i], indexed.folded[i]);
       }
     }
@@ -256,6 +259,7 @@ export class DeepSearchService {
     const mode = request.options.mode ?? 'phrase';
     const scope = request.options.scope ?? 'message';
     const terms = parseTerms(request.query, mode);
+    const ids = matchesSessionIds(terms);
     const echo: SearchQueryEcho = { terms, mode, scope, wholeWord };
     const scan: DeepScanInfo = { sessionsRead: 0, bytesRead: 0, stoppedEarly: false };
     const snippets: SearchSnippet[] = [];
@@ -283,7 +287,7 @@ export class DeepSearchService {
       const indexed = await this.search.unitsOf(request.id);
       if (indexed) {
         for (let i = 0; i < indexed.blocks.length; i++) {
-          if (roles && !roles.has(indexed.blocks[i].role)) continue;
+          if (skipBlock(indexed.blocks[i].role, roles, ids)) continue;
           consume(indexed.blocks[i], indexed.folded[i]);
         }
       }
