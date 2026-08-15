@@ -3,12 +3,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { FILE_PARAM, type FileRef, formatFileRef, parseFileRef } from '../lib/fileRefs.ts';
 import { useFoldState } from '../lib/folding.ts';
 import { parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
+import { FileRefContext, type FileRefContextValue } from '../components/viewer/FileRefContext.ts';
+import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
 import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
@@ -112,18 +115,61 @@ export function SessionViewPage() {
     [setSearchParams],
   );
 
+  /**
+   * The file a link in the conversation opened. Parsed by the same function
+   * that produced the parameter, so the URL is read by the code that wrote it.
+   */
+  const fileParam = searchParams.get(FILE_PARAM);
+  const fileRef = useMemo(() => (fileParam ? parseFileRef(fileParam) : null), [fileParam]);
+
+  const closeFile = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete(FILE_PARAM);
+        return sp;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  const projectPath = detail.data?.summary.projectPath ?? '';
+  const fileRefs = useMemo<FileRefContextValue>(
+    () => ({
+      sessionId: id,
+      projectPath,
+      // Built from the route alone rather than from the current querystring: a
+      // copied link should open that file in that session, not carry somebody
+      // else's search marks along.
+      hrefFor: (ref: FileRef) => `/session/${id}?${FILE_PARAM}=${encodeURIComponent(formatFileRef(ref))}`,
+      openFile: (ref: FileRef) =>
+        setSearchParams(
+          (prev) => {
+            const sp = new URLSearchParams(prev);
+            sp.set(FILE_PARAM, formatFileRef(ref));
+            return sp;
+          },
+          { replace: true },
+        ),
+    }),
+    [id, projectPath, setSearchParams],
+  );
+
   const navigate = useNavigate();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-      if (agentId) closeAgent();
+      // Innermost first: the file sits on top of the subagent drawer, and both
+      // may be open — a path is often clicked from inside a subagent report.
+      if (fileRef) closeFile();
+      else if (agentId) closeAgent();
       else navigate(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [agentId, closeAgent, navigate]);
+  }, [fileRef, closeFile, agentId, closeAgent, navigate]);
 
   /**
    * Drop an echoed prompt as soon as the real one arrives, matched on its text
@@ -218,136 +264,151 @@ export function SessionViewPage() {
   })();
 
   return (
-    <div className="flex h-full flex-col">
-      <SessionHeader
-        detail={detail.data}
-        color={color}
-        // Not detail.summary.live: that one only moves when the transcript
-        // grows, so the badge would still read "live" through a turn the app
-        // itself is running.
-        live={liveInfo}
-        showThinking={showThinking}
-        onToggleThinking={() => {
-          setShowThinking((v) => {
-            localStorage.setItem('showThinking', String(!v));
-            return !v;
-          });
-        }}
-        thinkingCount={thinkingCount}
-        expandTools={expandTools}
-        onToggleTools={() => {
-          setExpandTools((v) => {
-            localStorage.setItem('expandTools', String(!v));
-            return !v;
-          });
-        }}
-        toolCount={toolCount}
-        canHideResponses={fold.canHide}
-        onHideResponses={fold.hideAll}
-        canShowResponses={fold.canShow}
-        onShowResponses={fold.showAll}
-        expandSegments={expandSegments}
-        onToggleSegments={() => setExpandSegments((v) => !v)}
-        compactionCount={compactionCount}
-        showTokens={showTokens}
-        onToggleTokens={() => setShowTokens((v) => !v)}
-        showLineage={showLineage}
-        onToggleLineage={() => setShowLineage((v) => !v)}
-        showFiles={showFiles}
-        onToggleFiles={() => setShowFiles((v) => !v)}
-        actions={
-          <>
-            <ViewButton view={view} />
-            <ExportButton detail={detail.data} />
-            <ResumeButtons session={detail.data.summary} />
-          </>
-        }
-      />
-      {showTokens && <TokenPanel summary={detail.data.summary} turns={detail.data.turns} />}
-      {showLineage && <LineagePanel sessionId={id} />}
-      {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
-      {/* The pill is a sibling of the scroller, not a child: inside it, it would
-          scroll away with the conversation. */}
-      <div className="relative min-h-0 flex-1">
-        {/* `both-edges` so the scrollbar does not shift the centre: the composer
-            below is centred on the full width, and reserving the gutter on one
-            side only left the two misaligned by half a scrollbar (measured: 5 px). */}
-        <div
-          ref={follow.scrollRef}
-          className="h-full overflow-y-auto px-4 py-4 [scrollbar-gutter:stable_both-edges]"
-        >
-          {/* Width on the outer box, zoom on an inner one — never both on the
-              same element: a max-width INSIDE a zoomed box is a length like any
-              other and would be scaled with it, so 896 px would drift to 1344
-              at 150 %. And `zoom` is only ever set when it is not 100, so the
-              default view runs through no zoom at all. */}
+    // Wraps the drawer as well as the conversation: a path written in a
+    // subagent's report is a path in this session too.
+    <FileRefContext value={fileRefs}>
+      <div className="flex h-full flex-col">
+        <SessionHeader
+          detail={detail.data}
+          color={color}
+          // Not detail.summary.live: that one only moves when the transcript
+          // grows, so the badge would still read "live" through a turn the app
+          // itself is running.
+          live={liveInfo}
+          showThinking={showThinking}
+          onToggleThinking={() => {
+            setShowThinking((v) => {
+              localStorage.setItem('showThinking', String(!v));
+              return !v;
+            });
+          }}
+          thinkingCount={thinkingCount}
+          expandTools={expandTools}
+          onToggleTools={() => {
+            setExpandTools((v) => {
+              localStorage.setItem('expandTools', String(!v));
+              return !v;
+            });
+          }}
+          toolCount={toolCount}
+          canHideResponses={fold.canHide}
+          onHideResponses={fold.hideAll}
+          canShowResponses={fold.canShow}
+          onShowResponses={fold.showAll}
+          expandSegments={expandSegments}
+          onToggleSegments={() => setExpandSegments((v) => !v)}
+          compactionCount={compactionCount}
+          showTokens={showTokens}
+          onToggleTokens={() => setShowTokens((v) => !v)}
+          showLineage={showLineage}
+          onToggleLineage={() => setShowLineage((v) => !v)}
+          showFiles={showFiles}
+          onToggleFiles={() => setShowFiles((v) => !v)}
+          actions={
+            <>
+              <ViewButton view={view} />
+              <ExportButton detail={detail.data} />
+              <ResumeButtons session={detail.data.summary} />
+            </>
+          }
+        />
+        {showTokens && <TokenPanel summary={detail.data.summary} turns={detail.data.turns} />}
+        {showLineage && <LineagePanel sessionId={id} />}
+        {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
+        {/* The pill is a sibling of the scroller, not a child: inside it, it would
+            scroll away with the conversation. */}
+        <div className="relative min-h-0 flex-1">
+          {/* `both-edges` so the scrollbar does not shift the centre: the composer
+              below is centred on the full width, and reserving the gutter on one
+              side only left the two misaligned by half a scrollbar (measured: 5 px). */}
           <div
-            ref={follow.contentRef}
-            className="mx-auto"
-            style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
+            ref={follow.scrollRef}
+            className="h-full overflow-y-auto px-4 py-4 [scrollbar-gutter:stable_both-edges]"
           >
-            <div style={view.zoom === ZOOM_DEFAULT ? undefined : { zoom: `${view.zoom}%` }}>
-              <TurnList
-                // Keyed on the session: what the user unfolded here must not
-                // carry over to the next session's segments and turns.
-                key={id}
-                turns={detail.data.turns}
-                showThinking={showThinking}
-                expandTools={expandTools}
-                fold={fold}
-                expandSegments={expandSegments}
-                scrollToUuid={msg}
-                scrollToTool={tool}
-                highlight={highlight}
-                onOpenAgent={openAgent}
-                // Handed to the list, which hangs it off the last turn's rail:
-                // an answer being written belongs where the answers are, not at
-                // the root level beside the prompt. Passed only while it has
-                // something to draw — see isWorking. While a prompt is still
-                // waiting for the transcript, the indicator belongs under THAT
-                // instead: it is the exchange being answered.
-                footer={
-                  pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined
-                }
-                // Inside the list, so an echoed prompt is spaced like the turn
-                // it is about to become.
-                pending={pending.map((p, i) => (
-                  <PendingTurn key={`${p.at}:${i}`} text={p.text}>
-                    {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
-                  </PendingTurn>
-                ))}
-              />
-              {detail.data.turns.length === 0 && pending.length === 0 && (
-                <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
-              )}
+            {/* Width on the outer box, zoom on an inner one — never both on the
+                same element: a max-width INSIDE a zoomed box is a length like any
+                other and would be scaled with it, so 896 px would drift to 1344
+                at 150 %. And `zoom` is only ever set when it is not 100, so the
+                default view runs through no zoom at all. */}
+            <div
+              ref={follow.contentRef}
+              className="mx-auto"
+              style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
+            >
+              <div style={view.zoom === ZOOM_DEFAULT ? undefined : { zoom: `${view.zoom}%` }}>
+                <TurnList
+                  // Keyed on the session: what the user unfolded here must not
+                  // carry over to the next session's segments and turns.
+                  key={id}
+                  turns={detail.data.turns}
+                  showThinking={showThinking}
+                  expandTools={expandTools}
+                  fold={fold}
+                  expandSegments={expandSegments}
+                  scrollToUuid={msg}
+                  scrollToTool={tool}
+                  highlight={highlight}
+                  onOpenAgent={openAgent}
+                  // Handed to the list, which hangs it off the last turn's rail:
+                  // an answer being written belongs where the answers are, not at
+                  // the root level beside the prompt. Passed only while it has
+                  // something to draw — see isWorking. While a prompt is still
+                  // waiting for the transcript, the indicator belongs under THAT
+                  // instead: it is the exchange being answered.
+                  footer={
+                    pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined
+                  }
+                  // Inside the list, so an echoed prompt is spaced like the turn
+                  // it is about to become.
+                  pending={pending.map((p, i) => (
+                    <PendingTurn key={`${p.at}:${i}`} text={p.text}>
+                      {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
+                    </PendingTurn>
+                  ))}
+                />
+                {detail.data.turns.length === 0 && pending.length === 0 && (
+                  <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
+                )}
+              </div>
             </div>
           </div>
+          {follow.scrollable && <FollowBottomButton following={follow.following} toggle={follow.toggle} />}
         </div>
-        {follow.scrollable && <FollowBottomButton following={follow.following} toggle={follow.toggle} />}
+        {/* A sibling of the scroller, not a child: the root is a column and the
+            scroller is the only min-h-0 flex-1, so this sits at the foot without
+            taking part in the scrolling. It takes the conversation's own width so
+            it lines up with the bubbles — the width lives on the outer box here
+            too, never on something zoomed. */}
+        {chatEnabled && (
+          <Composer
+            sessionId={id}
+            maxWidth={view.width === WIDTH_FULL ? undefined : `${view.width}px`}
+            onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
+            lastModel={lastAnswer?.model ?? null}
+            lastEffort={lastAnswer?.effort ?? null}
+          />
+        )}
+        {agentId && (
+          <SubagentDrawer
+            sessionId={id}
+            agentId={agentId}
+            showThinking={showThinking}
+            zoom={view.zoom}
+            onClose={closeAgent}
+          />
+        )}
+        {fileRef && (
+          <FileViewerPanel
+            // Keyed on the reference: opening another file starts a fresh panel
+            // rather than scrolling the previous one's state onto a new body.
+            key={formatFileRef(fileRef)}
+            sessionId={id}
+            projectPath={projectPath}
+            fileRef={fileRef}
+            onClose={closeFile}
+          />
+        )}
       </div>
-      {/* A sibling of the scroller, not a child: the root is a column and the
-          scroller is the only min-h-0 flex-1, so this sits at the foot without
-          taking part in the scrolling. It takes the conversation's own width so
-          it lines up with the bubbles — the width lives on the outer box here
-          too, never on something zoomed. */}
-      {chatEnabled && (
-        <Composer
-          sessionId={id}
-          maxWidth={view.width === WIDTH_FULL ? undefined : `${view.width}px`}
-          onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
-          lastModel={lastAnswer?.model ?? null}
-          lastEffort={lastAnswer?.effort ?? null}
-        />
-      )}
-      {agentId && (
-        <SubagentDrawer
-          sessionId={id}
-          agentId={agentId}
-          showThinking={showThinking}
-          zoom={view.zoom}
-          onClose={closeAgent}
-        />
-      )}
-    </div>
+    </FileRefContext>
   );
 }

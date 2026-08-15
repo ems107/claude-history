@@ -4,6 +4,9 @@ import type {
   AutoReloadStatus,
   ChatSendRequest,
   ChatStatusResponse,
+  FileOpenRequest,
+  FileOpenResponse,
+  FileReadResponse,
   LineageResponse,
   LiveResponse,
   LogDayResponse,
@@ -293,4 +296,27 @@ export const api = {
   subagent: (id: string, agentId: string) =>
     getJson<SubagentDetailResponse>(`/api/sessions/${id}/subagents/${agentId}`),
   toolResult: (path: string) => getJson<ToolResultFileResponse>(`/api/tool-results?path=${encodeURIComponent(path)}`),
+  /**
+   * One local file for the viewer panel. Deliberately not `getJson`: this is the
+   * GET whose failure a person reads, and "Session not found" says something
+   * where `404 Not Found — /api/files/read?session=…` says nothing.
+   */
+  fileRead: async (sessionId: string, ref: string) => {
+    const res = await fetch(
+      `/api/files/read?session=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(ref)}`,
+    );
+    const body = (await res.json().catch(() => ({}))) as FileReadResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  fileOpen: async (req: FileOpenRequest) => {
+    const res = await fetch('/api/files/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    const body = (await res.json().catch(() => ({}))) as FileOpenResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
 };
