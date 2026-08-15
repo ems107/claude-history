@@ -84,7 +84,12 @@ export function parseFileRef(raw: string, opts: FileRefOptions = {}): FileRef | 
   // A fragment or a query on its own points inside this page, not at a file.
   if (input.startsWith('#') || input.startsWith('?')) return null;
 
-  const windowsAbs = DRIVE_RE.test(input) || UNC_RE.test(input);
+  // The separators arrive percent-encoded from the markdown→hast step
+  // (`C:%5CUsers%5C…`), and an encoded drive letter is no longer a drive
+  // letter: `C:%5C` reads as protocol `c:` and the path is thrown away. Only
+  // this test needs to see through it — the path itself is decoded below.
+  const probe = input.replace(/%5C/gi, '\\').replace(/%2F/gi, '/');
+  const windowsAbs = DRIVE_RE.test(probe) || UNC_RE.test(probe);
 
   let rest = input;
   let line: number | undefined;
