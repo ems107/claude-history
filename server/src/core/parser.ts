@@ -16,9 +16,16 @@ import type {
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
-import { extractPrompt, injectedOrigin, notificationText } from './summarizer.ts';
+import { extractPrompt, injectedOrigin, parseNotification } from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
+
+/**
+ * `origin.kind` of a task notification, and the label a queued one is given: an
+ * attachment line carries no `origin` of its own, and the two envelopes hold the
+ * very same block (see the attachment branch below).
+ */
+const NOTIFICATION_ORIGIN = 'task-notification';
 
 /** Stands in for the uuid of a line that carried none — never part of the message tree. */
 const GEN_UUID_PREFIX = 'gen-';
@@ -372,6 +379,37 @@ export async function parseTranscript(
     return turn && turn.items.length > 0 ? turn.items[turn.items.length - 1] : null;
   };
 
+  /**
+   * Something Claude Code injected into the conversation — today an Agent or a
+   * background command reporting back. It OPENS a turn, because a real exchange
+   * follows it, EXCEPT when the turn it would open was itself opened by one:
+   * agents that finish together are delivered back to back (three in a row in
+   * `980751cb`), and a turn each would leave all but the last holding nothing
+   * but the news. Only notice-after-notice merges, so nothing can ever swallow a
+   * prompt or an answer.
+   */
+  const pushNotice = (o: RawLine, origin: string, content: string, carriedOver: boolean, runId: string | null): void => {
+    const previous = lastItem();
+    const turn = previous?.blocks[0]?.kind === 'notice' ? ensureTurn() : newTurn(str(o.promptId));
+    turn.items.push({
+      uuid: makeUuid(o),
+      aliasUuids: [],
+      role: 'system',
+      timestamp: str(o.timestamp),
+      endTimestamp: str(o.timestamp),
+      model: null,
+      isMeta: false,
+      isCompactSummary: false,
+      systemSubtype: origin,
+      carriedOver,
+      runId,
+      discardedBranch: null,
+      usage: null,
+      effort: null,
+      blocks: [{ kind: 'notice', origin, ...parseNotification(content) }],
+    });
+  };
+
   for await (const line of streamLines(filePath)) {
     const o = safeParse(line);
     if (!o) continue;
@@ -450,23 +488,7 @@ export async function parseTranscript(
         // follows it — but as what it is, and `isPromptItem` stops counting it.
         const injected = injectedOrigin(o);
         if (injected) {
-          newTurn(str(o.promptId)).items.push({
-            uuid: makeUuid(o),
-            aliasUuids: [],
-            role: 'system',
-            timestamp: str(o.timestamp),
-            endTimestamp: str(o.timestamp),
-            model: null,
-            isMeta: false,
-            isCompactSummary: false,
-            systemSubtype: injected,
-            carriedOver,
-            runId,
-            discardedBranch: null,
-            usage: null,
-            effort: null,
-            blocks: [{ kind: 'notice', origin: injected, text: notificationText(content) }],
-          });
+          pushNotice(o, injected, content, carriedOver, runId);
           continue;
         }
         const prompt = extractPrompt(content);
@@ -557,6 +579,19 @@ export async function parseTranscript(
             blocks: userBlocks,
           });
         }
+      }
+    } else if (type === 'attachment') {
+      // A notification that lands while a turn is in flight is QUEUED, and comes
+      // back in another envelope: an `attachment` line whose `queued_command`
+      // prompt is the very same `<task-notification>` block. Reading only the
+      // `user` lines left THREE of the five agent reports in `980751cb`
+      // rendered nowhere at all — not even as a summary line. It is the only
+      // attachment type that ever carries one (31 of its 34 in this corpus; the
+      // other 3 are prompts the user really typed while Claude was working).
+      const attachment = isRec(o.attachment) ? o.attachment : null;
+      const queued = attachment?.type === 'queued_command' ? str(attachment.prompt) : null;
+      if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
+        pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId);
       }
     } else if (type === 'assistant') {
       if (!isRec(o.message)) continue;

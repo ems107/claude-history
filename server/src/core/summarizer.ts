@@ -42,9 +42,45 @@ export function injectedOrigin(o: RawLine): string | null {
 }
 
 /** The line a `<task-notification>` is worth showing: its own summary of itself. */
-export function notificationText(content: string): string {
+function notificationText(content: string): string {
   const summary = /<summary>([\s\S]*?)<\/summary>/.exec(content);
   return (summary?.[1] ?? content).trim();
+}
+
+/** Everything a `<task-notification>` carries besides its summary line. */
+export interface ParsedNotification {
+  text: string;
+  taskId: string | null;
+  toolUseId: string | null;
+  status: string | null;
+  result: string | null;
+}
+
+function tagged(content: string, tag: string): string | null {
+  const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(content);
+  const value = m?.[1].trim();
+  return value ? value : null;
+}
+
+/**
+ * The whole of a `<task-notification>`, not just the line it summarises itself
+ * with. `<result>` is the report an Agent handed back and the parent transcript
+ * records it NOWHERE else — the tool result of the call is boilerplate — so
+ * keeping only the summary threw away 53 deliverables in this corpus, 1,076 KB
+ * of them.
+ *
+ * `<task-id>` is the `agentId` when the task was an Agent; a background command
+ * notifies through the same channel with an id that matches no transcript, so
+ * the caller decides what is an agent by looking the id up, not by trusting it.
+ */
+export function parseNotification(content: string): ParsedNotification {
+  return {
+    text: notificationText(content),
+    taskId: tagged(content, 'task-id'),
+    toolUseId: tagged(content, 'tool-use-id'),
+    status: tagged(content, 'status'),
+    result: tagged(content, 'result'),
+  };
 }
 
 /**

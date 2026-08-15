@@ -258,8 +258,38 @@ export type ContentBlock =
    * e.g. `task-notification`). It wears the `user` role in the transcript but
    * nobody typed it, so it gets its own panel: it OPENS a turn (a real exchange
    * follows) and has to look like an event, not like a prompt.
+   *
+   * `text` is the block's own `<summary>` — the readable line. The fields below
+   * are the rest of what a `<task-notification>` carries and used to be thrown
+   * away with it; every one of them is null on a notice that is not one (and on
+   * the older transcripts, which had no background tasks to report).
    */
-  | { kind: 'notice'; origin: string; text: string }
+  | {
+      kind: 'notice';
+      origin: string;
+      text: string;
+      /**
+       * `<task-id>`. For an Agent it IS the `agentId`, which is the only exact
+       * link between a report and the subagent transcript that produced it. A
+       * background COMMAND notifies through this same channel with an id of its
+       * own (9 characters, matching no transcript), so a reader must check it
+       * against the session's subagents rather than assume every notice is an
+       * agent's.
+       */
+      taskId: string | null;
+      /** `<tool-use-id>`: the call this is the answer to — what a "go to the call" link needs. */
+      toolUseId: string | null;
+      /** `<status>` verbatim, `completed` or `failed`. 4 of the 6 agents in one session here failed. */
+      status: string | null;
+      /**
+       * `<result>`: the whole report the agent handed back. It exists ONLY here —
+       * the tool result of the call is boilerplate ("Async agent launched
+       * successfully…") and the parent transcript holds the deliverable nowhere
+       * else. Not truncated: 53 of them in this corpus, p50 22.5 KB, max 56.7 KB,
+       * and cutting at the tool-result limit would halve most of them.
+       */
+      result: string | null;
+    }
   /** The output of a `/context` run, parsed. */
   | { kind: 'context'; snapshot: ContextSnapshot }
   /** A compaction boundary, with what it dropped. */
