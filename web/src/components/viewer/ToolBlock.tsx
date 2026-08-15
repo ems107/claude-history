@@ -2,9 +2,13 @@ import type { ContentBlock } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes } from '../../lib/format.ts';
+import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
+
+/** The tools whose collapsed summary is a file path and nothing else. */
+const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 
 function OffloadedResult({
   path,
@@ -93,6 +97,11 @@ export function ToolBlock({
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
           <span className="truncate font-mono text-[var(--text-dim)]">{block.inputSummary}</span>
         </FoldHeader>
+        {/* Gated on the tool NAME, not on the shape of the string: for these
+            five the summary IS the `file_path` (parser.ts summarizeInput), so
+            there is nothing to guess. A Bash command that happens to contain a
+            path is not a file this opens. */}
+        {FILE_TOOLS.has(block.toolName) && <FileRefChip path={block.inputSummary} />}
         {costBadge}
         {block.agentId && onOpenAgent && (
           <button

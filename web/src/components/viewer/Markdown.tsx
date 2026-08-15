@@ -2,9 +2,9 @@ import { createContext, type ReactNode, useContext } from 'react';
 import ReactMarkdown, { type Components, defaultUrlTransform, type UrlTransform } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import { type FileRef, parseFileRef } from '../../lib/fileRefs.ts';
-import { hasSelection } from '../../lib/selection.ts';
-import { type FileRefContextValue, useFileRefs } from './FileRefContext.ts';
+import { parseFileRef } from '../../lib/fileRefs.ts';
+import { useFileRefs } from './FileRefContext.ts';
+import { FileLink } from './FileRefLink.tsx';
 import 'highlight.js/styles/github-dark.css';
 
 /**
@@ -36,50 +36,6 @@ function codeText(children: ReactNode): string | null {
 }
 
 const LINK_CLASS = 'text-sky-400 underline decoration-dotted underline-offset-2 hover:decoration-solid';
-
-/**
- * The click that opens the panel instead of navigating.
- *
- * The element stays an `<a>` with a real href — copy-link, middle click and
- * ctrl+click all have to keep working, and a `<button>` would make the prose
- * unselectable, which is the rule the fold headers are built on.
- */
-function FileLink({
-  ctx,
-  fileRef,
-  className,
-  title,
-  children,
-}: {
-  ctx: FileRefContextValue;
-  fileRef: FileRef;
-  className: string;
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <a
-      href={ctx.hrefFor(fileRef)}
-      data-file-ref={fileRef.path}
-      title={title}
-      // Underline and colour only: a `filter` anywhere above a message would
-      // make the bubble the containing block for the fixed cost and context
-      // popovers inside it.
-      className={className}
-      onClick={(e) => {
-        // A modified click belongs to the browser: new tab, new window, save.
-        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        // A drag that ended on the link was a copy, not a click — and prose is
-        // where people drag most.
-        if (hasSelection()) return;
-        e.preventDefault();
-        ctx.openFile(fileRef);
-      }}
-    >
-      {children}
-    </a>
-  );
-}
 
 const components: Components = {
   a({ node: _node, href, children, ...rest }) {

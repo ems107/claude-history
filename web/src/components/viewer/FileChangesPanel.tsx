@@ -1,6 +1,7 @@
 import type { FileChange } from '@claude-history/shared';
 import { useState } from 'react';
 import { formatDateTime } from '../../lib/format.ts';
+import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 
 function EditBlock({ edit }: { edit: FileChange['edits'][number] }) {
@@ -42,27 +43,33 @@ export function FileChangesPanel({ fileChanges }: { fileChanges: FileChange[] })
         const last = fc.edits[fc.edits.length - 1]?.timestamp;
         return (
           <div key={fc.path} className="mb-1">
-            <FoldHeader
-              open={isOpen}
-              onToggle={() =>
-                setOpen((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(fc.path)) next.delete(fc.path);
-                  else next.add(fc.path);
-                  return next;
-                })
-              }
-              className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
-            >
-              <span className="text-[var(--text-dim)]">{isOpen ? '▾' : '▸'}</span>
-              <span className="min-w-0 flex-1 truncate font-mono" title={fc.path}>
-                {fc.path}
-              </span>
-              <span className="shrink-0 text-[var(--text-dim)]">
-                {fc.edits.length} edit{fc.edits.length !== 1 ? 's' : ''}
-                {first && ` · ${formatDateTime(first)}${last && last !== first ? ` → ${formatDateTime(last)}` : ''}`}
-              </span>
-            </FoldHeader>
+            <div className="flex items-center gap-1 text-xs">
+              <FoldHeader
+                open={isOpen}
+                onToggle={() =>
+                  setOpen((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(fc.path)) next.delete(fc.path);
+                    else next.add(fc.path);
+                    return next;
+                  })
+                }
+                className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
+              >
+                <span className="text-[var(--text-dim)]">{isOpen ? '▾' : '▸'}</span>
+                <span className="min-w-0 flex-1 truncate font-mono" title={fc.path}>
+                  {fc.path}
+                </span>
+                <span className="shrink-0 text-[var(--text-dim)]">
+                  {fc.edits.length} edit{fc.edits.length !== 1 ? 's' : ''}
+                  {first && ` · ${formatDateTime(first)}${last && last !== first ? ` → ${formatDateTime(last)}` : ''}`}
+                </span>
+              </FoldHeader>
+              {/* Beside the header, never inside it: nothing interactive may be
+                  nested in a FoldHeader. `fc.path` is always the absolute
+                  `file_path` of an Edit/Write, so there is nothing to gate on. */}
+              <FileRefChip path={fc.path} />
+            </div>
             {isOpen && (
               <div className="mt-1 ml-5">
                 {fc.edits.map((edit, i) => (
