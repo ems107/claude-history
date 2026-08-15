@@ -12,8 +12,9 @@ import { createLogger } from './logger.ts';
  * (background-task notifications) stopped being counted and indexed as prompts.
  * 8: the re-cached tokens joined the daily buckets. 9: prompts typed while Claude
  * was working (the `attachment` envelope) started being counted and indexed.
+ * 10: what the session's subagents spent became part of the enrichment.
  */
-export const CACHE_VERSION = 9;
+export const CACHE_VERSION = 10;
 
 const cacheLog = createLogger('cache');
 

@@ -7,7 +7,7 @@ import { api } from '../api/client.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { DailyChart, type ChartSeries } from '../components/stats/DailyChart.tsx';
 import { PricingEditor } from '../components/stats/PricingEditor.tsx';
-import { computeCost, formatTokens, formatUsd } from '../lib/cost.ts';
+import { computeCost, computeMessageCost, formatTokens, formatUsd } from '../lib/cost.ts';
 import { formatDateTime, shortModel } from '../lib/format.ts';
 
 type Metric = 'cost' | 'output' | 'prompts' | 'sessions';
@@ -88,7 +88,7 @@ export function StatsPage() {
       return p;
     };
     const perModel = new Map<string, { output: number; cost: number }>();
-    let totals = { sessions: 0, prompts: 0, output: 0, cost: 0 };
+    let totals = { sessions: 0, prompts: 0, output: 0, cost: 0, ownCost: 0 };
     // Context that was cached, expired and had to be written again. Priced here
     // rather than stored: the enrichment keeps tokens only, so an edit to the
     // price table moves this figure like it moves every other.
@@ -112,6 +112,29 @@ export function StatsPage() {
         p.lastMs = Math.max(p.lastMs, s.mtimeMs);
         for (const [model, u] of Object.entries(du.byModel)) {
           const cost = computeCost(u, resolvePrices(model, prices)) ?? 0;
+          totals.output += u.output;
+          totals.cost += cost;
+          // Kept apart for one figure only: the share of spend that went on
+          // re-cached context. Re-caches are measured in session transcripts and
+          // nowhere else, so counting the agents' spend in that denominator
+          // would make the percentage fall as more work is delegated, saying
+          // something about caching that never happened.
+          totals.ownCost += cost;
+          p.output += u.output;
+          p.cost += cost;
+          c.output += u.output;
+          c.cost += cost;
+          const m = perModel.get(model) ?? { output: 0, cost: 0 };
+          m.output += u.output;
+          m.cost += cost;
+          perModel.set(model, m);
+        }
+        // The agents those sessions sent out, on the day THEY ran. Their tokens
+        // are not in `byModel` — separate conversations, separate transcripts —
+        // so without this the dashboard is short by whatever was delegated, and
+        // the sessions that delegate most are the ones it understates most.
+        for (const [model, u] of Object.entries(du.subagentByModel ?? {})) {
+          const cost = computeMessageCost(u, resolvePrices(model, prices)) ?? 0;
           totals.output += u.output;
           totals.cost += cost;
           p.output += u.output;
@@ -191,7 +214,7 @@ export function StatsPage() {
           <Card
             label="≈ Cost"
             value={formatUsd(agg.totals.cost)}
-            hint="API-equivalent value at the configured prices — not actual subscription spend"
+            hint="API-equivalent value at the configured prices, subagents included — not actual subscription spend"
           />
         </div>
 
@@ -204,7 +227,9 @@ export function StatsPage() {
             <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
               <span className="text-2xl font-semibold text-amber-300">{formatUsd(agg.recache.billed)}</span>
               <span className="text-xs text-[var(--text-dim)]">
-                {agg.totals.cost > 0 && <>{((agg.recache.billed / agg.totals.cost) * 100).toFixed(1)}% of spend · </>}
+                {agg.totals.ownCost > 0 && (
+                  <>{((agg.recache.billed / agg.totals.ownCost) * 100).toFixed(1)}% of session spend · </>
+                )}
                 {formatTokens(agg.recache.tokens)} tokens over {agg.recache.events} request
                 {agg.recache.events !== 1 ? 's' : ''} · {formatUsd(agg.recache.billed - agg.recache.ifRead)} more than
                 reading them from cache would have cost

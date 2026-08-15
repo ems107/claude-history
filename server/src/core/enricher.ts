@@ -1,6 +1,16 @@
-import type { CacheState, DailyUsage, PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import type {
+  CacheState,
+  DailyUsage,
+  MessageUsage,
+  PrLink,
+  SessionEnrichment,
+  UsageTotals,
+} from '@claude-history/shared';
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
+import { toMessageUsage } from './parser.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
 
 export interface SearchBlock {
@@ -32,12 +42,99 @@ function addUsage(totals: UsageTotals, usage: Record<string, unknown>): void {
   totals.cacheCreate += num(usage.cache_creation_input_tokens) ?? 0;
 }
 
+function zeroMessageUsage(): MessageUsage {
+  return { ...zeroUsage(), cacheCreate1h: 0, cacheCreate5m: 0 };
+}
+
+function addMessageUsage(totals: MessageUsage, u: MessageUsage): void {
+  totals.input += u.input;
+  totals.output += u.output;
+  totals.cacheRead += u.cacheRead;
+  totals.cacheCreate += u.cacheCreate;
+  totals.cacheCreate1h += u.cacheCreate1h;
+  totals.cacheCreate5m += u.cacheCreate5m;
+}
+
+/** The UTC day a line belongs to — the key of the stats buckets. */
+function dayOf(o: Record<string, unknown>): string | null {
+  const ts = str(o.timestamp);
+  return ts && ts.length >= 10 ? ts.slice(0, 10) : null;
+}
+
+/** What the agents of one session spent, ready to be stored beside its own usage. */
+export interface SubagentSpend {
+  usage: MessageUsage;
+  byModel: Record<string, MessageUsage>;
+  /** day (UTC) → model → usage, to be merged into the session's daily buckets. */
+  daily: Record<string, Record<string, MessageUsage>>;
+}
+
+function emptySpend(): SubagentSpend {
+  return { usage: zeroMessageUsage(), byModel: {}, daily: {} };
+}
+
+/**
+ * Every `subagents/agent-*.jsonl` of a session, totalled.
+ *
+ * These are separate API conversations that appear nowhere in the parent
+ * transcript, so this is the only way the session's real cost can be known —
+ * and it is not a rounding error: one session here shows $1.49 of its own and
+ * spent $10.53 through 11 agents.
+ *
+ * The rules are the parser's, because the drawer prices the same messages from
+ * the parsed turns and the two figures are compared: one usage per `message.id`
+ * (streamed chunks repeat it verbatim), taken from the FIRST line carrying it,
+ * `<synthetic>` excluded, replayed lines dropped. `toMessageUsage` is shared
+ * with the parser outright so the TTL split cannot drift.
+ */
+export async function enrichSubagents(sessionDir: string | null): Promise<SubagentSpend> {
+  const spend = emptySpend();
+  if (!sessionDir) return spend;
+  let files: string[];
+  try {
+    files = (await fsp.readdir(path.join(sessionDir, 'subagents'))).filter((f) => f.endsWith('.jsonl'));
+  } catch {
+    return spend; // no subagents dir: the usual case
+  }
+
+  for (const file of files) {
+    const isReplay = replayFilter();
+    const seenMessageIds = new Set<string>();
+    try {
+      for await (const line of streamLines(path.join(sessionDir, 'subagents', file))) {
+        const o = safeParse(line);
+        if (!o || isReplay(o)) continue;
+        if (str(o.type) !== 'assistant' || !isRec(o.message)) continue;
+        const model = str(o.message.model);
+        const messageId = str(o.message.id);
+        if (!model || model === '<synthetic>' || !messageId || seenMessageIds.has(messageId)) continue;
+        if (!isRec(o.message.usage)) continue;
+        seenMessageIds.add(messageId);
+        const usage = toMessageUsage(o.message.usage);
+        addMessageUsage(spend.usage, usage);
+        addMessageUsage((spend.byModel[model] ??= zeroMessageUsage()), usage);
+        const day = dayOf(o);
+        if (day) addMessageUsage(((spend.daily[day] ??= {})[model] ??= zeroMessageUsage()), usage);
+      }
+    } catch {
+      // An agent's transcript being written while we read it is not a reason to
+      // lose the rest of them; the next enrich picks the file up again.
+    }
+  }
+  return spend;
+}
+
 /**
  * Full single-pass parse of one transcript: exact counts, token totals
  * (assistant lines deduped by message.id — streamed turns repeat the usage
  * object), PR links, fork ancestry and extracted text for full-text search.
  */
-export async function enrichSession(filePath: string, sessionId: string): Promise<EnrichData> {
+export async function enrichSession(
+  filePath: string,
+  sessionId: string,
+  /** `<projectDir>/<sessionUuid>`, when the session has one: where its agents' transcripts live. */
+  sessionDir: string | null = null,
+): Promise<EnrichData> {
   const usage = zeroUsage();
   const carriedOverUsage = zeroUsage();
   const usageByModel: Record<string, UsageTotals> = {};
@@ -64,12 +161,8 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
     null;
   let compactedSinceLastRequest = false;
 
-  const dayOf = (o: Record<string, unknown>): string | null => {
-    const ts = str(o.timestamp);
-    return ts && ts.length >= 10 ? ts.slice(0, 10) : null;
-  };
   const dayBucket = (day: string): DailyUsage =>
-    (daily[day] ??= { prompts: 0, byModel: {}, recachedByModel: {}, recacheEvents: 0 });
+    (daily[day] ??= { prompts: 0, byModel: {}, recachedByModel: {}, recacheEvents: 0, subagentByModel: {} });
 
   for await (const line of streamLines(filePath)) {
     const o = safeParse(line);
@@ -218,6 +311,15 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
     }
   }
 
+  // The agents' own conversations, which this file records nowhere. Their days
+  // are their own — an agent can still be working when midnight passes — so they
+  // land in the bucket their timestamps name, creating it if this session wrote
+  // nothing that day.
+  const subagents = await enrichSubagents(sessionDir);
+  for (const [day, byModel] of Object.entries(subagents.daily)) {
+    dayBucket(day).subagentByModel = byModel;
+  }
+
   return {
     enrichment: {
       userMessageCount,
@@ -227,6 +329,8 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
       compactionCount,
       usage,
       usageByModel,
+      subagentUsage: subagents.usage,
+      subagentUsageByModel: subagents.byModel,
       daily,
       models: [...models].sort(),
       prLinks,

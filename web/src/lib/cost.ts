@@ -11,20 +11,46 @@ import type {
 import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
 
 /**
- * What a whole session would have cost through the API, summed per model
- * because each one bills at its own rates. `null` when it has not been
- * enriched yet or when no model in it has a price — an unknown cost must
- * never render as "$0.000".
+ * What a session cost, in the two halves it is really made of. `null` where
+ * nothing can be priced — not enriched yet, or no model with a price — because
+ * an unknown cost must never render as "$0.000".
+ */
+export interface SessionCostParts {
+  /** The requests in this transcript: what the per-message pills add up to. */
+  own: number | null;
+  /** The agents it sent out, in their own conversations. Null when it sent none. */
+  subagents: number | null;
+  /** What the session cost, which is the two together — the figure to lead with. */
+  total: number | null;
+}
+
+const add = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : a + b);
+
+export function sessionCostParts(session: SessionSummary, prices: PriceTable): SessionCostParts {
+  const e = session.enrichment;
+  if (!e) return { own: null, subagents: null, total: null };
+  let own: number | null = null;
+  for (const [model, usage] of Object.entries(e.usageByModel)) {
+    own = add(own, computeCost(usage, resolvePrices(model, prices)));
+  }
+  // Priced with `computeMessageCost`, not `computeCost`: these aggregates keep
+  // the TTL split because an agent's writes are mostly 5-minute ones, and the
+  // 1-hour rate would overcharge them by 60% of the write.
+  let subagents: number | null = null;
+  for (const [model, usage] of Object.entries(e.subagentUsageByModel ?? {})) {
+    subagents = add(subagents, computeMessageCost(usage, resolvePrices(model, prices)));
+  }
+  return { own, subagents, total: add(own, subagents) };
+}
+
+/**
+ * What the session cost, agents included. This is the number the list, the sort
+ * and the stats use: a session that delegates its work to eleven agents spent
+ * that money as surely as one that did the work itself, and reading only the
+ * parent's own requests understated it by 8x in the worst case here.
  */
 export function sessionCost(session: SessionSummary, prices: PriceTable): number | null {
-  const byModel = session.enrichment?.usageByModel;
-  if (!byModel) return null;
-  let total: number | null = null;
-  for (const [model, usage] of Object.entries(byModel)) {
-    const cost = computeCost(usage, resolvePrices(model, prices));
-    if (cost !== null) total = (total ?? 0) + cost;
-  }
-  return total;
+  return sessionCostParts(session, prices).total;
 }
 
 /**

@@ -67,7 +67,7 @@ export async function loadSubagents(sessionDir: string | null): Promise<Subagent
  * the two in step — the per-message costs shown in the viewer only reconcile
  * with the session total because both dedupe the same way.
  */
-function toMessageUsage(usage: Record<string, unknown>): MessageUsage {
+export function toMessageUsage(usage: Record<string, unknown>): MessageUsage {
   const cacheCreation = isRec(usage.cache_creation) ? usage.cache_creation : null;
   return {
     input: num(usage.input_tokens) ?? 0,

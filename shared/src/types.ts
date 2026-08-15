@@ -104,6 +104,18 @@ export interface DailyUsage {
   recachedByModel: Record<string, number>;
   /** Requests that day which had to re-write a cached prefix. */
   recacheEvents: number;
+  /**
+   * What the agents this session sent out spent THAT day, in their own
+   * conversations. An addition to `byModel`, never a subset of it: those
+   * requests are not in this transcript at all.
+   *
+   * Bucketed by the agent's own timestamps rather than by the turn that
+   * launched it — an agent runs for minutes and can finish on the next day —
+   * and kept with the TTL split, because a subagent writes 5-minute caches
+   * (1.25x input) where a session writes 1-hour ones (2x). Folded into
+   * `byModel` it would be priced at the session's rate and overcharged.
+   */
+  subagentByModel: Record<string, MessageUsage>;
 }
 
 export interface SessionEnrichment {
@@ -114,11 +126,33 @@ export interface SessionEnrichment {
   /** `system`/`compact_boundary` lines: how many times this session was compacted. */
   compactionCount: number;
   /**
-   * What THIS session spent. Carried-over lines are excluded (see
-   * `carriedOverUsage`), so summing sessions never bills a fork's copies twice.
+   * What the requests in THIS transcript cost. Carried-over lines are excluded
+   * (see `carriedOverUsage`), so summing sessions never bills a fork's copies
+   * twice.
+   *
+   * This is no longer the whole of what the session spent — the agents it sent
+   * out are in `subagentUsage` — and it must stay this exact quantity: it is
+   * what the viewer's per-message pills add up to, which is the only check that
+   * the token arithmetic is right.
    */
   usage: UsageTotals;
   usageByModel: Record<string, UsageTotals>;
+  /**
+   * What the agents this session sent out spent, added up from their own
+   * transcripts (`<sessionUuid>/subagents/agent-*.jsonl`). Their requests are
+   * their own API conversations and appear nowhere in this file, so without
+   * this the session cost was short by 88% in the worst case here — $1.49
+   * shown against $12.01 really spent, across 11 agents.
+   *
+   * Kept apart from `usage` rather than folded into it for two reasons, both
+   * load-bearing: the pills above, and the cache TTL — hence `MessageUsage`,
+   * which carries the 1h/5m split that `UsageTotals` does not.
+   *
+   * Nothing here can be double-counted corpus-wide: an `agent-*.jsonl` belongs
+   * to exactly one session and a `/branch` fork does not copy the directory.
+   */
+  subagentUsage: MessageUsage;
+  subagentUsageByModel: Record<string, MessageUsage>;
   /** Per-UTC-day usage (yyyy-mm-dd) for the stats dashboard. Carried-over lines excluded. */
   daily: Record<string, DailyUsage>;
   models: string[];

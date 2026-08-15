@@ -80,6 +80,14 @@ interface IndexCacheFile {
 
 interface EnrichedEntry extends CacheKey {
   enrichment: SessionEnrichment;
+  /**
+   * Bytes of `subagents/*.jsonl` when this was computed. The cache key is the
+   * session file's (size, mtime), and the agents' spend is now part of the
+   * enrichment — but their files grow on their own, so without this a running
+   * agent's cost would stay frozen at whatever it was when the parent last
+   * wrote a line.
+   */
+  subagentBytes: number;
 }
 
 export interface TextEntry extends CacheKey {
@@ -193,7 +201,15 @@ export class SessionIndex {
     for (const s of scanned) {
       seen.add(s.id);
       const prev = this.scanned.get(s.id);
-      if (prev && prev.sizeBytes === s.sizeBytes && prev.mtimeMs === s.mtimeMs && prev.subagentCount === s.subagentCount) {
+      if (
+        prev &&
+        prev.sizeBytes === s.sizeBytes &&
+        prev.mtimeMs === s.mtimeMs &&
+        prev.subagentCount === s.subagentCount &&
+        // An agent writing into its own transcript changes what this session
+        // cost without touching a byte of its file.
+        prev.subagentBytes === s.subagentBytes
+      ) {
         continue;
       }
       // Classify before refreshSummary records the new size — the previous one
@@ -296,9 +312,12 @@ export class SessionIndex {
     try {
       let enriched = await this.cache.loadEntry<EnrichedEntry>('enriched', s.id, key);
       const textOk = (await this.cache.loadEntry<TextEntry>('text', s.id, key)) !== null;
+      // The agents' bytes are checked apart from the cache key: nothing about
+      // the session file changes when one of them writes another answer.
+      if (enriched && enriched.subagentBytes !== s.subagentBytes) enriched = null;
       if (!enriched || !textOk) {
-        const data = await enrichSession(s.filePath, s.id);
-        enriched = { ...key, enrichment: data.enrichment };
+        const data = await enrichSession(s.filePath, s.id, s.sessionDir);
+        enriched = { ...key, enrichment: data.enrichment, subagentBytes: s.subagentBytes };
         await this.cache.saveEntry('enriched', s.id, enriched);
         await this.cache.saveEntry('text', s.id, { ...key, blocks: data.searchBlocks } satisfies TextEntry);
       }

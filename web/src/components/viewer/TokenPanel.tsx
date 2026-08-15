@@ -5,7 +5,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
-import { computeCost, formatUsd, summariseRecache } from '../../lib/cost.ts';
+import { computeCost, computeMessageCost, formatUsd, summariseRecache } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
 
@@ -49,6 +49,15 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
   );
   const totalCost = models.reduce(
     (acc, [model, usage]) => acc + (computeCost(usage, resolvePrices(model, priceTable)) ?? 0),
+    0,
+  );
+  // What the agents this session sent out spent, in their own conversations.
+  // Their requests are not in this transcript, so this is an addition to the
+  // rows above and not a part of them — the opposite of "of which re-cached".
+  const sub = e.subagentUsage;
+  const subTokens = sub ? sub.input + sub.output + sub.cacheRead + sub.cacheCreate : 0;
+  const subCost = Object.entries(e.subagentUsageByModel ?? {}).reduce(
+    (acc, [model, usage]) => acc + (computeMessageCost(usage, resolvePrices(model, priceTable)) ?? 0),
     0,
   );
   const recache = summariseRecache(contextIndex.recaches, priceTable);
@@ -97,9 +106,16 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           {models.map(([model, usage]) => (
             <Row key={model} label={shortModel(model) ?? model} usage={usage} prices={resolvePrices(model, priceTable)} />
           ))}
+          {/* With one model its row IS the conversation, and repeating it under
+              another name would only pad the ledger. */}
           {models.length > 1 && (
             <tr className="border-t border-[var(--border)] font-semibold">
-              <td className="py-1 pr-4 font-mono">total</td>
+              <td
+                className="py-1 pr-4 font-mono"
+                title="The requests in this transcript — what the per-message pills in the conversation add up to"
+              >
+                {subTokens > 0 ? 'this conversation' : 'total'}
+              </td>
               <td className="px-2 text-right">{fmt(e.usage.input)}</td>
               <td className="px-2 text-right">{fmt(e.usage.output)}</td>
               <td className="px-2 text-right">{fmt(e.usage.cacheRead)}</td>
@@ -122,6 +138,33 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
               <td className="px-2 text-right">{fmt(recache.cost.tokens)}</td>
               <td className="px-2 text-right">{formatUsd(recache.cost.billed)}</td>
             </tr>
+          )}
+          {subTokens > 0 && (
+            <>
+              <tr className="text-sky-400/90">
+                <td
+                  className="py-1 pr-4 font-mono"
+                  title="Separate API conversations, in their own transcripts — nothing of this is in the file above"
+                >
+                  <Link to={`?agents=1`} className="hover:underline">
+                    ⑂ {summary.subagentCount} subagent{summary.subagentCount === 1 ? '' : 's'}
+                  </Link>
+                </td>
+                <td className="px-2 text-right">{fmt(sub.input)}</td>
+                <td className="px-2 text-right">{fmt(sub.output)}</td>
+                <td className="px-2 text-right">{fmt(sub.cacheRead)}</td>
+                <td className="px-2 text-right">{fmt(sub.cacheCreate)}</td>
+                <td className="px-2 text-right">{formatUsd(subCost)}</td>
+              </tr>
+              <tr className="border-t-2 border-[var(--border)] font-semibold text-[var(--text)]">
+                <td className="py-1 pr-4 font-mono">session total</td>
+                <td className="px-2 text-right">{fmt(e.usage.input + sub.input)}</td>
+                <td className="px-2 text-right">{fmt(e.usage.output + sub.output)}</td>
+                <td className="px-2 text-right">{fmt(e.usage.cacheRead + sub.cacheRead)}</td>
+                <td className="px-2 text-right">{fmt(e.usage.cacheCreate + sub.cacheCreate)}</td>
+                <td className="px-2 text-right">{formatUsd(totalCost + subCost)}</td>
+              </tr>
+            </>
           )}
           {carriedTokens > 0 && (
             <tr className="border-t border-dashed border-amber-500/40 text-amber-300/80">
@@ -161,6 +204,20 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           )}
           : those messages are shown here and cost that much, but they were billed there, so they are left out of every
           total.
+        </div>
+      )}
+      {subTokens > 0 && (
+        <div className="mt-1 text-[10px] text-sky-400/70">
+          The subagents ran as their own API conversations, in their own transcripts: none of those tokens is in this
+          file, and none of them is in the per-message pills — which is why they are added here rather than found among
+          the rows above. Cache writes there are mostly 5-minute ones and are priced as such.
+        </div>
+      )}
+      {e.compactionCount > 0 && (
+        <div className="mt-1 text-[10px] text-[var(--text-dim)] opacity-70">
+          Not in any of these figures: the {e.compactionCount} compaction{e.compactionCount === 1 ? '' : 's'} of this
+          session. Claude Code writes no <code>usage</code> at all for the call that produces the summary, so what it
+          cost is not recorded anywhere and cannot be recovered.
         </div>
       )}
       <div className="mt-1 text-[10px] text-[var(--text-dim)] opacity-70">

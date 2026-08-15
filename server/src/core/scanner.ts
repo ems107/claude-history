@@ -12,15 +12,36 @@ export interface ScannedSession {
   /** `<projectDir>/<sessionUuid>` — holds subagents/ and tool-results/ when present. */
   sessionDir: string | null;
   subagentCount: number;
+  /**
+   * Bytes across `subagents/*.jsonl`. The session total now includes what those
+   * agents spent, and their files grow on their own schedule — an agent runs in
+   * the background and keeps writing after the line that launched it — so the
+   * session file's own (size, mtime) cannot say whether that figure is stale.
+   * This is what tells the enricher to look again.
+   */
+  subagentBytes: number;
 }
 
-async function countSubagents(sessionDir: string): Promise<number> {
+async function scanSubagents(sessionDir: string): Promise<{ count: number; bytes: number }> {
+  const dir = path.join(sessionDir, 'subagents');
+  let entries: string[];
   try {
-    const entries = await fsp.readdir(path.join(sessionDir, 'subagents'));
-    return entries.filter((e) => e.endsWith('.meta.json')).length;
+    entries = await fsp.readdir(dir);
   } catch {
-    return 0;
+    return { count: 0, bytes: 0 };
   }
+  let bytes = 0;
+  for (const name of entries) {
+    if (!name.endsWith('.jsonl')) continue;
+    try {
+      bytes += (await fsp.stat(path.join(dir, name))).size;
+    } catch {
+      // deleted between readdir and stat
+    }
+  }
+  // Counted by the meta files, as before: a transcript with no meta is not an
+  // agent we can name, and a meta with no transcript is still one that ran.
+  return { count: entries.filter((e) => e.endsWith('.meta.json')).length, bytes };
 }
 
 /** Enumerate all top-level session transcripts under ~/.claude/projects. */
@@ -56,6 +77,7 @@ export async function scanSessions(projectsDir: string): Promise<ScannedSession[
         continue; // deleted between readdir and stat
       }
       const sessionDir = subdirs.has(id) ? path.join(dirPath, id) : null;
+      const subagents = sessionDir ? await scanSubagents(sessionDir) : { count: 0, bytes: 0 };
       result.push({
         id,
         filePath,
@@ -63,7 +85,8 @@ export async function scanSessions(projectsDir: string): Promise<ScannedSession[
         sizeBytes: stat.size,
         mtimeMs: stat.mtimeMs,
         sessionDir,
-        subagentCount: sessionDir ? await countSubagents(sessionDir) : 0,
+        subagentCount: subagents.count,
+        subagentBytes: subagents.bytes,
       });
     }
   }

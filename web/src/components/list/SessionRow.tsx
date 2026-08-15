@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../../api/client.ts';
-import { formatUsd, sessionCost } from '../../lib/cost.ts';
+import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
 import { entrypointLabel, formatBytes, formatDateTime, relativeTime, shortModel } from '../../lib/format.ts';
 import { SessionBadges } from './Badges.tsx';
 import { ProjectTag } from './ProjectTag.tsx';
@@ -39,7 +39,7 @@ function RowContent({
 }) {
   // One shared query across every visible row: same key, one request.
   const prices = useQuery({ queryKey: ['prices'], queryFn: api.prices });
-  const cost = sessionCost(session, prices.data?.prices ?? {});
+  const cost = sessionCostParts(session, prices.data?.prices ?? {});
   const navigate = useNavigate();
 
   // "Prompts" = user-typed messages (from enrichment) — the same metric the
@@ -118,13 +118,22 @@ function RowContent({
             </span>
           ))}
           {/* Right after the size, and only when it can be priced: a missing
-              cost stays blank instead of claiming the session was free. */}
-          {cost !== null && (
+              cost stays blank instead of claiming the session was free. It is
+              the whole of what the session spent, subagents included — they can
+              be 88% of it — with the split in the tooltip. */}
+          {cost.total !== null && (
             <span
               className="shrink-0"
-              title="API-equivalent value at the configured prices — not actual subscription spend (see Stats)"
+              title={
+                cost.subagents !== null
+                  ? `${formatUsd(cost.own)} in this conversation + ${formatUsd(cost.subagents)} in ${
+                      session.subagentCount
+                    } subagent${session.subagentCount === 1 ? '' : 's'} — API-equivalent value at the configured prices`
+                  : 'API-equivalent value at the configured prices — not actual subscription spend (see Stats)'
+              }
             >
-              {formatUsd(cost)}
+              {formatUsd(cost.total)}
+              {cost.subagents !== null && <span className="ml-1 text-sky-400/80">⑂</span>}
             </span>
           )}
           {/* The whole row is a <Link>, so this cannot be one too — same reason
