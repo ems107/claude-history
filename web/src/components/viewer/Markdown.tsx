@@ -80,12 +80,13 @@ const components: Components = {
      * here — work despite its spaces, and makes a span holding a command fail
      * cleanly instead of being cut up.
      *
-     * `allowBareName: false`: two thirds of the backticked candidates in this
-     * corpus are names with no directory (`package.json`, `settings.json`), half
-     * of them not in the project at all, and a link the reader cannot judge
-     * without clicking is worse than plain text.
+     * `strict`: a code span is where everything else in a technical answer
+     * lives too. Two thirds of the backticked candidates here are names with no
+     * directory (`package.json`, `settings.json`), half of them not in this
+     * project at all, and without the rest of the rule `text/html` and
+     * `GET /api/retention` became links as well.
      */
-    const fileRef = ctx && text ? parseFileRef(text, { allowBareName: false }) : null;
+    const fileRef = ctx && text ? parseFileRef(text, { strict: true }) : null;
     const code = (
       <code className={className} {...rest}>
         {children}

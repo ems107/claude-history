@@ -1,4 +1,5 @@
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import type { FileOpenRequest, FileOpenResponse, FileReadResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
@@ -33,7 +34,12 @@ function resolveRef(ctx: AppContext, session: string, ref: string): Resolved {
   if (!summary) return { ok: false, code: 404, error: 'Session not found' };
   // A NUL in a path is never anything but an attempt to cut one short.
   if (ref.includes('\0')) return { ok: false, code: 400, error: 'Invalid path' };
-  return { ok: true, path: path.resolve(summary.projectPath, ref) };
+  // `~/.claude/settings.json` is written constantly in these transcripts and
+  // means the home directory to everyone who reads it. Resolved against the
+  // project it becomes `<project>\~\.claude\settings.json`, which exists
+  // nowhere — a "not found" for a file that is right there.
+  const expanded = /^~[\\/]/.test(ref) ? path.join(os.homedir(), ref.slice(2)) : ref;
+  return { ok: true, path: path.resolve(summary.projectPath, expanded) };
 }
 
 export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void {

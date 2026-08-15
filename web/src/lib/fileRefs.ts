@@ -29,12 +29,20 @@ export interface FileRef {
 
 export interface FileRefOptions {
   /**
-   * Whether `package.json` — a name with no directory and no line — counts.
-   * True for an explicit markdown link, where the author asserted it is a file;
-   * false when scanning prose, where half of them name a file that is not in
-   * this project and the reader cannot tell which without clicking.
+   * Demand evidence that this is a file at all.
+   *
+   * A markdown link is not strict: the author wrote `[x](y)` and asserted that
+   * `y` is a file, so a bare `package.json` counts. A backticked span is
+   * strict, because a code span is where everything else in a technical answer
+   * also lives — and the three that got through before this existed say what
+   * it is for: `text/html` (a MIME type), `GET /api/retention` (a route) and
+   * every bare `settings.json` that belongs to some other project.
+   *
+   * Strict therefore asks for a directory or a drive AND for either a real
+   * extension or a line number. That keeps `web/src/lib/folding.ts` and
+   * `parser.ts:42` and drops the rest.
    */
-  allowBareName?: boolean;
+  strict?: boolean;
 }
 
 /** Which file the viewer panel is showing. Beside `agent`, `msg` and `tool`. */
@@ -78,7 +86,7 @@ const KNOWN_EXT = new Set([
  * first and a `%23` inside a real filename becomes an anchor nobody wrote.
  */
 export function parseFileRef(raw: string, opts: FileRefOptions = {}): FileRef | null {
-  const allowBareName = opts.allowBareName ?? true;
+  const strict = opts.strict ?? false;
   const input = raw.trim();
   if (!input || /[\n\r\0]/.test(input)) return null;
   // A fragment or a query on its own points inside this page, not at a file.
@@ -138,12 +146,17 @@ export function parseFileRef(raw: string, opts: FileRefOptions = {}): FileRef | 
 
   if (!absolute && !posixRoot && !hasSeparator) {
     // A bare name is the weakest signal there is: no directory, and often no
-    // line either. It counts only when asked for, and only with an extension
-    // that names a kind of file.
-    if (!allowBareName) return null;
+    // line either. It counts only outside strict mode, and only with an
+    // extension that names a kind of file.
+    if (strict) return null;
     const ext = EXT_RE.exec(last)?.[1].toLowerCase();
     if (!ext || !KNOWN_EXT.has(ext)) return null;
   }
+
+  // Strict mode wants a real filename at the end of the path, or a line number
+  // standing in for one. A separator alone proves nothing: `text/html` is a
+  // MIME type, `GET /api/retention` a route, and both were becoming links.
+  if (strict && line === undefined && !EXT_RE.test(last)) return null;
 
   return { path, line, endLine, column, kind: absolute || posixRoot ? 'absolute' : 'relative' };
 }
