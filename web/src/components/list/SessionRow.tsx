@@ -120,7 +120,9 @@ function RowContent({
           {/* Right after the size, and only when it can be priced: a missing
               cost stays blank instead of claiming the session was free. It is
               the whole of what the session spent, subagents included — they can
-              be 88% of it — with the split in the tooltip. */}
+              be 88% of it — with the split in the tooltip. Nothing marks that
+              here: the ⑂ badge on the same row already says there are agents,
+              and saying it twice is noise around the one figure being read. */}
           {cost.total !== null && (
             <span
               className="shrink-0"
@@ -133,7 +135,6 @@ function RowContent({
               }
             >
               {formatUsd(cost.total)}
-              {cost.subagents !== null && <span className="ml-1 text-sky-400/80">⑂</span>}
             </span>
           )}
           {/* The whole row is a <Link>, so this cannot be one too — same reason
