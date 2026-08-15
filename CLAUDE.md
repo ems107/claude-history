@@ -561,8 +561,8 @@ No automated test suite (personal tool). Verify against real data:
     commands) — those rows must read "no report" with the ↓ button disabled and the reason on it,
     never a guess. In headless Chrome over CDP, on `?agents=1`: the rows must carry the
     status in the right colour, `↑ the call` must land on `[data-tool-id]` with `.match-flash` and
-    leave only a handful of tool blocks in the DOM (3 of 210 in `980751cb`, whose calls all sit
-    inside a compacted segment that has to unfold first), `↓ the report` must flash the notice
+    leave only a handful of tool blocks in the DOM (3 of the 987 in `980751cb`, whose Agent calls
+    all sit inside a compacted segment that has to unfold first), `↓ the report` must flash the notice
     panel, and **pressing either one a second time must jump again** — that is the `jumpNonce`, and
     without it the second press does nothing at all. Opening a report fold must NOT collapse the
     turn under it (count `[data-bubble]` before and after). The launch boilerplate must be gone
