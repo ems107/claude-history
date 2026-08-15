@@ -90,8 +90,16 @@ export function elapsed(when: string | number | null): string | null {
   if (when === null) return null;
   const ms = typeof when === 'number' ? when : Date.parse(when);
   if (Number.isNaN(ms)) return null;
+  return formatDuration(Date.now() - ms);
+}
 
-  const total = Math.floor(Math.max(0, Date.now() - ms) / 1000);
+/**
+ * A span in the same words, between two instants that are both in the past —
+ * how long an agent ran, say. `elapsed` is this one measured against now: the
+ * spelling lives here, once.
+ */
+export function formatDuration(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000);
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor(total / 60) % 60;
   const seconds = total % 60;
@@ -102,6 +110,15 @@ export function elapsed(when: string | number | null): string | null {
   // Seconds are the point of this format; they only become noise past an hour.
   if (hours === 0) parts.push(`${seconds} s`);
   return parts.join(' ');
+}
+
+/** The span between two transcript timestamps, or null when either is missing. */
+export function durationBetween(from: string | null, to: string | null): string | null {
+  if (!from || !to) return null;
+  const a = Date.parse(from);
+  const b = Date.parse(to);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return formatDuration(b - a);
 }
 
 export function formatBytes(n: number): string {

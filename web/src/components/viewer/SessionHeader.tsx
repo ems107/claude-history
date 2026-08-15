@@ -116,6 +116,8 @@ export function SessionHeader({
   onToggleLineage,
   showFiles,
   onToggleFiles,
+  showAgents,
+  onToggleAgents,
   actions,
   live,
 }: {
@@ -142,6 +144,8 @@ export function SessionHeader({
   onToggleLineage: () => void;
   showFiles: boolean;
   onToggleFiles: () => void;
+  showAgents: boolean;
+  onToggleAgents: () => void;
   actions?: import('react').ReactNode;
 }) {
   const s = detail.summary;
@@ -284,6 +288,16 @@ export function SessionHeader({
             Files ({detail.fileChanges.length})
           </button>
         )}
+        {detail.subagents.length > 0 && (
+          <button
+            type="button"
+            onClick={onToggleAgents}
+            className={toggleClass(showAgents)}
+            title="The agents this session sent out: what each was asked, what it reported back, and what it cost"
+          >
+            ⑂ Subagents ({detail.subagents.length})
+          </button>
+        )}
         {actions}
       </div>
       {s.titleSource === 'local' && s.originalTitle && (
@@ -304,7 +318,7 @@ export function SessionHeader({
         {s.entrypoint && <span>{entrypointLabel(s.entrypoint)}</span>}
         {s.slug && <span className="font-mono opacity-70">{s.slug}</span>}
         {s.claudeVersion && <span className="opacity-70">cc {s.claudeVersion}</span>}
-        <SessionBadges session={s} omitPr live={live} />
+        <SessionBadges session={s} omitPr live={live} onSubagentsClick={onToggleAgents} />
         <AncestryChips label="forked from" ids={detail.ancestry.forkedFrom ? [detail.ancestry.forkedFrom] : []} />
         <AncestryChips label="branched into" ids={detail.ancestry.descendants} />
         {(s.enrichment?.runIds.length ?? 0) > 0 && (

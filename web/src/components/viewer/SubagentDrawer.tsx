@@ -6,6 +6,7 @@ import { costEntries } from '../../lib/cost.ts';
 import { useFoldState } from '../../lib/folding.ts';
 import { ZOOM_DEFAULT } from '../../lib/viewPrefs.ts';
 import { CostPill } from './CostPill.tsx';
+import { useSubagents } from './SubagentContext.ts';
 import { TurnList } from './TurnList.tsx';
 
 const NO_PRICES: PriceTable = {};
@@ -43,6 +44,20 @@ export function SubagentDrawer({
   // exactly like the conversation's.
   const fold = useFoldState(query.data?.turns ?? EMPTY_TURNS, showThinking, agentId);
 
+  // Where this one sits among the session's agents, so a drawer is not a dead
+  // end: five agents sent out together are read one after another, and closing
+  // and hunting for the next call in the conversation is the long way round.
+  const subagents = useSubagents();
+  const order = subagents ? [...subagents.byId.keys()] : [];
+  const at = order.indexOf(agentId);
+  const step = (delta: number): (() => void) | undefined => {
+    const next = order[at + delta];
+    return at >= 0 && next ? () => subagents?.openAgent(next) : undefined;
+  };
+  const previous = step(-1);
+  const following = step(1);
+  const call = subagents?.byId.get(agentId)?.toolUseId;
+
   return (
     <div className="fixed inset-y-0 right-0 z-20 flex w-[44rem] max-w-[90vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl">
       <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-2">
@@ -53,6 +68,39 @@ export function SubagentDrawer({
           {query.data?.meta.description ?? agentId}
         </span>
         <CostPill entries={entries} prices={prices} label="agent" variant="badge" />
+        {call && subagents?.hasCall(call) && (
+          <button
+            type="button"
+            onClick={() => subagents.goToCall(call)}
+            className="shrink-0 cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+            title="Go to the call that sent it out"
+          >
+            ↑ the call
+          </button>
+        )}
+        {at >= 0 && order.length > 1 && (
+          <span className="flex shrink-0 items-center gap-1 text-xs text-[var(--text-dim)]">
+            <button
+              type="button"
+              disabled={!previous}
+              onClick={previous}
+              className={previous ? 'cursor-pointer px-1 hover:text-[var(--text)]' : 'px-1 opacity-30'}
+              title="Previous subagent"
+            >
+              ‹
+            </button>
+            {at + 1} of {order.length}
+            <button
+              type="button"
+              disabled={!following}
+              onClick={following}
+              className={following ? 'cursor-pointer px-1 hover:text-[var(--text)]' : 'px-1 opacity-30'}
+              title="Next subagent"
+            >
+              ›
+            </button>
+          </span>
+        )}
         <button
           type="button"
           onClick={onClose}

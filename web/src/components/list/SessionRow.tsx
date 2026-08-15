@@ -1,7 +1,7 @@
 import type { SessionSummary } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { api } from '../../api/client.ts';
 import { formatUsd, sessionCost } from '../../lib/cost.ts';
 import { entrypointLabel, formatBytes, formatDateTime, relativeTime, shortModel } from '../../lib/format.ts';
@@ -40,6 +40,7 @@ function RowContent({
   // One shared query across every visible row: same key, one request.
   const prices = useQuery({ queryKey: ['prices'], queryFn: api.prices });
   const cost = sessionCost(session, prices.data?.prices ?? {});
+  const navigate = useNavigate();
 
   // "Prompts" = user-typed messages (from enrichment) — the same metric the
   // Prompts sort uses. Fallback: Claude Code's internal context-entry count
@@ -126,7 +127,16 @@ function RowContent({
               {formatUsd(cost)}
             </span>
           )}
-          <SessionBadges session={session} />
+          {/* The whole row is a <Link>, so this cannot be one too — same reason
+              the rename and pin buttons swallow their click here. */}
+          <SessionBadges
+            session={session}
+            onSubagentsClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              navigate(`/session/${session.id}?agents=1`);
+            }}
+          />
         </div>
       </div>
       <RowDates session={session} />

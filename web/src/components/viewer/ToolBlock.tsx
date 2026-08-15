@@ -4,11 +4,20 @@ import { api } from '../../api/client.ts';
 import { formatBytes } from '../../lib/format.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
+import { useSubagents } from './SubagentContext.ts';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
 /** The tools whose collapsed summary is a file path and nothing else. */
 const FILE_TOOLS = new Set(['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
+/**
+ * What an Agent call gets back on the spot: 1,084 characters of harness
+ * metadata, identical for every call, telling the model not to quote any of it.
+ * The answer arrives later as a notification, so printing this verbatim was a
+ * screenful of noise standing where the reader looks for a result.
+ */
+const LAUNCH_NOTE = 'Async agent launched successfully';
 
 function OffloadedResult({
   path,
@@ -81,6 +90,11 @@ export function ToolBlock({
   }, [targeted]);
   const result = block.result;
   const statusColor = result ? (result.isError ? 'bg-red-400' : 'bg-emerald-400') : 'bg-zinc-500';
+  const subagents = useSubagents();
+  // The agent's own type is a far better label than the word "subagent" when a
+  // run holds five of them; it falls back to the generic one outside a session.
+  const agentType = block.agentId ? subagents?.byId.get(block.agentId)?.agentType : null;
+  const launched = !!block.agentId && !!result && !result.isError && result.text.startsWith(LAUNCH_NOTE);
 
   return (
     // The anchor a search result scrolls to and flashes. A data attribute rather
@@ -110,7 +124,7 @@ export function ToolBlock({
             className="shrink-0 cursor-pointer rounded bg-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-400 hover:bg-sky-500/25"
             title="Open subagent transcript"
           >
-            ⑂ subagent
+            ⑂ {agentType ?? 'subagent'}
           </button>
         )}
       </div>
@@ -124,7 +138,13 @@ export function ToolBlock({
               </pre>
             </>
           )}
-          {result && (
+          {launched && (
+            <div className="mt-2 text-xs text-[var(--text-dim)]">
+              Sent out — nothing came back here. Its report arrives further down as a notification, and its own
+              transcript is behind the ⑂ button.
+            </div>
+          )}
+          {result && !launched && (
             <>
               <div className="mt-2 mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
                 Result{result.isError ? ' (error)' : ''}

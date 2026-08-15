@@ -180,6 +180,10 @@ function ToolGroup({
   const blocks = tools.map((t) => t.block);
   const names = [...new Set(blocks.map((b) => b.toolName))];
   const errors = blocks.filter((b) => b.result?.isError).length;
+  // A fan-out of agents is the one thing in a run worth seeing without opening
+  // it: three of them come out of a single message in `980751cb`, and the tool
+  // name alone ("Agent, Agent, Agent" collapsed to one word) said nothing.
+  const agents = blocks.filter((b) => b.agentId).length;
   const owners = tools.filter((t) => t.costOwner).map((t) => t.item);
   const entries = costEntries(owners, costs.prices);
   const lastUuid = entries.length > 0 ? entries[entries.length - 1].uuid : null;
@@ -249,6 +253,11 @@ function ToolGroup({
         </span>
         <span className="min-w-0 truncate font-mono opacity-70">{names.join(', ')}</span>
       </FoldHeader>
+      {agents > 0 && (
+        <span className="shrink-0 font-semibold text-sky-400" title="Subagents sent out from this run">
+          ⑂ {agents} subagent{agents !== 1 ? 's' : ''}
+        </span>
+      )}
       {errors > 0 && <span className="shrink-0 text-red-400">{errors} failed</span>}
       {runPill}
     </div>
@@ -354,7 +363,7 @@ function SystemItem({ item }: { item: MessageItem }) {
   // Normally rendered by TurnView, which has the turn badge to hand it; this is
   // the path for anywhere else a notice can turn up.
   if (first?.kind === 'notice') {
-    return <InjectedNotice item={item} origin={first.origin} text={first.text} />;
+    return <InjectedNotice item={item} notice={first} />;
   }
   const text = first?.kind === 'text' ? first.text : '';
   return (
@@ -480,9 +489,7 @@ function noticeNode(
   badge: ReactNode | undefined,
   onClick?: () => void,
 ): ReactNode {
-  return (
-    <InjectedNotice key={item.uuid} item={item} origin={notice.origin} text={notice.text} badge={badge} onClick={onClick} />
-  );
+  return <InjectedNotice key={item.uuid} item={item} notice={notice} badge={badge} onClick={onClick} />;
 }
 
 /**

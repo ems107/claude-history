@@ -16,9 +16,15 @@ export function SessionBadges({
   session,
   omitPr = false,
   live,
+  onSubagentsClick,
 }: {
   session: SessionSummary;
   omitPr?: boolean;
+  /**
+   * Makes the ⑂ badge the way IN to the subagents, instead of a number with
+   * nothing behind it. Absent where there is nowhere to go.
+   */
+  onSubagentsClick?: (e: import('react').MouseEvent) => void;
   /**
    * Live state from a fresher source than the summary, when the caller has one.
    * The session page does: its summary comes from `['session', id]`, which is
@@ -55,13 +61,25 @@ export function SessionBadges({
     );
   }
   if (session.subagentCount > 0) {
+    const label = `⑂ ${session.subagentCount}`;
+    const className = 'bg-sky-500/15 text-sky-400';
+    const title = `${session.subagentCount} subagent${session.subagentCount === 1 ? '' : 's'}${
+      onSubagentsClick ? ' — open the list' : ''
+    }`;
     badges.push(
-      <Badge
-        key="agents"
-        label={`⑂ ${session.subagentCount}`}
-        title={`${session.subagentCount} subagent transcript(s)`}
-        className="bg-sky-500/15 text-sky-400"
-      />,
+      onSubagentsClick ? (
+        <button
+          key="agents"
+          type="button"
+          onClick={onSubagentsClick}
+          title={title}
+          className={`inline-flex cursor-pointer items-center rounded px-1.5 py-px text-[10px] font-semibold tracking-wide uppercase hover:bg-sky-500/30 ${className}`}
+        >
+          {label}
+        </button>
+      ) : (
+        <Badge key="agents" label={label} title={title} className={className} />
+      ),
     );
   }
   if (!omitPr && session.enrichment && session.enrichment.prLinks.length > 0) {

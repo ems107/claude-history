@@ -42,6 +42,7 @@ export function TurnList({
   expandSegments = false,
   scrollToUuid,
   scrollToTool,
+  jumpNonce,
   highlight,
   onOpenAgent,
   footer,
@@ -61,6 +62,13 @@ export function TurnList({
    * rendered nowhere. It wins over `scrollToUuid` when both are given.
    */
   scrollToTool?: string | null;
+  /**
+   * Changes every time a jump is ASKED for, even to the anchor already in the
+   * URL. The effect below keys on the link and not on the data, which is what
+   * stops a live session being yanked back every few seconds — and also what
+   * made clicking the same row twice do nothing after scrolling away from it.
+   */
+  jumpNonce?: number;
   /** The words a search matched, when the link came from one. */
   highlight?: MatchHighlight | null;
   onOpenAgent?: (agentId: string) => void;
@@ -246,7 +254,7 @@ export function TurnList({
     // follow-the-end button for control of the scroll. The turns are already
     // rendered when this mounts, so there is nothing to wait for.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToUuid, scrollToTool]);
+  }, [scrollToUuid, scrollToTool, jumpNonce]);
 
   /**
    * The turn the footer belongs to: the last one of the live segment, and only
