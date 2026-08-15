@@ -33,9 +33,10 @@ export function SubagentDrawer({
   });
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
   const prices = pricesQ.data?.prices ?? NO_PRICES;
-  // A subagent runs as its own API conversation, so this cost is NOT part of the
-  // session total in the token panel — one session on this machine spends 43%
-  // again on top of its parent. The drawer is the only place it can be seen.
+  // Priced here from the parsed turns, and the enricher totals the same messages
+  // from the same file for the session total — the two are checked against each
+  // other (worst delta 2.7e-15 across every session with agents). What this cost
+  // is NOT part of is the conversation's own row: none of it is in that file.
   const entries = useMemo(
     () => costEntries((query.data?.turns ?? []).flatMap((t) => t.items), prices),
     [query.data, prices],

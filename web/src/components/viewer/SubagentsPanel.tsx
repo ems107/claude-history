@@ -195,9 +195,10 @@ function AgentRow({
  * query key the drawer uses — so nothing is read twice and opening one
  * afterwards is instant. Measured on this machine: 350-500 KB and ~20 ms each.
  *
- * That cost is NOT part of the session total anywhere else in the app: a
- * subagent is its own API conversation, enriched nowhere, and one session here
- * spends 43% again on top of its parent. This panel is the only place it shows.
+ * The cost here is the same money the session total counts — it is added to the
+ * session's own spend in the token panel, in the list and in the stats — but
+ * this is the only place it is broken down per agent, and where the ones worth
+ * looking at (the $4.31 among ten cheap ones) become visible.
  */
 export function SubagentsPanel({
   sessionId,
@@ -235,7 +236,7 @@ export function SubagentsPanel({
           </span>
         )}
         <span className="ml-2 font-normal normal-case opacity-70">
-          (each one its own conversation — this spend is NOT part of the session total)
+          (each one its own conversation — counted in the session total, and in none of its messages)
         </span>
       </div>
       {rows.map((row, i) => (
