@@ -598,17 +598,22 @@ export async function parseTranscript(
         pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId);
         continue;
       }
-      // Or a prompt the user typed while Claude was working, which is a prompt
-      // like any other and opens its own turn — the answer to it really does
-      // hang off this line's uuid. `queuedPrompt` is what tells the two apart,
-      // and the reason it does not reuse `injectedOrigin` is written there.
+      // Or a prompt the user typed while Claude was working. `queuedPrompt` is
+      // what tells the two apart, and the reason it does not reuse
+      // `injectedOrigin` is written there.
       const typed = queuedPrompt(o);
       const prompt = typed ? extractPrompt(typed) : null;
       if (!prompt) continue;
-      // No `promptId` on these lines, so the turn takes none. Nothing keys on
-      // it (a turn's React key is its first item's uuid), and the answer joins
-      // through `ensureTurn` like every other.
-      newTurn(str(o.promptId)).items.push({
+      // It joins the turn already open (`ensureTurn`) instead of starting one,
+      // because that is what Claude Code does with it: the `last-prompt` sidecar
+      // written straight after delivery still names the PREVIOUS prompt, in both
+      // cases here. A turn of its own also cut the conversation in half at a
+      // point nothing had ended — in `b343d4ac` the line lands between a
+      // `tool_result` and three more `tool_use` calls of the same piece of work,
+      // and splitting that run in two invented a boundary the session never had.
+      // The viewer draws it on the rail with the answers, as the interjection it
+      // is. `promptId` is absent from these lines anyway, so nothing is lost.
+      ensureTurn().items.push({
         uuid: makeUuid(o),
         aliasUuids: [],
         role: 'user',

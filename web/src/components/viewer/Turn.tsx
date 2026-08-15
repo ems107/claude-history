@@ -653,7 +653,20 @@ export function TurnView({
     for (const item of turn.items) {
       if (item.role === 'user' && (isPromptItem(item) || item.isCompactSummary)) {
         // The summary panel takes no badge, so it must not consume one either.
-        nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge));
+        const node = userNode(item, models, badgePlaced ? undefined : turnBadge);
+        // Folded, the turn still shows what the user wrote — hiding a queued
+        // prompt here would repeat in miniature the bug that hid it outright.
+        // On the rail, though: it did not open this turn, and at the prompt's
+        // own margin it would read as a second one.
+        nodes.push(
+          item.queued ? (
+            <div key={item.uuid} className={RAIL}>
+              {node}
+            </div>
+          ) : (
+            node
+          ),
+        );
         badgePlaced ||= !item.isCompactSummary;
         promptShown ||= !item.isCompactSummary;
         continue;
@@ -687,6 +700,11 @@ export function TurnView({
   for (const item of turn.items) {
     if (item.role === 'user') {
       flushTools();
+      // A prompt typed while Claude was working did not open this turn — it
+      // arrived in the middle of one. `markFold` puts it on the rail with the
+      // answers, so the thread it interrupted still reads as one thread, and it
+      // cuts the tool run it landed in exactly as a question to the user does.
+      if (item.queued) markFold();
       nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge));
       badgePlaced ||= !item.isCompactSummary;
       promptShown ||= !item.isCompactSummary;
