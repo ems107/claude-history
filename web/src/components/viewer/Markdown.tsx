@@ -2,7 +2,7 @@ import { createContext, type ReactNode, useContext } from 'react';
 import ReactMarkdown, { type Components, defaultUrlTransform, type UrlTransform } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
-import { parseFileRef } from '../../lib/fileRefs.ts';
+import { parseFileRef, rangeFromLabel } from '../../lib/fileRefs.ts';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
 import 'highlight.js/styles/github-dark.css';
@@ -28,8 +28,8 @@ const urlTransform: UrlTransform = (url, key, node) =>
  */
 const InPre = createContext(false);
 
-/** The text of a `<code>` span, when it is one plain string and nothing else. */
-function codeText(children: ReactNode): string | null {
+/** The text of a node, when it is one plain string and nothing else. */
+function plainText(children: ReactNode): string | null {
   if (typeof children === 'string') return children;
   if (Array.isArray(children) && children.length === 1 && typeof children[0] === 'string') return children[0];
   return null;
@@ -42,7 +42,11 @@ const components: Components = {
     const ctx = useFileRefs();
     // The link TEXT is usually not the path (`[:905](frmActualizador.frm:905)`),
     // so the reference is read from the href and the label is left as written.
-    const fileRef = ctx && href ? parseFileRef(href) : null;
+    // The one thing the label knows that the href does not is the END of a
+    // range: `[:1068-1074](…frm:1068)` points at seven lines and links to one.
+    const parsed = ctx && href ? parseFileRef(href) : null;
+    const label = plainText(children);
+    const fileRef = parsed && label ? rangeFromLabel(label, parsed) : parsed;
     // Outside a session view — the release notes in UpdateButton — there is no
     // context and this is byte for byte the anchor react-markdown drew before.
     if (!ctx || !fileRef) {
@@ -57,7 +61,7 @@ const components: Components = {
         ctx={ctx}
         fileRef={fileRef}
         className={LINK_CLASS}
-        title={`Open ${fileRef.path}${fileRef.line ? `:${fileRef.line}` : ''}`}
+        title={`Open ${fileRef.path}${fileRef.line ? `:${fileRef.line}` : ''}${fileRef.endLine ? `-${fileRef.endLine}` : ''}`}
       >
         {children}
       </FileLink>
@@ -73,7 +77,7 @@ const components: Components = {
   code({ node: _node, className, children, ...rest }) {
     const inPre = useContext(InPre);
     const ctx = useFileRefs();
-    const text = inPre ? null : codeText(children);
+    const text = inPre ? null : plainText(children);
     /**
      * The whole span is one candidate, never scanned inside. That is what lets
      * `Actualizacion Base de Datos 2.0/sentenciasSQL.bas:6648` — a real shape

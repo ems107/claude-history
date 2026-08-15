@@ -165,6 +165,30 @@ export function isFileRef(text: string, opts?: FileRefOptions): boolean {
   return parseFileRef(text, opts) !== null;
 }
 
+/** `:1068-1074`, `1068-1074`, `frmActualizador.frm:1068-1074`, `L59-L60`. */
+const LABEL_RANGE_RE = /(?:^|[:\s]|\bL)(\d{1,7})\s*[-–—]\s*L?(\d{1,7})$/;
+
+/**
+ * The end of a range that the link TEXT carries and its destination does not.
+ *
+ * Claude writes `[:1068-1074](ActualizadorVersion/frmActualizador.frm:1068)` —
+ * the sentence points at seven lines and the href holds only the first, so the
+ * panel marked one line of a stretch and looked like it had lost the rest.
+ *
+ * Believed only when the label's own start is the destination's line: that is
+ * what makes it the same reference restated, rather than some other number
+ * that happens to sit at the end of the words.
+ */
+export function rangeFromLabel(label: string, ref: FileRef): FileRef {
+  if (ref.line === undefined || ref.endLine !== undefined) return ref;
+  const m = LABEL_RANGE_RE.exec(label.trim());
+  if (!m) return ref;
+  const start = Number(m[1]);
+  const end = Number(m[2]);
+  if (start !== ref.line || end <= start) return ref;
+  return { ...ref, endLine: end };
+}
+
 /**
  * The reference as one string, for the URL. It round-trips through
  * `parseFileRef`, which is what lets `?file=` be parsed by the same code that

@@ -298,14 +298,18 @@ export function FileViewerPanel({
                   // Markup produced by hljs from text we read, not from
                   // anything a transcript wrote — hljs escapes its input.
                   //
-                  // The transparent background is a STYLE and not a class: the
-                  // github-dark theme paints `.hljs` an opaque colour, it is
-                  // loaded after Tailwind, and it was covering the target
-                  // stripe everywhere except the few pixels of the pre's
-                  // padding — which read as a stripe that failed to draw.
+                  // These are STYLES and not classes because `github-dark.css`
+                  // loads after Tailwind and `.hljs` wins every tie. Its
+                  // background covered the target stripe; its `padding: 1em`
+                  // then pushed the text 12 px below its own line number and
+                  // the stripe, so the highlight sat two thirds of a line off —
+                  // and only in files that got highlighted at all, which is
+                  // what made it look intermittent. Its `overflow-x: auto`
+                  // would make this a second scroll container inside the one
+                  // that already scrolls.
                   <code
-                    className="hljs p-0"
-                    style={{ background: 'transparent' }}
+                    className="hljs"
+                    style={{ background: 'transparent', padding: 0, overflow: 'visible' }}
                     dangerouslySetInnerHTML={{ __html: html }}
                   />
                 ) : (
