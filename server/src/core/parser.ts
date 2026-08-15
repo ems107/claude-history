@@ -454,10 +454,21 @@ export async function parseTranscript(
     if (type === 'user') {
       if (!isRec(o.message)) continue;
       // `/context` is re-injected as an isMeta line: the only record of the
-      // window size and of the per-category split. Every other isMeta line is
-      // still noise.
+      // window size and of the per-category split. So is a notification
+      // delivered INSIDE a subagent transcript, which is how an agent learns
+      // that an agent of its own has finished — 4 of the 37 notifications in
+      // subagent files here are written that way, and not one of the 69 in a
+      // session file is. Dropping every isMeta line took those reports with it,
+      // which is why the nested agents of `15a86025` had a report nowhere.
+      // Everything else isMeta is still noise (69 of 73 carry no `origin` at
+      // all, so this test is exact).
       if (o.isMeta === true) {
         const meta = str(o.message.content);
+        const injected = meta ? injectedOrigin(o) : null;
+        if (meta && injected) {
+          pushNotice(o, injected, meta, carriedOver, runId);
+          continue;
+        }
         const snapshot = meta ? parseContextSnapshot(meta) : null;
         if (snapshot) {
           ensureTurn().items.push({

@@ -24,6 +24,8 @@ export interface SearchBlock {
    * only anchor that can open the right tool in the viewer.
    */
   toolUseId?: string | null;
+  /** Only on the block that holds a subagent's id: which agent it names. */
+  agentId?: string | null;
 }
 
 export interface EnrichData {
@@ -67,10 +69,12 @@ export interface SubagentSpend {
   byModel: Record<string, MessageUsage>;
   /** day (UTC) → model → usage, to be merged into the session's daily buckets. */
   daily: Record<string, Record<string, MessageUsage>>;
+  /** The agents themselves, so their ids can be searched for like a session's. */
+  ids: string[];
 }
 
 function emptySpend(): SubagentSpend {
-  return { usage: zeroMessageUsage(), byModel: {}, daily: {} };
+  return { usage: zeroMessageUsage(), byModel: {}, daily: {}, ids: [] };
 }
 
 /**
@@ -98,6 +102,7 @@ export async function enrichSubagents(sessionDir: string | null): Promise<Subage
   }
 
   for (const file of files) {
+    spend.ids.push(file.slice('agent-'.length, -'.jsonl'.length));
     const isReplay = replayFilter();
     const seenMessageIds = new Set<string>();
     try {
@@ -331,6 +336,7 @@ export async function enrichSession(
       usageByModel,
       subagentUsage: subagents.usage,
       subagentUsageByModel: subagents.byModel,
+      subagentIds: subagents.ids,
       daily,
       models: [...models].sort(),
       prLinks,

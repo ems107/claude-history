@@ -54,6 +54,12 @@ export interface SearchSnippet {
    * carrying a `tool_result` is rendered nowhere at all.
    */
   toolUseId: string | null;
+  /**
+   * Set on the row that IS a subagent's id: the hit belongs to the parent
+   * session, and this is what opens the agent it names — the id is otherwise a
+   * string with nothing behind it, which is exactly why it is indexed.
+   */
+  agentId: string | null;
 }
 
 export interface SearchHit {

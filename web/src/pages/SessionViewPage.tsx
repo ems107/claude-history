@@ -32,6 +32,9 @@ const EMPTY_TURNS: Turn[] = [];
 const EMPTY_AGENTS: SubagentMeta[] = [];
 /** Opens the subagent list. `agent` (singular) opens one transcript — they are not the same thing. */
 const AGENTS_PARAM = 'agents';
+/** Anchors inside the OPEN DRAWER, the drawer's counterpart of `tool` and `msg`. */
+const AGENT_TOOL_PARAM = 'agentTool';
+const AGENT_MSG_PARAM = 'agentMsg';
 
 export function SessionViewPage() {
   const { id = '' } = useParams();
@@ -122,15 +125,26 @@ export function SessionViewPage() {
   }, [setSearchParams]);
 
   const openAgent = useCallback(
-    (aid: string) => {
+    (aid: string, anchor?: { tool?: string; msg?: string }) => {
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
           sp.set('agent', aid);
+          // Anchors INSIDE the drawer, and always rewritten together: one left
+          // over from a previous jump would point into another agent's
+          // transcript, where it resolves to nothing at all.
+          for (const [param, value] of [
+            [AGENT_TOOL_PARAM, anchor?.tool],
+            [AGENT_MSG_PARAM, anchor?.msg],
+          ] as const) {
+            if (value) sp.set(param, value);
+            else sp.delete(param);
+          }
           return sp;
         },
         { replace: true },
       );
+      setJumpNonce((n) => n + 1);
     },
     [setSearchParams],
   );
@@ -476,6 +490,9 @@ export function SessionViewPage() {
               agentId={agentId}
               showThinking={showThinking}
               zoom={view.zoom}
+              scrollToTool={searchParams.get(AGENT_TOOL_PARAM)}
+              scrollToUuid={searchParams.get(AGENT_MSG_PARAM)}
+              jumpNonce={jumpNonce}
               onClose={closeAgent}
             />
           )}

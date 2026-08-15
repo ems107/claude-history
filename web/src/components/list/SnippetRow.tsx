@@ -14,7 +14,9 @@ import { highlightSearchParams, TOOL_PARAM } from '../../lib/highlight.ts';
  *
  * A snippet with no uuid — every subagent one — links to the session without an
  * anchor: the viewer knows only the parent transcript, so an anchor there would
- * resolve nowhere.
+ * resolve nowhere. The exception is the row that IS an agent's id, which opens
+ * that agent: the whole reason those ids are indexed is that the string was
+ * otherwise a dead end.
  */
 export function SnippetRow({
   sessionId,
@@ -26,7 +28,11 @@ export function SnippetRow({
   query: SearchQueryEcho;
 }) {
   let to = `/session/${sessionId}`;
-  if (snippet.uuid || snippet.toolUseId) {
+  if (snippet.agentId) {
+    // Both: the drawer for the agent named, and the list behind it so it can be
+    // seen where it sits among the others.
+    to += `?agents=1&agent=${encodeURIComponent(snippet.agentId)}`;
+  } else if (snippet.uuid || snippet.toolUseId) {
     const params = highlightSearchParams(query);
     if (snippet.uuid) params.set('msg', snippet.uuid);
     // A tool hit needs its run and its own block opened, and neither is

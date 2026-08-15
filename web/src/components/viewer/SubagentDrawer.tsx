@@ -18,6 +18,9 @@ export function SubagentDrawer({
   agentId,
   showThinking,
   zoom,
+  scrollToTool,
+  scrollToUuid,
+  jumpNonce,
   onClose,
 }: {
   sessionId: string;
@@ -25,6 +28,14 @@ export function SubagentDrawer({
   showThinking: boolean;
   /** The thread zoom, passed down rather than read again: this is a thread too. */
   zoom: number;
+  /**
+   * Anchors inside THIS transcript, which is where a nested agent's call and
+   * report live — the agent that spawned it made the call and received the
+   * report, so neither is in the conversation underneath.
+   */
+  scrollToTool?: string | null;
+  scrollToUuid?: string | null;
+  jumpNonce?: number;
   onClose: () => void;
 }) {
   const query = useQuery({
@@ -67,6 +78,12 @@ export function SubagentDrawer({
         </span>
         <span className="min-w-0 flex-1 truncate text-sm" title={query.data?.meta.description}>
           {query.data?.meta.description ?? agentId}
+        </span>
+        {/* Written down because it is what the URL carries and what a
+            notification calls this agent — searchable now, and until it was on
+            screen there was no way to go from the string back to the agent. */}
+        <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)] opacity-60 select-text" title="Subagent id — paste it into the search to come back here">
+          {agentId}
         </span>
         <CostPill entries={entries} prices={prices} label="agent" variant="badge" />
         {call && subagents?.hasCall(call) && (
@@ -116,7 +133,15 @@ export function SubagentDrawer({
         {query.isError && <div className="text-red-400">Failed: {String(query.error)}</div>}
         {query.data && (
           <div style={zoom === ZOOM_DEFAULT ? undefined : { zoom: `${zoom}%` }}>
-            <TurnList key={agentId} turns={query.data.turns} showThinking={showThinking} fold={fold} />
+            <TurnList
+              key={agentId}
+              turns={query.data.turns}
+              showThinking={showThinking}
+              fold={fold}
+              scrollToTool={scrollToTool}
+              scrollToUuid={scrollToUuid}
+              jumpNonce={jumpNonce}
+            />
           </div>
         )}
       </div>

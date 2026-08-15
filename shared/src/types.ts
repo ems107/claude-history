@@ -153,6 +153,13 @@ export interface SessionEnrichment {
    */
   subagentUsage: MessageUsage;
   subagentUsageByModel: Record<string, MessageUsage>;
+  /**
+   * The agents' own ids (`agent-<id>.jsonl`), which is what a notification's
+   * `<task-id>` is. Indexed like the session's own id so that pasting one finds
+   * it: the app writes them into the URL when a drawer opens, and until they
+   * were searchable there was no way back from the string to the agent.
+   */
+  subagentIds: string[];
   /** Per-UTC-day usage (yyyy-mm-dd) for the stats dashboard. Carried-over lines excluded. */
   daily: Record<string, DailyUsage>;
   models: string[];

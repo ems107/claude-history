@@ -66,6 +66,14 @@ export class SearchService {
     // match list and the deep scan agreeing about it — but only a query that
     // could BE an id is ever allowed to look at it (`matchesSessionIds`).
     blocks.push({ uuid: null, role: ID_ROLE, text: id });
+    // And its agents' ids, for the same reason and one more: an agent id is
+    // written into the URL when its drawer opens and shown nowhere else, so
+    // until this existed there was no way back from the string to the agent.
+    // The row carries which agent it names, because the hit belongs to the
+    // parent session and the link has to open the drawer.
+    for (const agentId of s?.enrichment?.subagentIds ?? []) {
+      blocks.push({ uuid: null, role: ID_ROLE, text: agentId, agentId });
+    }
     // The (possibly locally-renamed) title is always searchable.
     if (s && s.titleSource !== 'uuid') blocks.push({ uuid: null, role: 'title', text: s.title });
     const entry = await this.index.loadTextBlocks(id);

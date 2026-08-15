@@ -17,8 +17,14 @@ export interface SubagentContextValue {
   byId: Map<string, SubagentMeta>;
   /** By the `tool_use` that spawned it. */
   byToolUse: Map<string, SubagentMeta>;
-  /** Its own transcript, in the drawer (`?agent=`). */
-  openAgent(agentId: string): void;
+  /**
+   * Its own transcript, in the drawer (`?agent=`) — optionally landing on
+   * something inside it, which is how a nested agent's call and report are
+   * reached: both live in the transcript of the agent that spawned it, and the
+   * drawer needs anchors of its own because `?tool=`/`?msg=` belong to the
+   * conversation underneath.
+   */
+  openAgent(agentId: string, anchor?: { tool?: string; msg?: string }): void;
   /** The call that started it (`?tool=`), opening every fold on the way. */
   goToCall(toolUseId: string): void;
   /** A message (`?msg=`) — the report, from the panel. */
