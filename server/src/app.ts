@@ -6,6 +6,7 @@ import { isSameOrigin } from './util/sameOrigin.ts';
 import { registerAutoReloadRoutes } from './routes/autoReload.ts';
 import { registerChatRoutes } from './routes/chat.ts';
 import { registerEventRoutes } from './routes/events.ts';
+import { registerFileRoutes } from './routes/files.ts';
 import { registerLogRoutes } from './routes/logs.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
@@ -85,6 +86,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerSearchRoutes(app, ctx);
   registerSubagentRoutes(app, ctx);
   registerToolResultRoutes(app, ctx);
+  registerFileRoutes(app, ctx);
   registerLiveRoutes(app, ctx);
   registerPromptRoutes(app, ctx);
   registerPriceRoutes(app, ctx);

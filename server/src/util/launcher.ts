@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { type SpawnOptions, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -18,9 +18,9 @@ export function cleanEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-function trySpawn(cmd: string, args: string[]): Promise<void> {
+function trySpawn(cmd: string, args: string[], opts?: SpawnOptions): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', env: cleanEnv() });
+    const child = spawn(cmd, args, { detached: true, stdio: 'ignore', env: cleanEnv(), ...opts });
     child.once('error', reject);
     child.once('spawn', () => {
       child.unref();
@@ -198,6 +198,48 @@ export async function openInExplorer(cwd: string): Promise<void> {
 /** Open VS Code at the project folder (`code` is a .cmd shim — go through cmd). */
 export async function openInVsCode(cwd: string): Promise<void> {
   await trySpawn('cmd', ['/c', 'code', cwd]);
+}
+
+/**
+ * Open one file with whatever Windows associates with it.
+ *
+ * Explorer is the launcher here rather than `cmd /c start`: it needs no shell,
+ * no empty-title argument, and it is already how this app opens a folder.
+ */
+export async function openFile(file: string): Promise<void> {
+  await trySpawn('explorer.exe', [file]);
+}
+
+/**
+ * Explorer at the file's folder, with the file selected. Answers whether it
+ * really selected it: false means the `/select` launch failed and the plain
+ * folder was opened instead, and the UI must not claim otherwise.
+ *
+ * `/select,<path>` has to reach Explorer as ONE argument with the switch
+ * OUTSIDE the quotes, and Node quotes any argument containing a space — which
+ * turns `/select,C:\a b\c.ts` into `"/select,C:\a b\c.ts"`, an argument Explorer
+ * does not recognise at all, so it opens Documents and looks like a bug in us.
+ * `windowsVerbatimArguments` is the only way to write that command line
+ * ourselves; the quotes around the path are added here on purpose. (The same
+ * trap is documented in routes/retention.ts, which sidesteps it by opening the
+ * folder — this is the version that does not have to.)
+ */
+export async function revealInExplorer(file: string): Promise<boolean> {
+  try {
+    await trySpawn('explorer.exe', [`/select,"${file}"`], { windowsVerbatimArguments: true });
+    return true;
+  } catch {
+    await openInExplorer(path.dirname(file));
+    return false;
+  }
+}
+
+/**
+ * VS Code at a file, on a line (`code` is a .cmd shim — go through cmd).
+ * `-g` is what makes `path:line` a position rather than a filename.
+ */
+export async function openFileInVsCode(file: string, line?: number): Promise<void> {
+  await trySpawn('cmd', ['/c', 'code', '-g', line ? `${file}:${line}` : file]);
 }
 
 export async function launchResume(cwd: string, sessionId: string): Promise<{ method: 'wt' | 'cmd'; command: string }> {

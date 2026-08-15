@@ -128,6 +128,55 @@ export interface ToolResultFileResponse {
   sizeBytes: number;
 }
 
+/**
+ * One local file, read for the viewer panel (`GET /api/files/read`).
+ *
+ * Everything except a malformed request answers 200: a file that is missing, is
+ * a folder, or cannot be read is a STATE the panel draws, not an error — the
+ * path is still worth showing, and the folder may still be worth opening. Only
+ * a bad session id or a cross-origin caller gets a 4xx.
+ */
+export interface FileReadResponse {
+  /** The resolved absolute path. A relative reference is resolved against the
+   *  session's launch cwd, so this is what says which file was actually tried. */
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  sizeBytes: number;
+  /** ISO-8601, or null when there is nothing to stat. */
+  modifiedAt: string | null;
+  /** Null for a folder, a binary file, or a file that could not be read. */
+  text: string | null;
+  /** The file is longer than what `text` holds. */
+  truncated: boolean;
+  /** A NUL byte in the head: not text, and not shown. */
+  binary: boolean;
+  /** The file exists but could not be read (EACCES, EBUSY…), verbatim. */
+  error?: string;
+}
+
+/** Launch a local file, its folder, or an editor at it (`POST /api/files/open`). */
+export interface FileOpenRequest {
+  /** Session id: the reference is resolved against ITS project path, and that
+   *  path comes from the index — never from the request. */
+  session: string;
+  /** The reference as written in the transcript (relative or absolute). */
+  path: string;
+  target: 'file' | 'folder' | 'vscode';
+  /** For 'vscode' only: the line to land on. */
+  line?: number;
+}
+
+export interface FileOpenResponse {
+  ok: true;
+  /**
+   * Explorer really did select the file. False means the `/select` launch
+   * failed and the folder was opened instead — the button must not claim
+   * something the shell did not do.
+   */
+  selected?: boolean;
+}
+
 export interface PromptEntry {
   display: string; // full typed prompt text
   timestamp: number; // epoch ms
@@ -758,6 +807,8 @@ export const LOG_SOURCES = [
   'chat',
   /** Reading Claude Code's own `cleanupPeriodDays` out of its settings files. */
   'retention',
+  /** Reading and launching the local files a transcript names. */
+  'files',
   'updates',
   /** Imported from the installer's update.log so an update reads as one timeline. */
   'update-helper',
