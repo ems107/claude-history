@@ -100,6 +100,17 @@ function UserItem({
               {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
             </span>
           )}
+          {/* Typed while Claude was working, so it sat in the queue until the
+              turn ended — which is why its clock reads EARLIER than the answer
+              above it. Without the chip that looks like a parsing error. */}
+          {item.queued && (
+            <span
+              className="rounded border border-[var(--border)] px-1 py-px font-normal text-[var(--text-dim)] normal-case"
+              title="Typed while Claude was working, so it waited in the queue and was sent when the turn ended. The time shown is when it was typed."
+            >
+              queued
+            </span>
+          )}
           {/* An explicit spacer rather than `ml-auto` on the run: the actions
               sit between the two, and only the spacer gives way to them. */}
           <span className="flex-1" />

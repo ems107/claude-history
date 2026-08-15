@@ -16,7 +16,7 @@ import type {
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
-import { extractPrompt, injectedOrigin, parseNotification } from './summarizer.ts';
+import { extractPrompt, injectedOrigin, parseNotification, queuedPrompt } from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
 
@@ -400,6 +400,7 @@ export async function parseTranscript(
       model: null,
       isMeta: false,
       isCompactSummary: false,
+      queued: false,
       systemSubtype: origin,
       carriedOver,
       runId,
@@ -468,6 +469,7 @@ export async function parseTranscript(
             model: null,
             isMeta: false,
             isCompactSummary: false,
+            queued: false,
             systemSubtype: 'context',
             carriedOver,
             runId,
@@ -519,6 +521,7 @@ export async function parseTranscript(
           // The compaction summary comes down this very path: a `user` line with
           // string content, indistinguishable from a typed prompt without it.
           isCompactSummary: o.isCompactSummary === true,
+          queued: false,
           systemSubtype: null,
           carriedOver,
           runId,
@@ -570,6 +573,7 @@ export async function parseTranscript(
             model: null,
             isMeta: false,
             isCompactSummary: false,
+            queued: false,
             systemSubtype: null,
             carriedOver,
             runId,
@@ -581,18 +585,49 @@ export async function parseTranscript(
         }
       }
     } else if (type === 'attachment') {
-      // A notification that lands while a turn is in flight is QUEUED, and comes
-      // back in another envelope: an `attachment` line whose `queued_command`
-      // prompt is the very same `<task-notification>` block. Reading only the
-      // `user` lines left THREE of the five agent reports in `980751cb`
-      // rendered nowhere at all — not even as a summary line. It is the only
-      // attachment type that ever carries one (31 of its 34 in this corpus; the
-      // other 3 are prompts the user really typed while Claude was working).
+      // Anything that lands while a turn is in flight is QUEUED, and comes back
+      // in another envelope: an `attachment` line whose `queued_command` prompt
+      // holds it. It arrives in two flavours and BOTH are messages.
+      //
+      // A `<task-notification>` — reading only the `user` lines left THREE of
+      // the five agent reports in `980751cb` rendered nowhere at all, not even
+      // as a summary line.
       const attachment = isRec(o.attachment) ? o.attachment : null;
       const queued = attachment?.type === 'queued_command' ? str(attachment.prompt) : null;
       if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
         pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId);
+        continue;
       }
+      // Or a prompt the user typed while Claude was working, which is a prompt
+      // like any other and opens its own turn — the answer to it really does
+      // hang off this line's uuid. `queuedPrompt` is what tells the two apart,
+      // and the reason it does not reuse `injectedOrigin` is written there.
+      const typed = queuedPrompt(o);
+      const prompt = typed ? extractPrompt(typed) : null;
+      if (!prompt) continue;
+      // No `promptId` on these lines, so the turn takes none. Nothing keys on
+      // it (a turn's React key is its first item's uuid), and the answer joins
+      // through `ensureTurn` like every other.
+      newTurn(str(o.promptId)).items.push({
+        uuid: makeUuid(o),
+        aliasUuids: [],
+        role: 'user',
+        // When it was TYPED, which is before the answer above it ended — see
+        // `MessageItem.queued`. 39 s earlier in `15a86025`.
+        timestamp: str(o.timestamp),
+        endTimestamp: str(o.timestamp),
+        model: null,
+        isMeta: false,
+        isCompactSummary: false,
+        queued: true,
+        systemSubtype: null,
+        carriedOver,
+        runId,
+        discardedBranch: null,
+        usage: null,
+        effort: null,
+        blocks: [prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text }],
+      });
     } else if (type === 'assistant') {
       if (!isRec(o.message)) continue;
       const messageId = str(o.message.id) ?? makeUuid(o);
@@ -609,6 +644,7 @@ export async function parseTranscript(
           model: synthetic ? null : model,
           isMeta: false,
           isCompactSummary: false,
+          queued: false,
           systemSubtype: null,
           carriedOver,
           runId,
@@ -675,6 +711,7 @@ export async function parseTranscript(
           model: null,
           isMeta: false,
           isCompactSummary: false,
+          queued: false,
           systemSubtype: subtype,
           carriedOver,
           runId,
@@ -713,6 +750,7 @@ export async function parseTranscript(
         model: null,
         isMeta: o.isMeta === true,
         isCompactSummary: false,
+        queued: false,
         systemSubtype: subtype,
         carriedOver,
         runId,

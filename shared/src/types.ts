@@ -327,6 +327,15 @@ export interface MessageItem {
    * Without it the viewer showed a 17,000-character "prompt" nobody wrote.
    */
   isCompactSummary: boolean;
+  /**
+   * A prompt the user typed while Claude was working, so it waited in the queue
+   * and was delivered when the turn ended. It reaches the transcript in a
+   * different envelope from every other prompt — an `attachment` line, see
+   * `queuedPrompt` — and its `timestamp` is when it was TYPED, not when it was
+   * sent, so it is legitimately older than the answer above it. The viewer says
+   * so rather than letting the clock read as a parsing error.
+   */
+  queued: boolean;
   /** system messages only */
   systemSubtype: string | null;
   /**

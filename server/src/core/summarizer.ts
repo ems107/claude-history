@@ -41,6 +41,34 @@ export function injectedOrigin(o: RawLine): string | null {
   return kind === null || kind === 'human' ? null : kind;
 }
 
+/**
+ * The prompt a human typed while Claude was working, or null for every other
+ * `attachment` line. Queued while the turn was in flight (`queue-operation`,
+ * `enqueue` then `remove`) and appended when it ended, in the SAME envelope a
+ * `<task-notification>` uses: `attachment.type === 'queued_command'`.
+ *
+ * **This is the only copy of that prompt.** It is written nowhere else in the
+ * transcript — no `user` line repeats it (checked on all 4 in this corpus) — so
+ * reading only `user` lines lost it outright: "No te dejes nada" in `15a86025`
+ * was in `history.jsonl`, so the Prompts page showed it, while the session it
+ * belongs to did not. The line is a real node of the tree, too: the answer to it
+ * hangs off its uuid.
+ *
+ * **The test is affirmative and must stay that way.** A notification carries no
+ * `origin` at all (`{type, prompt, commandMode, timestamp}`, 32 of 32 here), so
+ * `injectedOrigin`'s rule — no `origin` means the human typed it, true of the
+ * older `user` lines — is exactly inverted here and would turn every
+ * notification into a prompt. Only `origin.kind === 'human'` says a human typed
+ * it (4 of 4 here, all `commandMode: "prompt"`); anything else is not ours to
+ * guess.
+ */
+export function queuedPrompt(o: RawLine): string | null {
+  const attachment = isRec(o.attachment) ? o.attachment : null;
+  if (!attachment || attachment.type !== 'queued_command') return null;
+  const kind = isRec(attachment.origin) ? str(attachment.origin.kind) : null;
+  return kind === 'human' ? str(attachment.prompt) : null;
+}
+
 /** The line a `<task-notification>` is worth showing: its own summary of itself. */
 function notificationText(content: string): string {
   const summary = /<summary>([\s\S]*?)<\/summary>/.exec(content);
@@ -196,14 +224,22 @@ function extractFromLines(headParsed: RawLine[], tailParsed: RawLine[]): Extract
       if (count !== null) x.messageCount = count;
     }
 
-    if (
-      type === 'user' &&
+    // A prompt typed while Claude was working comes down the attachment path and
+    // is a prompt like any other here: it decides `isEmpty` and can be the
+    // title's last fallback. Neither changes on this machine's corpus — the
+    // earliest of the four sits at line 51, well past the head window — but the
+    // rule is the same rule, and it should not depend on the envelope.
+    const typed =
+      (type === 'attachment' ? queuedPrompt(o) : null) ??
+      (type === 'user' &&
       o.isMeta !== true &&
       isRec(o.message) &&
       typeof o.message.content === 'string' &&
       injectedOrigin(o) === null
-    ) {
-      const prompt = extractPrompt(o.message.content);
+        ? o.message.content
+        : null);
+    if (typed !== null) {
+      const prompt = extractPrompt(typed);
       if (prompt) {
         if (prompt.isSlashCommand) {
           if (isHead && !x.firstSlashCommand) x.firstSlashCommand = prompt.text;

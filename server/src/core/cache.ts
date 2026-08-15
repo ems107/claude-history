@@ -10,8 +10,10 @@ import { createLogger } from './logger.ts';
  * 6: `forkedFrom` replaced the `session_id` ancestry guess, and a fork's
  * carried-over tokens moved out of its own totals. 7: lines Claude Code injected
  * (background-task notifications) stopped being counted and indexed as prompts.
+ * 8: the re-cached tokens joined the daily buckets. 9: prompts typed while Claude
+ * was working (the `attachment` envelope) started being counted and indexed.
  */
-export const CACHE_VERSION = 8;
+export const CACHE_VERSION = 9;
 
 const cacheLog = createLogger('cache');
 

@@ -1,7 +1,7 @@
 import type { CacheState, DailyUsage, PrLink, SessionEnrichment, UsageTotals } from '@claude-history/shared';
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
-import { extractPrompt, injectedOrigin } from './summarizer.ts';
+import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
 
 export interface SearchBlock {
   uuid: string | null;
@@ -124,6 +124,20 @@ export async function enrichSession(filePath: string, sessionId: string): Promis
           if (day && !carried) dayBucket(day).prompts++;
           searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text });
         }
+      }
+    } else if (type === 'attachment') {
+      // A prompt typed while Claude was working arrives in its own envelope and
+      // nowhere else (see `queuedPrompt`), so it has to be counted and indexed
+      // from here or it is a prompt no search can reach: 4 in this corpus, one
+      // of which the Prompts page listed — `history.jsonl` keeps them — while
+      // its own session showed nothing.
+      const typed = queuedPrompt(o);
+      const prompt = typed ? extractPrompt(typed) : null;
+      if (prompt) {
+        userMessageCount++;
+        const day = dayOf(o);
+        if (day && !carried) dayBucket(day).prompts++;
+        searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text });
       }
     } else if (type === 'assistant' && isRec(o.message)) {
       const model = str(o.message.model);
