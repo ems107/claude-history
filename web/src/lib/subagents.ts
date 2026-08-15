@@ -58,15 +58,18 @@ const EMPTY: SubagentIndex = { rows: [], byId: new Map(), byToolUse: new Map(), 
  * `toolUseId` for the call and the `taskId` (= the agentId) for the report —
  * never the description, which is three words and repeats across retries.
  *
- * Ordering is the launch order the metas are read in (the directory sorted),
- * not the order the reports arrive: agents run in parallel and finish out of
- * order, and the list is about who was sent, not who came back first.
+ * Ordered by when each one was SENT OUT, not by the directory the metas are
+ * read from — that one sorts by agentId, which is random hex, so a retry sent
+ * ten minutes later came out above the four failures that caused it. Nor by
+ * when the reports arrive: agents run in parallel and finish out of order, and
+ * the list is about who was sent. An agent whose call is not in this transcript
+ * has no time to sort by and keeps its place at the end.
  */
 export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): SubagentIndex {
   if (subagents.length === 0) return EMPTY;
 
-  const byId = new Map(subagents.map((m) => [m.agentId, m]));
   const byToolUse = new Map(subagents.filter((m) => m.toolUseId).map((m) => [m.toolUseId, m]));
+  const known = new Set(subagents.map((m) => m.agentId));
   const calls = new Map<string, SubagentCall>();
   const reports = new Map<string, SubagentReport[]>();
 
@@ -90,7 +93,7 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
           // A background command notifies through the very same channel, with an
           // id that matches no transcript — so a notice counts as an agent's
           // only if its task-id is one of ours.
-          if (!block.taskId || !byId.has(block.taskId)) continue;
+          if (!block.taskId || !known.has(block.taskId)) continue;
           const list = reports.get(block.taskId) ?? [];
           list.push({
             uuid: item.uuid,
@@ -105,13 +108,22 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
     }
   }
 
+  const rows: SubagentRow[] = subagents.map((meta) => ({
+    meta,
+    call: calls.get(meta.agentId) ?? null,
+    reports: reports.get(meta.agentId) ?? [],
+  }));
+  // ISO-8601 UTC sorts as text, and `sort` is stable, so agents sent out in the
+  // same message keep the order the directory gave them. A missing time sinks
+  // instead of floating to the top, which is what an empty string would do.
+  const sentAt = (r: SubagentRow): string => r.call?.timestamp ?? '~';
+  rows.sort((a, b) => (sentAt(a) < sentAt(b) ? -1 : sentAt(a) > sentAt(b) ? 1 : 0));
+
   return {
-    rows: subagents.map((meta) => ({
-      meta,
-      call: calls.get(meta.agentId) ?? null,
-      reports: reports.get(meta.agentId) ?? [],
-    })),
-    byId,
+    rows,
+    // Built from the sorted rows, because the drawer walks it with ‹ n of N ›
+    // and has to agree with the list the reader is looking at.
+    byId: new Map(rows.map((r) => [r.meta.agentId, r.meta])),
     byToolUse,
     calls: new Set([...calls.values()].map((c) => c.toolUseId)),
   };
