@@ -15,6 +15,7 @@ import { ImageBlock } from './ImageBlock.tsx';
 import { InjectedNotice } from './InjectedNotice.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
+import { PlanCard, PlanModeMarker, parsePlan } from './PlanCard.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
 
@@ -109,6 +110,16 @@ function UserItem({
               title="Typed while Claude was working, so it waited in the queue and was sent when the turn ended. The time shown is when it was typed."
             >
               queued
+            </span>
+          )}
+          {/* Only `plan` is marked. Every other mode is the ordinary state of
+              affairs, and a chip for it would sit on every prompt ever sent. */}
+          {item.permissionMode === 'plan' && (
+            <span
+              className="rounded bg-violet-500/15 px-1 py-px font-semibold text-violet-300 normal-case"
+              title="Sent in plan mode: Claude could explore and design, but not edit files or run anything that changes the machine."
+            >
+              plan
             </span>
           )}
           {/* An explicit spacer rather than `ml-auto` on the run: the actions
@@ -368,6 +379,14 @@ function SystemItem({ item }: { item: MessageItem }) {
       <div id={item.uuid}>
         <Anchors item={item} />
         <CompactBoundaryPanel boundary={first.boundary} />
+      </div>
+    );
+  }
+  if (first?.kind === 'plan-mode') {
+    return (
+      <div id={item.uuid}>
+        <Anchors item={item} />
+        <PlanModeMarker block={first} />
       </div>
     );
   }
@@ -734,11 +753,21 @@ export function TurnView({
       let owns = true;
       for (const block of visible as ToolContentBlock[]) {
         pendingTools.push({ block, item, costOwner: owns });
+        // A plan is cut out of the run for the same reason a question is, and
+        // the two are handled identically here.
         const asked = parseAskUserQuestion(block);
-        if (!asked) continue;
+        const plan = asked ? null : parsePlan(block);
+        if (!asked && !plan) continue;
         flushTools();
         owns = false;
-        nodes.push(<AnsweredQuestionCard key={`asked-${block.toolUseId || item.uuid}`} parsed={asked} />);
+        const key = block.toolUseId || item.uuid;
+        nodes.push(
+          asked ? (
+            <AnsweredQuestionCard key={`asked-${key}`} parsed={asked} />
+          ) : (
+            <PlanCard key={`plan-${key}`} parsed={plan!} />
+          ),
+        );
       }
       continue;
     }
@@ -750,9 +779,10 @@ export function TurnView({
       if (b.kind === 'tool') {
         pendingTools.push({ block: b, item, costOwner: false });
         // Same rule as above, inside a message that also has prose: the run
-        // ends at the question and the card follows it.
+        // ends at the question — or at the plan — and the card follows it.
         const asked = parseAskUserQuestion(b);
-        if (asked) {
+        const plan = asked ? null : parsePlan(b);
+        if (asked || plan) {
           rendered.push(
             <ToolGroup
               key={`tools-before-ask-${i}`}
@@ -764,7 +794,13 @@ export function TurnView({
             />,
           );
           pendingTools = [];
-          rendered.push(<AnsweredQuestionCard key={`asked-${i}`} parsed={asked} />);
+          rendered.push(
+            asked ? (
+              <AnsweredQuestionCard key={`asked-${i}`} parsed={asked} />
+            ) : (
+              <PlanCard key={`plan-${i}`} parsed={plan!} />
+            ),
+          );
         }
         continue;
       }

@@ -10,7 +10,7 @@ The approved plan lives at
 
 - [x] **1. Parser + types.** `PlanOutcome`, `ToolResultInfo.plan`, `plan-mode` block,
       `MessageItem.permissionMode`, `summarizeInput` case, plan-mode attachments.
-- [ ] 2. `PlanCard` + insertion in `Turn.tsx` + `SystemItem` + `PLAN` chip.
+- [x] **2. `PlanCard` + insertion in `Turn.tsx` + `SystemItem` + `PLAN` chip.**
 - [ ] 3. Consumers of the new kind: export, folding, segments.
 - [ ] 4. Enricher + `CACHE_VERSION` 12 + `plan` search role + `deepSearch` de-dup.
 - [ ] 5. `GET /api/plans` + `PlansPage`.
@@ -40,3 +40,14 @@ rendered — the other three fire on a CLI first prompt with no plan mode open.
 o sonnet…"* → approved `toolu_014qndvKLoC1hKQ6JMiW1MhD`, 16,894 chars, saved to
 `lexical-swimming-tulip.md` → exit 18:21:35 (`planExists: true`). The collapsed header reads the
 plan's own H1 instead of 17 KB of stringified JSON.
+
+**In the browser (headless Chrome over CDP), `b343d4ac`.** 2 plan cards — `✖ NOT APPROVED` with
+the feedback quoted under "the user said", and `✔ APPROVED` — plus the 2 markers and 1 `plan`
+chip. The rejected card still shows its 16.2k-char plan, which only works because the text falls
+back to the call's own input: a rejection keeps no copy on the result. Opening the fold renders
+real markdown (4 headings, 4 code blocks) and does **not** collapse the turn (248 bubbles before
+and after). The fold headers are `DIV`s with `role="button"` and hold nothing interactive. No raw
+JSON and no ANSI anywhere on the page.
+
+`f3384d17` shows 1 marker and 0 cards, which is right: the rest sit inside compacted segments,
+and those render nothing until unfolded.
