@@ -11,7 +11,7 @@ The approved plan lives at
 - [x] **1. Parser + types.** `PlanOutcome`, `ToolResultInfo.plan`, `plan-mode` block,
       `MessageItem.permissionMode`, `summarizeInput` case, plan-mode attachments.
 - [x] **2. `PlanCard` + insertion in `Turn.tsx` + `SystemItem` + `PLAN` chip.**
-- [ ] 3. Consumers of the new kind: export, folding, segments.
+- [x] **3. Consumers of the new kind: export, folding, segments.**
 - [ ] 4. Enricher + `CACHE_VERSION` 12 + `plan` search role + `deepSearch` de-dup.
 - [ ] 5. `GET /api/plans` + `PlansPage`.
 - [ ] 6. Composer: live permission-mode picker + initial mode from the transcript.
@@ -51,3 +51,13 @@ JSON and no ANSI anywhere on the page.
 
 `f3384d17` shows 1 marker and 0 cards, which is right: the rest sit inside compacted segments,
 and those render nothing until unfolded.
+
+**Export.** `buildMarkdown` over the real `b343d4ac` payload gives two `📝 **Plan — …**` blocks
+with the right verdicts, the file path on the approved one, `The user said:` under the rejected
+one, and the two plan-mode markers. **No `ExitPlanMode` is left as a tool `<details>`** and there
+are zero JSON-stringified plans. The plan survives `includeTools: false` — it is the decision,
+not tool traffic.
+
+`folding.ts` and `segments.ts` needed nothing: `foldedCounts` only looks at assistant items and
+`isPromptItem` requires the user role, so a plan-mode item counts as neither a response, nor a
+tool, nor a prompt. Checked, not assumed.

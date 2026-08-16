@@ -4,6 +4,7 @@ import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { foldedCounts } from '../../lib/folding.ts';
+import { parsePlan } from '../../lib/plans.ts';
 import { isPromptItem } from '../../lib/segments.ts';
 import { AnsweredQuestionCard, parseAskUserQuestion } from './AnsweredQuestion.tsx';
 import { Bubble } from './Bubble.tsx';
@@ -15,7 +16,7 @@ import { ImageBlock } from './ImageBlock.tsx';
 import { InjectedNotice } from './InjectedNotice.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
-import { PlanCard, PlanModeMarker, parsePlan } from './PlanCard.tsx';
+import { PlanCard, PlanModeMarker } from './PlanCard.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
 
