@@ -2,6 +2,7 @@
 
 import type {
   LiveInfo,
+  PlanRecord,
   ProjectInfo,
   SessionDetail,
   SessionSummary,
@@ -193,6 +194,29 @@ export interface PromptEntry {
   sessionExists: boolean;
 }
 export type PromptsResponse = PromptEntry[];
+
+/**
+ * One plan, as the Plans page lists it: the record from the session's
+ * enrichment, plus who it belongs to and what is left of it on disk.
+ */
+export interface PlanEntry extends PlanRecord {
+  sessionId: string;
+  sessionTitle: string;
+  project: string;
+  projectKey: string;
+  projectName: string;
+  /**
+   * Whether `~/.claude/plans/<slug>.md` still holds THIS plan.
+   *
+   * The file is named after the session slug and overwritten, so a session that
+   * planned twice keeps only its latest — and a page that showed a link to
+   * every plan would send most of them to somebody else's text. Null when the
+   * plan recorded no path at all (every rejection, and any approval by a CLI
+   * that did not write one).
+   */
+  onDisk: boolean | null;
+}
+export type PlansResponse = PlanEntry[];
 
 export interface ResumeResponse {
   ok: boolean;

@@ -13,7 +13,7 @@ The approved plan lives at
 - [x] **2. `PlanCard` + insertion in `Turn.tsx` + `SystemItem` + `PLAN` chip.**
 - [x] **3. Consumers of the new kind: export, folding, segments.**
 - [x] **4. Enricher + `CACHE_VERSION` 12 + `plan` search role + `deepSearch` de-dup.**
-- [ ] 5. `GET /api/plans` + `PlansPage`.
+- [x] **5. `GET /api/plans` + `PlansPage`.**
 - [ ] 6. Composer: live permission-mode picker + initial mode from the transcript.
 - [ ] 7. `ExitPlanMode` approval panel with the three decisions.
 - [ ] 8. `CLAUDE.md`.
@@ -75,6 +75,22 @@ plan named; the approval's tool_result turned out to echo the whole plan back af
 preamble, with the SAME anchor as the indexed row — one plan, twice, both links landing in the
 same place. Cutting the echo at `## Approved Plan:` took `b343d4ac` from 7 deep matches to 6
 while keeping the preamble, which names the file the plan was saved to.
+
+**The Plans page.** 17 rows, newest first, each linking at its own plan with `?tool=` rather
+than at the session. The disk state came out **10 on disk, 1 overwritten, 6 with no file**, and
+every part of that is the predicted behaviour: the overwritten one is
+`quiero-que-planifiques-la-playful-pearl.md`, written by two approvals a day apart, of which
+only the second survives — the exact case the research named — and all 6 "no file" rows are
+`rejected` or `pending`, since only an approval records a path.
+
+That check was wrong first time round and the bug is worth keeping in mind: comparing
+`stat.size` to the recorded length is **bytes against characters**, and every plan here is
+Spanish. The retention plan is 12,299 characters and 12,546 bytes, so the shortcut answered
+"gone" for all eleven files that were sitting right there. The files are read whole now — nine
+of them, 51 KB at the worst.
+
+Deep link: `?tool=` on a plan opens its run and nothing else (3 tool blocks in the DOM of a
+session with hundreds), flashes for ~2.2 s of its 2.5 s budget, and scrolls to it.
 
 **Corpus:** 17 plans in 11 sessions (11 approved, 5 rejected, 1 pending), text recorded for
 17/17. The `pending` one is genuine, not a parse failure: `2ed0a955`'s last written line IS its

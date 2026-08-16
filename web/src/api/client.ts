@@ -12,6 +12,7 @@ import type {
   LogDayResponse,
   LogsResponse,
   MetaResponse,
+  PlansResponse,
   PriceTable,
   ProjectsResponse,
   PromptsResponse,
@@ -55,6 +56,7 @@ export const api = {
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),
+  plans: () => getJson<PlansResponse>('/api/plans'),
   live: () => getJson<LiveResponse>('/api/live'),
   prices: () => getJson<{ prices: PriceTable; isDefault: boolean }>('/api/prices'),
   fetchOfficialPrices: async () => {
