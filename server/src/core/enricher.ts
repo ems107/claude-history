@@ -4,13 +4,15 @@ import type {
   CacheState,
   DailyUsage,
   MessageUsage,
+  PlanRecord,
   PrLink,
   SessionEnrichment,
   UsageTotals,
 } from '@claude-history/shared';
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
-import { toMessageUsage } from './parser.ts';
+import { planFeedback, planTitle, toMessageUsage } from './parser.ts';
+import { PLAN_ROLE } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
 
 export interface SearchBlock {
@@ -55,6 +57,30 @@ function addMessageUsage(totals: MessageUsage, u: MessageUsage): void {
   totals.cacheCreate += u.cacheCreate;
   totals.cacheCreate1h += u.cacheCreate1h;
   totals.cacheCreate5m += u.cacheCreate5m;
+}
+
+/** How much of a plan the Plans page needs to show to make it recognisable. */
+const PLAN_PREVIEW_CHARS = 300;
+
+/**
+ * Fill in a plan's text, and index it.
+ *
+ * This is the ONE deliberate exception to "tool calls are never indexed", and
+ * it is worth stating why: that rule exists because tool OUTPUT is 34% of the
+ * bytes in this corpus and indexing it would take the cache from 6.5 MB to
+ * ~250 MB. Plans are 16 documents and a quarter of a megabyte — and they are
+ * the highest-value prose a session holds, the design decision every answer
+ * after it rests on. Leaving them findable only behind the deep-scan button was
+ * the wrong trade in both directions.
+ *
+ * The anchor is the CALL, not the message: one assistant message can hold
+ * several calls, and `?tool=` is what opens the right plan.
+ */
+function fillPlanText(record: PlanRecord, text: string, searchBlocks: SearchBlock[]): void {
+  record.chars = text.length;
+  record.title = planTitle(text);
+  record.preview = text.slice(0, PLAN_PREVIEW_CHARS);
+  searchBlocks.push({ uuid: record.uuid, role: PLAN_ROLE, text, toolUseId: record.toolUseId });
 }
 
 /** The UTC day a line belongs to — the key of the stats buckets. */
@@ -150,6 +176,8 @@ export async function enrichSession(
   const seenMessageIds = new Set<string>();
   const promptIds = new Set<string>();
   const searchBlocks: SearchBlock[] = [];
+  /** `ExitPlanMode` calls by tool_use id, so a later result line can answer them. */
+  const plans = new Map<string, PlanRecord>();
   const prSeen = new Set<string>();
   const daily: Record<string, DailyUsage> = {};
   const isReplay = replayFilter();
@@ -221,6 +249,28 @@ export async function enrichSession(
           const day = dayOf(o);
           if (day && !carried) dayBucket(day).prompts++;
           searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text });
+        }
+      }
+      // The verdict on a plan comes back on the result line, which is a `user`
+      // line carrying an array. Both flavours are read the way `toPlanOutcome`
+      // reads them: the TYPE of `toolUseResult` is the answer.
+      if (isRec(o.message) && Array.isArray(o.message.content)) {
+        for (const block of o.message.content) {
+          if (!isRec(block) || block.type !== 'tool_result') continue;
+          const plan = plans.get(str(block.tool_use_id) ?? '');
+          if (!plan) continue;
+          plan.decidedAt = str(o.timestamp);
+          if (isRec(o.toolUseResult)) {
+            plan.status = 'approved';
+            plan.filePath = str(o.toolUseResult.filePath);
+            // A newer CLI sends no `input.plan`, so the approved result may be
+            // the only copy of the text there is.
+            const text = str(o.toolUseResult.plan);
+            if (text && !plan.chars) fillPlanText(plan, text, searchBlocks);
+          } else if (typeof o.toolUseResult === 'string') {
+            plan.status = 'rejected';
+            plan.feedback = planFeedback(o.toolUseResult, o);
+          }
         }
       }
     } else if (type === 'attachment') {
@@ -305,6 +355,26 @@ export async function enrichSession(
             searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.text });
           } else if (block.type === 'tool_use') {
             toolUseCount++;
+            if (block.name === 'ExitPlanMode') {
+              const toolUseId = str(block.id);
+              if (toolUseId && !plans.has(toolUseId)) {
+                const record: PlanRecord = {
+                  toolUseId,
+                  uuid: str(o.uuid),
+                  askedAt: str(o.timestamp),
+                  decidedAt: null,
+                  status: 'pending',
+                  title: null,
+                  preview: '',
+                  chars: 0,
+                  filePath: null,
+                  feedback: null,
+                };
+                const text = isRec(block.input) ? str(block.input.plan) : null;
+                if (text) fillPlanText(record, text, searchBlocks);
+                plans.set(toolUseId, record);
+              }
+            }
           }
         }
       }
@@ -339,6 +409,7 @@ export async function enrichSession(
       subagentIds: subagents.ids,
       daily,
       models: [...models].sort(),
+      plans: [...plans.values()],
       prLinks,
       forkedFrom,
       carriedOverUsage,

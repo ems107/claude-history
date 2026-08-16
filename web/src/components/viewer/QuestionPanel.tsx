@@ -1,5 +1,7 @@
-import type { ChatQuestion } from '@claude-history/shared';
+import type { ChatPlanDecision, ChatQuestion } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
+import { FileRefChip } from './FileRefLink.tsx';
+import { Markdown } from './Markdown.tsx';
 
 /**
  * What Claude is waiting on, sitting where the next message would go.
@@ -19,18 +21,27 @@ export function QuestionPanel({
   maxWidth,
   onAnswer,
   onDecline,
+  onPlanDecision,
   busy,
 }: {
   question: ChatQuestion;
   maxWidth?: string;
   onAnswer: (answers: Record<string, string | string[]>) => void;
   onDecline: () => void;
+  /** The three answers a plan takes — see `PlanApproval`. */
+  onPlanDecision: (decision: ChatPlanDecision, note?: string) => void;
   busy: boolean;
 }) {
   const items = question.questions;
   const [active, setActive] = useState(0);
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
+  const [note, setNote] = useState('');
+  const isPlan = question.toolName === 'ExitPlanMode';
+
+  useEffect(() => {
+    setNote('');
+  }, [question.askedAt]);
 
   // A new question starts clean, on its first tab.
   useEffect(() => {
@@ -88,7 +99,7 @@ export function QuestionPanel({
             {/* Same wording as the card it becomes in the transcript, and as
                 the label on every answer bubble. */}
             <span className="text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
-              {items ? 'Assistant asked' : 'Assistant needs permission'}
+              {isPlan ? 'Assistant proposed a plan' : items ? 'Assistant asked' : 'Assistant needs permission'}
             </span>
             {/* One tab per question. With a single one there is nothing to
                 switch between, so the strip would only be furniture. */}
@@ -163,7 +174,18 @@ export function QuestionPanel({
               </>
             )}
 
-            {!items && (
+            {/* The plan is the thing being judged, so it is rendered as the
+                markdown it is. Escaped inside a <pre> — which is what every
+                other permission gets — it was unreadable at exactly the moment
+                it had to be read. */}
+            {isPlan && question.plan && <Markdown text={question.plan} />}
+            {isPlan && !question.plan && (
+              <p className="text-sm text-[var(--text-dim)]">
+                Claude has finished planning, but the plan itself could not be read
+                {question.planFilePath ? ' from its plan file' : ''}. Approving still works.
+              </p>
+            )}
+            {!items && !isPlan && (
               <>
                 <p className="mb-2 text-sm text-[var(--text)]">
                   Claude wants to use <span className="font-mono">{question.toolName}</span>, and auto mode did not
@@ -176,6 +198,49 @@ export function QuestionPanel({
             )}
           </div>
 
+          {/* A plan takes the three answers Claude Code itself offers, not
+              allow/deny: approving it also decides how the session continues,
+              and refusing it is really "go back and change this", which is
+              useless without saying what. The note reaches the transcript as
+              `userFeedback` — the very text the viewer later prints under
+              "the user said". */}
+          {isPlan ? (
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--accent-dim)]/40 px-3 py-1.5">
+              {question.planFilePath && <FileRefChip path={question.planFilePath} title="Open the plan file" />}
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="What should change? (sent back with the plan)"
+                className="min-w-40 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)]"
+              />
+              <button
+                type="button"
+                onClick={() => onPlanDecision('keep-planning', note)}
+                disabled={busy}
+                className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
+              >
+                Keep planning
+              </button>
+              <button
+                type="button"
+                onClick={() => onPlanDecision('approve-manual')}
+                disabled={busy}
+                title="Approve the plan and ask before each change from here on."
+                className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
+              >
+                Approve · ask me
+              </button>
+              <button
+                type="button"
+                onClick={() => onPlanDecision('approve-auto')}
+                disabled={busy}
+                title="Approve the plan and let Claude carry it out the way it normally works."
+                className="rounded border border-[var(--accent-dim)] px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                {busy ? 'Sending…' : 'Approve · go ahead'}
+              </button>
+            </div>
+          ) : (
           <div className="flex items-center gap-1.5 border-t border-[var(--accent-dim)]/40 px-3 py-1.5">
             {items && items.length > 1 && active < items.length - 1 && (
               <button
@@ -204,6 +269,7 @@ export function QuestionPanel({
               {busy ? 'Sending…' : items ? 'Answer' : 'Allow'}
             </button>
           </div>
+          )}
         </div>
       </div>
     </div>

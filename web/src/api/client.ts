@@ -2,6 +2,8 @@ import type {
   AppSettings,
   AutoReloadRun,
   AutoReloadStatus,
+  ChatPermissionMode,
+  ChatPlanDecision,
   ChatSendRequest,
   ChatStatusResponse,
   FileOpenRequest,
@@ -12,6 +14,7 @@ import type {
   LogDayResponse,
   LogsResponse,
   MetaResponse,
+  PlansResponse,
   PriceTable,
   ProjectsResponse,
   PromptsResponse,
@@ -55,6 +58,7 @@ export const api = {
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),
+  plans: () => getJson<PlansResponse>('/api/plans'),
   live: () => getJson<LiveResponse>('/api/live'),
   prices: () => getJson<{ prices: PriceTable; isDefault: boolean }>('/api/prices'),
   fetchOfficialPrices: async () => {
@@ -163,11 +167,16 @@ export const api = {
   },
   // Answers whatever Claude is waiting on. The turn has been held open since
   // the question was asked, so this is what lets it continue.
-  chatAnswer: async (id: string, answers: Record<string, string | string[]> | null) => {
+  chatAnswer: async (
+    id: string,
+    answers: Record<string, string | string[]> | null,
+    /** `ExitPlanMode` only: which of the three answers to a plan, and the note that goes with a refusal. */
+    plan?: { decision: ChatPlanDecision; note?: string },
+  ) => {
     const res = await fetch(`/api/sessions/${id}/chat/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answers }),
+      body: JSON.stringify({ answers, ...plan }),
     });
     const payload = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
@@ -175,7 +184,10 @@ export const api = {
   },
   // Opens the process without sending a prompt, so the composer can offer the
   // real model list — which only a running CLI knows.
-  chatStart: async (id: string, body: { model?: string; effort?: string | null }) => {
+  chatStart: async (
+    id: string,
+    body: { model?: string; effort?: string | null; permissionMode?: ChatPermissionMode },
+  ) => {
     const res = await fetch(`/api/sessions/${id}/chat/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

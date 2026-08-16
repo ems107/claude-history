@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   startUpdateLogImport(updates.install?.root ?? null, config.cacheDir);
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
-  const chat = new SessionChatService(index, () => index.getSettings());
+  const chat = new SessionChatService(config, index, () => index.getSettings());
   const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload, chat });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);

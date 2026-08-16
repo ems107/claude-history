@@ -1,4 +1,10 @@
-import { CHAT_MESSAGE_MAX, CLAUDE_MODELS, type ChatModelInfo } from '@claude-history/shared';
+import {
+  CHAT_MESSAGE_MAX,
+  CLAUDE_MODELS,
+  type ChatModelInfo,
+  type ChatPermissionMode,
+  type ChatPlanDecision,
+} from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
@@ -134,6 +140,7 @@ export function Composer({
   onSent,
   lastModel,
   lastEffort,
+  lastMode,
 }: {
   sessionId: string;
   maxWidth?: string;
@@ -146,6 +153,8 @@ export function Composer({
    */
   lastModel?: string | null;
   lastEffort?: string | null;
+  /** The permission mode the session was last in — `plan` is the one worth restoring. */
+  lastMode?: ChatPermissionMode | null;
 }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -196,6 +205,9 @@ export function Composer({
   // five levels was both wrong on screen and wrong on the wire.
   const efforts = current?.efforts ?? [];
   const commands = status?.availableCommands ?? [];
+  // Same rule as the model: what is running wins, then what the session was
+  // last in, then the ordinary way of sending.
+  const mode: ChatPermissionMode = status?.permissionMode ?? lastMode ?? 'auto';
 
   useEffect(() => {
     const el = box.current;
@@ -217,6 +229,7 @@ export function Composer({
         text: prompt,
         model,
         effort: models.length > 0 ? (efforts.length > 0 ? (effort ?? efforts[0]) : null) : effort,
+        permissionMode: mode,
       })
       .then(() => {
         setText('');
@@ -235,7 +248,7 @@ export function Composer({
     setOpening(true);
     setError(null);
     api
-      .chatStart(sessionId, { model: wantedModel, effort })
+      .chatStart(sessionId, { model: wantedModel, effort, permissionMode: mode })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         setOpening(false);
@@ -243,10 +256,13 @@ export function Composer({
       });
   };
 
-  const answer = (answers: Record<string, string | string[]> | null) => {
+  const answer = (
+    answers: Record<string, string | string[]> | null,
+    plan?: { decision: ChatPlanDecision; note?: string },
+  ) => {
     setAnswering(true);
     api
-      .chatAnswer(sessionId, answers)
+      .chatAnswer(sessionId, answers, plan)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         setAnswering(false);
@@ -261,9 +277,9 @@ export function Composer({
       .finally(() => void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] }));
   };
 
-  const change = (patch: { model?: string; effort?: string | null }) => {
-    // Both are startup flags, so the server restarts the process to honour a
-    // new one. Nothing to do here but remember the choice for the next send.
+  const change = (patch: { model?: string; effort?: string | null; permissionMode?: ChatPermissionMode }) => {
+    // Model and mode are switched live on the next send, effort restarts the
+    // process. Either way there is nothing to do here but remember the choice.
     queryClient.setQueryData(['chat', sessionId], (old: typeof status) => (old ? { ...old, ...patch } : old));
   };
 
@@ -292,6 +308,7 @@ export function Composer({
           busy={answering}
           onAnswer={(answers) => answer(answers)}
           onDecline={() => answer(null)}
+          onPlanDecision={(decision, note) => answer({}, { decision, note })}
         />
       )}
       {/* Slash commands this CLI really has, offered as you type `/`. */}
@@ -402,6 +419,24 @@ export function Composer({
                 )}
               </>
             )}
+            {/* Always offered, model list or not: unlike the model and the
+                effort, the mode needs nothing from a running CLI to be picked,
+                and plan mode is most useful on the FIRST prompt of a piece of
+                work — which is exactly when no process exists yet. */}
+            <Picker
+              value={mode}
+              options={[
+                { value: 'auto', label: 'auto' },
+                { value: 'plan', label: 'plan' },
+              ]}
+              disabled={!!blocked}
+              title={
+                mode === 'plan'
+                  ? 'Plan mode: Claude explores and designs, but changes nothing until you approve a plan.'
+                  : 'Claude works as usual, approving the ordinary tools by itself.'
+              }
+              onChange={(v) => change({ permissionMode: v as ChatPermissionMode })}
+            />
             {status?.state === 'starting' && (
               <span className="px-1 text-[11px] text-[var(--text-dim)]">starting…</span>
             )}

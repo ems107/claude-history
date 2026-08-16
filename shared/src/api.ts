@@ -2,6 +2,7 @@
 
 import type {
   LiveInfo,
+  PlanRecord,
   ProjectInfo,
   SessionDetail,
   SessionSummary,
@@ -193,6 +194,29 @@ export interface PromptEntry {
   sessionExists: boolean;
 }
 export type PromptsResponse = PromptEntry[];
+
+/**
+ * One plan, as the Plans page lists it: the record from the session's
+ * enrichment, plus who it belongs to and what is left of it on disk.
+ */
+export interface PlanEntry extends PlanRecord {
+  sessionId: string;
+  sessionTitle: string;
+  project: string;
+  projectKey: string;
+  projectName: string;
+  /**
+   * Whether `~/.claude/plans/<slug>.md` still holds THIS plan.
+   *
+   * The file is named after the session slug and overwritten, so a session that
+   * planned twice keeps only its latest — and a page that showed a link to
+   * every plan would send most of them to somebody else's text. Null when the
+   * plan recorded no path at all (every rejection, and any approval by a CLI
+   * that did not write one).
+   */
+  onDisk: boolean | null;
+}
+export type PlansResponse = PlanEntry[];
 
 export interface ResumeResponse {
   ok: boolean;
@@ -568,7 +592,33 @@ export interface ChatQuestion {
   /** The tool's own input, when this is a permission rather than a question. */
   input?: unknown;
   askedAt: string;
+  /**
+   * `ExitPlanMode` only: the plan awaiting approval, in markdown.
+   *
+   * Read from the call's own input when it has one, and otherwise from
+   * `~/.claude/plans/<slug>.md` — newer Claude Code has the model write the plan
+   * file itself and sends the tool no input at all, so without that fallback the
+   * one thing the user has to judge would not be on screen.
+   */
+  plan?: string | null;
+  planFilePath?: string | null;
 }
+
+/**
+ * The three answers Claude Code itself offers to a plan. The first two allow
+ * the tool and set the mode the session continues in; the third denies it, and
+ * the note goes back as the reason — which is exactly what the transcript then
+ * records as `userFeedback`.
+ */
+export type ChatPlanDecision = 'approve-auto' | 'approve-manual' | 'keep-planning';
+
+/**
+ * The permission modes the composer offers. Deliberately two of the six the SDK
+ * accepts: `auto` is how this app has always sent prompts, and `plan` is the
+ * point of the picker. `bypassPermissions` and friends are not something a
+ * browser button should be able to reach.
+ */
+export type ChatPermissionMode = 'auto' | 'plan';
 
 export interface ChatStatus {
   sessionId: string;
@@ -595,6 +645,13 @@ export interface ChatStatus {
    */
   model: string | null;
   effort: string | null;
+  /**
+   * The mode the RUNNING process is in, or null when there is none — same rule
+   * as model and effort. It is tracked live: `setPermissionMode` changes it
+   * without a restart, and Claude Code changes it by itself when a plan is
+   * approved, which the SDK reports on its `system`/`status` messages.
+   */
+  permissionMode: ChatPermissionMode | null;
   lastError: string | null;
   /**
    * Why a prompt cannot be sent right now, in the words the UI shows. One
@@ -636,6 +693,10 @@ export interface ChatModelInfo {
 export interface ChatAnswerRequest {
   /** Question text -> chosen label(s). Null declines the tool instead. */
   answers: Record<string, string | string[]> | null;
+  /** `ExitPlanMode` only: which of the three answers to a plan was given. */
+  decision?: ChatPlanDecision;
+  /** What to tell Claude when the plan is sent back for more work. */
+  note?: string;
 }
 
 export interface ChatSendRequest {
@@ -644,6 +705,8 @@ export interface ChatSendRequest {
   model?: string;
   /** Null for a model with no effort levels — nothing is passed to the CLI. */
   effort?: string | null;
+  /** Switched live, with no restart — unlike effort. */
+  permissionMode?: ChatPermissionMode;
 }
 
 // ---- Claude Code's own history retention (cleanupPeriodDays) ----

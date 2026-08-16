@@ -7,6 +7,7 @@ import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
+import { PlansPage } from './pages/PlansPage.tsx';
 import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
 import { SessionViewPage } from './pages/SessionViewPage.tsx';
@@ -64,6 +65,7 @@ export function App() {
         </span>
         <nav className="ml-4 flex items-center gap-1">
           <NavItem to="/prompts" label="Prompts" />
+          <NavItem to="/plans" label="Plans" />
           <NavItem to="/stats" label="Stats" />
         </nav>
         <span className="ml-auto flex items-center gap-2">
@@ -88,6 +90,7 @@ export function App() {
           <Route path="/" element={<SessionListPage />} />
           <Route path="/session/:id" element={<SessionViewPage />} />
           <Route path="/prompts" element={<PromptsPage />} />
+          <Route path="/plans" element={<PlansPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           {/* Diagnostics, reached from Settings — deliberately not in the nav. */}

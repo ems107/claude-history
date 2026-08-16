@@ -6,6 +6,13 @@ export interface AppConfig {
   dataRoot: string;
   projectsDir: string;
   sessionsDir: string;
+  /**
+   * Where Claude Code saves the plan of a session, as `<slug>.md`. Newer
+   * versions have the model write the plan there and send `ExitPlanMode` with
+   * no input at all, so this is the only place the plan can be read from while
+   * it is being approved.
+   */
+  plansDir: string;
   historyFile: string;
   cacheDir: string;
   /** User data that must survive cache wipes (e.g. local title overrides). */
@@ -82,6 +89,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     dataRoot,
     projectsDir: path.join(dataRoot, 'projects'),
     sessionsDir: path.join(dataRoot, 'sessions'),
+    plansDir: path.join(dataRoot, 'plans'),
     historyFile: path.join(dataRoot, 'history.jsonl'),
     cacheDir,
     userdataFile: path.resolve(cacheDir, '..', 'userdata.json'),

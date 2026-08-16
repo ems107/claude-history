@@ -6,6 +6,7 @@ import type {
   FileEdit,
   MessageItem,
   MessageUsage,
+  PlanOutcome,
   PrLink,
   SessionDetail,
   SessionSummary,
@@ -111,11 +112,87 @@ function toAnswers(raw: unknown): Record<string, string> | null {
   return Object.keys(answers).length > 0 ? answers : null;
 }
 
+/**
+ * What the user did with a plan, off the `ExitPlanMode` result line.
+ *
+ * The two answers are two different types, not two shapes of one: approving
+ * writes an object, refusing writes the generic rejection string. So the type
+ * IS the verdict, and reading the prose (which starts "User has approved your
+ * plan…" either way round) is never necessary.
+ */
+function toPlanOutcome(raw: unknown, line: RawLine): PlanOutcome | null {
+  if (isRec(raw)) {
+    return { status: 'approved', text: str(raw.plan), filePath: str(raw.filePath), feedback: null };
+  }
+  if (typeof raw === 'string') {
+    return { status: 'rejected', text: null, filePath: null, feedback: planFeedback(raw, line) };
+  }
+  return null;
+}
+
+/** The generic refusal, which says nothing about why and is not feedback. */
+const GENERIC_REFUSAL = /^(The user declined\.|The user doesn't want to proceed with this tool use)/;
+
+/**
+ * What the user said instead of approving, from whichever of the two places
+ * this refusal used.
+ *
+ * A refusal typed in the terminal writes `userFeedback` beside
+ * `toolDenialKind: "user-rejected"`. One sent from this app does NOT: a
+ * `canUseTool` deny is recorded as `permission-rule` with no such field, and the
+ * message travels inside `toolUseResult` as `"Error: <message>"` — verified end
+ * to end against a real session. Reading only the field lost every note sent
+ * from here, which is precisely the half of the exchange the card exists to
+ * show.
+ */
+export function planFeedback(raw: string, line: RawLine): string | null {
+  const explicit = str(line.userFeedback);
+  if (explicit) return explicit;
+  const text = raw.replace(/^Error:\s*/, '').trim();
+  return text && !GENERIC_REFUSAL.test(text) ? text : null;
+}
+
+type PlanModeEvent = Extract<ContentBlock, { kind: 'plan-mode' }>['event'];
+
+/**
+ * Which plan-mode event an `attachment` line is, or null for the ones that are
+ * not plan mode at all (`queued_command` and the context deltas).
+ *
+ * `plan_mode_exit` is the trap: it is written 60 times in this corpus against 11
+ * entries, because Claude Code also emits one on the first prompt of every CLI
+ * run — sessions that never planned included. Taken at face value the viewer
+ * would announce a departure from a mode nothing ever entered, so an exit
+ * counts only while an entry is open, which is what `open` is for.
+ */
+function planModeEvent(attachment: Record<string, unknown> | null, open: boolean): PlanModeEvent | null {
+  switch (attachment?.type) {
+    case 'plan_mode':
+      return 'enter';
+    case 'plan_mode_reentry':
+      return 'reentry';
+    case 'plan_mode_exit':
+      return open ? 'exit' : null;
+    // The plan re-injected so it survives a compaction — the only one carrying
+    // the markdown itself, and it always lands beside a `compact_boundary`.
+    case 'plan_file_reference':
+      return 'reference';
+    default:
+      return null;
+  }
+}
+
+/** The first `# heading` of a plan: what names it in a collapsed header or a list. */
+export function planTitle(markdown: string): string | null {
+  const m = /^#\s+(.+)$/m.exec(markdown);
+  return m ? m[1].trim() : null;
+}
+
 function buildResult(
   c: Record<string, unknown>,
   projectsDir: string,
   persistedOutputPath: string | null,
   answers: Record<string, string> | null,
+  plan: PlanOutcome | null,
 ): ToolResultInfo {
   let text = extractResultText(c.content);
   const totalChars = text.length;
@@ -134,7 +211,7 @@ function buildResult(
     const m = /output saved to: (.+?[\\/]tool-results[\\/][^\s\\/"]+\.txt)/i.exec(text);
     if (m) offloadedFile = toProjectsRelative(m[1], projectsDir);
   }
-  return { text, truncated, totalChars, isError: c.is_error === true, offloadedFile, answers };
+  return { text, truncated, totalChars, isError: c.is_error === true, offloadedFile, answers, plan };
 }
 
 /** One-line human summary of a tool invocation for the collapsed header. */
@@ -165,6 +242,14 @@ function summarizeInput(toolName: string, input: unknown): string {
     case 'WebFetch':
     case 'WebSearch':
       return first('url', 'query');
+    // The input is the whole plan — up to 25 KB of markdown — so the default
+    // below would stringify all of it into a one-line collapsed header. Its
+    // first heading is what actually names it. (Newer Claude Code writes the
+    // plan to the plan file and sends no input at all, hence the empty case.)
+    case 'ExitPlanMode': {
+      const plan = first('plan');
+      return plan ? (planTitle(plan) ?? plan.slice(0, 120)) : '';
+    }
     default: {
       const s = first('description', 'command', 'file_path', 'pattern', 'query', 'url', 'prompt');
       if (s) return s;
@@ -365,6 +450,8 @@ export async function parseTranscript(
   const isReplay = replayFilter();
   let current: Turn | null = null;
   let fallbackId = 0;
+  /** Whether a `plan_mode` entry is still open — see `planModeEvent`. */
+  let planModeOpen = false;
 
   const newTurn = (promptId: string | null): Turn => {
     current = { promptId, items: [] };
@@ -378,6 +465,27 @@ export async function parseTranscript(
     const turn = turns[turns.length - 1];
     return turn && turn.items.length > 0 ? turn.items[turn.items.length - 1] : null;
   };
+
+  /** An item with everything a line gives us and nothing a caller must decide. */
+  const blankItem = (o: RawLine, carriedOver: boolean, runId: string | null): MessageItem => ({
+    uuid: makeUuid(o),
+    aliasUuids: [],
+    role: 'system',
+    timestamp: str(o.timestamp),
+    endTimestamp: str(o.timestamp),
+    model: null,
+    isMeta: false,
+    isCompactSummary: false,
+    queued: false,
+    systemSubtype: null,
+    permissionMode: str(o.permissionMode),
+    carriedOver,
+    runId,
+    discardedBranch: null,
+    usage: null,
+    effort: null,
+    blocks: [],
+  });
 
   /**
    * Something Claude Code injected into the conversation — today an Agent or a
@@ -402,6 +510,7 @@ export async function parseTranscript(
       isCompactSummary: false,
       queued: false,
       systemSubtype: origin,
+      permissionMode: str(o.permissionMode),
       carriedOver,
       runId,
       discardedBranch: null,
@@ -482,6 +591,7 @@ export async function parseTranscript(
             isCompactSummary: false,
             queued: false,
             systemSubtype: 'context',
+            permissionMode: str(o.permissionMode),
             carriedOver,
             runId,
             discardedBranch: null,
@@ -534,6 +644,7 @@ export async function parseTranscript(
           isCompactSummary: o.isCompactSummary === true,
           queued: false,
           systemSubtype: null,
+          permissionMode: str(o.permissionMode),
           carriedOver,
           runId,
           discardedBranch: null,
@@ -547,6 +658,10 @@ export async function parseTranscript(
         // AskUserQuestion result, and a decline writes the line's whole prose
         // into `toolUseResult` as a character-keyed object (2 lines here).
         const askedAnswers = isRec(o.toolUseResult) ? toAnswers(o.toolUseResult.answers) : null;
+        // Guarded by tool name for the same reason: an object `toolUseResult`
+        // means "approved" only on an ExitPlanMode result — everywhere else it
+        // is just the structured output of whatever tool ran.
+        const planOutcome = toPlanOutcome(o.toolUseResult, o);
         const userBlocks: ContentBlock[] = [];
         for (const c of content) {
           if (!isRec(c)) continue;
@@ -559,6 +674,7 @@ export async function parseTranscript(
                 projectsDir,
                 persistedOutputPath,
                 tool.toolName === 'AskUserQuestion' ? askedAnswers : null,
+                tool.toolName === 'ExitPlanMode' ? planOutcome : null,
               );
             }
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
@@ -586,6 +702,7 @@ export async function parseTranscript(
             isCompactSummary: false,
             queued: false,
             systemSubtype: null,
+            permissionMode: str(o.permissionMode),
             carriedOver,
             runId,
             discardedBranch: null,
@@ -604,6 +721,34 @@ export async function parseTranscript(
       // the five agent reports in `980751cb` rendered nowhere at all, not even
       // as a summary line.
       const attachment = isRec(o.attachment) ? o.attachment : null;
+
+      // Plan mode announces itself here, and this is the only record of it that
+      // has a clock: the `permission-mode` sidecar carries no timestamp and no
+      // uuid, so it can only ever be read positionally.
+      const planEvent = planModeEvent(attachment, planModeOpen);
+      if (planEvent) {
+        planModeOpen = planEvent === 'exit' ? false : planEvent !== 'reference';
+        // It joins the turn already open rather than starting one: the entry is
+        // written with the SAME timestamp as the prompt that entered plan mode,
+        // so it belongs to that exchange, and a turn of its own would cut the
+        // conversation where nothing happened.
+        ensureTurn().items.push({
+          ...blankItem(o, carriedOver, runId),
+          role: 'system',
+          systemSubtype: 'plan-mode',
+          blocks: [
+            {
+              kind: 'plan-mode',
+              event: planEvent,
+              planFilePath: str(attachment?.planFilePath),
+              planExists: typeof attachment?.planExists === 'boolean' ? attachment.planExists : null,
+              planContent: str(attachment?.planContent),
+            },
+          ],
+        });
+        continue;
+      }
+
       const queued = attachment?.type === 'queued_command' ? str(attachment.prompt) : null;
       if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
         pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId);
@@ -637,6 +782,7 @@ export async function parseTranscript(
         isCompactSummary: false,
         queued: true,
         systemSubtype: null,
+        permissionMode: str(o.permissionMode),
         carriedOver,
         runId,
         discardedBranch: null,
@@ -662,6 +808,7 @@ export async function parseTranscript(
           isCompactSummary: false,
           queued: false,
           systemSubtype: null,
+          permissionMode: str(o.permissionMode),
           carriedOver,
           runId,
           discardedBranch: null,
@@ -729,6 +876,7 @@ export async function parseTranscript(
           isCompactSummary: false,
           queued: false,
           systemSubtype: subtype,
+          permissionMode: str(o.permissionMode),
           carriedOver,
           runId,
           discardedBranch: null,
@@ -768,6 +916,7 @@ export async function parseTranscript(
         isCompactSummary: false,
         queued: false,
         systemSubtype: subtype,
+        permissionMode: str(o.permissionMode),
         carriedOver,
         runId,
         discardedBranch: null,

@@ -10,6 +10,7 @@ import { registerFileRoutes } from './routes/files.ts';
 import { registerLogRoutes } from './routes/logs.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
+import { registerPlanRoutes } from './routes/plans.ts';
 import { registerPriceRoutes } from './routes/prices.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPromptRoutes } from './routes/prompts.ts';
@@ -89,6 +90,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerFileRoutes(app, ctx);
   registerLiveRoutes(app, ctx);
   registerPromptRoutes(app, ctx);
+  registerPlanRoutes(app, ctx);
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
   registerChatRoutes(app, ctx);

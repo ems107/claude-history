@@ -31,6 +31,17 @@ export interface SearchOptions {
 export const ID_ROLE = 'id';
 
 /**
+ * The role of a plan submitted with `ExitPlanMode` — the one piece of tool
+ * traffic that IS indexed, see `fillPlanText`.
+ *
+ * It needs no rule of its own here: a request restricting the search to titles,
+ * prompts or responses names those roles explicitly, so `skipBlock` already
+ * leaves a plan out of `in=user` — which is right, since a plan is not
+ * something the user wrote.
+ */
+export const PLAN_ROLE = 'plan';
+
+/**
  * Whether this query may look at session ids at all. The app writes ids as
  * their first eight characters (fork chips, lineage, the log), so pasting one
  * back has to find the session — but a uuid is 32 hex characters, and an

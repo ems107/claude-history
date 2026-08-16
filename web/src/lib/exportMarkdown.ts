@@ -1,5 +1,6 @@
 import type { ContentBlock, MessageItem, SessionDetail } from '@claude-history/shared';
 import { formatDateTime, shortModel } from './format.ts';
+import { parsePlan } from './plans.ts';
 
 export interface ExportOptions {
   includeTools: boolean;
@@ -42,6 +43,21 @@ function systemLines(item: MessageItem): string[] {
         `${b.preTokens?.toLocaleString() ?? '—'} → ${b.postTokens?.toLocaleString() ?? '—'} tokens`,
       '',
     ];
+  }
+  if (first?.kind === 'plan-mode') {
+    const label = {
+      enter: 'Entered plan mode',
+      reentry: 'Back in plan mode',
+      exit: 'Left plan mode',
+      reference: 'The plan was carried through a compaction',
+    }[first.event];
+    const out = [`> 📝 **${label}**${first.planFilePath ? ` — \`${first.planFilePath}\`` : ''}`, ''];
+    // The copy re-injected around a compaction is the plan itself, so it is
+    // exported as the markdown it is rather than as a note that it existed.
+    if (first.planContent) {
+      out.push('<details>', '<summary>📝 The plan</summary>', '', first.planContent, '', '</details>', '');
+    }
+    return out;
   }
   const text = first?.kind === 'text' ? first.text : '';
   return [`> ⚙️ **${item.systemSubtype ?? 'system'}:** ${text.replace(/\n/g, ' ').slice(0, 500)}`, ''];
@@ -86,6 +102,20 @@ function contentLines(
         out.push('<details>', '<summary>💭 Thinking</summary>', '', block.text, '', '</details>', '');
         break;
       case 'tool': {
+        // A plan is prose, and a plan run through `JSON.stringify` is prose
+        // with every newline escaped — i.e. the one block of an export nobody
+        // can read. It is exported as the markdown it is, whatever the tool
+        // options say: it is not tool traffic, it is the decision.
+        const plan = parsePlan(block);
+        if (plan) {
+          writeHeader();
+          const verdict =
+            plan.status === 'approved' ? '✔ approved' : plan.status === 'rejected' ? '✖ not approved' : 'awaiting an answer';
+          out.push(`> 📝 **Plan — ${verdict}**${plan.filePath ? ` — \`${plan.filePath}\`` : ''}`, '');
+          if (plan.text) out.push('<details>', '<summary>📝 The plan</summary>', '', plan.text, '', '</details>', '');
+          if (plan.feedback) out.push(`> **The user said:** ${plan.feedback.replace(/\n/g, ' ')}`, '');
+          break;
+        }
         if (!opts.includeTools) break;
         writeHeader();
         const summary = `🔧 <b>${block.toolName}</b>${block.inputSummary ? ` — <code>${block.inputSummary.slice(0, 120).replace(/</g, '&lt;')}</code>` : ''}`;
