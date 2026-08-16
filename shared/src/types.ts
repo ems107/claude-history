@@ -337,8 +337,35 @@ export interface ToolResultInfo {
    *
    * Null for the transcripts that never wrote it (a declined question records
    * no answers at all), where the prose stays the fallback.
+   *
+   * One value is a sentinel and not an answer: `(notes only)` means no option
+   * was taken and a note was written instead — see `annotations`. The prose
+   * spells that same case `=(no option selected)`, so the two forms disagree
+   * on the one thing they both record.
    */
   answers: Record<string, string> | null;
+  /**
+   * `AskUserQuestion` only: `toolUseResult.annotations`, question text -> what
+   * the user attached to their answer.
+   *
+   * `notes` is free text written BESIDE a pick, and this is its ONLY copy: the
+   * answer string does not carry it, and in the prose it runs straight into the
+   * tool's own closing sentence with nothing but `. ` between them, so it
+   * cannot be read back from there. All three in this corpus state a real
+   * requirement ("Esta opción, pero explicando el motivo (si se conoce)",
+   * "Pero con sangría, que se note que no es un prompt normal") — which is
+   * exactly the half of an answer that changes what gets built.
+   *
+   * `preview` is the drawing of the option that was taken, normally the same
+   * string as that option's own `preview` in the tool input — which is where
+   * the viewer reads it from. Kept as the fallback for the versions whose
+   * echoed `questions` dropped previews altogether (2.1.221).
+   *
+   * Null when the line wrote none. The field is optional, is sometimes `{}`,
+   * and carries an entry only for the questions that really have something:
+   * 24 of the 33 structured results here, 20 previews and 3 notes.
+   */
+  annotations: Record<string, { preview?: string; notes?: string }> | null;
   /**
    * `ExitPlanMode` only: whether the user approved the plan, and what they said
    * if they did not. Null on every other tool, and on a plan still awaiting an
