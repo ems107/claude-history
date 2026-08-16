@@ -1,9 +1,25 @@
-import { query, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  type PermissionMode,
+  type PermissionResult,
+  type PermissionUpdate,
+} from '@anthropic-ai/claude-agent-sdk';
 import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import type { AppSettings, ChatModelInfo, ChatQuestion, ChatState, ChatStatus } from '@claude-history/shared';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import type {
+  AppSettings,
+  ChatModelInfo,
+  ChatPermissionMode,
+  ChatPlanDecision,
+  ChatQuestion,
+  ChatState,
+  ChatStatus,
+} from '@claude-history/shared';
 import { CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import type { AppConfig } from '../config.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
@@ -35,7 +51,18 @@ const FALLBACK_MODEL = 'sonnet';
 interface PendingAsk {
   question: ChatQuestion;
   resolve: (result: PermissionResult) => void;
+  /** The permission updates the CLI proposed with this prompt, if any. */
+  suggestions?: PermissionUpdate[];
 }
+
+/** How prompts are sent unless the composer says otherwise. */
+const DEFAULT_PERMISSION_MODE: ChatPermissionMode = 'auto';
+
+/** What each answer to a plan means on the wire. */
+const PLAN_MODE_AFTER: Record<'approve-auto' | 'approve-manual', PermissionMode> = {
+  'approve-auto': 'auto',
+  'approve-manual': 'default',
+};
 
 interface ChatProcess {
   sessionId: string;
@@ -49,6 +76,8 @@ interface ChatProcess {
   model: string;
   /** Null for a model that takes no effort setting. */
   effort: string | null;
+  /** Switched live over the control channel, and by Claude Code when a plan is approved. */
+  permissionMode: ChatPermissionMode;
   queued: string[];
   working: boolean;
   starting: boolean;
@@ -126,6 +155,7 @@ export class SessionChatService {
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
+    private readonly config: AppConfig,
     private readonly index: SessionIndex,
     private readonly settings: () => AppSettings,
   ) {
@@ -192,6 +222,7 @@ export class SessionChatService {
       // point from the transcript, which the server would have to parse to know.
       model: p?.model ?? null,
       effort: p?.effort ?? null,
+      permissionMode: p?.permissionMode ?? null,
       lastError,
       blockedReason: this.sendBlockedReason(sessionId),
       question: p?.ask?.question ?? null,
@@ -205,7 +236,13 @@ export class SessionChatService {
    * flight, and switches model or effort live — no restart, which is one of the
    * things the control channel buys.
    */
-  async send(sessionId: string, text: string, model?: string, effort?: string | null): Promise<void> {
+  async send(
+    sessionId: string,
+    text: string,
+    model?: string,
+    effort?: string | null,
+    permissionMode?: ChatPermissionMode,
+  ): Promise<void> {
     const blocked = this.sendBlockedReason(sessionId);
     if (blocked) {
       log.warn(`prompt refused for ${sessionId} — ${blocked}`);
@@ -224,8 +261,19 @@ export class SessionChatService {
     // No effort sent means no effort passed: the CLI then uses whatever that
     // model's own default is, which is the only right answer for one that has none.
     const wantEffort = effort ?? null;
+    const wantMode = permissionMode ?? DEFAULT_PERMISSION_MODE;
 
     let p = this.procs.get(sessionId);
+    if (p && p.permissionMode !== wantMode) {
+      // Live, like the model — `setPermissionMode` is a control message, so
+      // switching in and out of plan mode costs nothing. Effort is the odd one
+      // out below precisely because it has no such message.
+      await p.session
+        .setPermissionMode(wantMode)
+        .catch((err: unknown) => log.warn(`setPermissionMode failed`, err));
+      p.permissionMode = wantMode;
+      log.info(`switched ${sessionId} to ${wantMode} mode`);
+    }
     if (p && p.model !== wantModel) {
       // Live, over the control channel. The old code had to kill the process
       // and pay the whole startup again.
@@ -241,7 +289,7 @@ export class SessionChatService {
       this.kill(p, 'effort changed');
       p = undefined;
     }
-    if (!p) p = this.spawnFor(sessionId, wantModel, wantEffort);
+    if (!p) p = this.spawnFor(sessionId, wantModel, wantEffort, wantMode);
 
     if (p.working) {
       p.queued.push(prompt);
@@ -260,14 +308,19 @@ export class SessionChatService {
    * source for them. Rather than show a stale guess, it offers to open the
    * session and asks once it is up.
    */
-  open(sessionId: string, model?: string, effort?: string | null): void {
+  open(sessionId: string, model?: string, effort?: string | null, permissionMode?: ChatPermissionMode): void {
     const blocked = this.sendBlockedReason(sessionId);
     if (blocked) {
       log.warn(`open refused for ${sessionId} — ${blocked}`);
       throw new Error(blocked);
     }
     if (this.procs.has(sessionId)) return;
-    const p = this.spawnFor(sessionId, model ?? this.index.get(sessionId)?.model ?? FALLBACK_MODEL, effort ?? null);
+    const p = this.spawnFor(
+      sessionId,
+      model ?? this.index.get(sessionId)?.model ?? FALLBACK_MODEL,
+      effort ?? null,
+      permissionMode ?? DEFAULT_PERMISSION_MODE,
+    );
     // Asked for here and not left to `system/init`: that arrives at the start
     // of a TURN, and the whole point of opening without a prompt is that there
     // is no turn yet. Without this the picker would wait for a message it is
@@ -281,12 +334,45 @@ export class SessionChatService {
    * label(s) chosen; a null answer denies the tool instead, which is how a
    * permission prompt is refused.
    */
-  answer(sessionId: string, values: Record<string, string | string[]> | null): void {
+  answer(
+    sessionId: string,
+    values: Record<string, string | string[]> | null,
+    decision?: ChatPlanDecision,
+    note?: string,
+  ): void {
     const p = this.procs.get(sessionId);
     if (!p?.ask) throw new Error('Nothing is waiting for an answer.');
-    const { question, resolve } = p.ask;
+    const { question, resolve, suggestions } = p.ask;
     p.ask = null;
     p.lastActivityAt = Date.now();
+    if (decision && question.toolName === 'ExitPlanMode') {
+      if (decision === 'keep-planning') {
+        // Denying is how Claude Code sends a plan back for more work, and the
+        // message is the reason: it lands in the transcript as `userFeedback`,
+        // which is exactly what the viewer prints under "the user said".
+        const message = note?.trim() || 'The user wants to keep planning.';
+        log.info(`user sent the plan back in ${sessionId}`);
+        resolve({ behavior: 'deny', message });
+      } else {
+        const mode = PLAN_MODE_AFTER[decision];
+        // The CLI's own suggestions are preferred: it knows what approving this
+        // prompt should change, and a hand-built update can only guess.
+        const updatedPermissions: PermissionUpdate[] = suggestions?.length
+          ? suggestions
+          : [{ type: 'setMode', mode, destination: 'session' }];
+        log.info(`user approved the plan in ${sessionId} (${decision})`);
+        resolve({
+          behavior: 'allow',
+          updatedInput: (question.input ?? {}) as Record<string, unknown>,
+          updatedPermissions,
+        });
+        // Claude Code will report the switch on its next status message, but
+        // the picker should not sit on a stale "plan" until then.
+        if (mode === 'auto') p.permissionMode = 'auto';
+      }
+      this.changed(sessionId);
+      return;
+    }
     if (values === null) {
       log.info(`user declined ${question.toolName} in ${sessionId}`);
       resolve({ behavior: 'deny', message: 'The user declined.' });
@@ -350,7 +436,12 @@ export class SessionChatService {
 
   // ---- internals ----
 
-  private spawnFor(sessionId: string, model: string, effort: string | null): ChatProcess {
+  private spawnFor(
+    sessionId: string,
+    model: string,
+    effort: string | null,
+    permissionMode: ChatPermissionMode,
+  ): ChatProcess {
     const cli = findClaudeCli();
     const summary = this.index.get(sessionId);
     if (!cli || !summary) throw new Error('The Claude Code CLI could not be found.');
@@ -365,6 +456,7 @@ export class SessionChatService {
       cwd,
       model,
       effort,
+      permissionMode,
       queued: [],
       working: false,
       starting: true,
@@ -386,10 +478,11 @@ export class SessionChatService {
         // Omitted entirely for a model that takes none — haiku is one, and
         // handing it an effort is asking for a setting it does not have.
         ...(effort ? { effort: effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
-        // The classifier approves the ordinary work, so canUseTool is only
-        // reached by what it will not take — and by AskUserQuestion, which
-        // always falls through to it whatever the rules say.
-        permissionMode: 'auto',
+        // In `auto` the classifier approves the ordinary work, so canUseTool is
+        // only reached by what it will not take — and by AskUserQuestion, which
+        // always falls through to it whatever the rules say. In `plan` nothing
+        // is executed and ExitPlanMode arrives here instead.
+        permissionMode,
         // Never the SDK's own vendored copy: that is 293 MB we deliberately do
         // not install, and this is the CLI the user actually runs.
         pathToClaudeCodeExecutable: cli,
@@ -414,7 +507,7 @@ export class SessionChatService {
           log.info(`the claude process for ${sessionId} is pid ${String(p.pid)}`);
           return child as unknown as ReturnType<NonNullable<Parameters<typeof query>[0]['options']>['spawnClaudeCodeProcess'] & object>;
         },
-        canUseTool: (toolName, input) => this.onCanUseTool(sessionId, toolName, input),
+        canUseTool: (toolName, input, opts) => this.onCanUseTool(sessionId, toolName, input, opts.suggestions),
         stderr: (data: string) => {
           const text = data.trim();
           if (text) log.warn(`${sessionId} wrote to stderr: ${text.slice(0, 300)}`);
@@ -441,6 +534,20 @@ export class SessionChatService {
       for await (const message of p.session) {
         p.lastActivityAt = Date.now();
         p.starting = false;
+        // Claude Code changes the mode by itself when a plan is approved, and
+        // says so here. Without this the picker would go on showing `plan`
+        // after the session had left it.
+        if (message.type === 'system' && (message.subtype === 'init' || message.subtype === 'status')) {
+          const mode = (message as { permissionMode?: string }).permissionMode;
+          if (mode && mode !== p.permissionMode) {
+            // Only the two the composer offers are shown; anything else Claude
+            // Code switches itself to is reported as the ordinary mode rather
+            // than as a state the picker cannot represent.
+            p.permissionMode = mode === 'plan' ? 'plan' : 'auto';
+            log.debug(`${p.sessionId} is now in ${mode} mode`);
+            this.changed(p.sessionId);
+          }
+        }
         if (message.type === 'system' && message.subtype === 'init') {
           // Emitted at the start of EVERY turn, not once at startup, so it
           // cannot mean "ready". Worth reading once: it names the slash
@@ -516,25 +623,70 @@ export class SessionChatService {
    * anything the classifier refuses. Either way the promise is held until the
    * browser answers, which is exactly what keeps the turn alive meanwhile.
    */
-  private onCanUseTool(sessionId: string, toolName: string, input: Record<string, unknown>): Promise<PermissionResult> {
+  private async onCanUseTool(
+    sessionId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+    /** What the CLI itself proposes on approval — preferred over anything built here. */
+    suggestions: PermissionUpdate[] | undefined,
+  ): Promise<PermissionResult> {
     const p = this.procs.get(sessionId);
-    if (!p) return Promise.resolve({ behavior: 'deny' as const, message: 'The session is gone.' });
+    if (!p) return { behavior: 'deny' as const, message: 'The session is gone.' };
 
     const questions = Array.isArray((input as { questions?: unknown }).questions)
       ? ((input as { questions: ChatQuestion['questions'] }).questions ?? null)
       : null;
+    const plan = toolName === 'ExitPlanMode' ? await this.planFor(sessionId, input) : null;
     const question: ChatQuestion = {
       toolName,
       questions,
       input: questions ? undefined : input,
       askedAt: new Date().toISOString(),
+      ...(plan ?? {}),
     };
-    log.info(`${toolName} is waiting on the user in ${sessionId}`, { questions: questions?.length ?? 0 });
+    log.info(`${toolName} is waiting on the user in ${sessionId}`, {
+      questions: questions?.length ?? 0,
+      planChars: plan?.plan?.length ?? 0,
+    });
 
     return new Promise((resolve) => {
-      p.ask = { question, resolve };
+      p.ask = { question, resolve, suggestions };
       this.changed(sessionId);
     });
+  }
+
+  /**
+   * The plan awaiting approval, and where it was saved.
+   *
+   * Two sources, because neither is guaranteed. Claude Code up to 2.1.229 put
+   * the whole markdown in `input.plan`; from 2.1.233 the tool takes no plan at
+   * all — its own description says the model should have "finished writing your
+   * plan to the plan file" first — so it has to be read from
+   * `~/.claude/plans/<slug>.md`. Failing to find either is not fatal: the panel
+   * falls back to showing the raw input, which is what it did for every tool
+   * before this existed.
+   */
+  private async planFor(
+    sessionId: string,
+    input: Record<string, unknown>,
+  ): Promise<{ plan: string | null; planFilePath: string | null }> {
+    const fromInput = typeof input.plan === 'string' && input.plan.trim() ? input.plan : null;
+    // 2.1.233 sends the path in the input beside the plan, which beats deriving
+    // it: the slug is only where the file WOULD be, and the CLI knows where it
+    // is. The derivation stays for the versions that send neither.
+    const slug = this.index.get(sessionId)?.slug;
+    const planFilePath =
+      (typeof input.planFilePath === 'string' && input.planFilePath) ||
+      (slug ? path.join(this.config.plansDir, `${slug}.md`) : null);
+    if (fromInput) return { plan: fromInput, planFilePath };
+    if (!planFilePath) return { plan: null, planFilePath: null };
+    try {
+      const text = await fsp.readFile(planFilePath, 'utf8');
+      return { plan: text.trim() ? text : null, planFilePath };
+    } catch (err) {
+      log.debug(`no plan file for ${sessionId} at ${planFilePath}`, err);
+      return { plan: null, planFilePath };
+    }
   }
 
   private write(p: ChatProcess, prompt: string): void {

@@ -1,4 +1,4 @@
-import type { LiveInfo, SubagentMeta, Turn } from '@claude-history/shared';
+import type { ChatPermissionMode, LiveInfo, SubagentMeta, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -353,6 +353,24 @@ export function SessionViewPage() {
     }
     return null;
   })();
+  /**
+   * And the mode it was last in — same rule, same reason. Only `user` lines
+   * carry it, and only `plan` is worth restoring: every other value means the
+   * ordinary way of sending, which is what the composer opens on anyway. It is
+   * NOT widened to a mode the picker cannot represent, so a session Claude Code
+   * left in `acceptEdits` opens in `auto` rather than claiming otherwise.
+   */
+  const lastMode: ChatPermissionMode | null = (() => {
+    const turns = detail.data.turns;
+    for (let t = turns.length - 1; t >= 0; t--) {
+      const items = turns[t].items;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const mode = items[i].permissionMode;
+        if (mode) return mode === 'plan' ? 'plan' : 'auto';
+      }
+    }
+    return null;
+  })();
 
   return (
     // Wraps the drawer as well as the conversation: a path written in a
@@ -482,6 +500,7 @@ export function SessionViewPage() {
               onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
               lastModel={lastAnswer?.model ?? null}
               lastEffort={lastAnswer?.effort ?? null}
+              lastMode={lastMode}
             />
           )}
           {agentId && (

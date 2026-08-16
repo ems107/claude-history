@@ -14,8 +14,8 @@ The approved plan lives at
 - [x] **3. Consumers of the new kind: export, folding, segments.**
 - [x] **4. Enricher + `CACHE_VERSION` 12 + `plan` search role + `deepSearch` de-dup.**
 - [x] **5. `GET /api/plans` + `PlansPage`.**
-- [ ] 6. Composer: live permission-mode picker + initial mode from the transcript.
-- [ ] 7. `ExitPlanMode` approval panel with the three decisions.
+- [x] **6. Composer: live permission-mode picker + initial mode from the transcript.**
+- [x] **7. `ExitPlanMode` approval panel with the three decisions.**
 - [ ] 8. `CLAUDE.md`.
 - [ ] 9. Delete this file and merge into `main`.
 
@@ -91,6 +91,30 @@ of them, 51 KB at the worst.
 
 Deep link: `?tool=` on a plan opens its run and nothing else (3 tool blocks in the DOM of a
 session with hundreds), flashes for ~2.2 s of its 2.5 s budget, and scrolls to it.
+
+**The composer, end to end against a real session** (`d29ebc13`, a throwaway in a temp folder,
+haiku — never opus or fable, and the spawned pid captured rather than filtering on `claude.exe`).
+
+A prompt sent with `permissionMode: plan` started the process in plan mode and the status
+reported it. Claude planned, asked an `AskUserQuestion`, and then `ExitPlanMode` arrived through
+`canUseTool` with **1,419 characters of plan**. Pressing *Keep planning* with a note sent the
+plan back, and the note came round the other side: the card now shows *"Anade tambien una
+seccion sobre el ano de copyright"* under "the user said". That round trip is the whole point —
+the two halves of this feature meeting on real data.
+
+Two things the corpus could not have told us, both now handled:
+
+- **2.1.233 sends `{plan, planFilePath}`**, not the bare `{plan}` of every call in the archive.
+  The path is taken from the input now and the slug derivation kept only as the fallback.
+- **A refusal sent from the app is NOT recorded like one typed in a terminal.** The SDK's
+  `canUseTool` deny lands as `toolDenialKind: "permission-rule"` with **no `userFeedback` field
+  at all** — the message travels inside `toolUseResult` as `"Error: <message>"`. Reading only
+  the field lost every note sent from here, which is exactly the half the card exists to show.
+  `planFeedback` reads both and ignores the generic refusals.
+
+The picker opens on `plan` for that session, restored from the transcript's last
+`permissionMode`. Process cleanup is clean: `pnpm stop` took pid 22832 (the one the server
+spawned) and left 12432 and 26892 — including this very terminal — untouched.
 
 **Corpus:** 17 plans in 11 sessions (11 approved, 5 rejected, 1 pending), text recorded for
 17/17. The `pending` one is genuine, not a parse failure: `2ed0a955`'s last written line IS its

@@ -125,11 +125,31 @@ function toPlanOutcome(raw: unknown, line: RawLine): PlanOutcome | null {
     return { status: 'approved', text: str(raw.plan), filePath: str(raw.filePath), feedback: null };
   }
   if (typeof raw === 'string') {
-    // `userFeedback` is what the user typed instead of approving — every
-    // rejection here carries one, and it is the instruction that follows.
-    return { status: 'rejected', text: null, filePath: null, feedback: str(line.userFeedback) };
+    return { status: 'rejected', text: null, filePath: null, feedback: planFeedback(raw, line) };
   }
   return null;
+}
+
+/** The generic refusal, which says nothing about why and is not feedback. */
+const GENERIC_REFUSAL = /^(The user declined\.|The user doesn't want to proceed with this tool use)/;
+
+/**
+ * What the user said instead of approving, from whichever of the two places
+ * this refusal used.
+ *
+ * A refusal typed in the terminal writes `userFeedback` beside
+ * `toolDenialKind: "user-rejected"`. One sent from this app does NOT: a
+ * `canUseTool` deny is recorded as `permission-rule` with no such field, and the
+ * message travels inside `toolUseResult` as `"Error: <message>"` — verified end
+ * to end against a real session. Reading only the field lost every note sent
+ * from here, which is precisely the half of the exchange the card exists to
+ * show.
+ */
+export function planFeedback(raw: string, line: RawLine): string | null {
+  const explicit = str(line.userFeedback);
+  if (explicit) return explicit;
+  const text = raw.replace(/^Error:\s*/, '').trim();
+  return text && !GENERIC_REFUSAL.test(text) ? text : null;
 }
 
 type PlanModeEvent = Extract<ContentBlock, { kind: 'plan-mode' }>['event'];

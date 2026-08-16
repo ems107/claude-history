@@ -11,7 +11,7 @@ import type {
 } from '@claude-history/shared';
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
-import { planTitle, toMessageUsage } from './parser.ts';
+import { planFeedback, planTitle, toMessageUsage } from './parser.ts';
 import { PLAN_ROLE } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
 
@@ -269,7 +269,7 @@ export async function enrichSession(
             if (text && !plan.chars) fillPlanText(plan, text, searchBlocks);
           } else if (typeof o.toolUseResult === 'string') {
             plan.status = 'rejected';
-            plan.feedback = str(o.userFeedback);
+            plan.feedback = planFeedback(o.toolUseResult, o);
           }
         }
       }
