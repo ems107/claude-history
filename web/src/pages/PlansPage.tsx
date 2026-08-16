@@ -151,10 +151,25 @@ export function PlansPage() {
                 {p.feedback}
               </div>
             )}
-            <div className="mt-0.5 text-xs text-[var(--text-dim)]/80">
-              {p.chars.toLocaleString()} chars · in{' '}
+            {/* Which session this belongs to, by name AND by id. The name is
+                what a reader recognises; the id is what the app writes
+                everywhere else — the URL, the log, a fork chip — and what
+                pasting eight characters back into the search finds. Same eight
+                and same mono chip as the session header, so the two read as the
+                same thing. */}
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-dim)]/80">
+              <span>{p.chars.toLocaleString()} chars</span>
+              <span className="opacity-50">·</span>
+              <span>in</span>
               <Link to={`/session/${p.sessionId}`} className="hover:text-[var(--text)] hover:underline">
                 {p.sessionTitle}
+              </Link>
+              <Link
+                to={`/session/${p.sessionId}`}
+                title={p.sessionId}
+                className="rounded bg-amber-500/10 px-1.5 py-px font-mono text-amber-400 hover:bg-amber-500/20"
+              >
+                {p.sessionId.slice(0, 8)}
               </Link>
             </div>
           </div>
