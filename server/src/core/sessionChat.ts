@@ -141,10 +141,12 @@ export function askedAnswers(
     const note = notes?.[q.question]?.notes?.trim() ?? '';
     if (parts.length > 0) answers[q.question] = parts.join(', ');
     else if (note) answers[q.question] = NOTES_ONLY;
-    // The preview of the option taken — only when exactly one was, which is the
-    // only case where "the selected option" names something.
-    const taken = parts.length === 1 ? q.options.find((o) => o.label === parts[0]) : undefined;
-    const preview = taken?.preview;
+    // The drawing of the option taken. Told from the free text by matching the
+    // labels rather than by counting the parts: an answer is often one option
+    // plus a typed rider, and there "the selected option" still names something.
+    // With several picked it names nothing, so nothing is recorded.
+    const labels = parts.filter((p) => q.options.some((o) => o.label === p));
+    const preview = labels.length === 1 ? q.options.find((o) => o.label === labels[0])?.preview : undefined;
     if (preview || note) {
       annotations[q.question] = { ...(preview ? { preview } : {}), ...(note ? { notes: note } : {}) };
     }
