@@ -1,11 +1,17 @@
 import type { CompactBoundary, ContextSnapshot } from '@claude-history/shared';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { formatContextTokens } from '../../lib/context.ts';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
 import { CopyActions } from './MessageActions.tsx';
 
 const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
+
+/** Under a group already headed by `jira-pccom`, the prefix is noise. */
+function shortToolName(tool: string, server: string): string {
+  const prefix = `mcp__${server}__`;
+  return tool.startsWith(prefix) ? tool.slice(prefix.length) : tool;
+}
 
 /**
  * A `/context` run, rendered where it happened.
@@ -18,17 +24,37 @@ const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
  */
 export function ContextSnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }) {
   const [showMcp, setShowMcp] = useState(false);
+  const [openServers, setOpenServers] = useState<ReadonlySet<string>>(() => new Set());
   const deferred = snapshot.categories.filter((c) => c.deferred);
   const deferredTotal = deferred.reduce((a, c) => a + c.tokens, 0);
   const loaded = snapshot.categories.filter((c) => !c.deferred && !/free space/i.test(c.label));
   const free = snapshot.categories.find((c) => /free space/i.test(c.label));
   const widest = Math.max(...snapshot.categories.map((c) => c.tokens), 1);
 
-  const Bar = ({ tokens, dim }: { tokens: number; dim?: boolean }) => (
+  // /context prints one flat list of tools ordered by weight, which interleaves
+  // the servers: the 12 Jira tools are scattered among the 18 devtools ones and
+  // nothing says what Jira costs. The question a reader has first is per server
+  // — which connection is worth its tokens — and only then which of its tools
+  // is the expensive one, so the table is grouped and each server folds.
+  const mcpServers = useMemo(() => {
+    const byServer = new Map<string, { server: string; tokens: number; tools: ContextSnapshot['mcpTools'] }>();
+    for (const t of snapshot.mcpTools) {
+      const group = byServer.get(t.server) ?? { server: t.server, tokens: 0, tools: [] };
+      group.tokens += t.tokens;
+      group.tools.push(t);
+      byServer.set(t.server, group);
+    }
+    for (const group of byServer.values()) group.tools.sort((a, b) => b.tokens - a.tokens);
+    return [...byServer.values()].sort((a, b) => b.tokens - a.tokens || a.server.localeCompare(b.server));
+  }, [snapshot.mcpTools]);
+  const mcpTotal = mcpServers.reduce((a, s) => a + s.tokens, 0);
+  const widestServer = Math.max(...mcpServers.map((s) => s.tokens), 1);
+
+  const Bar = ({ tokens, dim, max = widest }: { tokens: number; dim?: boolean; max?: number }) => (
     <span className="block h-1 rounded-full bg-[var(--border)]">
       <span
         className={`block h-1 rounded-full ${dim ? 'bg-[var(--text-dim)]/40' : 'bg-[var(--accent)]/70'}`}
-        style={{ width: `${Math.max(1, (tokens / widest) * 100)}%` }}
+        style={{ width: `${Math.max(1, (tokens / max) * 100)}%` }}
       />
     </span>
   );
@@ -76,30 +102,58 @@ export function ContextSnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }
         </div>
       )}
 
-      {snapshot.mcpTools.length > 0 && (
+      {mcpServers.length > 0 && (
         <div className="mt-1.5 border-t border-[var(--border)] pt-1.5">
           <FoldHeader
             open={showMcp}
             onToggle={() => setShowMcp((v) => !v)}
             className="inline-block text-[var(--text-dim)] hover:text-[var(--text)]"
           >
-            {showMcp ? '▾' : '▸'} {snapshot.mcpTools.length} MCP tools ·{' '}
-            {fmt(snapshot.mcpTools.reduce((a, t) => a + t.tokens, 0))} tokens
+            {showMcp ? '▾' : '▸'} {mcpServers.length} MCP {mcpServers.length === 1 ? 'server' : 'servers'} ·{' '}
+            {snapshot.mcpTools.length} tools · {fmt(mcpTotal)} tokens
           </FoldHeader>
           {showMcp && (
-            <table className="mt-1 w-full">
-              <tbody>
-                {[...snapshot.mcpTools]
-                  .sort((a, b) => b.tokens - a.tokens)
-                  .map((t) => (
-                    <tr key={t.tool} className="border-t border-[var(--border)]">
-                      <td className="py-px pr-2 font-mono break-all">{t.tool}</td>
-                      <td className="py-px pr-2 text-[var(--text-dim)]">{t.server}</td>
-                      <td className="py-px text-right font-mono tabular-nums">{t.tokens}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <div className="mt-1">
+              {mcpServers.map((s) => {
+                const open = openServers.has(s.server);
+                return (
+                  <div key={s.server} className="border-t border-[var(--border)]">
+                    <FoldHeader
+                      open={open}
+                      onToggle={() =>
+                        setOpenServers((prev) => {
+                          const next = new Set(prev);
+                          if (!next.delete(s.server)) next.add(s.server);
+                          return next;
+                        })
+                      }
+                      className="grid grid-cols-[12rem_1fr_5rem_4rem] items-center gap-2 py-0.5 hover:text-[var(--text)]"
+                    >
+                      <span className="truncate font-mono">
+                        <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span> {s.server}
+                      </span>
+                      <Bar tokens={s.tokens} max={widestServer} />
+                      <span className="text-right font-mono tabular-nums">{fmt(s.tokens)}</span>
+                      <span className="text-right text-[10px] text-[var(--text-dim)] tabular-nums">
+                        {s.tools.length} tools
+                      </span>
+                    </FoldHeader>
+                    {open && (
+                      <div className="mb-1 ml-2 border-l border-[var(--border)] pl-3">
+                        {s.tools.map((t) => (
+                          <div key={t.tool} className="grid grid-cols-[1fr_5rem] gap-2 py-px">
+                            <span className="font-mono break-all text-[var(--text-dim)]">
+                              {shortToolName(t.tool, s.server)}
+                            </span>
+                            <span className="text-right font-mono tabular-nums">{fmt(t.tokens)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
