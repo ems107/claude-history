@@ -15,7 +15,7 @@ import { createLogger } from './logger.ts';
  * 10: what the session's subagents spent became part of the enrichment. 11: their
  * ids joined the search index, and a nested agent's report stopped being dropped.
  */
-export const CACHE_VERSION = 11;
+export const CACHE_VERSION = 12;
 
 const cacheLog = createLogger('cache');
 

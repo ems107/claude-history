@@ -12,7 +12,7 @@ The approved plan lives at
       `MessageItem.permissionMode`, `summarizeInput` case, plan-mode attachments.
 - [x] **2. `PlanCard` + insertion in `Turn.tsx` + `SystemItem` + `PLAN` chip.**
 - [x] **3. Consumers of the new kind: export, folding, segments.**
-- [ ] 4. Enricher + `CACHE_VERSION` 12 + `plan` search role + `deepSearch` de-dup.
+- [x] **4. Enricher + `CACHE_VERSION` 12 + `plan` search role + `deepSearch` de-dup.**
 - [ ] 5. `GET /api/plans` + `PlansPage`.
 - [ ] 6. Composer: live permission-mode picker + initial mode from the transcript.
 - [ ] 7. `ExitPlanMode` approval panel with the three decisions.
@@ -61,3 +61,22 @@ not tool traffic.
 `folding.ts` and `segments.ts` needed nothing: `foldedCounts` only looks at assistant items and
 `isPromptItem` requires the user role, so a plan-mode item counts as neither a response, nor a
 tool, nor a prompt. Checked, not assumed.
+
+**Search, after the `CACHE_VERSION` 12 bump.** `/api/meta` came back `cacheHits: 0` with all
+116 sessions enriched. A phrase living only inside a plan (`"es el mayor riesgo del proyecto"`)
+now returns two `plan` rows, each anchored on its own `ExitPlanMode` call; `in=user` drops them,
+which is right — a plan is not something the user wrote.
+
+**The arithmetic closes both ways**: 3 places / 3 `pageMatches` / 3 `matchCount` indexed, and
+6 / 6 / 6 deep. Deep stays a superset (1 session → 3; that session 3 → 6 matches).
+
+**The double count is really gone, and there were two of them.** The call input was the one the
+plan named; the approval's tool_result turned out to echo the whole plan back after a fixed
+preamble, with the SAME anchor as the indexed row — one plan, twice, both links landing in the
+same place. Cutting the echo at `## Approved Plan:` took `b343d4ac` from 7 deep matches to 6
+while keeping the preamble, which names the file the plan was saved to.
+
+**Corpus:** 17 plans in 11 sessions (11 approved, 5 rejected, 1 pending), text recorded for
+17/17. The `pending` one is genuine, not a parse failure: `2ed0a955`'s last written line IS its
+`ExitPlanMode` call, its tool id appears once in the whole file, and it is the same session that
+shows `enter=1, exit=0`. A plan awaiting an answer right now.

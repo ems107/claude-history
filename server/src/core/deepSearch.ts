@@ -68,10 +68,19 @@ function toolResultText(content: unknown): string {
   return content === undefined || content === null ? '' : JSON.stringify(content);
 }
 
+/** Where an `ExitPlanMode` approval stops explaining itself and repeats the plan. */
+const APPROVED_PLAN_MARKER = '## Approved Plan:';
+
 function toolCallText(block: Record<string, unknown>): string {
   const name = str(block.name) ?? 'tool';
-  // The input as written: a command, a path, a pattern. Searching it answers
-  // "which session ran that" as well as any prose would.
+  // A plan is INDEXED (see `fillPlanText`), and this scan re-matches the indexed
+  // text as well as reading the tool traffic — so carrying the input here would
+  // report the same plan twice for one call, as two places instead of one. The
+  // name is kept, because "which session called ExitPlanMode" is still a
+  // question this scan should answer.
+  if (name === 'ExitPlanMode') return name;
+  // Everything else, as written: a command, a path, a pattern. Searching it
+  // answers "which session ran that" as well as any prose would.
   return `${name} ${JSON.stringify(block.input ?? {})}`;
 }
 
@@ -336,6 +345,8 @@ export class DeepSearchService {
     // replay (see `replayFilter`) spends the snippet budget twice on one
     // command and counts its matches again.
     const isReplay = replayFilter();
+    /** `ExitPlanMode` calls seen so far — their results echo an indexed plan. */
+    const planCalls = new Set<string>();
     const overBudget = (): boolean => {
       if (signal?.aborted) return true;
       if (++lines % LINES_PER_CLOCK_CHECK !== 0) return false;
@@ -361,11 +372,20 @@ export class DeepSearchService {
           for (const block of message.content) {
             if (!isRec(block)) continue;
             if (block.type === 'tool_use') {
-              yield { uuid, role: 'call', text: toolCallText(block), toolUseId: str(block.id) };
+              const callId = str(block.id);
+              if (callId && str(block.name) === 'ExitPlanMode') planCalls.add(callId);
+              yield { uuid, role: 'call', text: toolCallText(block), toolUseId: callId };
             } else if (block.type === 'tool_result') {
-              resultOf ??= str(block.tool_use_id);
-              const text = toolResultText(block.content);
-              if (text.trim()) yield { uuid, role: 'tool', text, toolUseId: str(block.tool_use_id) };
+              const callId = str(block.tool_use_id);
+              resultOf ??= callId;
+              // An approval echoes the whole plan back after a fixed preamble,
+              // and the plan is indexed — so the echo is cut off here. Both rows
+              // carry the same anchor, so keeping it would show one plan twice
+              // and send both copies to the same place. The preamble stays: it
+              // names the file the plan was saved to.
+              const raw = toolResultText(block.content);
+              const text = callId && planCalls.has(callId) ? raw.split(APPROVED_PLAN_MARKER)[0] : raw;
+              if (text.trim()) yield { uuid, role: 'tool', text, toolUseId: callId };
             }
           }
         }

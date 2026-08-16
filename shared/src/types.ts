@@ -118,6 +118,31 @@ export interface DailyUsage {
   subagentByModel: Record<string, MessageUsage>;
 }
 
+/**
+ * One plan this session submitted for approval, for the index and the Plans
+ * page. The markdown itself is deliberately NOT here: plans run to 25 KB each
+ * and this is cached on disk for every session, while the text is already in
+ * the transcript and one fetch away.
+ */
+export interface PlanRecord {
+  /** The `ExitPlanMode` call — the anchor a `?tool=` link needs. */
+  toolUseId: string;
+  /** The assistant message that made the call. */
+  uuid: string | null;
+  askedAt: string | null;
+  /** When the user answered. Null while a plan is still awaiting one. */
+  decidedAt: string | null;
+  status: 'approved' | 'rejected' | 'pending';
+  /** Its first `# heading`. */
+  title: string | null;
+  /** Enough of the plan to recognise it in a list. */
+  preview: string;
+  chars: number;
+  /** `~/.claude/plans/<slug>.md`, when the approval recorded one. */
+  filePath: string | null;
+  feedback: string | null;
+}
+
 export interface SessionEnrichment {
   userMessageCount: number;
   assistantMessageCount: number;
@@ -163,6 +188,8 @@ export interface SessionEnrichment {
   /** Per-UTC-day usage (yyyy-mm-dd) for the stats dashboard. Carried-over lines excluded. */
   daily: Record<string, DailyUsage>;
   models: string[];
+  /** Every plan submitted with `ExitPlanMode`, in the order they were made. */
+  plans: PlanRecord[];
   prLinks: PrLink[];
   /**
    * The session this one was forked from (`/branch`), read from the `forkedFrom`
