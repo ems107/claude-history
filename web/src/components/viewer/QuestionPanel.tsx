@@ -2,6 +2,7 @@ import type { ChatPlanDecision, ChatQuestion } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
 import { FileRefChip } from './FileRefLink.tsx';
 import { Markdown } from './Markdown.tsx';
+import { Sketch } from './Sketch.tsx';
 
 /**
  * What Claude is waiting on, sitting where the next message would go.
@@ -199,12 +200,7 @@ export function QuestionPanel({
                   {hasSketches && (
                     <div className="min-w-0">
                       {shown?.preview ? (
-                        // A drawing, so `whitespace-pre` and a scroller of its
-                        // own: the widest in this corpus is 114 columns, and
-                        // wrapping one is destroying it.
-                        <pre className="max-h-64 overflow-auto rounded border border-[var(--border)] bg-[var(--bg)] p-2 font-mono text-[11px] leading-snug whitespace-pre text-[var(--text-dim)]">
-                          {shown.preview}
-                        </pre>
+                        <Sketch text={shown.preview} className="max-h-64 overflow-y-auto" />
                       ) : (
                         <div className="rounded border border-dashed border-[var(--border)] p-2 text-[11px] text-[var(--text-dim)] italic">
                           This option has no sketch.

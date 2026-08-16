@@ -1,6 +1,7 @@
 import type { ContentBlock } from '@claude-history/shared';
 import { useState } from 'react';
 import { FoldHeader } from './FoldHeader.tsx';
+import { Sketch } from './Sketch.tsx';
 
 type ToolBlockType = Extract<ContentBlock, { kind: 'tool' }>;
 
@@ -237,38 +238,55 @@ export function answerSummary(parsed: AnsweredQuestions): string {
 }
 
 /**
- * The mockup Claude drew for one option, behind a fold of its own.
+ * One offered option: what it said, whether it was taken, and its drawing.
  *
- * Folded, and folded even for the option that was taken: 24 questions here
- * carry drawings of up to 19 lines each, so an open one turns a four-option
- * question into a screenful of box drawing standing between two sentences of
- * conversation. The reader opens the one they want to compare.
+ * The `▸ sketch` sits at the RIGHT-HAND END OF THE OPTION'S OWN ROW, not under
+ * it. Underneath it read as a third line of the option and pushed the next
+ * option down, so a four-option question became eight rows of which half were
+ * furniture; on the row it is plainly what it is, a control belonging to that
+ * option.
  *
- * `FoldHeader` rather than a `<button>` — the repo's rule — and here it earns
- * itself twice over: what a drawing is FOR is being read and copied out.
+ * Folded, and folded even for the option that was taken: these drawings run to
+ * 19 lines, and four open ones turn a question into a screenful of box drawing
+ * standing between two sentences of conversation.
+ *
+ * The dimming of an option not taken is on its TEXT rather than on the whole
+ * row, so the fold stays legible — a control at 60% opacity reads as a disabled
+ * one. `FoldHeader` rather than a `<button>` is the repo's rule, and here it
+ * earns itself twice over: what a drawing is FOR is being read and copied out.
  */
-function OptionPreview({ preview }: { preview: string }) {
+function OptionRow({ option, picked }: { option: AskedOption; picked: boolean }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mt-0.5 ml-5">
-      <FoldHeader
-        open={open}
-        onToggle={() => setOpen((o) => !o)}
-        className="inline-flex w-fit items-center gap-1 rounded px-1 py-px text-[10px] text-[var(--text-dim)] hover:text-[var(--text)]"
+    <div>
+      <div
+        className={`flex items-baseline gap-2 rounded px-2 py-1 text-xs ${
+          picked
+            ? 'border border-[var(--accent-dim)] bg-[var(--accent)]/10 text-[var(--text)]'
+            : 'border border-transparent text-[var(--text-dim)]'
+        }`}
       >
-        <span aria-hidden className="opacity-60">
-          {open ? '▾' : '▸'}
+        <span aria-hidden className={`shrink-0 ${picked ? 'text-[var(--accent)]' : 'opacity-40'}`}>
+          {picked ? '●' : '○'}
         </span>
-        sketch
-      </FoldHeader>
-      {open && (
-        // `whitespace-pre` and a scroller of its own: these are drawings, and
-        // the widest line here is 114 columns. Wrapping one is destroying it,
-        // and letting it push the page sideways is worse.
-        <pre className="mt-1 max-w-full overflow-x-auto rounded border border-[var(--border)] bg-black/30 p-2 font-mono text-[11px] leading-snug whitespace-pre text-[var(--text-dim)]">
-          {preview}
-        </pre>
-      )}
+        <span className={`min-w-0 ${picked ? 'font-medium' : 'opacity-60'}`}>{option.label}</span>
+        {option.description && option.description.trim() !== option.label.trim() && (
+          <span className={`truncate text-[11px] ${picked ? 'opacity-70' : 'opacity-50'}`}>{option.description}</span>
+        )}
+        {option.preview && (
+          <FoldHeader
+            open={open}
+            onToggle={() => setOpen((o) => !o)}
+            className="ml-auto flex w-fit shrink-0 items-center gap-1 rounded px-1 py-px text-[10px] text-[var(--text-dim)] hover:text-[var(--text)]"
+          >
+            <span aria-hidden className="opacity-60">
+              {open ? '▾' : '▸'}
+            </span>
+            sketch
+          </FoldHeader>
+        )}
+      </div>
+      {option.preview && open && <Sketch text={option.preview} className="mt-1 ml-5" />}
     </div>
   );
 }
@@ -293,32 +311,9 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
               <span className="text-xs text-[var(--text)]">{q.question}</span>
             </div>
             <div className="space-y-0.5">
-              {q.options.map((o) => {
-                const picked = q.picked.includes(o.label);
-                return (
-                  <div key={o.label}>
-                    <div
-                      className={`flex items-baseline gap-2 rounded px-2 py-1 text-xs ${
-                        picked
-                          ? 'border border-[var(--accent-dim)] bg-[var(--accent)]/10 text-[var(--text)]'
-                          : 'border border-transparent text-[var(--text-dim)] opacity-60'
-                      }`}
-                    >
-                      <span aria-hidden className={`shrink-0 ${picked ? 'text-[var(--accent)]' : 'opacity-40'}`}>
-                        {picked ? '●' : '○'}
-                      </span>
-                      <span className={picked ? 'font-medium' : ''}>{o.label}</span>
-                      {o.description && o.description.trim() !== o.label.trim() && (
-                        <span className="truncate text-[11px] opacity-70">{o.description}</span>
-                      )}
-                    </div>
-                    {/* Outside the row, not inside it: an option not taken is
-                        drawn at 60% opacity, and a drawing at 60% is one nobody
-                        can read — which is the opposite of why it is offered. */}
-                    {o.preview && <OptionPreview preview={o.preview} />}
-                  </div>
-                );
-              })}
+              {q.options.map((o) => (
+                <OptionRow key={o.label} option={o} picked={q.picked.includes(o.label)} />
+              ))}
               {/* "Other": text that matched no option. It shows even when
                   options WERE picked — a multiSelect answer can be several
                   boxes plus a sentence, and dropping that sentence deleted a
