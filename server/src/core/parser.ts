@@ -216,6 +216,7 @@ function buildResult(
   persistedOutputPath: string | null,
   answers: Record<string, string> | null,
   annotations: Record<string, { preview?: string; notes?: string }> | null,
+  response: string | null,
   plan: PlanOutcome | null,
 ): ToolResultInfo {
   let text = extractResultText(c.content);
@@ -235,7 +236,17 @@ function buildResult(
     const m = /output saved to: (.+?[\\/]tool-results[\\/][^\s\\/"]+\.txt)/i.exec(text);
     if (m) offloadedFile = toProjectsRelative(m[1], projectsDir);
   }
-  return { text, truncated, totalChars, isError: c.is_error === true, offloadedFile, answers, annotations, plan };
+  return {
+    text,
+    truncated,
+    totalChars,
+    isError: c.is_error === true,
+    offloadedFile,
+    answers,
+    annotations,
+    response,
+    plan,
+  };
 }
 
 /** One-line human summary of a tool invocation for the collapsed header. */
@@ -694,6 +705,7 @@ export async function parseTranscript(
         // into `toolUseResult` as a character-keyed object (2 lines here).
         const askedAnswers = isRec(o.toolUseResult) ? toAnswers(o.toolUseResult.answers) : null;
         const askedAnnotations = isRec(o.toolUseResult) ? toAnnotations(o.toolUseResult.annotations) : null;
+        const askedResponse = isRec(o.toolUseResult) ? str(o.toolUseResult.response) : null;
         // Guarded by tool name for the same reason: an object `toolUseResult`
         // means "approved" only on an ExitPlanMode result — everywhere else it
         // is just the structured output of whatever tool ran.
@@ -711,6 +723,7 @@ export async function parseTranscript(
                 persistedOutputPath,
                 tool.toolName === 'AskUserQuestion' ? askedAnswers : null,
                 tool.toolName === 'AskUserQuestion' ? askedAnnotations : null,
+                tool.toolName === 'AskUserQuestion' ? askedResponse : null,
                 tool.toolName === 'ExitPlanMode' ? planOutcome : null,
               );
             }

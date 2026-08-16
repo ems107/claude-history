@@ -367,6 +367,14 @@ export interface ToolResultInfo {
    */
   annotations: Record<string, { preview?: string; notes?: string }> | null;
   /**
+   * `AskUserQuestion` only: `toolUseResult.response`, freeform text answering
+   * the card as a whole rather than any one of its questions. Nothing on this
+   * machine has written one yet — it is in the tool's output schema, and this
+   * app can produce one from the composer — so it is carried rather than
+   * assumed absent.
+   */
+  response: string | null;
+  /**
    * `ExitPlanMode` only: whether the user approved the plan, and what they said
    * if they did not. Null on every other tool, and on a plan still awaiting an
    * answer — which is a real state, not a missing one.

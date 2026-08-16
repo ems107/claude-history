@@ -1,16 +1,37 @@
 import type { ContentBlock } from '@claude-history/shared';
+import { useState } from 'react';
+import { FoldHeader } from './FoldHeader.tsx';
 
 type ToolBlockType = Extract<ContentBlock, { kind: 'tool' }>;
+
+interface AskedOption {
+  label: string;
+  description: string;
+  /**
+   * The mockup Claude drew for this option — `options[].preview`, 68 of them
+   * here across 24 questions. Never on a `multiSelect` question (0 of 7), which
+   * is what the tool's own schema says too.
+   */
+  preview: string | null;
+}
 
 interface AskedQuestion {
   question: string;
   header: string;
-  options: { label: string; description: string }[];
+  options: AskedOption[];
   multiSelect: boolean;
   /** The options the user marked, in the order the answer named them. */
   picked: string[];
   /** What was typed under "Other" — alongside the picks, or instead of them. */
   typed: string | null;
+  /** `annotations[q].notes`: what the user wrote beside their pick. */
+  notes: string | null;
+  /**
+   * The answer was the `(notes only)` sentinel: no option taken, a note
+   * written instead. Read as an ordinary answer it becomes a typed one nobody
+   * typed, which is what the card used to draw.
+   */
+  notesOnly: boolean;
   /** Whether an answer to this question was recorded at all. */
   answered: boolean;
 }
@@ -18,7 +39,16 @@ interface AskedQuestion {
 export interface AnsweredQuestions {
   questions: AskedQuestion[];
   declined: boolean;
+  /** A reply to the card as a whole rather than to any one of its questions. */
+  response: string | null;
 }
+
+/**
+ * What Claude Code writes in `answers` when a question was answered with a note
+ * and no option. The prose spells the same case `(no option selected)`, so the
+ * two forms disagree — and only this one is ever read.
+ */
+const NOTES_ONLY = '(notes only)';
 
 /**
  * Split one recorded answer into the options it names and the rest.
@@ -111,18 +141,27 @@ export function parseAskUserQuestion(block: ToolBlockType): AnsweredQuestions | 
   const raw = input?.questions;
   if (!Array.isArray(raw) || raw.length === 0) return null;
 
-  const asked: Omit<AskedQuestion, 'picked' | 'typed' | 'answered'>[] = [];
+  const asked: Omit<AskedQuestion, 'picked' | 'typed' | 'notes' | 'notesOnly' | 'answered'>[] = [];
   for (const q of raw) {
     if (typeof q !== 'object' || q === null) continue;
-    const item = q as Partial<AskedQuestion>;
+    const item = q as { question?: unknown; header?: unknown; options?: unknown; multiSelect?: unknown };
     if (typeof item.question !== 'string' || !Array.isArray(item.options)) continue;
     asked.push({
       question: item.question,
       header: typeof item.header === 'string' ? item.header : '',
-      options: item.options.filter(
-        (o): o is { label: string; description: string } =>
-          typeof o === 'object' && o !== null && typeof (o as { label?: unknown }).label === 'string',
-      ),
+      options: item.options
+        .filter(
+          (o): o is { label: string; description?: unknown; preview?: unknown } =>
+            typeof o === 'object' && o !== null && typeof (o as { label?: unknown }).label === 'string',
+        )
+        .map((o) => ({
+          label: o.label,
+          description: typeof o.description === 'string' ? o.description : '',
+          // Read from the INPUT, never from the result's echoed `questions`:
+          // Claude Code 2.1.221 strips `preview` from that echo (`edacebe6`),
+          // so the drawings exist in one of the two places and not the other.
+          preview: typeof o.preview === 'string' && o.preview.trim() ? o.preview : null,
+        })),
       multiSelect: item.multiSelect === true,
     });
   }
@@ -135,15 +174,28 @@ export function parseAskUserQuestion(block: ToolBlockType): AnsweredQuestions | 
       text,
       asked.map((q) => q.question),
     );
+  const annotations = block.result?.annotations ?? {};
   const questions: AskedQuestion[] = asked.map((q) => {
     const answer = answers[q.question];
     const answered = typeof answer === 'string' && answer.trim().length > 0;
-    const { picked, typed } = answered ? splitAnswer(answer, q.options) : { picked: [], typed: null };
-    return { ...q, picked, typed, answered };
+    const notesOnly = answer === NOTES_ONLY;
+    const { picked, typed } =
+      answered && !notesOnly ? splitAnswer(answer, q.options) : { picked: [], typed: null };
+    const annotation = annotations[q.question];
+    const notes = annotation?.notes ?? null;
+    // The result also records the drawing of the option that was taken. It is
+    // normally the same string the input already gave us, so it only ever fills
+    // a gap — the transcripts whose echoed options lost their previews.
+    const recovered = annotation?.preview?.trim();
+    const options =
+      recovered && picked.length > 0
+        ? q.options.map((o) => (picked.includes(o.label) && !o.preview ? { ...o, preview: recovered } : o))
+        : q.options;
+    return { ...q, options, picked, typed, notes: notes?.trim() || null, notesOnly, answered };
   });
   // A refusal leaves no answers, and the tool says so in its own words.
   const declined = questions.every((q) => !q.answered) && /declin|denied|stopped/i.test(text);
-  return { questions, declined };
+  return { questions, declined, response: block.result?.response?.trim() || null };
 }
 
 /**
@@ -173,9 +225,52 @@ export function AnsweredQuestionCard({ parsed }: { parsed: AnsweredQuestions }) 
 export function answerSummary(parsed: AnsweredQuestions): string {
   if (parsed.declined) return 'declined';
   const answered = parsed.questions
-    .map((q) => [...q.picked, ...(q.typed ? [q.typed] : [])].join(', '))
+    .map((q) => {
+      const chosen = [...q.picked, ...(q.typed ? [q.typed] : [])].join(', ');
+      if (q.notesOnly) return q.notes ? `a note: ${q.notes}` : 'a note';
+      // A note beside a pick is a condition on it, so a summary naming only the
+      // pick would say the opposite of what was agreed.
+      return chosen && q.notes ? `${chosen} (+ a note)` : chosen;
+    })
     .filter((a) => a.length > 0);
   return answered.length ? answered.join(' · ') : 'no answer recorded';
+}
+
+/**
+ * The mockup Claude drew for one option, behind a fold of its own.
+ *
+ * Folded, and folded even for the option that was taken: 24 questions here
+ * carry drawings of up to 19 lines each, so an open one turns a four-option
+ * question into a screenful of box drawing standing between two sentences of
+ * conversation. The reader opens the one they want to compare.
+ *
+ * `FoldHeader` rather than a `<button>` — the repo's rule — and here it earns
+ * itself twice over: what a drawing is FOR is being read and copied out.
+ */
+function OptionPreview({ preview }: { preview: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-0.5 ml-5">
+      <FoldHeader
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        className="inline-flex w-fit items-center gap-1 rounded px-1 py-px text-[10px] text-[var(--text-dim)] hover:text-[var(--text)]"
+      >
+        <span aria-hidden className="opacity-60">
+          {open ? '▾' : '▸'}
+        </span>
+        sketch
+      </FoldHeader>
+      {open && (
+        // `whitespace-pre` and a scroller of its own: these are drawings, and
+        // the widest line here is 114 columns. Wrapping one is destroying it,
+        // and letting it push the page sideways is worse.
+        <pre className="mt-1 max-w-full overflow-x-auto rounded border border-[var(--border)] bg-black/30 p-2 font-mono text-[11px] leading-snug whitespace-pre text-[var(--text-dim)]">
+          {preview}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -201,21 +296,26 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
               {q.options.map((o) => {
                 const picked = q.picked.includes(o.label);
                 return (
-                  <div
-                    key={o.label}
-                    className={`flex items-baseline gap-2 rounded px-2 py-1 text-xs ${
-                      picked
-                        ? 'border border-[var(--accent-dim)] bg-[var(--accent)]/10 text-[var(--text)]'
-                        : 'border border-transparent text-[var(--text-dim)] opacity-60'
-                    }`}
-                  >
-                    <span aria-hidden className={`shrink-0 ${picked ? 'text-[var(--accent)]' : 'opacity-40'}`}>
-                      {picked ? '●' : '○'}
-                    </span>
-                    <span className={picked ? 'font-medium' : ''}>{o.label}</span>
-                    {o.description && o.description.trim() !== o.label.trim() && (
-                      <span className="truncate text-[11px] opacity-70">{o.description}</span>
-                    )}
+                  <div key={o.label}>
+                    <div
+                      className={`flex items-baseline gap-2 rounded px-2 py-1 text-xs ${
+                        picked
+                          ? 'border border-[var(--accent-dim)] bg-[var(--accent)]/10 text-[var(--text)]'
+                          : 'border border-transparent text-[var(--text-dim)] opacity-60'
+                      }`}
+                    >
+                      <span aria-hidden className={`shrink-0 ${picked ? 'text-[var(--accent)]' : 'opacity-40'}`}>
+                        {picked ? '●' : '○'}
+                      </span>
+                      <span className={picked ? 'font-medium' : ''}>{o.label}</span>
+                      {o.description && o.description.trim() !== o.label.trim() && (
+                        <span className="truncate text-[11px] opacity-70">{o.description}</span>
+                      )}
+                    </div>
+                    {/* Outside the row, not inside it: an option not taken is
+                        drawn at 60% opacity, and a drawing at 60% is one nobody
+                        can read — which is the opposite of why it is offered. */}
+                    {o.preview && <OptionPreview preview={o.preview} />}
                   </div>
                 );
               })}
@@ -234,6 +334,26 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
                   </span>
                 </div>
               )}
+              {/* The note, and it is never folded away: it is a condition the
+                  user attached to their answer in their own words — "Esta
+                  opción, pero explicando el motivo" — and reading the pick
+                  without it gives the opposite instruction to the one given. */}
+              {q.notes && (
+                <div className="flex items-baseline gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-[var(--text)]">
+                  <span aria-hidden className="shrink-0 text-amber-400">
+                    ✎
+                  </span>
+                  <span className="whitespace-pre-wrap">{q.notes}</span>
+                  <span className="ml-auto shrink-0 text-[11px] text-[var(--text-dim)]">
+                    {q.notesOnly ? 'a note, and no option' : 'a note on the answer'}
+                  </span>
+                </div>
+              )}
+              {q.notesOnly && !q.notes && (
+                <div className="px-2 py-1 text-[11px] text-[var(--text-dim)] italic">
+                  No option was taken — the answer was a note, which this transcript did not keep.
+                </div>
+              )}
               {!q.answered && !parsed.declined && (
                 <div className="px-2 py-1 text-[11px] text-[var(--text-dim)] italic">
                   No answer to this question was recorded.
@@ -243,6 +363,16 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
           </div>
         );
       })}
+      {/* Not an answer to any one question — a reply to the card. */}
+      {parsed.response && (
+        <div className="flex items-baseline gap-2 rounded border border-[var(--accent-dim)] bg-[var(--accent)]/10 px-2 py-1 text-xs text-[var(--text)]">
+          <span aria-hidden className="shrink-0 text-[var(--accent)]">
+            ✎
+          </span>
+          <span className="whitespace-pre-wrap">{parsed.response}</span>
+          <span className="ml-auto shrink-0 text-[11px] text-[var(--text-dim)]">replied instead</span>
+        </div>
+      )}
       {parsed.declined && (
         <div className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)]">
           The question was declined, so Claude carried on without an answer.
