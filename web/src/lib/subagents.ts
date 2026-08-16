@@ -50,6 +50,17 @@ export interface SubagentIndex {
 const EMPTY: SubagentIndex = { rows: [], byId: new Map(), byToolUse: new Map(), calls: new Set() };
 
 /**
+ * The brief an Agent call was given (`input.prompt`), which the three-word
+ * description is not. One implementation, because the same call is read from
+ * the session's transcript here and from another agent's in the panel.
+ */
+export function promptOf(input: unknown): string | null {
+  if (input === null || typeof input !== 'object') return null;
+  const prompt = (input as { prompt?: unknown }).prompt;
+  return typeof prompt === 'string' ? prompt : null;
+}
+
+/**
  * The subagents of a session joined to the conversation they came out of: the
  * call that started each one, and the report it handed back.
  *
@@ -78,16 +89,11 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
       for (const block of item.blocks) {
         if (block.kind === 'tool') {
           if (!block.agentId || calls.has(block.agentId)) continue;
-          const input = block.input;
-          const prompt =
-            input !== null && typeof input === 'object' && typeof (input as { prompt?: unknown }).prompt === 'string'
-              ? ((input as { prompt: string }).prompt)
-              : null;
           calls.set(block.agentId, {
             toolUseId: block.toolUseId,
             messageUuid: item.uuid,
             timestamp: item.timestamp,
-            prompt,
+            prompt: promptOf(block.input),
           });
         } else if (block.kind === 'notice') {
           // A background command notifies through the very same channel, with an

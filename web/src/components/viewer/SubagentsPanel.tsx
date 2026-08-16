@@ -4,7 +4,7 @@ import { type ReactNode, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { type CostEntry, costEntries, formatTokens, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
 import { durationBetween, formatDateTime, formatDateTimeFull } from '../../lib/format.ts';
-import { rowStatus, type SubagentRow } from '../../lib/subagents.ts';
+import { promptOf, rowStatus, type SubagentRow } from '../../lib/subagents.ts';
 import { CostPill } from './CostPill.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -48,9 +48,54 @@ interface Nesting {
   parent: SubagentMeta;
   /** The call, in the parent's transcript. */
   toolUseId: string;
+  /** When that call was made — the row's "sent", which the session cannot supply. */
+  sentAt: string | null;
+  /** The brief it was given, from the call in the parent's transcript. */
+  prompt: string | null;
   /** The item of the parent's transcript that carries its report, when it filed one. */
   reportUuid: string | null;
+  reportAt: string | null;
   reportStatus: string | null;
+  /** And the report itself, so a nested row folds open exactly like a top-level one. */
+  result: string | null;
+}
+
+/**
+ * The list as a tree: every agent an agent spawned goes directly under it,
+ * indented, in the order it was sent out. The alternative is a flat list where
+ * four agents sit at the top level saying "sent out by …" and the reader has to
+ * reassemble who belongs to whom by reading eleven lines of prose.
+ *
+ * Rows whose parent is not in this list (there should be none — a parent is by
+ * definition one of the session's agents) are appended at the end rather than
+ * dropped: a row nobody can see is a worse answer than a row out of place.
+ */
+function asTree(rows: SubagentRow[], nesting: Map<string, Nesting>): { row: SubagentRow; depth: number }[] {
+  const children = new Map<string, SubagentRow[]>();
+  for (const row of rows) {
+    const under = nesting.get(row.meta.agentId);
+    if (!under) continue;
+    const list = children.get(under.parent.agentId) ?? [];
+    list.push(row);
+    children.set(under.parent.agentId, list);
+  }
+  for (const list of children.values()) {
+    list.sort((a, b) => (nesting.get(a.meta.agentId)?.sentAt ?? '').localeCompare(nesting.get(b.meta.agentId)?.sentAt ?? ''));
+  }
+
+  const out: { row: SubagentRow; depth: number }[] = [];
+  const placed = new Set<string>();
+  const place = (row: SubagentRow, depth: number): void => {
+    if (placed.has(row.meta.agentId)) return; // a cycle cannot happen, but nothing here depends on that
+    placed.add(row.meta.agentId);
+    out.push({ row, depth });
+    for (const child of children.get(row.meta.agentId) ?? []) place(child, depth + 1);
+  };
+  for (const row of rows) {
+    if (!nesting.has(row.meta.agentId)) place(row, 0);
+  }
+  for (const row of rows) place(row, 0);
+  return out;
 }
 
 function StatusChip({ row, nesting }: { row: SubagentRow; nesting: Nesting | null }) {
@@ -129,6 +174,7 @@ function JumpButton({ label, jump }: { label: string; jump: { run: (() => void) 
 
 function AgentRow({
   row,
+  depth,
   figures,
   prices,
   loading,
@@ -136,6 +182,8 @@ function AgentRow({
   nesting,
 }: {
   row: SubagentRow;
+  /** How deep under the session this agent sits: 0 for one it sent out itself. */
+  depth: number;
   figures: AgentFigures | null;
   prices: PriceTable;
   loading: boolean;
@@ -146,6 +194,16 @@ function AgentRow({
   const subagents = useSubagents();
   const { meta, call, reports } = row;
   const reported = reports[reports.length - 1] ?? null;
+  // A nested agent was sent out and reported back inside its parent's
+  // transcript, so both of its times come from there.
+  const sentTime = call?.timestamp ?? nesting?.sentAt ?? null;
+  const backTime = reported?.timestamp ?? nesting?.reportAt ?? null;
+  const brief = call?.prompt ?? nesting?.prompt ?? null;
+  const results = reports.length
+    ? reports.flatMap((r) => (r.result ? [{ key: r.uuid, text: r.result }] : []))
+    : nesting?.reportUuid && nesting.result
+      ? [{ key: nesting.reportUuid, text: nesting.result }]
+      : [];
   // Each of the two jumps goes to the session's conversation or into the parent
   // agent's drawer, depending on where the thing being pointed at actually is.
   const goToCall = call
@@ -167,9 +225,13 @@ function AgentRow({
 
   return (
     <div
+      // Indented under whoever sent it out, with a rail on the left so the
+      // parentage reads at a glance instead of from the line below. An inline
+      // margin because the depth is data — Tailwind cannot make a class from it.
+      style={depth > 0 ? { marginLeft: `${depth * 1.5}rem` } : undefined}
       className={`mb-1 rounded border px-2 py-1.5 ${
         active ? 'border-sky-500/40 bg-sky-500/5' : 'border-[var(--border)]'
-      }`}
+      } ${depth > 0 ? 'border-l-2 border-l-sky-500/30' : ''}`}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <span className="shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-sky-400 uppercase">
@@ -191,7 +253,7 @@ function AgentRow({
       </div>
       {nesting && (
         <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">
-          sent out by{' '}
+          ↳ sent out by{' '}
           <button
             type="button"
             onClick={() => subagents?.openAgent(nesting.parent.agentId)}
@@ -200,21 +262,17 @@ function AgentRow({
           >
             ⑂ {nesting.parent.agentType} · {nesting.parent.description}
           </button>
-          , not by this session — so its call and its report are in that transcript
+          , so its call and its report are in that transcript
         </div>
       )}
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-dim)]">
-        {call?.timestamp && (
-          <span title={`Sent out at ${formatDateTimeFull(call.timestamp)}`}>
-            sent {formatDateTime(call.timestamp)}
-          </span>
+        {sentTime && (
+          <span title={`Sent out at ${formatDateTimeFull(sentTime)}`}>sent {formatDateTime(sentTime)}</span>
         )}
-        {reported?.timestamp && (
-          <span title={`Reported back at ${formatDateTimeFull(reported.timestamp)}`}>
-            → back {formatDateTime(reported.timestamp)}
-            {call?.timestamp && durationBetween(call.timestamp, reported.timestamp)
-              ? ` · ${durationBetween(call.timestamp, reported.timestamp)}`
-              : ''}
+        {backTime && (
+          <span title={`Reported back at ${formatDateTimeFull(backTime)}`}>
+            → back {formatDateTime(backTime)}
+            {durationBetween(sentTime, backTime) ? ` · ${durationBetween(sentTime, backTime)}` : ''}
           </span>
         )}
         {figures && (
@@ -236,24 +294,19 @@ function AgentRow({
         <JumpButton label="↑ the call" jump={goToCall} />
         <JumpButton label="↓ the report" jump={goToReport} />
       </div>
+      {/* The brief and the report read the same whether they came from this
+          conversation or from the transcript of the agent that spawned it. */}
       <div className="mt-0.5 flex flex-wrap items-center gap-2">
-        {call?.prompt && (
-          <Fold label={`brief · ${formatTokens(call.prompt.length)} chars`}>
-            <pre className="max-h-96 overflow-auto text-[11px] whitespace-pre-wrap text-[var(--text-dim)]">
-              {call.prompt}
-            </pre>
+        {brief && (
+          <Fold label={`brief · ${formatTokens(brief.length)} chars`}>
+            <pre className="max-h-96 overflow-auto text-[11px] whitespace-pre-wrap text-[var(--text-dim)]">{brief}</pre>
           </Fold>
         )}
-        {reports.map((report, i) =>
-          report.result ? (
-            <Fold
-              key={report.uuid}
-              label={`report${reports.length > 1 ? ` ${i + 1}` : ''} · ${formatTokens(report.result.length)} chars`}
-            >
-              <Markdown text={report.result} />
-            </Fold>
-          ) : null,
-        )}
+        {results.map(({ key, text }, i) => (
+          <Fold key={key} label={`report${results.length > 1 ? ` ${i + 1}` : ''} · ${formatTokens(text.length)} chars`}>
+            <Markdown text={text} />
+          </Fold>
+        ))}
       </div>
     </div>
   );
@@ -303,16 +356,27 @@ export function SubagentsPanel({
   const nesting = new Map<string, Nesting>();
   {
     const callerOf = new Map<string, SubagentMeta>();
-    const reportOf = new Map<string, { uuid: string; status: string | null }>();
+    const sentAt = new Map<string, string | null>();
+    const briefOf = new Map<string, string | null>();
+    const reportOf = new Map<string, { uuid: string; at: string | null; status: string | null; result: string | null }>();
     details.forEach((q, i) => {
       if (!q.data) return;
       const owner = rows[i].meta;
       for (const turn of q.data.turns) {
         for (const item of turn.items) {
           for (const block of item.blocks) {
-            if (block.kind === 'tool' && block.toolUseId) callerOf.set(block.toolUseId, owner);
+            if (block.kind === 'tool' && block.toolUseId) {
+              callerOf.set(block.toolUseId, owner);
+              sentAt.set(block.toolUseId, item.timestamp);
+              briefOf.set(block.toolUseId, promptOf(block.input));
+            }
             if (block.kind === 'notice' && block.taskId) {
-              reportOf.set(block.taskId, { uuid: item.uuid, status: block.status });
+              reportOf.set(block.taskId, {
+                uuid: item.uuid,
+                at: item.timestamp,
+                status: block.status,
+                result: block.result,
+              });
             }
           }
         }
@@ -327,11 +391,16 @@ export function SubagentsPanel({
       nesting.set(row.meta.agentId, {
         parent,
         toolUseId: row.meta.toolUseId,
+        sentAt: sentAt.get(row.meta.toolUseId) ?? null,
+        prompt: briefOf.get(row.meta.toolUseId) ?? null,
         reportUuid: report?.uuid ?? null,
+        reportAt: report?.at ?? null,
         reportStatus: report?.status ?? null,
+        result: report?.result ?? null,
       });
     }
   }
+  const ordered = asTree(rows, nesting);
   const allEntries = figures.flatMap((f) => f?.entries ?? []);
   const total = sumCost(allEntries);
   const usage = sumUsage(allEntries);
@@ -350,17 +419,21 @@ export function SubagentsPanel({
           (each one its own conversation — counted in the session total, and in none of its messages)
         </span>
       </div>
-      {rows.map((row, i) => (
-        <AgentRow
-          key={row.meta.agentId}
-          row={row}
-          figures={figures[i]}
-          prices={prices}
-          loading={details[i]?.isLoading ?? false}
-          active={row.meta.agentId === openAgentId}
-          nesting={nesting.get(row.meta.agentId) ?? null}
-        />
-      ))}
+      {ordered.map(({ row, depth }) => {
+        const i = rows.indexOf(row);
+        return (
+          <AgentRow
+            key={row.meta.agentId}
+            row={row}
+            depth={depth}
+            figures={figures[i]}
+            prices={prices}
+            loading={details[i]?.isLoading ?? false}
+            active={row.meta.agentId === openAgentId}
+            nesting={nesting.get(row.meta.agentId) ?? null}
+          />
+        );
+      })}
     </div>
   );
 }
