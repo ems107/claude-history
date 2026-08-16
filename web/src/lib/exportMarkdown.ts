@@ -1,4 +1,5 @@
 import type { ContentBlock, MessageItem, SessionDetail } from '@claude-history/shared';
+import { parseAskUserQuestion } from '../components/viewer/AnsweredQuestion.tsx';
 import { formatDateTime, shortModel } from './format.ts';
 import { parsePlan } from './plans.ts';
 
@@ -114,6 +115,30 @@ function contentLines(
           out.push(`> 📝 **Plan — ${verdict}**${plan.filePath ? ` — \`${plan.filePath}\`` : ''}`, '');
           if (plan.text) out.push('<details>', '<summary>📝 The plan</summary>', '', plan.text, '', '</details>', '');
           if (plan.feedback) out.push(`> **The user said:** ${plan.feedback.replace(/\n/g, ' ')}`, '');
+          break;
+        }
+        // Same reason as the plan above: an answered question is a turn of the
+        // conversation, not tool traffic, and stringifying it buries the one
+        // line worth reading under the JSON of everything that was offered —
+        // several KB of it once the options carry drawings.
+        const asked = parseAskUserQuestion(block);
+        if (asked) {
+          writeHeader();
+          out.push(`> ❓ **Assistant asked${asked.declined ? ' — declined' : ''}**`, '');
+          for (const q of asked.questions) {
+            out.push(`> **${q.header || 'Question'}** — ${q.question.replace(/\n/g, ' ')}`, '');
+            for (const o of q.options) {
+              const taken = q.picked.includes(o.label);
+              out.push(`> - ${taken ? '**●' : '○'} ${o.label}${taken ? '**' : ''}`);
+              // The drawing goes in a fence of its own: it is the thing that was
+              // compared, and a blockquote would collapse its whitespace away.
+              if (o.preview) out.push('', fence(o.preview), '');
+            }
+            if (q.typed) out.push(`> - **✎ ${q.typed}** (typed ${q.picked.length > 0 ? 'as well' : 'instead'})`);
+            if (q.notes) out.push(`> - ✎ *${q.notes.replace(/\n/g, ' ')}*`);
+            out.push('');
+          }
+          if (asked.response) out.push(`> **The user replied:** ${asked.response.replace(/\n/g, ' ')}`, '');
           break;
         }
         if (!opts.includeTools) break;
