@@ -5,7 +5,7 @@ import { normalizeProjectKey } from './projects.ts';
 import type { ScannedSession } from './scanner.ts';
 
 // Cheap per-session metadata from head-25 + tail-40 lines only.
-// Format rules: see CLAUDE.md "Claude Code data format rules".
+// Format rules: see docs/AI_TRANSCRIPTS.md.
 
 const HEAD_N = 25;
 const TAIL_N = 40;

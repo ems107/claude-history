@@ -139,4 +139,4 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 
 - `/` focus search · `j`/`k` or arrows move selection · `Enter` open session · `Esc` back / close drawer.
 
-See `CLAUDE.md` for architecture and the verified Claude Code data-format rules.
+See `CLAUDE.md` for the developer documentation index — architecture, the verified Claude Code data-format rules and how each part is checked all live under `docs/`.

@@ -20,7 +20,7 @@
 
 What both sides must agree on: `types.ts` (domain), `api.ts` (endpoint response shapes), `prices.ts`, `recache.ts`, `fold.ts` and `match.ts`.
 
-**The search fold lives here** because a hand-kept copy in the web app drifted from the server's within an hour of being written, and `match.ts` is that argument applied to finding a term: the server scans with `occurrences` / `parseTerms` and the viewer marks the words a search landed on with the same ones, so the whole-word rule cannot exist twice. Same reasoning for `recache.ts` (enricher and viewer) and `prices.ts` (see [AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTEXT.md) for the model-key rule, which is the one that has bitten).
+**The search fold lives here** because a hand-kept copy in the web app drifted from the server's within an hour of being written; `match.ts` applies the same argument to finding a term ([AI_SEARCH.md](AI_SEARCH.md)). Same reasoning for `recache.ts` (enricher and viewer) and `prices.ts` (see [AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTEXT.md) for the model-key rule, which is the one that has bitten).
 
 ### `server/src/config.ts`
 

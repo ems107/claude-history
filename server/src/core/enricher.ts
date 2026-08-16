@@ -236,7 +236,7 @@ export async function enrichSession(
     if (type === 'user') {
       // A line Claude Code injected (a background command reporting back) is not
       // a prompt and is not indexed: it is tool output wearing the user role, and
-      // tool output never enters the corpus — see the Search section of CLAUDE.md.
+      // tool output never enters the corpus — see docs/AI_SEARCH.md.
       if (
         o.isMeta !== true &&
         isRec(o.message) &&

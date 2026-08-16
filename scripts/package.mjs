@@ -3,7 +3,7 @@
 // Usage:  node scripts/package.mjs                        (local build, version "dev")
 //         node scripts/package.mjs --release --version 1.2.0   (release.mjs only)
 //
-// Output layout inside the zip (see CLAUDE.md "Portable install layout"):
+// Output layout inside the zip (see docs/AI_DISTRIBUTION.md):
 //   install.ps1 / uninstall.ps1 / launch.vbs      <- installer (stable across updates)
 //   versions/v<version>/
 //     node/node.exe                               <- embedded Node runtime

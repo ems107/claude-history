@@ -1,5 +1,5 @@
 // Domain types shared between server and web.
-// Data model reference: see CLAUDE.md "Claude Code data format rules".
+// Data model reference: see docs/AI_TRANSCRIPTS.md and docs/AI_COST_AND_CONTEXT.md.
 
 export type TitleSource =
   | 'custom-title'

@@ -73,7 +73,7 @@ The installed server runs hidden, so the daily log files are the only trace of a
 
 ## Cutting a release
 
-> **NEVER cut a release on your own initiative.** `pnpm release` publishes a public GitHub release and makes every installed instance offer the update — that is the user's call, always. Commit and push freely; tag and release ONLY when the user explicitly asks for it in that turn. "Finish this feature" is not a request to release it.
+> **NEVER cut a release on your own initiative** — the rule, and why, is in [CLAUDE.md](../CLAUDE.md#commands). Commit and push freely; tag and release only when the user asks for it in that turn.
 
 `pnpm release -- --version X.Y.Z --notes-file <path>` (`scripts/release.mjs`): state checks → typecheck → build → package → annotated tag → push → `gh release create`. `--dry-run` stops before tagging.
 

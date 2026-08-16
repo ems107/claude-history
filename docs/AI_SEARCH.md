@@ -1,13 +1,13 @@
 # Search
 
-**Load this when:** you touch `core/search.ts`, `core/searchText.ts`, `core/deepSearch.ts`, `shared/fold.ts`, `shared/match.ts`, the search box, the results list or the paged match list.
+**Load this when:** you touch `server/src/core/search.ts`, `searchText.ts`, `deepSearch.ts`, `shared/src/fold.ts`, `shared/src/match.ts`, the search box, the results list or the paged match list.
 
 ## Invariants
 
 - **Tool calls and tool output are NEVER indexed** — with exactly one exception, a plan.
 - **The deep scan re-matches the indexed text too**, so it is a superset of the plain search by construction.
 - **One predicate decides what is searchable** (`skipBlock`), shared by the index, the deep scan and both paged match lists.
-- **There is exactly one `normalize('NFD')` in the repo** (`shared/fold.ts`) and it must stay that way.
+- **There is exactly one `normalize('NFD')` in the repo** (`shared/src/fold.ts`) and it must stay that way.
 - **Every occurrence belongs to exactly one window** (`matchWindows`), or the counts stop adding up.
 - **A partial answer must never read as a complete one** (`stoppedEarly`).
 - **The advanced panel's tuning lives in the URL only** — no settings, no persistence.

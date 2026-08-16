@@ -20,6 +20,8 @@ Related: token and cost fields are in [AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTE
 
 ## Files and directories
 
+Paths are relative to the data root (`~/.claude` unless `--data-root` / `CLAUDE_CONFIG_DIR` says otherwise).
+
 | Path | What it is |
 | --- | --- |
 | `projects/<encoded-dir>/<sessionUuid>.jsonl` | The transcript: one JSON object per line. Lines reach ~27 KB, files several MB. |

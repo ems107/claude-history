@@ -1,6 +1,6 @@
 # Tokens, cost, context and compaction
 
-**Load this when:** you touch anything that counts tokens, prices a message, draws a cost or context pill, or reads a `compact_boundary` — `enricher`, `parser`, `shared/prices.ts`, `shared/recache.ts`, `web/lib/cost.ts`, `web/lib/context.ts`, `TokenPanel`, `ContextCurve`, the Stats page.
+**Load this when:** you touch anything that counts tokens, prices a message, draws a cost or context pill, or reads a `compact_boundary` — `enricher`, `parser`, `shared/src/prices.ts`, `shared/src/recache.ts`, `web/src/lib/cost.ts`, `web/src/lib/context.ts`, `TokenPanel`, `ContextCurve`, the Stats page.
 
 The line format itself is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md); subagent transcripts in [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md).
 
