@@ -26,7 +26,7 @@ export function QuestionPanel({
 }: {
   question: ChatQuestion;
   maxWidth?: string;
-  onAnswer: (answers: Record<string, string | string[]>) => void;
+  onAnswer: (answers: Record<string, string | string[]>, annotations: Record<string, { notes?: string }>) => void;
   onDecline: () => void;
   /** The three answers a plan takes — see `PlanApproval`. */
   onPlanDecision: (decision: ChatPlanDecision, note?: string) => void;
@@ -36,6 +36,9 @@ export function QuestionPanel({
   const [active, setActive] = useState(0);
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [other, setOther] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  /** Which option's sketch is on show — the last one pointed at, per question. */
+  const [focused, setFocused] = useState<Record<string, string>>({});
   const [note, setNote] = useState('');
   const isPlan = question.toolName === 'ExitPlanMode';
 
@@ -47,19 +50,27 @@ export function QuestionPanel({
   useEffect(() => {
     setPicked({});
     setOther({});
+    setNotes({});
+    setFocused({});
     setActive(0);
   }, [question.askedAt]);
 
-  const answerOf = (q: string): string | string[] | null => {
+  /**
+   * What this question's answer will say. Picks first, free text last — the
+   * order Claude Code writes, and the order the viewer reads back.
+   *
+   * The free text does NOT replace the picks. It used to, and that made one real
+   * kind of answer unsendable from here: several boxes ticked plus a typed
+   * requirement, which exists in this corpus and which the transcript card
+   * already knew how to draw.
+   */
+  const answerOf = (q: string): string[] => {
     const free = other[q]?.trim();
-    if (free) return free;
-    const chosen = picked[q];
-    if (!chosen?.length) return null;
-    return chosen.length === 1 ? chosen[0] : chosen;
+    return [...(picked[q] ?? []), ...(free ? [free] : [])];
   };
 
   const toggle = (q: string, label: string, multi: boolean) => {
-    setOther((prev) => ({ ...prev, [q]: '' }));
+    setFocused((prev) => ({ ...prev, [q]: label }));
     setPicked((prev) => {
       const current = prev[q] ?? [];
       if (!multi) return { ...prev, [q]: [label] };
@@ -70,24 +81,37 @@ export function QuestionPanel({
     });
   };
 
-  const answered = (q: string) => answerOf(q) !== null;
+  // A note on its own is an answer: Claude Code records it as `(notes only)`,
+  // and refusing to send it would be this app being stricter than the tool.
+  const answered = (q: string) => answerOf(q).length > 0 || !!notes[q]?.trim();
   const complete = (items ?? []).every((q) => answered(q.question));
 
   const submit = () => {
     if (!items) {
-      onAnswer({});
+      onAnswer({}, {});
       return;
     }
     if (!complete) return;
     const answers: Record<string, string | string[]> = {};
+    const annotations: Record<string, { notes?: string }> = {};
     for (const q of items) {
       const a = answerOf(q.question);
-      if (a !== null) answers[q.question] = a;
+      if (a.length > 0) answers[q.question] = a;
+      const n = notes[q.question]?.trim();
+      if (n) annotations[q.question] = { notes: n };
     }
-    onAnswer(answers);
+    onAnswer(answers, annotations);
   };
 
   const current = items?.[active];
+  // The sketch on show: the option last pointed at, else the one taken, else the
+  // first that has one — so the column is never blank while a drawing exists.
+  const shown = current
+    ? (current.options.find((o) => o.label === focused[current.question] && o.preview) ??
+      current.options.find((o) => (picked[current.question] ?? []).includes(o.label) && o.preview) ??
+      current.options.find((o) => o.preview))
+    : undefined;
+  const hasSketches = !!current?.options.some((o) => o.preview);
 
   return (
     // No gutter of its own: it renders inside the composer's, so the panel and
@@ -140,32 +164,72 @@ export function QuestionPanel({
                   )}
                   <span className="text-sm text-[var(--text)]">{current.question}</span>
                 </div>
-                <div className="space-y-1">
-                  {current.options.map((o) => {
-                    const on = (picked[current.question] ?? []).includes(o.label) && !other[current.question]?.trim();
-                    return (
-                      <button
-                        key={o.label}
-                        type="button"
-                        onClick={() => toggle(current.question, o.label, current.multiSelect)}
-                        className={`block w-full rounded border px-2.5 py-1.5 text-left transition-colors ${
-                          on
-                            ? 'border-[var(--accent-dim)] bg-[var(--accent)]/10'
-                            : 'border-[var(--border)] hover:bg-[var(--bg-hover)]'
-                        }`}
-                      >
-                        <div className="text-sm text-[var(--text)]">{o.label}</div>
-                        {o.description && o.description.trim() !== o.label.trim() && (
-                          <div className="text-[11px] text-[var(--text-dim)]">{o.description}</div>
-                        )}
-                      </button>
-                    );
-                  })}
+                {/* Side by side once there is a sketch to put beside the list —
+                    which is what Claude Code's own card does, and the only way
+                    the comparison the drawings exist for can be made. Stacked
+                    below `sm`, where two columns would leave neither readable. */}
+                <div className={hasSketches ? 'grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]' : ''}>
+                  <div className="space-y-1">
+                    {current.options.map((o) => {
+                      const on = (picked[current.question] ?? []).includes(o.label);
+                      return (
+                        <button
+                          key={o.label}
+                          type="button"
+                          onClick={() => toggle(current.question, o.label, current.multiSelect)}
+                          // Pointing at an option is asking to see it. Focus is
+                          // there for the keyboard, which otherwise tabs through
+                          // a list of labels with the drawings frozen elsewhere.
+                          onMouseEnter={() => setFocused((prev) => ({ ...prev, [current.question]: o.label }))}
+                          onFocus={() => setFocused((prev) => ({ ...prev, [current.question]: o.label }))}
+                          className={`block w-full rounded border px-2.5 py-1.5 text-left transition-colors ${
+                            on
+                              ? 'border-[var(--accent-dim)] bg-[var(--accent)]/10'
+                              : 'border-[var(--border)] hover:bg-[var(--bg-hover)]'
+                          } ${o.preview && shown?.label === o.label ? 'ring-1 ring-[var(--accent-dim)]/50' : ''}`}
+                        >
+                          <div className="text-sm text-[var(--text)]">{o.label}</div>
+                          {o.description && o.description.trim() !== o.label.trim() && (
+                            <div className="text-[11px] text-[var(--text-dim)]">{o.description}</div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {hasSketches && (
+                    <div className="min-w-0">
+                      {shown?.preview ? (
+                        // A drawing, so `whitespace-pre` and a scroller of its
+                        // own: the widest in this corpus is 114 columns, and
+                        // wrapping one is destroying it.
+                        <pre className="max-h-64 overflow-auto rounded border border-[var(--border)] bg-[var(--bg)] p-2 font-mono text-[11px] leading-snug whitespace-pre text-[var(--text-dim)]">
+                          {shown.preview}
+                        </pre>
+                      ) : (
+                        <div className="rounded border border-dashed border-[var(--border)] p-2 text-[11px] text-[var(--text-dim)] italic">
+                          This option has no sketch.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-1.5 space-y-1">
                   <input
                     value={other[current.question] ?? ''}
                     onChange={(e) => setOther((prev) => ({ ...prev, [current.question]: e.target.value }))}
                     placeholder="Or type your own answer…"
                     className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)]"
+                  />
+                  {/* A different thing from the box above, recorded in a
+                      different place: that one is the answer, this one is the
+                      condition put on it ("this one, but explain why"). Claude
+                      Code keeps them apart as `answers` and `annotations.notes`,
+                      and so does this. */}
+                  <input
+                    value={notes[current.question] ?? ''}
+                    onChange={(e) => setNotes((prev) => ({ ...prev, [current.question]: e.target.value }))}
+                    placeholder="✎ A note on your answer…"
+                    className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-amber-500/60"
                   />
                 </div>
                 {current.multiSelect && (

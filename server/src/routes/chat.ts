@@ -69,9 +69,13 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
       if (answers !== null && (typeof answers !== 'object' || Array.isArray(answers))) {
         return reply.code(400).send({ error: 'answers must be an object or null' });
       }
+      const annotations = request.body?.annotations;
+      if (annotations != null && (typeof annotations !== 'object' || Array.isArray(annotations))) {
+        return reply.code(400).send({ error: 'annotations must be an object or null' });
+      }
       const note = typeof request.body?.note === 'string' ? request.body.note : undefined;
       try {
-        ctx.chat.answer(id, answers, asDecision(request.body?.decision), note);
+        ctx.chat.answer(id, answers, asDecision(request.body?.decision), note, annotations ?? null);
         return { ok: true };
       } catch (err) {
         return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) });
