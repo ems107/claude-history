@@ -247,6 +247,45 @@ export interface ProjectInfo {
 
 // ---- Conversation detail (viewer) ----
 
+/**
+ * What became of a plan Claude submitted with `ExitPlanMode` — the half of the
+ * story the transcript keeps and the viewer used to throw away.
+ *
+ * Read from the STRUCTURED fields of the carrying line, never from its prose,
+ * for the reason `answers` is: the tool_result text is a fixed template with the
+ * plan glued onto the end of it, and picking either back out of that is
+ * guesswork the moment the plan contains the template's own words.
+ *
+ * The two flavours are not variations of one shape — they are different types.
+ * An approval writes an OBJECT (`{plan, isAgent, filePath}`, 10 of the 14 calls
+ * in this corpus); a rejection writes a plain STRING starting `"Error: "`, with
+ * `toolDenialKind` and `userFeedback` as siblings on the line. That second one
+ * is the generic tool-rejection shape, nothing plan-specific, which is why the
+ * status is decided by the type of `toolUseResult` and not by any field in it.
+ */
+export interface PlanOutcome {
+  status: 'approved' | 'rejected';
+  /**
+   * The plan as Claude Code recorded it on approval (`toolUseResult.plan`).
+   * Null on a rejection, which keeps no copy — the call's own input is then the
+   * only place the plan exists.
+   */
+  text: string | null;
+  /**
+   * `toolUseResult.filePath`: the `~/.claude/plans/<slug>.md` the plan was saved
+   * to. Worth carrying even though the text is here, because it is a real file
+   * the user can open — but it holds only the LATEST plan for that slug, so it
+   * is not proof that this is the plan on disk.
+   */
+  filePath: string | null;
+  /**
+   * `userFeedback`: what the user said instead of approving. Every rejection in
+   * this corpus carries one, and it is the whole point of the rejection — the
+   * plan was refused *for a reason*, and that reason is the next instruction.
+   */
+  feedback: string | null;
+}
+
 export interface ToolResultInfo {
   text: string;
   truncated: boolean;
@@ -273,6 +312,12 @@ export interface ToolResultInfo {
    * no answers at all), where the prose stays the fallback.
    */
   answers: Record<string, string> | null;
+  /**
+   * `ExitPlanMode` only: whether the user approved the plan, and what they said
+   * if they did not. Null on every other tool, and on a plan still awaiting an
+   * answer — which is a real state, not a missing one.
+   */
+  plan: PlanOutcome | null;
 }
 
 export type ContentBlock =
@@ -331,6 +376,31 @@ export type ContentBlock =
        */
       result: string | null;
     }
+  /**
+   * The session entering or leaving plan mode. Claude Code records it as an
+   * `attachment` line of its own — with a uuid and a timestamp, unlike the
+   * `permission-mode` sidecar, which carries neither and can only be read
+   * positionally.
+   *
+   * `exit` is the one to be careful with: the transcript writes 60 of them here
+   * against 11 entries, because it also fires on the first prompt of every CLI
+   * run whether or not plan mode was ever on. So an exit is only emitted when an
+   * entry is open — otherwise the viewer would announce the end of something
+   * that never started, in sessions that never planned at all.
+   *
+   * `reference` is the plan being re-injected to survive a compaction, and it is
+   * the only one carrying `planContent`: the whole markdown, inline.
+   */
+  | {
+      kind: 'plan-mode';
+      event: 'enter' | 'reentry' | 'exit' | 'reference';
+      /** `~/.claude/plans/<slug>.md`. Claude Code precomputes it from the slug, so it is set even before a plan exists. */
+      planFilePath: string | null;
+      /** Whether that file was already on disk when the line was written. Absent on a re-entry. */
+      planExists: boolean | null;
+      /** `reference` only: the plan itself, carried through the compaction. */
+      planContent: string | null;
+    }
   /** The output of a `/context` run, parsed. */
   | { kind: 'context'; snapshot: ContextSnapshot }
   /** A compaction boundary, with what it dropped. */
@@ -379,6 +449,19 @@ export interface MessageItem {
   queued: boolean;
   /** system messages only */
   systemSubtype: string | null;
+  /**
+   * The permission mode in force when this line was written (`plan`, `auto`,
+   * `default`…), verbatim. Only `user` lines carry it — it appears on no
+   * assistant line in this corpus — which makes it the one record of the mode
+   * that has a timestamp and belongs to a turn. The `permission-mode` sidecar
+   * says the same thing with no uuid and no clock, and the `mode` sidecar says
+   * something else entirely (`normal` in 1993 of 1993 lines: that is the editor
+   * mode, and it never reads `plan`).
+   *
+   * The viewer marks only `plan`. Everything else is the ordinary state of
+   * affairs, and a chip for it would be furniture on every prompt ever sent.
+   */
+  permissionMode: string | null;
   /**
    * A line copied into this transcript by `/branch` (`forkedFrom` on the line):
    * the exchange happened in the parent session and was billed there. Rendered
