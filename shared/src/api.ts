@@ -571,9 +571,21 @@ export type ChatState = 'idle' | 'starting' | 'working' | 'asking' | 'error';
 /** One of Claude's multiple-choice questions, as `AskUserQuestion` states it. */
 export interface ChatQuestionItem {
   question: string;
-  /** Short label, max 12 characters — what the UI puts on the chip. */
+  /** Short label the UI puts on the chip. Meant to be ≤12 characters; one in this corpus is 16. */
   header: string;
-  options: { label: string; description: string }[];
+  options: {
+    label: string;
+    description: string;
+    /**
+     * A mockup of what this option leads to, drawn by Claude. It reaches the
+     * browser because `canUseTool` hands the tool's own array over, and it has
+     * to be in the contract rather than surviving by accident: choosing between
+     * three layouts without seeing them is the terminal experience this app
+     * would otherwise fail to reproduce. Absent on most options, and never on a
+     * `multiSelect` question.
+     */
+    preview?: string;
+  }[];
   multiSelect: boolean;
 }
 
@@ -693,6 +705,17 @@ export interface ChatModelInfo {
 export interface ChatAnswerRequest {
   /** Question text -> chosen label(s). Null declines the tool instead. */
   answers: Record<string, string | string[]> | null;
+  /**
+   * Question text -> the note written beside that answer, which Claude Code
+   * records as `annotations[q].notes`. A different thing from a free-text
+   * answer and recorded in a different place: the answer is what was chosen,
+   * the note is the condition put on it ("this one, but explain why").
+   *
+   * Only `notes` travels. The other half of an annotation is the drawing of the
+   * option taken, and the server already holds it — making the browser echo
+   * kilobytes of box-drawing back would be asking it to prove something we know.
+   */
+  annotations?: Record<string, { notes?: string }> | null;
   /** `ExitPlanMode` only: which of the three answers to a plan was given. */
   decision?: ChatPlanDecision;
   /** What to tell Claude when the plan is sent back for more work. */

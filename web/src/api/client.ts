@@ -172,11 +172,13 @@ export const api = {
     answers: Record<string, string | string[]> | null,
     /** `ExitPlanMode` only: which of the three answers to a plan, and the note that goes with a refusal. */
     plan?: { decision: ChatPlanDecision; note?: string },
+    /** Question text -> the note written beside that answer (`annotations.notes`). */
+    annotations?: Record<string, { notes?: string }>,
   ) => {
     const res = await fetch(`/api/sessions/${id}/chat/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ answers, ...plan }),
+      body: JSON.stringify({ answers, ...plan, ...(annotations ? { annotations } : {}) }),
     });
     const payload = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);

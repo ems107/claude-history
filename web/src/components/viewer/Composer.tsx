@@ -259,10 +259,11 @@ export function Composer({
   const answer = (
     answers: Record<string, string | string[]> | null,
     plan?: { decision: ChatPlanDecision; note?: string },
+    annotations?: Record<string, { notes?: string }>,
   ) => {
     setAnswering(true);
     api
-      .chatAnswer(sessionId, answers, plan)
+      .chatAnswer(sessionId, answers, plan, annotations)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         setAnswering(false);
@@ -306,7 +307,7 @@ export function Composer({
           question={status.question}
           maxWidth={maxWidth}
           busy={answering}
-          onAnswer={(answers) => answer(answers)}
+          onAnswer={(answers, annotations) => answer(answers, undefined, annotations)}
           onDecline={() => answer(null)}
           onPlanDecision={(decision, note) => answer({}, { decision, note })}
         />

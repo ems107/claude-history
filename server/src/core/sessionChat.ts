@@ -15,6 +15,7 @@ import type {
   ChatPermissionMode,
   ChatPlanDecision,
   ChatQuestion,
+  ChatQuestionItem,
   ChatState,
   ChatStatus,
 } from '@claude-history/shared';
@@ -57,6 +58,102 @@ interface PendingAsk {
 
 /** How prompts are sent unless the composer says otherwise. */
 const DEFAULT_PERMISSION_MODE: ChatPermissionMode = 'auto';
+
+/**
+ * What Claude Code puts in `answers` for a question answered with a note and no
+ * option. Its own permission component writes this exact string, and the app has
+ * to write it too: it is what tells the reader afterwards — and this repo's own
+ * viewer — that nothing was chosen, as against an answer that went missing.
+ */
+const NOTES_ONLY = '(notes only)';
+
+/**
+ * The questions off an `AskUserQuestion` input, copied field by field.
+ *
+ * A cast would be cheaper and was what this did: the array went to the browser
+ * unread, so a malformed item reached React and only announced itself when
+ * `options.map` threw, with the turn already held open by the promise nobody
+ * could now resolve. Copying also makes `preview` part of the contract rather
+ * than something that happened to survive.
+ */
+function askedQuestions(raw: unknown): ChatQuestionItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: ChatQuestionItem[] = [];
+  for (const q of raw) {
+    if (typeof q !== 'object' || q === null) continue;
+    const item = q as { question?: unknown; header?: unknown; options?: unknown; multiSelect?: unknown };
+    if (typeof item.question !== 'string' || !Array.isArray(item.options)) continue;
+    out.push({
+      question: item.question,
+      header: typeof item.header === 'string' ? item.header : '',
+      options: item.options
+        .filter(
+          (o): o is { label: string; description?: unknown; preview?: unknown } =>
+            typeof o === 'object' && o !== null && typeof (o as { label?: unknown }).label === 'string',
+        )
+        .map((o) => ({
+          label: o.label,
+          description: typeof o.description === 'string' ? o.description : '',
+          ...(typeof o.preview === 'string' && o.preview.trim() ? { preview: o.preview } : {}),
+        })),
+      multiSelect: item.multiSelect === true,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * The tool's payload, built from what the browser sent and the questions it was
+ * really asked.
+ *
+ * The questions are the authority on which keys exist, which is what keeps an
+ * arbitrary map from being echoed into a tool's input: anything the pending
+ * question did not ask is dropped here rather than trusted at the route.
+ *
+ * Three things it has to reproduce byte for byte, because the transcript is read
+ * back by the same rules for every session whatever wrote it:
+ *  - a multiSelect answer is ONE string joined with `", "`, never an array;
+ *  - free text goes at the end of that string, after the labels, and does NOT
+ *    replace them — several picks plus a typed requirement is a real answer;
+ *  - a note with nothing picked writes the `(notes only)` sentinel.
+ *
+ * The annotation carries the drawing of the option that was taken as well as the
+ * note, and is omitted for a question that has neither — exactly where Claude
+ * Code writes one and where it does not.
+ */
+export function askedAnswers(
+  questions: ChatQuestionItem[],
+  values: Record<string, string | string[]>,
+  notes: Record<string, { notes?: string }> | null,
+): {
+  answers: Record<string, string>;
+  annotations: Record<string, { preview?: string; notes?: string }> | null;
+  noteCount: number;
+} {
+  const answers: Record<string, string> = {};
+  const annotations: Record<string, { preview?: string; notes?: string }> = {};
+  let noteCount = 0;
+  for (const q of questions) {
+    const raw = values[q.question];
+    const parts = (Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [])
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const note = notes?.[q.question]?.notes?.trim() ?? '';
+    if (parts.length > 0) answers[q.question] = parts.join(', ');
+    else if (note) answers[q.question] = NOTES_ONLY;
+    // The drawing of the option taken. Told from the free text by matching the
+    // labels rather than by counting the parts: an answer is often one option
+    // plus a typed rider, and there "the selected option" still names something.
+    // With several picked it names nothing, so nothing is recorded.
+    const labels = parts.filter((p) => q.options.some((o) => o.label === p));
+    const preview = labels.length === 1 ? q.options.find((o) => o.label === labels[0])?.preview : undefined;
+    if (preview || note) {
+      annotations[q.question] = { ...(preview ? { preview } : {}), ...(note ? { notes: note } : {}) };
+    }
+    if (note) noteCount++;
+  }
+  return { answers, annotations: Object.keys(annotations).length > 0 ? annotations : null, noteCount };
+}
 
 /** What each answer to a plan means on the wire. */
 const PLAN_MODE_AFTER: Record<'approve-auto' | 'approve-manual', PermissionMode> = {
@@ -339,6 +436,7 @@ export class SessionChatService {
     values: Record<string, string | string[]> | null,
     decision?: ChatPlanDecision,
     note?: string,
+    notes?: Record<string, { notes?: string }> | null,
   ): void {
     const p = this.procs.get(sessionId);
     if (!p?.ask) throw new Error('Nothing is waiting for an answer.');
@@ -378,10 +476,18 @@ export class SessionChatService {
       resolve({ behavior: 'deny', message: 'The user declined.' });
     } else if (question.questions) {
       // The tool wants its own questions echoed back beside the answers.
-      log.info(`user answered ${question.questions.length} question(s) in ${sessionId}`);
+      const filled = askedAnswers(question.questions, values, notes ?? null);
+      log.info(
+        `user answered ${String(question.questions.length)} question(s) in ${sessionId}` +
+          (filled.noteCount > 0 ? `, ${String(filled.noteCount)} with a note` : ''),
+      );
       resolve({
         behavior: 'allow',
-        updatedInput: { questions: question.questions, answers: values } as Record<string, unknown>,
+        updatedInput: {
+          questions: question.questions,
+          answers: filled.answers,
+          ...(filled.annotations ? { annotations: filled.annotations } : {}),
+        } as Record<string, unknown>,
       });
     } else {
       log.info(`user allowed ${question.toolName} in ${sessionId}`);
@@ -483,6 +589,12 @@ export class SessionChatService {
         // always falls through to it whatever the rules say. In `plan` nothing
         // is executed and ExitPlanMode arrives here instead.
         permissionMode,
+        // The format the option previews arrive in, and the one the panel
+        // draws: a monospace box, which is also what the CLI asks for itself.
+        // Pinned rather than inherited — the SDK documents this as its default,
+        // and a default is documentation, not a promise. `html` would mean
+        // rendering model-authored markup, which this app will not do.
+        toolConfig: { askUserQuestion: { previewFormat: 'markdown' } },
         // Never the SDK's own vendored copy: that is 293 MB we deliberately do
         // not install, and this is the CLI the user actually runs.
         pathToClaudeCodeExecutable: cli,
@@ -633,9 +745,7 @@ export class SessionChatService {
     const p = this.procs.get(sessionId);
     if (!p) return { behavior: 'deny' as const, message: 'The session is gone.' };
 
-    const questions = Array.isArray((input as { questions?: unknown }).questions)
-      ? ((input as { questions: ChatQuestion['questions'] }).questions ?? null)
-      : null;
+    const questions = askedQuestions(input.questions);
     const plan = toolName === 'ExitPlanMode' ? await this.planFor(sessionId, input) : null;
     const question: ChatQuestion = {
       toolName,

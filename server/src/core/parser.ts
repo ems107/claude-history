@@ -113,6 +113,29 @@ function toAnswers(raw: unknown): Record<string, string> | null {
 }
 
 /**
+ * The `AskUserQuestion` annotations off the carrying line: per question, the
+ * drawing the user took and the note they wrote beside it.
+ *
+ * Same defensive shape as `toAnswers` — only strings survive — plus one rule of
+ * its own: an entry holding neither is dropped rather than kept as `{}`. Claude
+ * Code writes annotations only where there is something to say (24 of the 33
+ * structured results here), and a viewer asking "is there a note?" must be able
+ * to trust the presence of the key.
+ */
+function toAnnotations(raw: unknown): Record<string, { preview?: string; notes?: string }> | null {
+  if (!isRec(raw)) return null;
+  const out: Record<string, { preview?: string; notes?: string }> = {};
+  for (const [question, value] of Object.entries(raw)) {
+    if (!isRec(value)) continue;
+    const preview = str(value.preview);
+    const notes = str(value.notes);
+    if (!preview && !notes) continue;
+    out[question] = { ...(preview ? { preview } : {}), ...(notes ? { notes } : {}) };
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
  * What the user did with a plan, off the `ExitPlanMode` result line.
  *
  * The two answers are two different types, not two shapes of one: approving
@@ -192,6 +215,8 @@ function buildResult(
   projectsDir: string,
   persistedOutputPath: string | null,
   answers: Record<string, string> | null,
+  annotations: Record<string, { preview?: string; notes?: string }> | null,
+  response: string | null,
   plan: PlanOutcome | null,
 ): ToolResultInfo {
   let text = extractResultText(c.content);
@@ -211,7 +236,17 @@ function buildResult(
     const m = /output saved to: (.+?[\\/]tool-results[\\/][^\s\\/"]+\.txt)/i.exec(text);
     if (m) offloadedFile = toProjectsRelative(m[1], projectsDir);
   }
-  return { text, truncated, totalChars, isError: c.is_error === true, offloadedFile, answers, plan };
+  return {
+    text,
+    truncated,
+    totalChars,
+    isError: c.is_error === true,
+    offloadedFile,
+    answers,
+    annotations,
+    response,
+    plan,
+  };
 }
 
 /** One-line human summary of a tool invocation for the collapsed header. */
@@ -249,6 +284,17 @@ function summarizeInput(toolName: string, input: unknown): string {
     case 'ExitPlanMode': {
       const plan = first('plan');
       return plan ? (planTitle(plan) ?? plan.slice(0, 120)) : '';
+    }
+    // Same trap as the plan above: the default would stringify the whole
+    // questions array, and an option's `preview` is a drawing of up to 19 lines
+    // — 58 of them in this corpus, so the collapsed header of a question with
+    // previews was several KB of box-drawing characters on one line. What names
+    // the call is what was asked.
+    case 'AskUserQuestion': {
+      const questions = Array.isArray(input.questions) ? input.questions : [];
+      const asked = questions.map((q) => (isRec(q) ? str(q.question) : null)).filter((q): q is string => !!q);
+      if (asked.length === 0) return '';
+      return asked.length === 1 ? asked[0] : `${asked[0]} (+${String(asked.length - 1)} more)`;
     }
     default: {
       const s = first('description', 'command', 'file_path', 'pattern', 'query', 'url', 'prompt');
@@ -658,6 +704,8 @@ export async function parseTranscript(
         // AskUserQuestion result, and a decline writes the line's whole prose
         // into `toolUseResult` as a character-keyed object (2 lines here).
         const askedAnswers = isRec(o.toolUseResult) ? toAnswers(o.toolUseResult.answers) : null;
+        const askedAnnotations = isRec(o.toolUseResult) ? toAnnotations(o.toolUseResult.annotations) : null;
+        const askedResponse = isRec(o.toolUseResult) ? str(o.toolUseResult.response) : null;
         // Guarded by tool name for the same reason: an object `toolUseResult`
         // means "approved" only on an ExitPlanMode result — everywhere else it
         // is just the structured output of whatever tool ran.
@@ -674,6 +722,8 @@ export async function parseTranscript(
                 projectsDir,
                 persistedOutputPath,
                 tool.toolName === 'AskUserQuestion' ? askedAnswers : null,
+                tool.toolName === 'AskUserQuestion' ? askedAnnotations : null,
+                tool.toolName === 'AskUserQuestion' ? askedResponse : null,
                 tool.toolName === 'ExitPlanMode' ? planOutcome : null,
               );
             }
