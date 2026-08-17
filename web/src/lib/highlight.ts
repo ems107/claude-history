@@ -160,25 +160,30 @@ function canHighlight(): boolean {
  * system line. The walk stops before the app's own root, so a click on the page
  * behind the conversation is nothing rather than everything.
  */
-export function boxKeyOf(el: HTMLElement | null): string | null {
+export function boxKeyOf(el: Element | null): string | null {
   for (let node = el; node; node = node.parentElement) {
     const toolId = node.getAttribute('data-tool-id');
     if (toolId) return `tool:${toolId}`;
+    // The app's own root is the one id above the conversation, and stopping
+    // there is what makes a click on the empty page mean "nothing".
     if (node.id && node.id !== 'root') return `msg:${node.id}`;
   }
   return null;
 }
 
 /**
- * The box a click landed in, for the find bar's focus. Wider than a marking box
- * on purpose: clicking a bubble's header, its timestamp or its fold row is still
- * clicking that message, and having the focus fall off when you miss the prose
- * by three pixels would be its own bug.
+ * Which message or call a click landed in.
+ *
+ * The walk is the whole of it, and it is deliberately wider than a marking box:
+ * clicking a bubble's header, a notice's padding or a tool block's fold row is
+ * still clicking that thing, and having the selection fall off because you
+ * missed the prose by three pixels would be its own bug. Anything with no
+ * message id above it — the scroller, the page behind the conversation — is
+ * nothing, which is what deselects.
  */
 export function focusKeyAt(node: EventTarget | null): string | null {
-  const start = node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
-  const box = start?.closest<HTMLElement>(`${BOX_SELECTOR}, [data-bubble]`);
-  return boxKeyOf(box ?? null);
+  const start = node instanceof Element ? node : node instanceof Node ? (node.parentElement ?? null) : null;
+  return boxKeyOf(start);
 }
 
 /** Every non-empty text node under `root`, in document order. */

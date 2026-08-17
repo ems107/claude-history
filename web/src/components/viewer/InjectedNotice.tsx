@@ -2,7 +2,6 @@ import type { ContentBlock, MessageItem } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 import { formatTokens } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime } from '../../lib/format.ts';
-import { hasSelection } from '../../lib/selection.ts';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useFoldable } from './RevealContext.ts';
@@ -31,13 +30,10 @@ export function InjectedNotice({
   item,
   notice,
   badge,
-  onClick,
 }: {
   item: MessageItem;
   notice: Notice;
   badge?: ReactNode;
-  /** Prompts-only mode: clicking it expands the turn, like a prompt bubble. */
-  onClick?: () => void;
 }) {
   const subagents = useSubagents();
   // The report is the only copy of what an agent handed back — 22.5 KB at the
@@ -52,20 +48,14 @@ export function InjectedNotice({
   return (
     <div
       id={item.uuid}
-      title={onClick ? 'Click to show or hide what followed it' : undefined}
-      // Same contract as `Bubble`: never fold on a click that ended a selection,
-      // and feedback through a ring — a filter would re-anchor the badge's
-      // fixed hover card to this box.
-      onClick={
-        onClick &&
-        (() => {
-          if (hasSelection()) return;
-          onClick();
-        })
-      }
+      // No `onClick`, the same contract as `Bubble` and for the same reason it
+      // was written: this used to fold the turn in prompts-only mode, so an
+      // accidental click hid what you were reading. It outlived the bubble's
+      // version by an oversight, and a click on a message now means something
+      // else entirely — it selects it.
       className={`my-2 rounded border px-3 py-2 text-xs ${
         failed ? 'border-red-500/30 bg-red-500/5' : 'border-zinc-500/25 bg-zinc-500/5'
-      } ${onClick ? 'cursor-pointer hover:ring-1 hover:ring-[var(--text-dim)]/40' : ''}`}
+      }`}
     >
       {item.aliasUuids.map((u) => (
         <span key={u} id={u} />
@@ -102,11 +92,12 @@ export function InjectedNotice({
           because a box is the unit the find bar counts in. */}
       <div data-bubble-body>
         <div className="mt-1 whitespace-pre-wrap text-[var(--text)]">{notice.text}</div>
-        {/* Everything below is interactive inside a box that folds the turn on a
-            click, so the whole region stops the event here — otherwise reading a
-            report would collapse the conversation around it. */}
+        {/* This whole region used to stop the click event, because the box it
+            sits in folded the turn: reading a report collapsed the conversation
+            around it. The box takes no click at all now, so there is nothing
+            left to stop. */}
         {(notice.result || agent) && (
-          <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+          <div className="mt-1.5">
             <div className="flex flex-wrap items-center gap-2">
               {notice.result && (
                 <FoldHeader

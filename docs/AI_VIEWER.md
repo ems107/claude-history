@@ -133,6 +133,16 @@ about it depends on the bar being open.
   the empty gutters count as clicking away. (One handler versus three hundred is
   not what makes this fast: React delegates from the root either way. What it
   buys is the invariant and three hundred closures.)
+- **`InjectedNotice` lost its own click at the same time.** It folded the turn
+  in prompts-only mode — the very behaviour the bubble's invariant was written
+  against — and had simply outlived it, which is why the region holding its
+  report had to stop the event. Nothing to stop now, and a click there selects
+  the notice like anything else.
+- **`focusKeyAt` walks up and stops at the first message id**, which is wider
+  than a marking box on purpose: a bubble's header, a notice's padding and a
+  tool block's fold row are all still that thing, and losing the selection for
+  missing the prose by three pixels would be its own bug. Nothing above the
+  conversation carries a message id, so the empty page means "nothing".
 - **The value lives outside React** (`lib/selectedMessage.ts`): a module
   variable, a `data-selected` attribute put on the element directly, and a
   subscription only where somebody really has to redraw — which is the find bar
@@ -245,17 +255,29 @@ again, because React may have thrown away the node it pointed into.
 **The scope follows the selected message, and only `All` is ever chosen by
 hand.** Selecting a message means "search in this one" (`Current message`);
 clicking away means "search what I can see" (`Visible`, which is also where the
-bar opens); and `All` is never entered for the reader, though it is left again
-the moment the selection changes. A scope that reaches into folded text is a
-decision, not somewhere to find yourself.
+bar opens); and nothing puts the reader into `All`. A scope that reaches into
+folded text is a decision, not somewhere to find yourself.
 
+- **`All`, once chosen, is held until the bar is closed** — selection or no
+  selection. Asking for the whole conversation and then losing it to a stray
+  click on the margin is the kind of help nobody wants, and closing the bar is
+  the obvious "I am done with this search".
+- **The scope explains itself in a sentence, always** (`SCOPE_BLURB`). Two of
+  the three are chosen for the reader and every button is two words, so the one
+  thing that must never be a guess is where the number in the counter came from.
 - **The cost of that default is real and is paid for out loud.** `Visible` is
   most of a conversation short, so a word living only in a folded tool result
   would read as "no matches" — precisely the answer this bar exists to stop
   anyone getting. So it never says that while a wider scope has more: the
-  counter says **where it looked** (`none in visible`) and the line under it is
-  a button, `N more in the whole conversation →`. One click, chosen by the
+  counter says **where it looked** (`none in visible`) and a button sits BESIDE
+  the sentence, `N more in the whole conversation →`. One click, made by the
   reader, which is what "never automatically" means.
+- **What the corpus could not reach carries its own explanation**, because the
+  short version is not self-evident: *on disk, not searched* means output too
+  large for the transcript, written to a file the browser never receives (deep
+  search reads those); *searched only in part* means the result was cut at
+  `MAX_RESULT_CHARS` on the way here, so everything before the cut is counted
+  and nothing after it is.
 - **Kinds are chips with their own counts**, so turning one off is informed
   rather than a guess, and a kind with nothing in it disables itself.
 

@@ -534,9 +534,8 @@ function noticeNode(
   item: MessageItem,
   notice: Extract<ContentBlock, { kind: 'notice' }>,
   badge: ReactNode | undefined,
-  onClick?: () => void,
 ): ReactNode {
-  return <InjectedNotice key={item.uuid} item={item} notice={notice} badge={badge} onClick={onClick} />;
+  return <InjectedNotice key={item.uuid} item={item} notice={notice} badge={badge} />;
 }
 
 /**
@@ -709,7 +708,7 @@ export function TurnView({
       }
       const notice = noticeOf(item);
       if (notice) {
-        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge, onToggleExpanded));
+        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;
         continue;
@@ -750,7 +749,7 @@ export function TurnView({
       flushTools();
       const notice = noticeOf(item);
       if (notice) {
-        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge, anyFolded ? onToggleExpanded : undefined));
+        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;
         continue;

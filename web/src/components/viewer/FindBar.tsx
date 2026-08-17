@@ -24,13 +24,24 @@ const PAGE_ROWS = 40;
  * Where the bar is allowed to look.
  *
  * Two of the three follow the selected message on their own: clicking a message
- * means "search in this one", clicking away means "search what I can see". Only
- * `all` is ever chosen by hand, and it is left again the moment the selection
- * changes — a scope that reaches into folded text is a decision, not a default
- * somebody should find themselves in.
+ * means "search in this one", clicking away means "search what I can see".
+ * `all` is only ever chosen by hand — a scope that reaches into folded text is a
+ * decision, not a default somebody should find themselves in — and once chosen
+ * it is held until the bar is closed, selection or no selection.
  */
 export type FindScope = 'all' | 'visible' | 'current';
 const SCOPE_LABEL: Record<FindScope, string> = { all: 'All', visible: 'Visible', current: 'Current message' };
+/**
+ * What each one actually searches, spelled out under the bar. The buttons are
+ * two words each and two of the three are chosen for the reader rather than by
+ * them, so the one thing that must never be a guess is where the number in the
+ * counter came from.
+ */
+const SCOPE_BLURB: Record<FindScope, string> = {
+  current: 'Searching only the message you have selected.',
+  visible: 'Searching only what is unfolded right now — folded turns, tool runs and compacted stretches are left out.',
+  all: 'Searching the whole conversation, including everything folded away.',
+};
 
 export interface FindBarProps {
   open: boolean;
@@ -137,11 +148,22 @@ export function useFindBar(
   const index = useMemo(() => (highlight ? findHits(units, highlight, roles) : null), [units, highlight, roles]);
 
   /**
-   * The selection drives the scope, and only ever away from `all`. Clicking a
-   * message asks to search inside it; clicking away asks for what is on screen.
-   * Nothing puts the reader into `all` but the button.
+   * The selection drives the scope: clicking a message asks to search inside it,
+   * clicking away asks for what is on screen. Nothing puts the reader into `all`
+   * but the button — and once they have pressed it, nothing takes them out of it
+   * either, until the bar is closed and opened again. Asking for the whole
+   * conversation and then losing it to a stray click on the margin is the kind of
+   * help nobody wants.
    */
-  useEffect(() => setScope(selected ? 'current' : 'visible'), [selected]);
+  const [allPinned, setAllPinned] = useState(false);
+  useEffect(() => {
+    if (allPinned) return;
+    setScope(selected ? 'current' : 'visible');
+  }, [selected, allPinned]);
+  const chooseScope = useCallback((next: FindScope) => {
+    setAllPinned(next === 'all');
+    setScope(next);
+  }, []);
 
   const hits = useMemo(() => {
     if (!index) return [];
@@ -249,6 +271,8 @@ export function useFindBar(
     setOpen(false);
     setPanel(false);
     setStanding(null);
+    // Closing is what un-pins `All`: it was asked for, for this search.
+    setAllPinned(false);
   }, []);
 
   // Another session starts clean: what was searched here says nothing about
@@ -260,6 +284,7 @@ export function useFindBar(
     setQuery('');
     setStanding(null);
     setOff(new Set());
+    setAllPinned(false);
   }, [sessionId]);
 
   useEffect(() => {
@@ -298,7 +323,7 @@ export function useFindBar(
     wholeWord,
     setWholeWord,
     scope,
-    setScope,
+    setScope: chooseScope,
     hasSelected: selected !== null,
     off,
     toggleRole: (role) =>
@@ -352,15 +377,27 @@ export function FindBar(p: FindBarProps) {
   // here rather than in the panel: a panel nobody has open must never change the
   // results in silence. The reach notes wait for a question — with an empty box
   // they are trivia about the session, not a caveat about an answer.
-  const notes: string[] = [];
-  if (p.scope !== 'all' && held <= 0) notes.push(SCOPE_LABEL[p.scope]);
-  if (p.off.size > 0) notes.push(`${FIND_ROLES.length - p.off.size} of ${FIND_ROLES.length} kinds`);
-  if (asked && p.hiddenThinking > 0) notes.push(`${p.hiddenThinking} in hidden thinking`);
+  const notes: { text: string; title?: string }[] = [];
+  if (p.off.size > 0) notes.push({ text: `${FIND_ROLES.length - p.off.size} of ${FIND_ROLES.length} kinds` });
+  if (asked && p.hiddenThinking > 0) {
+    notes.push({
+      text: `${p.hiddenThinking} in hidden thinking`,
+      title: 'Matches inside thinking blocks, which this conversation is not drawing — turn Thinking on in the header to reach them.',
+    });
+  }
   if (asked && p.short.offloaded > 0) {
-    notes.push(`${p.short.offloaded} output${p.short.offloaded === 1 ? '' : 's'} on disk, not searched`);
+    notes.push({
+      text: `${p.short.offloaded} tool output${p.short.offloaded === 1 ? '' : 's'} on disk, not searched`,
+      title:
+        'Output too large for the transcript, written to a file beside it. The browser never receives those, so nothing in them is counted here. Search ▸ deep, on the session list, does read them.',
+    });
   }
   if (asked && p.short.truncated > 0) {
-    notes.push(`${p.short.truncated} output${p.short.truncated === 1 ? '' : 's'} cut short`);
+    notes.push({
+      text: `${p.short.truncated} long output${p.short.truncated === 1 ? '' : 's'} searched only in part`,
+      title:
+        'The server sends the first 20,000 characters of a tool result and no more, so for these the search stops there. Everything before the cut is counted; anything after it is not.',
+    });
   }
 
   return (
@@ -417,23 +454,28 @@ export function FindBar(p: FindBarProps) {
         </button>
       </div>
 
-      {/* Whatever is off its default says so out here, where it can be seen: a
-          panel nobody has open must never change the results in silence. */}
-      {(notes.length > 0 || held > 0) && (
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-2 pt-1 text-[11px] text-[var(--text-dim)]/80">
-          {held > 0 && (
-            <button
-              type="button"
-              onClick={() => p.setScope('all')}
-              title="Search the whole conversation, folded away or not"
-              className="cursor-pointer rounded px-1 font-semibold text-[var(--accent)] hover:bg-[var(--bg-hover)]"
-            >
-              {held} more in the whole conversation →
-            </button>
-          )}
-          {notes.length > 0 && <span>{notes.join(' · ')}</span>}
-        </div>
-      )}
+      {/* Where it is looking, always, in a sentence — the buttons are two words
+          and two of the three scopes are chosen for the reader. Then whatever is
+          off its default, and whatever this corpus cannot reach: a panel nobody
+          has open must never change the results in silence. */}
+      <div className="mx-auto flex max-w-5xl flex-wrap items-baseline gap-x-2 pt-1 text-[11px] text-[var(--text-dim)]/80">
+        <span>{SCOPE_BLURB[p.scope]}</span>
+        {held > 0 && (
+          <button
+            type="button"
+            onClick={() => p.setScope('all')}
+            title="Search the whole conversation, folded away or not"
+            className="cursor-pointer rounded px-1 font-semibold text-[var(--accent)] hover:bg-[var(--bg-hover)]"
+          >
+            {held} more in the whole conversation →
+          </button>
+        )}
+        {notes.map((n) => (
+          <span key={n.text} title={n.title} className={n.title ? 'cursor-help underline decoration-dotted' : undefined}>
+            · {n.text}
+          </span>
+        ))}
+      </div>
 
       {p.panel && (
         <div className="mx-auto mt-2 max-w-5xl space-y-2 border-t border-[var(--border)] pt-2">

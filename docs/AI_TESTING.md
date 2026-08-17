@@ -129,6 +129,7 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 - **Nesting: `15a86025`** — 11 agents, **7 `fork` at depth 1 and 4 `general-purpose` at depth 2**, all four spawned by the fork "Investigar lib, list, pages y hooks web" ($4.30). Those four must be indented **under that row and nowhere else** (`marginLeft` on exactly 4 of the 11; 0 of 5 in `980751cb`, 0 of 6 in `19ebb1d5`), carry their own `sent` / `→ back` times and `brief` / `report` folds, read `sent out by ⑂ fork · …`, carry the status of the report filed **inside that agent** (`completed`, not "no report"), and send both jumps to the PARENT's drawer — `↑ the call` onto its `[data-tool-id]` with `.match-flash`, `↓ the report` onto the notice panel — with the URL showing `agentTool=` / `agentMsg=` and never both. **Check the flash within 2.5 s**: it takes itself off, and looking at 3 s reads as "nothing happened". Those four reports exist only because a notification inside a subagent transcript is `isMeta: true`.
 - **Ids**: every row and the drawer header prints the 17-hex id, and pasting it — whole or as a prefix — into the search returns that session with an `id` row linking to `?agents=1&agent=<id>`.
 - **The notice panel now has a `[data-bubble-body]`**, so re-run the `[data-bubble]` count around opening a report and the `↓ the report` flash. Marks must land inside that body — a deep link used to paint the origin chip, the status and the clock along with the text — and the report opens itself when the find bar steps onto it, which is a report's only route into a search of any kind.
+- **It also lost its `onClick`**, which folded the turn in prompts-only mode. Clicking a notice must now change no fold at all — count `[data-bubble]` and `[data-tool-id]` before and after — and must select it instead. Its cursor must not be `pointer`.
 
 **23. Plan mode.** Parse first, comparing before and after over the whole corpus: only `items` may move, only in sessions that touch plan mode, and by exactly the number of markers emitted (`f3384d17` +7 = 2 enter + 1 reentry + 2 exit + 2 reference; `980751cb` +3). **Turns, prompts and the four token totals identical everywhere** — a turn that grows means a marker opened one instead of joining the one already open.
 
@@ -208,11 +209,16 @@ Then Chrome over CDP, with check 9's harness:
   Visible without moving All (17 → 29 of 113 on `b343d4ac`); `Current message`
   is disabled until a box is selected, then narrows to it with exactly one ring
   on the page.
-- **The selection drives the scope, and only away from `All`.** Opening with a
+- **The selection drives the scope, and never into `All`.** Opening with a
   message selected must land on `Current message`; clicking the empty gutter
   must fall back to `Visible` and disable `Current message`; selecting again
-  must return to `Current message`. `All` must stick while nothing is clicked
-  and be left the moment the selection changes.
+  must return to `Current message`. **`All`, once pressed, must survive both** —
+  deselecting and selecting something else — and only closing and reopening the
+  bar lets go of it.
+- **The scope always explains itself**, in a sentence under the bar, and the
+  `N more in the whole conversation` button sits BESIDE that sentence rather
+  than replacing it. The two reach notes carry a `title` each, because "3 long
+  outputs searched only in part" is not self-evident.
 - **Selecting works with the bar shut**, which is the point of it being its own
   feature: click a bubble on arrival and `[data-selected]` must be on it with
   the ring drawn, click the empty gutter and it must go. And **a deep link
