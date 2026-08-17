@@ -52,8 +52,9 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
  * pill keeps it in view as the answer grows.
  *
  * Three clocks, and the two after the first are the ones that say whether the
- * silence is going anywhere: how long the TURN has run, how long since the last
- * message landed, how long since the last tool was called. Each appears only
+ * silence is going anywhere: the turn's `total`, how long since the model last
+ * WROTE (tool calls are not messages, or the two would be the same number all
+ * through a run) and how long since the last tool was called. Each appears only
  * once it has something of its own to report — a turn that has produced nothing
  * yet shows one figure, which is the truth about it.
  */
@@ -117,7 +118,10 @@ export function WorkingIndicator({
             // Out of the announced text: a screen reader repeating the seconds
             // every second would drown the one thing worth saying.
             <span aria-hidden="true" className="tabular-nums text-xs text-[var(--text-dim)]/70">
-              <Figure at={since} hint="Turn started" />
+              {/* Labelled like the two beside it: bare, it was the only figure
+                  and could only be the turn, but next to "last message" a naked
+                  number is one of three and says nothing about which. */}
+              <Figure label="total" at={since} hint="Turn started" />
               {/* Neither figure can appear without the turn's own (both are gated
                   on a known start), so a separator never opens the row. Inline
                   text with `nowrap` on each figure: the line breaks at a dot and

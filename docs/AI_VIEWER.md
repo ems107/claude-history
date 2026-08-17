@@ -25,7 +25,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 - **Nothing the composer does may hide a message** — growing it scrolls the conversation clear of it.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
-- **Every clock on the working indicator belongs to the turn in flight**, and the prompt that opened it is not news.
+- **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
 
 ## Two layout rules that keep breaking
 
@@ -462,34 +462,38 @@ Why it says "working" rather than "writing", and why the silence it fills is so 
 
 ### Three clocks, and two of them are about the silence
 
-The turn's own figure — how long it has run — answers "is this slow?" and nothing
-else. What the reader actually wants to know while a turn hangs is whether it is
-going anywhere, so two more sit beside it: **how long since the last message
-landed** and **how long since the last tool was called**. Both come from the
-conversation (`lib/turnActivity.ts`, pure) rather than from `/api/live`, which
-knows when the turn began and nothing about what has happened inside it.
+The turn's own figure — `total`, how long it has run — answers "is this slow?"
+and nothing else. What the reader actually wants to know while a turn hangs is
+whether it is going anywhere, so two more sit beside it: **how long since the
+model last wrote** and **how long since the last tool was called**. Both come
+from the conversation (`lib/turnActivity.ts`, pure) rather than from
+`/api/live`, which knows when the turn began and nothing about what has happened
+inside it. All three are labelled, `total` included: bare, it was the only figure
+and could only be the turn.
 
 - **Every clock on the row belongs to the turn in flight.** A figure is shown
   only for something stamped AFTER the turn started, and an unknown start hides
   both — otherwise the previous turn's last word wears this turn's clothes, which
   is exactly what the echoed-prompt state would show (while a prompt of ours is
   still pending, the last turn in the transcript is the one BEFORE it).
-- **The prompt that opened the turn is not news.** It is what the first figure
-  measures FROM, and it is written a beat AFTER the status flips to busy, so
-  "after the start" does not exclude it: index 0 of the turn is skipped by role.
-  A prompt typed MID-turn (`queued`, on the rail) is a message like any other and
-  does count.
+- **A tool call is not a message, and only the model's output is one.** Count the
+  message that made the call and the two figures are the same number for as long
+  as a run lasts — two clocks that always agree are one clock and a lie — because
+  a message ENDS with its calls. So `last message` takes the newest assistant
+  item carrying anything that is not a `tool` block, and the prompt, a prompt
+  typed mid-turn (`queued`) and an injected notice are all somebody else talking.
 - **A tool is timed by when it was CALLED, not by when it came back.** A `Bash`
   four minutes into its run is precisely what these figures exist to reveal, and
   the result's own clock has nothing to say yet — it is the call that proves the
-  turn got that far. `endTimestamp` IS that call: a message's tool calls are the
-  last lines it writes (Claude writes and then calls — the same 0-of-6,295 fact
-  the `tools-before-ask` note above rests on), so no per-block timestamp is
-  needed and none is carried.
-- **The two may read the same number, and that is honest**: it means the newest
-  message in the conversation is a tool call. They part company as soon as prose
-  lands on top of a run — 8 s and 19 s apart on the last turns of the two
-  sessions checked.
+  turn got that far.
+- **The two stamps of a merged message are what makes both readings possible.**
+  `endTimestamp` is its last line, which for a message that called anything IS
+  its last call (Claude writes and then calls — the same 0-of-6,295 fact the
+  `tools-before-ask` note above rests on); `timestamp` is its first, which is
+  where the writing was. So the message figure reads the START and the tool
+  figure the END of the very same item. The per-block clock does exist in the
+  transcript and is dropped in the merge ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#live-sessions-and-streaming));
+  this is what survives of it, and it is enough.
 - **The figures lag by a re-parse and are exact anyway.** They move when
   `sessions-changed` brings the conversation back, so one can appear a second
   late, but the value is read off the transcript's own timestamps rather than off

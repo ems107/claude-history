@@ -13,7 +13,16 @@ import type { Turn } from '@claude-history/shared';
  * Pure, and checkable without a browser.
  */
 export interface TurnActivity {
-  /** The newest message of that turn (epoch ms), the prompt that opened it aside. */
+  /**
+   * When the model last SAID something in that turn (epoch ms) — the newest
+   * assistant message carrying anything that is not a tool call.
+   *
+   * Tool calls are deliberately not messages here, and neither is a prompt: a
+   * message that called something ends with the call, so counting it would make
+   * this figure and `lastToolAt` the same number for as long as a run lasts, and
+   * two clocks that always agree are one clock and a lie. What is left is the
+   * one worth reading beside the tools — how long since the model last wrote.
+   */
   lastMessageAt: number | null;
   /**
    * The newest tool CALL of that turn (epoch ms) — when it was ISSUED, not when
@@ -39,26 +48,29 @@ export function turnActivity(turns: Turn[]): TurnActivity {
   let lastMessageAt: number | null = null;
   let lastToolAt: number | null = null;
 
-  for (let i = 0; i < turn.items.length; i++) {
-    const item = turn.items[i];
-    // The prompt that opened the turn is what the turn's own counter measures
-    // FROM, so counting it would print the same number twice — and it is
-    // written a beat after the turn is stamped busy, which is exactly the skew
-    // that makes "since" too coarse a filter on its own. Only at index 0, so a
-    // prompt typed mid-turn (`queued`, on the rail) still counts as news.
-    if (i === 0 && item.role === 'user') continue;
+  for (const item of turn.items) {
+    // Only the model's own output: the prompt that opened the turn is what the
+    // turn's own counter measures FROM, and neither a queued prompt nor an
+    // injected notice is Claude answering.
+    if (item.role !== 'assistant') continue;
     // A rewound-away branch is history, not this turn's progress.
     if (item.discardedBranch !== null) continue;
-    const at = stamp(item.endTimestamp ?? item.timestamp);
-    if (at === null) continue;
-    if (lastMessageAt === null || at > lastMessageAt) lastMessageAt = at;
-    // `endTimestamp` is the last CHUNK of the message, and a message's tool
-    // calls are the last lines it writes (Claude writes and then calls: 0 of
-    // 6,295 calls in this corpus land between two pieces of prose), so for a
-    // message that called anything that stamp IS its last call.
-    if (item.blocks.some((b) => b.kind === 'tool') && (lastToolAt === null || at > lastToolAt)) {
-      lastToolAt = at;
-    }
+
+    // The two stamps a merged message carries, and each answers a different
+    // question. `endTimestamp` is its LAST line, which for a message that
+    // called anything IS its last call — Claude writes and then calls, so the
+    // tool_use lines close the message (0 of 6,295 calls in this corpus land
+    // between two pieces of prose). `timestamp` is its FIRST line, which is
+    // where the writing was: the thinking or the prose that came before the
+    // call. That is why the message figure reads the start and the tool figure
+    // the end — a per-block clock exists in the transcript and is dropped in
+    // the merge, and this is what survives of it.
+    const started = stamp(item.timestamp);
+    const ended = stamp(item.endTimestamp ?? item.timestamp);
+    const wrote = item.blocks.some((b) => b.kind !== 'tool');
+    const called = item.blocks.some((b) => b.kind === 'tool');
+    if (wrote && started !== null && (lastMessageAt === null || started > lastMessageAt)) lastMessageAt = started;
+    if (called && ended !== null && (lastToolAt === null || ended > lastToolAt)) lastToolAt = ended;
   }
 
   return { lastMessageAt, lastToolAt };
