@@ -813,6 +813,15 @@ export function TurnView({
             expandAll={expandTools}
             onOpenAgent={onOpenAgent}
             costs={costs}
+            // The third of the three runs, and the only one that was missing
+            // this. It is the calls a message makes BETWEEN two pieces of prose,
+            // which no message in this corpus does today (0 of 6,295 calls over
+            // the 20 largest sessions — Claude writes, then calls, and the
+            // trailing calls leave through flushTools). So the omission opened
+            // no link that anyone has clicked; it was a third case written to
+            // differ from its two siblings, waiting for the first transcript
+            // that goes text → tool → text.
+            targetTool={targetTool}
           />,
         );
         pendingTools = [];

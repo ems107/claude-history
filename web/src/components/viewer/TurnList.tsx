@@ -186,9 +186,16 @@ export function TurnList({
 
     const arrive = (el: HTMLElement): void => {
       // The anchor may be an alias uuid — a zero-sized <span> inside the bubble —
-      // so what gets flashed is the box, not whatever carries the id. A tool block
-      // is its own box and sits outside any bubble.
-      const box = el.closest<HTMLElement>('[data-bubble]') ?? el;
+      // so what gets flashed is the box, not whatever carries the id.
+      //
+      // A tool block is its own box, and it is tested FIRST because it is not
+      // always OUTSIDE a bubble, as this used to assume. A run that ends at a
+      // question or a plan inside a message that also has prose is rendered into
+      // that message's own bubble (`tools-before-ask`), and there `closest`
+      // climbed past the one call to the whole answer: 25 calls over the 20
+      // largest sessions, and `b343d4ac`'s `toolu_01CyGpmXFjFcBj8apDVmAXck`
+      // flashed 19,383 characters to point at 17,047 of them.
+      const box = el.matches('[data-tool-id]') ? el : (el.closest<HTMLElement>('[data-bubble]') ?? el);
       box.scrollIntoView({ block: 'center' });
       box.classList.add('match-flash');
       timers.push(setTimeout(() => box.classList.remove('match-flash'), FLASH_MS));
