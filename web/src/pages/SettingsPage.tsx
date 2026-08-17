@@ -816,7 +816,7 @@ export function SettingsPage() {
                   .catch((e) => setNote(`Failed: ${String(e)}`))
                   .finally(() => setBusy(null));
               }}
-              title="Deletes the derived cache only. Your renames, pins and prices live elsewhere and are kept."
+              title="Deletes the derived cache only. Your renames, pins, starred messages and prices live elsewhere and are kept."
             >
               {busy === 'cache' ? 'Clearing…' : 'Clear cache'}
             </button>
@@ -883,7 +883,7 @@ export function SettingsPage() {
                     className="mt-0.5 accent-red-400"
                   />
                   <span>
-                    Also delete my data — renames, pins, prices, settings and cache
+                    Also delete my data — renames, pins, starred messages, prices, settings and cache
                     <span className="block font-mono text-[11px] text-[var(--text-dim)]">
                       {data.paths.userdataFile}
                     </span>

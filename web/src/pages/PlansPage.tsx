@@ -4,8 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api/client.ts';
+import { OrderBar } from '../components/list/OrderBar.tsx';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
+import { groupBySession, sortByDate, useOrder } from '../lib/order.ts';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 
@@ -47,12 +49,70 @@ function DiskState({ plan }: { plan: PlanEntry }) {
   );
 }
 
+function PlanRow({ plan: p, color }: { plan: PlanEntry; color: string }) {
+  return (
+    <div className="border-b border-[var(--border)] px-4 py-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-dim)]">
+        <ProjectTag name={p.projectName} path={p.project} color={color} />
+        {p.askedAt && (
+          <span title={formatDateTime(p.askedAt)}>
+            {formatDateTime(p.askedAt)} · {relativeTime(p.askedAt)}
+          </span>
+        )}
+        <span className={`font-semibold ${STATUS[p.status].tone}`}>{STATUS[p.status].label}</span>
+        <DiskState plan={p} />
+        <span className="ml-auto inline-flex items-center gap-1.5">
+          {/* Straight to the plan itself, not merely to the session: the
+              viewer opens the segment, the run and the call from `?tool=`. */}
+          <Link
+            to={`/session/${p.sessionId}?tool=${encodeURIComponent(p.toolUseId)}`}
+            className="shrink-0 rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+          >
+            Open the plan →
+          </Link>
+        </span>
+      </div>
+      <div className="mt-1 text-sm font-semibold text-[var(--text)]">
+        {p.title ?? <span className="font-normal text-[var(--text-dim)] italic">untitled plan</span>}
+      </div>
+      {p.feedback && (
+        <div className="mt-1 border-l-2 border-amber-500/40 pl-2 text-xs text-[var(--text-dim)]">
+          <span className="font-semibold text-amber-400/80">the user said: </span>
+          {p.feedback}
+        </div>
+      )}
+      {/* Which session this belongs to, by name AND by id. The name is
+          what a reader recognises; the id is what the app writes
+          everywhere else — the URL, the log, a fork chip — and what
+          pasting eight characters back into the search finds. Same eight
+          and same mono chip as the session header, so the two read as the
+          same thing. */}
+      <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-dim)]/80">
+        <span>{p.chars.toLocaleString()} chars</span>
+        <span className="opacity-50">·</span>
+        <span>in</span>
+        <Link to={`/session/${p.sessionId}`} className="hover:text-[var(--text)] hover:underline">
+          {p.sessionTitle}
+        </Link>
+        <Link
+          to={`/session/${p.sessionId}`}
+          title={p.sessionId}
+          className="rounded bg-amber-500/10 px-1.5 py-px font-mono text-amber-400 hover:bg-amber-500/20"
+        >
+          {p.sessionId.slice(0, 8)}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 export function PlansPage() {
   const plans = useQuery({ queryKey: ['plans'], queryFn: api.plans });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [q, setQ] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [status, setStatus] = useState('');
+  const [order, setOrder] = useOrder('plansOrder');
 
   const colorByProject = useMemo(() => {
     const map = new Map<string, string>();
@@ -76,6 +136,15 @@ export function PlansPage() {
     }
     return list;
   }, [plans.data, q, projectFilter, status]);
+
+  // When it was submitted for approval — the one date a plan has from the start
+  // (a pending one was never decided).
+  const at = (p: PlanEntry) => p.askedAt;
+  const flat = useMemo(() => sortByDate(rows, at, order.dir), [rows, order.dir]);
+  const groups = useMemo(
+    () => groupBySession(rows, at, (p) => ({ sessionId: p.sessionId, sessionTitle: p.sessionTitle }), order.dir),
+    [rows, order.dir],
+  );
 
   if (plans.isLoading) return <div className="p-8 text-[var(--text-dim)]">Loading plans…</div>;
   if (plans.isError) return <div className="p-8 text-red-400">Failed: {String(plans.error)}</div>;
@@ -111,69 +180,57 @@ export function PlansPage() {
             </option>
           ))}
         </select>
-        <span className="ml-auto text-[var(--text-dim)]">
+        <span className="text-[var(--text-dim)]">
           {rows.length} plan{rows.length === 1 ? '' : 's'}
+          {order.group === 'session' && ` in ${groups.length} session${groups.length === 1 ? '' : 's'}`}
+        </span>
+        <span className="ml-auto">
+          <OrderBar
+            order={order}
+            onChange={setOrder}
+            field="Asked"
+            groupHint="Group the plans by the session that submitted them, newest session first"
+          />
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {rows.map((p) => (
-          <div key={`${p.sessionId}-${p.toolUseId}`} className="border-b border-[var(--border)] px-4 py-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-dim)]">
-              <ProjectTag
-                name={p.projectName}
-                path={p.project}
+        {order.group === 'session'
+          ? groups.map((group) => (
+              <div key={group.sessionId}>
+                <div className="flex items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-raised)] px-4 py-1 text-xs text-[var(--text-dim)]">
+                  <Link
+                    to={`/session/${group.sessionId}`}
+                    className="min-w-0 truncate font-semibold text-[var(--text)] hover:underline"
+                  >
+                    {group.sessionTitle}
+                  </Link>
+                  <Link
+                    to={`/session/${group.sessionId}`}
+                    title={group.sessionId}
+                    className="shrink-0 rounded bg-amber-500/10 px-1.5 py-px font-mono text-amber-400 hover:bg-amber-500/20"
+                  >
+                    {group.sessionId.slice(0, 8)}
+                  </Link>
+                  <span className="ml-auto shrink-0">
+                    {group.items.length} plan{group.items.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                {group.items.map((p) => (
+                  <PlanRow
+                    key={`${p.sessionId}-${p.toolUseId}`}
+                    plan={p}
+                    color={colorByProject.get(p.projectKey) ?? FALLBACK_COLOR}
+                  />
+                ))}
+              </div>
+            ))
+          : flat.map((p) => (
+              <PlanRow
+                key={`${p.sessionId}-${p.toolUseId}`}
+                plan={p}
                 color={colorByProject.get(p.projectKey) ?? FALLBACK_COLOR}
               />
-              {p.askedAt && (
-                <span title={formatDateTime(p.askedAt)}>
-                  {formatDateTime(p.askedAt)} · {relativeTime(p.askedAt)}
-                </span>
-              )}
-              <span className={`font-semibold ${STATUS[p.status].tone}`}>{STATUS[p.status].label}</span>
-              <DiskState plan={p} />
-              <span className="ml-auto inline-flex items-center gap-1.5">
-                {/* Straight to the plan itself, not merely to the session: the
-                    viewer opens the segment, the run and the call from `?tool=`. */}
-                <Link
-                  to={`/session/${p.sessionId}?tool=${encodeURIComponent(p.toolUseId)}`}
-                  className="shrink-0 rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
-                >
-                  Open the plan →
-                </Link>
-              </span>
-            </div>
-            <div className="mt-1 text-sm font-semibold text-[var(--text)]">
-              {p.title ?? <span className="font-normal text-[var(--text-dim)] italic">untitled plan</span>}
-            </div>
-            {p.feedback && (
-              <div className="mt-1 border-l-2 border-amber-500/40 pl-2 text-xs text-[var(--text-dim)]">
-                <span className="font-semibold text-amber-400/80">the user said: </span>
-                {p.feedback}
-              </div>
-            )}
-            {/* Which session this belongs to, by name AND by id. The name is
-                what a reader recognises; the id is what the app writes
-                everywhere else — the URL, the log, a fork chip — and what
-                pasting eight characters back into the search finds. Same eight
-                and same mono chip as the session header, so the two read as the
-                same thing. */}
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-dim)]/80">
-              <span>{p.chars.toLocaleString()} chars</span>
-              <span className="opacity-50">·</span>
-              <span>in</span>
-              <Link to={`/session/${p.sessionId}`} className="hover:text-[var(--text)] hover:underline">
-                {p.sessionTitle}
-              </Link>
-              <Link
-                to={`/session/${p.sessionId}`}
-                title={p.sessionId}
-                className="rounded bg-amber-500/10 px-1.5 py-px font-mono text-amber-400 hover:bg-amber-500/20"
-              >
-                {p.sessionId.slice(0, 8)}
-              </Link>
-            </div>
-          </div>
-        ))}
+            ))}
         {rows.length === 0 && <div className="p-8 text-center text-[var(--text-dim)]">No plans match.</div>}
       </div>
     </div>

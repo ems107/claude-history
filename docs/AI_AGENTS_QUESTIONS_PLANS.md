@@ -115,6 +115,8 @@ So the TYPE is the verdict and the prose never has to be read — the tool_resul
 
 A plan is also the one piece of tool input that IS indexed — see [AI_SEARCH.md](AI_SEARCH.md).
 
+The Plans page orders itself with the same control as the Starred page (`askedAt`, a direction, grouping by session) — see [AI_VIEWER.md](AI_VIEWER.md). `/api/plans` still answers newest-first, which is what the page opens on.
+
 ## Verify
 
 [AI_TESTING.md](AI_TESTING.md) — checks 22 (subagents), 23 (plan mode), 24 (answered questions, drawings and notes).

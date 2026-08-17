@@ -12,6 +12,7 @@ import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
 import { SessionViewPage } from './pages/SessionViewPage.tsx';
 import { SettingsPage } from './pages/SettingsPage.tsx';
+import { StarredPage } from './pages/StarredPage.tsx';
 import { StatsPage } from './pages/StatsPage.tsx';
 
 function NavItem({ to, label }: { to: string; label: string }) {
@@ -65,6 +66,7 @@ export function App() {
         </span>
         <nav className="ml-4 flex items-center gap-1">
           <NavItem to="/prompts" label="Prompts" />
+          <NavItem to="/starred" label="Starred" />
           <NavItem to="/plans" label="Plans" />
           <NavItem to="/stats" label="Stats" />
         </nav>
@@ -90,6 +92,7 @@ export function App() {
           <Route path="/" element={<SessionListPage />} />
           <Route path="/session/:id" element={<SessionViewPage />} />
           <Route path="/prompts" element={<PromptsPage />} />
+          <Route path="/starred" element={<StarredPage />} />
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/settings" element={<SettingsPage />} />

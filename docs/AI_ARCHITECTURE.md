@@ -68,7 +68,7 @@ The scripts shipped inside the release zip, and the packaging/release tooling �
 | What | Where | Regenerable |
 | --- | --- | --- |
 | List summaries, enrichment, search text | `%LOCALAPPDATA%\claude-history\cache\` | yes — deleting it is always safe |
-| Renames, pins, price table, settings | `userdata.json`, **beside** the cache dir | **no** |
+| Renames, pins, starred messages, price table, settings | `userdata.json`, **beside** the cache dir | **no** |
 | Logs | `logs\`, beside the cache dir | yes (pruned by `logRetentionDays`) |
 | Filters, scroll position, view toggles | browser `localStorage` / `sessionStorage`, and the URL | yes |
 
@@ -93,6 +93,37 @@ There is NO official CLI or API to rename a stored session; the only Claude-leve
 
 When overridden, summaries expose `originalTitle` (what Claude Code still shows) and `titleSource: 'local'`, and **the UI must always surface both**. (The Agent SDK's `renameSession()` / `tagSession()` would write into the transcript — see the reading/running line in [AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md).)
 
+## A star keeps its own copy of the message
+
+The third local override after renames and pins, and the only one that stores
+CONTENT: `stars` in `userdata.json` holds the message's text, its role, its
+clock, and the session title and project as they were.
+
+**Two things pay for that duplication.** The Starred page then parses nothing —
+reading the text back out of the transcripts would mean one `parseSession` per
+starred session on every visit (~100-200 ms each; 208 ms on the 16 MB one) and
+the cost would grow with use. And a star **outlives its transcript**: everything
+in `~/.claude` expires ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)), while the whole
+point of starring something is to keep it. Nothing can go stale meanwhile —
+transcript lines are append-only, so a message's text never changes once
+written.
+
+- **The copy is bounded** (`STAR_TEXT_MAX`, 200,000 characters) and says when it
+  was cut: this file is read whole at startup and rewritten in full on every pin,
+  and a prompt can carry a pasted log of any size.
+- **The key is the message's CANONICAL uuid.** A streamed answer merges its
+  chunks, so the endpoint resolves an alias before storing, and the viewer asks
+  `isStarred` with the aliases too.
+- **Where it came from is re-read from the index whenever the session is still
+  there**, so a local rename shows on the Starred page as well; the stored title
+  and project are the fallback for a session that has gone.
+- **Starring emits `stars-changed`, never `session-updated`** — that event
+  invalidates `['session', id]`, which is a full re-parse of the transcript in
+  every open tab for a write that touched nothing in it.
+- **Unstarring asks nothing about the session.** A star whose transcript has gone
+  is exactly the one that has to stay removable, so only the starring path needs
+  the session in the index.
+
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 1, 5, 21 (the files endpoint), and the same-origin cases in 19.
+[AI_TESTING.md](AI_TESTING.md) — checks 1, 5, 21 (the files endpoint), 25 (starred messages), and the same-origin cases in 19.

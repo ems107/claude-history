@@ -14,6 +14,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A deep link must point at something visible**: unfold the way in, then scroll, then say which one it was.
 - **Marks are `Range`s in the CSS Custom Highlight API**, never `<mark>` nodes in React's markdown.
 - **A message bubble takes no `onClick`.**
+- **A starred message says so without being hovered, and nothing is drawn on the bubble.**
 
 ## Two layout rules that keep breaking
 
@@ -24,6 +25,41 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A message bubble is not one of them.** A prompt used to fold its own turn in prompts-only mode, and an accidental click there hid the answer being read, so `Bubble` takes no `onClick` at all: a turn folds only from its fold strip.
 - Two consequences: **nothing interactive may be nested inside a `FoldHeader`** (copy buttons, cost pills and the subagent link are siblings in the header row), and a shrink-wrapped header needs `w-fit`, which the `<button>` gave for free.
 - Real buttons stay real: the header's mode toggles are controls with nothing to copy.
+
+## The star on a message
+
+`MessageActions` is the toolbar in a bubble's header row, and the star sits there
+beside the two copy buttons — never on the bubble, which takes no `onClick` and
+must not be recoloured: an outline means recolouring `[data-bubble-tail]` too
+(its own element, its own opaque fill, its own keyframes) and `match-flash`
+already animates that border for 2.5 s, so a deep link arriving would fight it.
+
+- **`hidden` sits on each button, not on the row.** The row was hidden as a whole
+  because an invisible button still takes its width and left a permanent gap in
+  the header; a set star has to stay visible while you scroll past it, so it opts
+  out and the copy buttons keep the hover rule. (`opacity-0`, which the session
+  header's pin uses, would bring the gap back.)
+- **No `StarContext` means no star button**, the same contract `SubagentContext`
+  states — and that is what keeps it out of the subagent drawer, which renders
+  the same `TurnList` over a transcript whose uuids this session does not
+  contain. The provider wraps the conversation's list alone.
+- **Starring invalidates `['stars']` and nothing else.** `['session', id]` is a
+  re-parse of the whole transcript; see the reasoning and the storage in
+  [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md).
+- The page itself (`/starred`) is the sibling of Prompts and Plans, and its rows
+  link with `?msg=` — so everything under "Deep links" below is what makes the
+  link land: the segment, the branch and the turn all unfold first.
+
+## The two cross-session pages order themselves
+
+Starred and Plans share `lib/order.ts` and `OrderBar`: one date field, a
+direction, and grouping by session. **A group is ordered by its NEWEST member in
+both directions**, which is what makes descending read as "the sessions I was
+last in". The choice is per page in `localStorage`, like the reading preferences
+in `viewPrefs.ts` — not in the URL, because the nav link carries no parameters
+and would reset it on every click. The session list keeps its own machinery
+(`filters.ts`: five sort fields, day/project grouping, all of it in the URL) and
+shares nothing with this but the look of the controls.
 
 ## What folds
 
@@ -105,4 +141,4 @@ Why it says "working" rather than "writing", and why the silence it fills is so 
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings).
+[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page).

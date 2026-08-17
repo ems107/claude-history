@@ -78,6 +78,7 @@ scripts/        package.mjs · release.mjs
 - **Subscription usage is read-only**: never refresh the token, never write `.credentials.json`. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **The server binds `127.0.0.1` only**, and every state-changing request must come from our own pages (403 otherwise). A path or a cwd never comes from the request — it comes from the index. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **Session renames are local overrides**; the UI always surfaces `originalTitle` beside them. → [Architecture](docs/AI_ARCHITECTURE.md)
+- **A starred message keeps its own copy of the text**, keyed on the message's canonical uuid, and starring never invalidates `['session', id]`. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **The reading half is ours; the Agent SDK is only used to run Claude.** → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **Everything in `~/.claude` has an expiry date** (`cleanupPeriodDays`), fixtures included. → [Transcripts](docs/AI_TRANSCRIPTS.md)
 - **Never log with `console.*`** in new code. → [Logging](docs/AI_LOGGING.md)
@@ -85,4 +86,4 @@ scripts/        package.mjs · release.mjs
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 24 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 25 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

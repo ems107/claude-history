@@ -55,7 +55,7 @@ The UI reloads itself when the new version is up (the whole swap takes a few sec
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
-Removes the scheduled task and the Start Menu shortcut. Your local data (renames, pins, prices — see below) is only deleted if you confirm; the install folder itself is left for you to delete manually.
+Removes the scheduled task and the Start Menu shortcut. Your local data (renames, pins, starred messages, prices — see below) is only deleted if you confirm; the install folder itself is left for you to delete manually.
 
 ## Run from source (development)
 
@@ -102,7 +102,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 
 ```
 %LOCALAPPDATA%\claude-history\
-├── userdata.json            ← YOUR data (renames, pins, prices, settings) — not regenerable
+├── userdata.json            ← YOUR data (renames, pins, starred messages, prices, settings) — not regenerable
 ├── logs\YYYY-MM-DD.log      ← one JSONL file per day; read them in Settings → log viewer
 └── cache\                   ← fully regenerable; safe to delete at any time
     ├── index.json           ← list-view summaries, keyed by (path, size, mtime)
@@ -129,6 +129,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - **File viewer**: any local file a transcript names — in prose, on a Read/Edit/Write header, in the files-touched list — opens in a panel with syntax highlighting and the line it pointed at marked, and can be opened in your editor or revealed in Explorer. Read-only, and resolved against the session's own project folder.
 - **Continue a conversation from the app** (experimental, off by default — Settings → *Send prompts from the app*): a composer at the foot of every session sends a prompt to Claude Code and streams the answer into the viewer. It picks the model, the effort and plan mode, puts Claude's questions to you with their drawings, notes and free text, and lets you approve a plan or send it back with a note.
 - Local session rename and ★ pins (stored in this tool's `userdata.json` — never writes into `~/.claude`).
+- **Starred messages** (`/starred`): star any prompt of yours or any answer of Claude's from the ★ in its corner, and find them all on one page — searchable, filterable by project and by who spoke, ordered by the message's own date and groupable by session, each with a link that lands on the message inside its conversation. The star keeps its own copy of the text, so a starred message survives the transcript being swept.
 - Live updates via SSE — running sessions show a pulsing LIVE badge.
 - Resume: copy the `claude --resume` command or open Windows Terminal/pwsh directly in the project; open the project in Explorer or VS Code.
 - Subscription usage in the header: the 5-hour and weekly windows, the same figures Claude Code's `/usage` shows, read from your stored session (read-only — the token is never refreshed or modified) and refreshed at most every 5 minutes. Switchable off in Settings.
@@ -136,7 +137,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - Grouping headers in the list (by day or by project) and collapsed tool-call groups in the conversation viewer, so long sessions read as prompts and answers.
 - Stats dashboard (`/stats`): daily activity stacked by project, model mix, per-project totals, API-equivalent cost estimation with an editable price table (one-click fetch of the current official prices from Anthropic's public docs — user-triggered, previewed before saving), and what re-caching cost across the corpus.
 - Prompt library (`/prompts`): every prompt ever typed, searchable, with copy and open-session actions.
-- Plans page (`/plans`): every plan ever submitted, newest first, with its outcome, what you said when you refused one, whether the file it left in `~/.claude/plans` is still that plan, and a link that opens it where it was written.
+- Plans page (`/plans`): every plan ever submitted, newest first, with its outcome, what you said when you refused one, whether the file it left in `~/.claude/plans` is still that plan, and a link that opens it where it was written. Same ordering controls as the Starred page: oldest-first, or grouped by the session that submitted them.
 - Export any conversation to Markdown (tool calls / thinking / system optional); plans and answered questions export as the prose they are, not as JSON.
 - Resume lineage view and a per-session file-changes viewer (which files each session edited, with before/after diffs).
 - Self-update from GitHub releases: automatic availability check (10 min), explicit-confirmation install with checksum verification and automatic rollback.
