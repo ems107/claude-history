@@ -1,5 +1,6 @@
 import type { ContentBlock, MessageItem, SessionDetail } from '@claude-history/shared';
 import { parseAskUserQuestion } from '../components/viewer/AnsweredQuestion.tsx';
+import { parseSentFiles } from './sentFiles.ts';
 import { formatDateTime, shortModel } from './format.ts';
 import { parsePlan } from './plans.ts';
 
@@ -139,6 +140,30 @@ function contentLines(
             out.push('');
           }
           if (asked.response) out.push(`> **The user replied:** ${asked.response.replace(/\n/g, ' ')}`, '');
+          break;
+        }
+        // And the third for the same reason: files handed to the user are the
+        // delivery, not the plumbing that carried it. Unlike an attached image
+        // there is nothing to embed — `SendUserFile` keeps no bytes anywhere in
+        // the payload — so the export names the files and says where they are,
+        // rather than implying it contains them.
+        const sent = parseSentFiles(block);
+        if (sent) {
+          writeHeader();
+          out.push(
+            `> 📎 **Assistant sent ${String(sent.files.length)} file${sent.files.length === 1 ? '' : 's'}**${
+              sent.failed ? ' — the delivery failed' : ''
+            }`,
+            '',
+          );
+          if (sent.caption) out.push(`> ${sent.caption.replace(/\n/g, ' ')}`, '');
+          for (const f of sent.files) {
+            const detail = [f.mediaType, f.sizeBytes === null ? null : `${String(Math.round(f.sizeBytes / 1024))} KB`]
+              .filter((d): d is string => !!d)
+              .join(' · ');
+            out.push(`> - \`${f.path}\`${detail ? ` — ${detail}` : ''}`);
+          }
+          out.push('', '> *The files themselves are on disk, not in this export.*', '');
           break;
         }
         if (!opts.includeTools) break;

@@ -18,12 +18,20 @@ export function ZoomableImage({
   alt,
   label,
   onError,
+  size = 'thumb',
 }: {
   src: string;
   alt: string;
   /** The line under the thumbnail — type and size, when the caller knows them. */
   label?: ReactNode;
   onError?: () => void;
+  /**
+   * `thumb` sits in the flow of a conversation, where 16rem is as much as a
+   * message may spend on one picture. `fill` is for a panel opened to look at
+   * this and nothing else, and a 4K screenshot shrunk to a thumbnail there is
+   * the panel refusing to use the room it took.
+   */
+  size?: 'thumb' | 'fill';
 }) {
   const [zoomed, setZoomed] = useState(false);
 
@@ -47,7 +55,12 @@ export function ZoomableImage({
         {/* max-w-full on the button too: it shrink-wraps its content, so without
             it the image's own max-w-full resolves against a box as wide as the
             image and a 1498px screenshot overflows the column. */}
-        <img src={src} alt={alt} onError={onError} className="max-h-64 max-w-full rounded object-contain" />
+        <img
+          src={src}
+          alt={alt}
+          onError={onError}
+          className={`max-w-full rounded object-contain ${size === 'fill' ? 'max-h-[78vh]' : 'max-h-64'}`}
+        />
       </button>
       {label && <div className="mt-0.5 text-[10px] text-[var(--text-dim)]">{label}</div>}
 

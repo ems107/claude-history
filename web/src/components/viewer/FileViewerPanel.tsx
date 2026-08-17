@@ -281,6 +281,7 @@ export function FileViewerPanel({
             alt={refBasename(data.path)}
             label="click to view full size"
             onError={() => setImageFailed(true)}
+            size="fill"
           />
         </div>
       )}

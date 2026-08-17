@@ -7,6 +7,7 @@ import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '..
 import { foldedCounts } from '../../lib/folding.ts';
 import { parsePlan } from '../../lib/plans.ts';
 import { isPromptItem } from '../../lib/segments.ts';
+import { parseSentFiles } from '../../lib/sentFiles.ts';
 import { AnsweredQuestionCard, parseAskUserQuestion } from './AnsweredQuestion.tsx';
 import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
@@ -19,6 +20,7 @@ import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
 import { PlanCard, PlanModeMarker } from './PlanCard.tsx';
 import { useRevealTarget } from './RevealContext.ts';
+import { SentFilesCard } from './SentFilesCard.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
 
@@ -553,6 +555,26 @@ function userNode(item: MessageItem, models: TurnModel[], badge: ReactNode | und
   return <UserItem key={item.uuid} item={item} models={models} badge={badge} />;
 }
 
+/**
+ * The card a call is lifted out of the run and drawn as, or null for the calls
+ * that are ordinary tool traffic.
+ *
+ * Three tools earn one, and each is a turn of the conversation in miniature
+ * rather than plumbing: a question put to the user, a plan submitted for
+ * approval, and files handed over. Every parser is guarded by its own tool name,
+ * so the order here is presentation and never correctness — and one place to add
+ * the fourth beats a ternary chain in the two loops below.
+ */
+function toolCard(block: ToolContentBlock, key: string): ReactNode | null {
+  const asked = parseAskUserQuestion(block);
+  if (asked) return <AnsweredQuestionCard key={`asked-${key}`} parsed={asked} />;
+  const plan = parsePlan(block);
+  if (plan) return <PlanCard key={`plan-${key}`} parsed={plan} />;
+  const sent = parseSentFiles(block);
+  if (sent) return <SentFilesCard key={`sent-${key}`} parsed={sent} />;
+  return null;
+}
+
 export function TurnView({
   turn,
   showThinking,
@@ -762,28 +784,18 @@ export function TurnView({
     // An assistant message that is only tool calls contributes to the run
     // without printing its own header — so the run carries its cost.
     if (visible.length > 0 && visible.every((b) => b.kind === 'tool')) {
-      // A question to the user CLOSES the run it belongs to and is drawn after
+      // A call that earns a card CLOSES the run it belongs to and is drawn after
       // it, at conversation level. `costOwner` drops to false once that has
       // happened: the message pays in the first run, and a second run holding
       // more of its calls must not bill it again.
       let owns = true;
       for (const block of visible as ToolContentBlock[]) {
         pendingTools.push({ block, item, costOwner: owns });
-        // A plan is cut out of the run for the same reason a question is, and
-        // the two are handled identically here.
-        const asked = parseAskUserQuestion(block);
-        const plan = asked ? null : parsePlan(block);
-        if (!asked && !plan) continue;
+        const card = toolCard(block, block.toolUseId || item.uuid);
+        if (!card) continue;
         flushTools();
         owns = false;
-        const key = block.toolUseId || item.uuid;
-        nodes.push(
-          asked ? (
-            <AnsweredQuestionCard key={`asked-${key}`} parsed={asked} />
-          ) : (
-            <PlanCard key={`plan-${key}`} parsed={plan!} />
-          ),
-        );
+        nodes.push(card);
       }
       continue;
     }
@@ -794,11 +806,10 @@ export function TurnView({
     for (const [i, b] of visible.entries()) {
       if (b.kind === 'tool') {
         pendingTools.push({ block: b, item, costOwner: false });
-        // Same rule as above, inside a message that also has prose: the run
-        // ends at the question — or at the plan — and the card follows it.
-        const asked = parseAskUserQuestion(b);
-        const plan = asked ? null : parsePlan(b);
-        if (asked || plan) {
+        // Same rule as above, inside a message that also has prose: the run ends
+        // at the call that earns a card, and the card follows it.
+        const card = toolCard(b, String(i));
+        if (card) {
           rendered.push(
             <ToolGroup
               key={`tools-before-ask-${i}`}
@@ -810,13 +821,7 @@ export function TurnView({
             />,
           );
           pendingTools = [];
-          rendered.push(
-            asked ? (
-              <AnsweredQuestionCard key={`asked-${i}`} parsed={asked} />
-            ) : (
-              <PlanCard key={`plan-${i}`} parsed={plan!} />
-            ),
-          );
+          rendered.push(card);
         }
         continue;
       }
