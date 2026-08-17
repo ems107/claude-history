@@ -34,6 +34,85 @@ const LATE_TEXT_MS = 900;
 
 const keyOf = (t: SegmentTurn): string => turnKey(t.turn, t.index);
 
+/**
+ * The timers one jump owns, cleared together. They are collected rather than
+ * tracked individually because a jump superseded halfway through has a flash to
+ * take back, marks to drop and a poll to stop, and forgetting any one of them
+ * leaves the previous link painting over the new one.
+ */
+function timerBag() {
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  return {
+    after(ms: number, fn: () => void): void {
+      timers.push(setTimeout(fn, ms));
+    },
+    clear(): void {
+      for (const t of timers) clearTimeout(t);
+      timers.length = 0;
+    },
+  };
+}
+
+/**
+ * The element an anchor names, tool first: a `call` hit also carries the uuid of
+ * the message that made it, and that would point at a whole answer instead of at
+ * the one call among a run of thirty. A tool id this parse does not hold (a fork,
+ * a subagent's own call) still lands on the exchange it belonged to.
+ */
+function findAnchor(toolUseId: string | null | undefined, uuid: string | null | undefined): HTMLElement | null {
+  if (toolUseId) {
+    const tool = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(toolUseId)}"]`);
+    if (tool) return tool;
+    if (!uuid) return null;
+  }
+  return uuid ? document.getElementById(uuid) : null;
+}
+
+/**
+ * The box an anchor lands on. The anchor may be an alias uuid — a zero-sized
+ * <span> inside the bubble — so what gets flashed and marked is the box, not
+ * whatever carries the id.
+ *
+ * A tool block is its own box, and it is tested FIRST because it is not always
+ * OUTSIDE a bubble, as this used to assume. A run that ends at a question or a
+ * plan inside a message that also has prose is rendered into that message's own
+ * bubble (`tools-before-ask`), and there `closest` climbed past the one call to
+ * the whole answer: 25 calls over the 20 largest sessions, and `b343d4ac`'s
+ * `toolu_01CyGpmXFjFcBj8apDVmAXck` flashed 19,383 characters to point at 17,047
+ * of them.
+ */
+export function anchorBox(el: HTMLElement): HTMLElement {
+  return el.matches('[data-tool-id]') ? el : (el.closest<HTMLElement>('[data-bubble]') ?? el);
+}
+
+/**
+ * Where marks may go inside a box. A bubble marks its body only, to keep the
+ * role and the model out of it; a tool block has no such split, and its header —
+ * the tool name and its input summary — is often exactly where the hit is.
+ */
+export function markingBody(box: HTMLElement): HTMLElement {
+  return box.querySelector<HTMLElement>('[data-bubble-body]') ?? box;
+}
+
+/**
+ * Looks for the anchor until it appears, rather than waiting one guess out:
+ * opening the way in is a chain of state updates — segment, branch, turn, tool
+ * run, tool block — and a single 100 ms bet at the end of it is a race on a big
+ * session. Returns nothing; the bag is what stops it.
+ */
+function pollForAnchor(bag: ReturnType<typeof timerBag>, find: () => HTMLElement | null, arrive: (el: HTMLElement) => void): void {
+  let tries = 0;
+  const attempt = (): void => {
+    const el = find();
+    if (el) {
+      arrive(el);
+      return;
+    }
+    if (++tries < ANCHOR_TRIES) bag.after(ANCHOR_STEP_MS, attempt);
+  };
+  bag.after(ANCHOR_STEP_MS, attempt);
+}
+
 export function TurnList({
   turns,
   showThinking,
@@ -151,61 +230,45 @@ export function TurnList({
   const highlightRef = useRef(highlight);
   highlightRef.current = highlight;
 
+  /**
+   * Unfolds everything between the top of the list and an anchor: a folded
+   * segment, a rewound-away branch or a folded turn would swallow a link
+   * silently. The state lands well before the scroll does. The tool's own run
+   * and block open on the way down, from `targetTool`; this only has to make the
+   * turn itself visible.
+   *
+   * It is only ever called from an effect that runs on the render where the jump
+   * was asked for, so closing over this render's `locate` and `fold` is right.
+   */
+  const openWayIn = (anchor: string): void => {
+    const at = locate.get(anchor);
+    if (!at) return;
+    setOpenSegments((s) => (s.has(at.segment) ? s : new Set(s).add(at.segment)));
+    if (at.discarded) {
+      const key = at.discarded;
+      setOpenDiscarded((s) => (s.has(key) ? s : new Set(s).add(key)));
+    }
+    fold.open(at.turn);
+  };
+
   useEffect(() => {
-    // A tool call is the more precise anchor and wins: a `call` hit also carries
-    // the uuid of the message that made it, which would flash a whole answer
-    // instead of the one call among a run of thirty.
+    // A tool call is the more precise anchor and wins.
     const anchor = scrollToTool ?? scrollToUuid;
     if (!anchor) return;
-    // A folded segment, a rewound-away branch or a folded turn would swallow the
-    // link silently, so open the way in first — the state lands well before the
-    // scroll below fires. The tool's own run and block open on the way down, from
-    // `targetTool`; this only has to make the turn itself visible.
-    const at = locate.get(anchor);
-    if (at) {
-      setOpenSegments((s) => (s.has(at.segment) ? s : new Set(s).add(at.segment)));
-      if (at.discarded) {
-        const key = at.discarded;
-        setOpenDiscarded((s) => (s.has(key) ? s : new Set(s).add(key)));
-      }
-      fold.open(at.turn);
-    }
+    openWayIn(anchor);
 
-    const timers: ReturnType<typeof setTimeout>[] = [];
+    const bag = timerBag();
     let clearMarks: (() => void) | null = null;
-    const find = (): HTMLElement | null => {
-      if (scrollToTool) {
-        const tool = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(scrollToTool)}"]`);
-        if (tool) return tool;
-        // Only then the message: a tool id this parse does not hold (a fork, a
-        // subagent's own call) still lands on the exchange it belonged to.
-        if (!scrollToUuid) return null;
-      }
-      return scrollToUuid ? document.getElementById(scrollToUuid) : null;
-    };
 
     const arrive = (el: HTMLElement): void => {
-      // The anchor may be an alias uuid — a zero-sized <span> inside the bubble —
-      // so what gets flashed is the box, not whatever carries the id.
-      //
-      // A tool block is its own box, and it is tested FIRST because it is not
-      // always OUTSIDE a bubble, as this used to assume. A run that ends at a
-      // question or a plan inside a message that also has prose is rendered into
-      // that message's own bubble (`tools-before-ask`), and there `closest`
-      // climbed past the one call to the whole answer: 25 calls over the 20
-      // largest sessions, and `b343d4ac`'s `toolu_01CyGpmXFjFcBj8apDVmAXck`
-      // flashed 19,383 characters to point at 17,047 of them.
-      const box = el.matches('[data-tool-id]') ? el : (el.closest<HTMLElement>('[data-bubble]') ?? el);
+      const box = anchorBox(el);
       box.scrollIntoView({ block: 'center' });
       box.classList.add('match-flash');
-      timers.push(setTimeout(() => box.classList.remove('match-flash'), FLASH_MS));
+      bag.after(FLASH_MS, () => box.classList.remove('match-flash'));
 
       const hl = highlightRef.current;
       if (!hl) return;
-      // A bubble marks its body only, to keep the role and the model out of it;
-      // a tool block has no such split, and its header — the tool name and its
-      // input summary — is often exactly where the hit is.
-      const body = box.querySelector<HTMLElement>('[data-bubble-body]') ?? box;
+      const body = markingBody(box);
       const mark = () => {
         clearMarks?.();
         const marked = markMatches(body, hl);
@@ -213,12 +276,10 @@ export function TurnList({
         return marked;
       };
       const marked = mark();
-      timers.push(
-        setTimeout(() => {
-          clearMarks?.();
-          clearMarks = null;
-        }, MARK_MS),
-      );
+      bag.after(MARK_MS, () => {
+        clearMarks?.();
+        clearMarks = null;
+      });
       // A long answer, or a tool result of a thousand lines, can be taller than
       // the window — or scroll inside its own box — so centring the box is no
       // promise that the match is on screen. `revealRange` moves only what has to
@@ -229,30 +290,16 @@ export function TurnList({
       // so the text searched may not be here yet. Re-marking once, and only when
       // the text really changed, is what covers that without a second guess.
       const settled = body.textContent?.length ?? 0;
-      timers.push(
-        setTimeout(() => {
-          if (!clearMarks || (body.textContent?.length ?? 0) === settled) return;
-          const late = mark();
-          if (late.first) revealRange(late.first);
-        }, LATE_TEXT_MS),
-      );
+      bag.after(LATE_TEXT_MS, () => {
+        if (!clearMarks || (body.textContent?.length ?? 0) === settled) return;
+        const late = mark();
+        if (late.first) revealRange(late.first);
+      });
     };
 
-    // Polled rather than waited out once: opening the way in is a chain of state
-    // updates — segment, branch, turn, tool run, tool block — and a single 100 ms
-    // guess at the end of it is a race on a big session.
-    let tries = 0;
-    const attempt = (): void => {
-      const el = find();
-      if (el) {
-        arrive(el);
-        return;
-      }
-      if (++tries < ANCHOR_TRIES) timers.push(setTimeout(attempt, ANCHOR_STEP_MS));
-    };
-    timers.push(setTimeout(attempt, ANCHOR_STEP_MS));
+    pollForAnchor(bag, () => findAnchor(scrollToTool, scrollToUuid), arrive);
     return () => {
-      for (const t of timers) clearTimeout(t);
+      bag.clear();
       clearMarks?.();
     };
     // Deliberately NOT keyed on `turns`/`locate`: the deep-linked jump belongs
