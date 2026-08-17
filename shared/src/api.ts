@@ -6,6 +6,7 @@ import type {
   ProjectInfo,
   SessionDetail,
   SessionSummary,
+  StarredMessage,
   SubagentDetail,
 } from './types.ts';
 
@@ -217,6 +218,29 @@ export interface PlanEntry extends PlanRecord {
   onDisk: boolean | null;
 }
 export type PlansResponse = PlanEntry[];
+
+/**
+ * One starred message, as the Starred page lists it: the stored record plus
+ * where it belongs today.
+ *
+ * The project and the title are on `StarredMessage` as snapshots, and the
+ * endpoint overwrites them from the index whenever the session is still there —
+ * so a session renamed after the star was set reads by its current name here
+ * too, and only a session that has since gone falls back to what was stored.
+ */
+export interface StarEntry extends StarredMessage {
+  /** False once the transcript is gone: the copy stays, the link cannot work. */
+  sessionExists: boolean;
+  projectKey: string;
+  projectName: string;
+}
+export type StarsResponse = StarEntry[];
+
+export interface StarUpdateResponse {
+  ok: boolean;
+  /** The record as stored, or null when the star was removed. */
+  star: StarEntry | null;
+}
 
 export interface ResumeResponse {
   ok: boolean;
@@ -993,4 +1017,11 @@ export type ServerEvent =
    * they started a turn or finished one.
    */
   | { type: 'chat-changed'; id: string }
+  /**
+   * A message was starred or unstarred. Its own event rather than
+   * `session-updated`, which invalidates `['session', id]` — and that is a full
+   * re-parse of the transcript, in every open tab, for a write that changed
+   * nothing in it.
+   */
+  | { type: 'stars-changed' }
   | { type: 'logs-appended' };

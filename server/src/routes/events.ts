@@ -30,6 +30,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });
     const onChat = (id: string) => send({ type: 'chat-changed', id });
+    const onStars = () => send({ type: 'stars-changed' });
     let logsTimer: NodeJS.Timeout | null = null;
     const onLogAppended = () => {
       if (logsTimer) return;
@@ -43,6 +44,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.index.events.on('sessions-changed', onChanged);
     ctx.index.events.on('live-changed', onLive);
     ctx.index.events.on('index-progress', onProgress);
+    ctx.index.events.on('stars-changed', onStars);
     ctx.updates.events.on('update-status', onUpdateStatus);
     ctx.chat.events.on('chat-changed', onChat);
     logEvents.on('appended', onLogAppended);
@@ -57,6 +59,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.index.events.off('sessions-changed', onChanged);
       ctx.index.events.off('live-changed', onLive);
       ctx.index.events.off('index-progress', onProgress);
+      ctx.index.events.off('stars-changed', onStars);
       ctx.updates.events.off('update-status', onUpdateStatus);
       ctx.chat.events.off('chat-changed', onChat);
     });

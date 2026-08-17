@@ -263,6 +263,48 @@ export interface SessionSummary {
   descendants: string[];
 }
 
+/**
+ * Cap on the copy a star keeps. `userdata.json` is read whole at startup and
+ * rewritten in full on every pin, rename and setting, and a prompt can carry a
+ * pasted log of any size — so the copy is bounded and says when it was cut.
+ * 200,000 characters is far above any real message here.
+ */
+export const STAR_TEXT_MAX = 200_000;
+
+/**
+ * A message the user starred, as stored in `userdata.json` — the third kind of
+ * local override after renames and pins, and the only one that keeps CONTENT.
+ *
+ * It keeps a copy of the text on purpose. Reading it back out of the transcript
+ * on every visit would mean parsing one file per starred session (~100-200 ms
+ * each, measured on the 16 MB one), and the star would die with the transcript
+ * — while the whole point of starring something is to keep it. Nothing can
+ * drift: transcript lines are append-only, so a message's text never changes
+ * after it is written.
+ */
+export interface StarredMessage {
+  sessionId: string;
+  /** The item's canonical uuid (`MessageItem.uuid`) — what `?msg=` needs. */
+  uuid: string;
+  role: 'user' | 'assistant';
+  /** The message's own clock: what the Starred page sorts by. */
+  timestamp: string | null;
+  /** When the star was set. The fallback order for a message with no clock. */
+  starredAt: string;
+  /** Its text as the transcript held it when it was starred. */
+  text: string;
+  /** The real length, before `STAR_TEXT_MAX` cut it. */
+  chars: number;
+  truncated: boolean;
+  /**
+   * Where it came from, snapshotted so an orphaned star still says so. The
+   * index wins whenever the session is still there — that is what keeps a
+   * local rename showing on the Starred page too.
+   */
+  sessionTitle: string;
+  project: string;
+}
+
 export interface ProjectInfo {
   key: string; // normalized path
   path: string; // display path

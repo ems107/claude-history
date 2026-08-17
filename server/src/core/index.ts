@@ -7,6 +7,7 @@ import type {
   ProjectInfo,
   SessionEnrichment,
   SessionSummary,
+  StarredMessage,
 } from '@claude-history/shared';
 import {
   AUTO_RELOAD_MESSAGE_MAX,
@@ -32,6 +33,11 @@ import { scanSessions, type ScannedSession } from './scanner.ts';
 import { summarizeSession } from './summarizer.ts';
 
 const log = createLogger('index');
+
+/** A star belongs to one message of one transcript, and nothing else identifies it. */
+function starKey(sessionId: string, uuid: string): string {
+  return `${sessionId}:${uuid}`;
+}
 
 /**
  * A whole number at or above `min`, falling back to the stored value. The
@@ -100,7 +106,7 @@ export interface TextEntry extends CacheKey {
  * and progressively fills token totals, PR links and resume ancestry.
  *
  * Events: 'session-updated' (id), 'sessions-changed' (ids), 'index-progress'
- * ({enriched, total}).
+ * ({enriched, total}), 'stars-changed'.
  */
 export class SessionIndex {
   readonly events = new EventEmitter();
@@ -113,6 +119,12 @@ export class SessionIndex {
   private titleOverrides: Record<string, string> = {};
   /** Pinned session ids — stored in userdata.json. */
   private pins = new Set<string>();
+  /**
+   * Starred messages, keyed `<sessionId>:<uuid>` — stored in userdata.json,
+   * text and all. A Map rather than the array on disk so the viewer can ask
+   * about one message without walking the list.
+   */
+  private stars = new Map<string, StarredMessage>();
   /** Custom model price table — null means "use defaults". */
   private prices: PriceTable | null = null;
   /** User settings — stored in userdata.json alongside renames and pins. */
@@ -134,11 +146,13 @@ export class SessionIndex {
     const userdata = await readJsonFile<{
       titleOverrides?: Record<string, string>;
       pins?: string[];
+      stars?: StarredMessage[];
       prices?: PriceTable;
       settings?: Partial<AppSettings>;
     }>(this.config.userdataFile);
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
+    this.stars = new Map((userdata?.stars ?? []).map((s) => [starKey(s.sessionId, s.uuid), s]));
     this.prices = userdata?.prices ?? null;
     // Only keys we still have: a setting that is retired would otherwise live
     // on in userdata.json forever, be served by /api/settings and read as
@@ -356,10 +370,16 @@ export class SessionIndex {
     };
   }
 
+  /**
+   * The whole file, every time. Anything missing from this literal is dropped
+   * from disk on the next rename — so a new kind of user data has to be added
+   * here as well as to the read above.
+   */
   private async saveUserdata(): Promise<void> {
     await writeJsonAtomic(this.config.userdataFile, {
       titleOverrides: this.titleOverrides,
       pins: [...this.pins],
+      stars: [...this.stars.values()],
       settings: this.settings,
       ...(this.prices ? { prices: this.prices } : {}),
     });
@@ -449,6 +469,38 @@ export class SessionIndex {
     else this.pins.delete(id);
     await this.saveUserdata();
     this.events.emit('session-updated', id);
+  }
+
+  /** Every starred message, in the order they were stored. */
+  listStars(): StarredMessage[] {
+    return [...this.stars.values()];
+  }
+
+  getStar(sessionId: string, uuid: string): StarredMessage | undefined {
+    return this.stars.get(starKey(sessionId, uuid));
+  }
+
+  /**
+   * Store or replace a star. `stars-changed` and NOT `session-updated`: the
+   * transcript did not move, and that event costs every open tab a re-parse of
+   * it.
+   */
+  async setStar(record: StarredMessage): Promise<void> {
+    this.stars.set(starKey(record.sessionId, record.uuid), record);
+    await this.saveUserdata();
+    this.events.emit('stars-changed');
+  }
+
+  /**
+   * Drop a star. Deliberately says nothing about whether the session still
+   * exists: a star whose transcript has gone is exactly the one that has to
+   * stay removable.
+   */
+  async removeStar(sessionId: string, uuid: string): Promise<boolean> {
+    if (!this.stars.delete(starKey(sessionId, uuid))) return false;
+    await this.saveUserdata();
+    this.events.emit('stars-changed');
+    return true;
   }
 
   /**
