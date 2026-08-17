@@ -4,6 +4,23 @@ import type { SentFile, SentFiles } from '../../lib/sentFiles.ts';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
 
+/**
+ * The tail of the folder a file was sent from — the last two segments, marked
+ * as cut.
+ *
+ * The whole path is neither useful nor showable here: these are absolute
+ * scratchpad paths of ~130 characters whose first ~110 are identical on every
+ * row, so a truncated column spent its width on the shared half and ran out
+ * before the part that differs. The end is the part that says anything, and the
+ * whole path is on the link's title and in its href.
+ */
+function folderTail(path: string, name: string): string {
+  const dir = path.slice(0, path.length - name.length).replace(/[\\/]+$/, '');
+  const parts = dir.split(/[\\/]/);
+  const tail = parts.slice(-2).join('\\');
+  return parts.length > 2 ? `…\\${tail}` : dir;
+}
+
 /** A chip that only exists when it has something to say. */
 function Chip({ children, tone, title }: { children: string; tone: 'quiet' | 'warn'; title: string }) {
   return (
@@ -55,12 +72,8 @@ function FileRow({ file }: { file: SentFile }) {
         <span className="shrink-0 font-medium">{file.name}</span>
       )}
       {detail && <span className="shrink-0 text-[11px] text-[var(--text-dim)]">{detail}</span>}
-      {/* The FOLDER, not the whole path: the filename is already the link at the
-          head of the row, and repeating it here spent the width twice. Dimmed and
-          last because a delivery's rows all share one directory — the whole path
-          is on the link's title and in its href. */}
       <span className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-[var(--text-dim)]/70" title={file.path}>
-        {file.path.slice(0, file.path.length - file.name.length).replace(/[\\/]$/, '')}
+        {folderTail(file.path, file.name)}
       </span>
       {file.unvalidated && (
         <Chip tone="warn" title="Claude Code could not confirm the file was at this path when it was sent.">
