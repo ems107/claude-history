@@ -307,7 +307,7 @@ export function SessionHeader({
           type="button"
           onClick={onToggleFind}
           className={toggleClass(findOpen)}
-          title="Find in this conversation (Ctrl+F) — reaches what is folded away, which the browser's own find cannot"
+          title="Find in this conversation — reaches what is folded away, which the browser's own find cannot. Ctrl+F searches the selected message, or what is unfolded; Ctrl+Shift+F searches all of it."
         >
           Find
         </button>

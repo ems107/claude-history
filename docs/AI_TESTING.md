@@ -175,10 +175,15 @@ is pure) over real `GET /api/sessions/:id` payloads.
   16=16, 31=31, 3=3 and three 0=0 over the three largest sessions. A difference
   means one side stopped folding the way the other does.
 - **The pairing that justifies the feature**: a string living only in an inline
-  tool result (`TS2353` in `f3384d17`) is found here and returns 0 sessions from
-  the indexed search. And the honest gap the other way: `NOTION_TOKEN` in
-  `4a1483ba` must give **0** here, with the bar's own note reporting the
-  offloaded and truncated outputs it cannot reach.
+  tool result is found here and returns 0 sessions from the indexed search.
+  **Choose that string by the property, never by name** — this repo writes about
+  its own transcripts, so a token that was tool-output-only lands in somebody's
+  prose sooner or later and a hard-coded one stops testing anything the day it
+  does (`TS2353` lasted about a week). Walk the session's tool text, take the
+  first token `/api/search` answers 0 for, and assert the client finds it. And
+  the honest gap the other way: `NOTION_TOKEN` in `4a1483ba` must give **0**
+  here, with the bar's own note reporting the offloaded and truncated outputs it
+  cannot reach.
 - **Recorded cost, so a regression shows**: building the corpus is ~40 ms for
   2.04 M folded characters and ~50 ms for 2.42 M; a scan is 1.4–48 ms; and a
   one-character phrase (`a`, 121,893 occurrences) must stop at `MAX_FIND_HITS`
@@ -215,10 +220,15 @@ Then Chrome over CDP, with check 9's harness:
   must return to `Current message`. **`All`, once pressed, must survive both** —
   deselecting and selecting something else — and only closing and reopening the
   bar lets go of it.
+- **`Ctrl+Shift+F` opens on `All`** with a message selected and with none, and
+  leaves the selection alone; plain `Ctrl+F` afterwards must go back to
+  following it.
 - **The scope always explains itself**, in a sentence under the bar, and the
   `N more in the whole conversation` button sits BESIDE that sentence rather
   than replacing it. The two reach notes carry a `title` each, because "3 long
   outputs searched only in part" is not self-evident.
+- **Every row in the panel carries a clock**, short in the row and full plus
+  relative on the hover.
 - **Selecting works with the bar shut**, which is the point of it being its own
   feature: click a bubble on arrival and `[data-selected]` must be on it with
   the ring drawn, click the empty gutter and it must go. And **a deep link

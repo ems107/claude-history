@@ -262,6 +262,9 @@ folded text is a decision, not somewhere to find yourself.
   selection. Asking for the whole conversation and then losing it to a stray
   click on the margin is the kind of help nobody wants, and closing the bar is
   the obvious "I am done with this search".
+- **`Ctrl+Shift+F` opens straight on `All`**, whatever is selected. It is the
+  other half of "All is never chosen for you": there has to be a way to ask for
+  it that does not start with clicking away from the message you are reading.
 - **The scope explains itself in a sentence, always** (`SCOPE_BLURB`). Two of
   the three are chosen for the reader and every button is two words, so the one
   thing that must never be a guess is where the number in the counter came from.
@@ -280,6 +283,12 @@ folded text is a decision, not somewhere to find yourself.
   and nothing after it is.
 - **Kinds are chips with their own counts**, so turning one off is informed
   rather than a guess, and a kind with nothing in it disables itself.
+- **A row in the list says WHEN**, short beside the role and full on the hover
+  with the relative time. The rows are lines lifted out of a conversation, and a
+  hundred of them all reading TOOL are otherwise the same row a hundred times;
+  the clock is the only thing that puts them back. `SearchSnippet` carries no
+  timestamp — the server's rows have none to give — so it rides on `FindUnit`
+  and reaches `SnippetRow` as an optional prop.
 
 **Scope and kinds live in component state, not in the URL.** `hl` means the
 terms the SERVER matched; overloading it with a live client query would give one

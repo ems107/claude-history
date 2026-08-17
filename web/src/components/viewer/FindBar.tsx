@@ -63,7 +63,13 @@ export interface FindBarProps {
   at: number;
   total: number;
   capped: boolean;
-  rows: { key: string; snippet: ReturnType<typeof hitSnippet>; active: boolean; select: () => void }[];
+  rows: {
+    key: string;
+    snippet: ReturnType<typeof hitSnippet>;
+    when: string | null;
+    active: boolean;
+    select: () => void;
+  }[];
   moreRows: number;
   showMore: () => void;
   hiddenThinking: number;
@@ -251,9 +257,19 @@ export function useFindBar(
   }, []);
 
   const seed = opts.seed;
-  const openBar = useCallback(() => {
+  /**
+   * `everywhere` is Ctrl+Shift+F: open on `All` whatever is selected. The
+   * shortcut is the second half of "All is never chosen for you" — there has to
+   * be a way to ASK for it that does not mean clicking away from the message you
+   * are reading first.
+   */
+  const openBar = useCallback((everywhere = false) => {
     setEverOpened(true);
     setOpen(true);
+    if (everywhere) {
+      setAllPinned(true);
+      setScope('all');
+    }
     setTyped((prev) => {
       if (prev.length > 0 || !seed) return prev;
       setWholeWord(seed.wholeWord);
@@ -292,7 +308,7 @@ export function useFindBar(
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
         e.preventDefault();
-        openBar();
+        openBar(e.shiftKey);
         return;
       }
       if (!open) return;
@@ -311,6 +327,7 @@ export function useFindBar(
     return hits.slice(0, rowLimit).map((hit, i) => ({
       key: `${hit.unit}:${hit.ordinal}`,
       snippet: hitSnippet(units, hit, highlight),
+      when: units[hit.unit].timestamp,
       active: i === at,
       select: () => stepTo(i),
     }));
@@ -421,7 +438,7 @@ export function FindBar(p: FindBarProps) {
               p.close();
             }
           }}
-          placeholder="Find in this conversation…"
+          placeholder="Find in this conversation…  (Ctrl+Shift+F searches all of it)"
           className="min-w-56 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 outline-none focus:border-[var(--accent)]"
         />
         <button type="button" onClick={() => p.setWholeWord(!p.wholeWord)} className={`${control} ${p.wholeWord ? on : idle}`} title="Whole words only">
@@ -526,6 +543,7 @@ export function FindBar(p: FindBarProps) {
                   query={{ terms: [], mode: 'phrase', scope: 'message', wholeWord: false }}
                   onSelect={row.select}
                   active={row.active}
+                  when={row.when}
                 />
               ))}
               {p.moreRows > 0 && (

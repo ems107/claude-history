@@ -1,5 +1,6 @@
 import type { SearchQueryEcho, SearchSnippet } from '@claude-history/shared';
 import { Link } from 'react-router';
+import { formatDateTimeFull, formatDateTimeShort, relativeTime } from '../../lib/format.ts';
 import { highlightSearchParams, TOOL_PARAM } from '../../lib/highlight.ts';
 
 /**
@@ -24,6 +25,7 @@ export function SnippetRow({
   query,
   onSelect,
   active = false,
+  when,
 }: {
   sessionId: string;
   snippet: SearchSnippet;
@@ -37,6 +39,13 @@ export function SnippetRow({
   onSelect?: () => void;
   /** The row the reader is standing on. A ring, never a filter. */
   active?: boolean;
+  /**
+   * When the message this came from was written. Only the find bar has it — the
+   * server's snippets carry no clock — and it is what puts a row back into its
+   * conversation: a hundred rows all reading TOOL are otherwise the same row a
+   * hundred times.
+   */
+  when?: string | null;
 }) {
   let to = `/session/${sessionId}`;
   if (snippet.agentId) {
@@ -69,6 +78,16 @@ export function SnippetRow({
       <span className="mr-2 inline-block w-14 shrink-0 text-right font-semibold text-[var(--text-dim)]/70 uppercase">
         {snippet.role}
       </span>
+      {when && (
+        // Short here and full on the hover: the row is one line and every
+        // character the clock takes is a character of the match itself.
+        <span
+          className="mr-2 inline-block shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60"
+          title={`${formatDateTimeFull(when)} · ${relativeTime(when)}`}
+        >
+          {formatDateTimeShort(when)}
+        </span>
+      )}
       {snippet.parts.map((part, pi) =>
         part.hit ? (
           <mark key={pi} className="rounded-sm bg-[var(--accent)]/30 px-0.5 text-[var(--text)]">

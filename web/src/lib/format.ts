@@ -34,6 +34,19 @@ export function formatDateTime(when: string | number | null): string {
 export const formatDateTimeFull = formatDateTime;
 
 /**
+ * The same clock with the year and the seconds dropped — for a place where the
+ * stamp is a hint beside something else and every character it takes is a
+ * character of that something else. The full one belongs on the hover.
+ */
+export function formatDateTimeShort(when: string | number | null): string {
+  if (when === null) return '—';
+  const ms = typeof when === 'number' ? when : Date.parse(when);
+  if (Number.isNaN(ms)) return '—';
+  const d = new Date(ms);
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
  * Time left until `when`, always rounded DOWN: "2 hr 37 min" promises less
  * than is actually left, never more, which is the safe direction for a quota
  * countdown. `compact` keeps only the largest unit ("2 hr", "5 d").

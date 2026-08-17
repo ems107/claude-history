@@ -88,6 +88,13 @@ export interface FindUnit {
   /** Where each piece ends in `folded`, and what kind of text it was. */
   segments: { end: number; role: FindRole }[];
   short: ShortText | null;
+  /**
+   * When the message this box belongs to was written. A row in the match list
+   * is a line of text out of its conversation, and the two things that put it
+   * back are who said it and when — the role alone leaves eight hundred rows
+   * looking like the same row.
+   */
+  timestamp: string | null;
 }
 
 export interface FindHit {
@@ -126,7 +133,12 @@ interface Piece {
  * ends in none. That equality is what lets `hitSnippet` recover the map later
  * instead of carrying 8 bytes per folded character for the life of the session.
  */
-function unitOf(uuid: string, toolUseId: string | null, pieces: Piece[], short: ShortText | null): FindUnit | null {
+function unitOf(
+  owner: Pick<MessageItem, 'uuid' | 'timestamp'>,
+  toolUseId: string | null,
+  pieces: Piece[],
+  short: ShortText | null,
+): FindUnit | null {
   const kept: { raw: string; folded: string; role: FindRole }[] = [];
   for (const piece of pieces) {
     const raw = piece.text.trim();
@@ -146,7 +158,15 @@ function unitOf(uuid: string, toolUseId: string | null, pieces: Piece[], short: 
     folded += piece.folded;
     segments.push({ end: folded.length, role: piece.role });
   }
-  return { uuid, toolUseId, raw: kept.map((p) => p.raw).join('\n'), folded, segments, short };
+  return {
+    uuid: owner.uuid,
+    toolUseId,
+    raw: kept.map((p) => p.raw).join('\n'),
+    folded,
+    segments,
+    short,
+    timestamp: owner.timestamp,
+  };
 }
 
 /**
@@ -178,7 +198,7 @@ type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
  * prints it — and not in the compact form the server's deep scan reads. A hit
  * the bar cannot paint is worse than one it never claims.
  */
-function toolUnit(block: ToolBlock, uuid: string): FindUnit | null {
+function toolUnit(block: ToolBlock, owner: MessageItem): FindUnit | null {
   const role: FindRole = block.toolName === 'ExitPlanMode' ? 'plan' : 'tool';
   const pieces: Piece[] = [{ text: `${block.toolName} ${block.inputSummary}`, role }];
   if (block.input !== null && block.input !== undefined) {
@@ -191,7 +211,7 @@ function toolUnit(block: ToolBlock, uuid: string): FindUnit | null {
   const result = block.result;
   if (result) pieces.push({ text: result.text, role });
   const short: ShortText | null = result?.offloadedFile ? 'offloaded' : result?.truncated ? 'truncated' : null;
-  return unitOf(uuid, block.toolUseId || null, pieces, short);
+  return unitOf(owner, block.toolUseId || null, pieces, short);
 }
 
 /** The prose of a user message: what `UserItem` draws inside its bubble. */
@@ -200,13 +220,13 @@ function userUnit(item: MessageItem): FindUnit | null {
     // `CompactSummaryPanel`, not a bubble: the summary a compaction wrote is not
     // a prompt anybody typed.
     const text = item.blocks.find((b) => b.kind === 'text');
-    return unitOf(item.uuid, null, [{ text: text?.kind === 'text' ? text.text : '', role: 'system' }], null);
+    return unitOf(item, null, [{ text: text?.kind === 'text' ? text.text : '', role: 'system' }], null);
   }
   const pieces: Piece[] = [];
   for (const b of item.blocks) {
     if (b.kind === 'text' || b.kind === 'command') pieces.push({ text: b.text, role: 'user' });
   }
-  return unitOf(item.uuid, null, pieces, null);
+  return unitOf(item, null, pieces, null);
 }
 
 /**
@@ -216,7 +236,7 @@ function userUnit(item: MessageItem): FindUnit | null {
  */
 function noticeUnit(item: MessageItem, notice: Extract<ContentBlock, { kind: 'notice' }>): FindUnit | null {
   return unitOf(
-    item.uuid,
+    item,
     null,
     [
       { text: notice.text, role: 'notice' },
@@ -232,7 +252,7 @@ function systemUnit(item: MessageItem): FindUnit | null {
   if (!first || first.kind !== 'text') return null;
   // Cut where `SystemItem` cuts it: it draws the first 400 characters and has no
   // fold to open, so a hit past them could be counted and never shown.
-  return unitOf(item.uuid, null, [{ text: first.text.slice(0, SYSTEM_CHARS), role: 'system' }], null);
+  return unitOf(item, null, [{ text: first.text.slice(0, SYSTEM_CHARS), role: 'system' }], null);
 }
 
 /**
@@ -287,7 +307,7 @@ export function buildFindCorpus(turns: Turn[]): FindUnit[] {
         // Only calls: no bubble at all, and they JOIN the run rather than being
         // drawn here — the message pays through the run's own pill.
         for (const block of tools) {
-          const unit = toolUnit(block, item.uuid);
+          const unit = toolUnit(block, item);
           if (unit) pending.push(unit);
         }
         continue;
@@ -300,7 +320,7 @@ export function buildFindCorpus(turns: Turn[]): FindUnit[] {
       let leadsWithTools = false;
       for (const b of item.blocks) {
         if (b.kind === 'tool') {
-          const unit = toolUnit(b, item.uuid);
+          const unit = toolUnit(b, item);
           if (unit) held.push(unit);
           continue;
         }
@@ -312,7 +332,7 @@ export function buildFindCorpus(turns: Turn[]): FindUnit[] {
         }
         prose.push({ text: b.text, role: b.kind === 'thinking' ? 'thinking' : 'assistant' });
       }
-      const bubble = unitOf(item.uuid, null, prose, null);
+      const bubble = unitOf(item, null, prose, null);
       // A run drawn before the first line of prose comes first; one drawn between
       // two lines is sorted after the bubble it interrupts (see above).
       if (leadsWithTools) units.push(...inside);
