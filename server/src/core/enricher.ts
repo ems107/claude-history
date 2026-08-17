@@ -6,6 +6,7 @@ import type {
   MessageUsage,
   PlanRecord,
   PrLink,
+  SearchBlock,
   SessionEnrichment,
   UsageTotals,
 } from '@claude-history/shared';
@@ -15,20 +16,10 @@ import { planFeedback, planTitle, toMessageUsage } from './parser.ts';
 import { PLAN_ROLE } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
 
-export interface SearchBlock {
-  uuid: string | null;
-  role: string;
-  text: string;
-  /**
-   * Only on the blocks the deep scan reads: which tool call this text belongs to.
-   * A line uuid cannot say it — one assistant message carries several calls, and
-   * the line that carries a `tool_result` is not rendered at all — so this is the
-   * only anchor that can open the right tool in the viewer.
-   */
-  toolUseId?: string | null;
-  /** Only on the block that holds a subagent's id: which agent it names. */
-  agentId?: string | null;
-}
+// It moved to `shared` when the viewer grew a search of its own over a corpus
+// this file never produces; re-exported so the modules written against it here
+// need not care where it lives.
+export type { SearchBlock };
 
 export interface EnrichData {
   enrichment: SessionEnrichment;

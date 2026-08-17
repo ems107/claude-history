@@ -1,23 +1,25 @@
 import {
-  foldWithMap,
   occurrences,
   type SearchMode,
-  type SearchSnippet,
   type SearchWordScope,
+  SNIPPET_AFTER,
+  SNIPPET_BEFORE,
 } from '@claude-history/shared';
-import type { SearchBlock } from './enricher.ts';
 
 // Finding a term is shared with the web (the viewer marks the words a search
-// landed on), so it lives in `@claude-history/shared` and is re-exported here —
-// the server's search paths were written against this module.
-export { hasTerm, occurrences, parseTerms } from '@claude-history/shared';
-
-export const SNIPPET_BEFORE = 60; // folded chars of context before the match
-export const SNIPPET_AFTER = 90;
-
-function oneLine(text: string): string {
-  return text.replace(/\s+/g, ' ');
-}
+// landed on, and its find bar scans a corpus of its own), so it lives in
+// `@claude-history/shared` and is re-exported here — the server's search paths
+// were written against this module.
+export {
+  buildSnippet,
+  hasTerm,
+  occurrences,
+  oneLine,
+  parseTerms,
+  type SearchBlock,
+  SNIPPET_AFTER,
+  SNIPPET_BEFORE,
+} from '@claude-history/shared';
 
 export interface SearchOptions {
   /** Restricts where to look: any subset of 'title' | 'user' | 'assistant'. */
@@ -112,54 +114,4 @@ export function matchWindows(folded: string, terms: string[], wholeWord: boolean
     });
   }
   return windows;
-}
-
-/**
- * One window of a block, cut at folded offsets and mapped back to the original
- * text, with every term that falls inside it marked — the anchor is only what
- * chose the window, not the only thing worth highlighting.
- */
-export function buildSnippet(
-  block: SearchBlock,
-  folded: string,
-  map: number[],
-  startFold: number,
-  endFold: number,
-  terms: string[],
-  wholeWord: boolean,
-): SearchSnippet {
-  const text = block.text;
-  const at = (foldedIndex: number): number => (foldedIndex < map.length ? map[foldedIndex] : text.length);
-
-  const ranges: [number, number][] = [];
-  for (const term of terms) {
-    for (const idx of occurrences(folded, term, wholeWord, startFold, endFold)) {
-      ranges.push([idx, idx + term.length]);
-    }
-  }
-  ranges.sort((a, b) => a[0] - b[0]);
-
-  const parts: SearchSnippet['parts'] = [];
-  const push = (chunk: string, hit?: true): void => {
-    if (chunk) parts.push(hit ? { text: chunk, hit } : { text: chunk });
-  };
-  let cursor = startFold;
-  let lead = startFold > 0 ? '…' : '';
-  for (const [start, end] of ranges) {
-    // Overlapping terms ("invalid" inside "is invalid") merge into one mark.
-    if (end <= cursor) continue;
-    push(lead + oneLine(text.slice(at(cursor), at(Math.max(start, cursor)))));
-    lead = '';
-    push(oneLine(text.slice(at(Math.max(start, cursor)), at(end))), true);
-    cursor = end;
-  }
-  push(lead + oneLine(text.slice(at(cursor), at(endFold))) + (endFold < map.length ? '…' : ''));
-
-  return {
-    uuid: block.uuid,
-    role: block.role,
-    parts,
-    toolUseId: block.toolUseId ?? null,
-    agentId: block.agentId ?? null,
-  };
 }
