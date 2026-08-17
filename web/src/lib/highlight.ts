@@ -117,6 +117,18 @@ export function matchSpans(texts: string[], hl: MatchHighlight, max = MAX_MARKS)
 }
 
 /**
+ * How much of a scroller's bottom is hidden by something stuck to it. The
+ * conversation's own scroller reaches the foot of the window with the composer
+ * stuck inside it, so its last stretch is *in* the box and *behind* the box:
+ * "already in view" has to stop above that, or a match in the last message is
+ * revealed by leaving it exactly where nothing can be read.
+ */
+function stuckToBottom(scroller: Element): number {
+  const stuck = scroller.querySelector<HTMLElement>('[data-sticky-bottom]');
+  return stuck ? stuck.getBoundingClientRect().height : 0;
+}
+
+/**
  * Brings a marked range into view — and does nothing when it already is.
  *
  * Scrolling the page to the box that holds a match is not the same as showing
@@ -136,8 +148,10 @@ export function revealRange(range: Range): void {
   for (const scroller of scrollers) {
     const rect = range.getBoundingClientRect();
     const box = scroller.getBoundingClientRect();
-    if (rect.top >= box.top && rect.bottom <= box.bottom) continue;
-    scroller.scrollTop += rect.top - box.top - box.height / 2 + rect.height / 2;
+    const bottom = box.bottom - stuckToBottom(scroller);
+    if (rect.top >= box.top && rect.bottom <= bottom) continue;
+    // Centred on what can be SEEN, which is the box minus whatever covers it.
+    scroller.scrollTop += rect.top - box.top - (bottom - box.top) / 2 + rect.height / 2;
   }
   const rect = range.getBoundingClientRect();
   if (rect.top < 0 || rect.bottom > window.innerHeight) {

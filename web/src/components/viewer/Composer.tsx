@@ -13,6 +13,11 @@ import { QuestionPanel } from './QuestionPanel.tsx';
 
 /** Grow with the text, but never eat the conversation above. */
 const MAX_TEXTAREA_PX = 220;
+/**
+ * How much of the scroller's bottom-right corner the follow-the-end pill needs:
+ * its own width plus the 16 px it floats off the edge. See `columnWidth`.
+ */
+const PILL_CORNER_PX = 120;
 
 /**
  * `claude-sonnet-5` and `sonnet` are the same choice wearing two names: the
@@ -129,21 +134,34 @@ function Picker({
  * see: a `--print` run writes no `status` into ~/.claude/sessions, so the
  * working indicator is driven from here (see SessionViewPage).
  *
- * It is sized and aligned as a USER bubble, because that is what it becomes:
- * same `maxWidth` as the conversation, same `px-4` gutter, and none of the
- * rail's indent — that belongs to the replies. A full-width footer read as
- * chrome bolted to the window instead of as the next thing in the thread.
+ * It is sized and aligned as a USER bubble, because that is what it becomes: it
+ * is drawn INSIDE the conversation's own column (`SessionViewPage` sticks it to
+ * the foot of the scroller), so the width and the gutter are the bubbles' own,
+ * and it takes none of the rail's indent — that belongs to the replies. A
+ * full-width footer read as chrome bolted to the window instead of as the next
+ * thing in the thread.
  */
 export function Composer({
   sessionId,
-  maxWidth,
+  columnWidth,
   onSent,
   lastModel,
   lastEffort,
   lastMode,
 }: {
   sessionId: string;
-  maxWidth?: string;
+  /**
+   * The width of the conversation's column, as a CSS length. Used for one piece
+   * of arithmetic: the follow-the-end pill floats in the scroller's bottom-right
+   * corner, which is the corner Send sits in, and the pill is on top — it would
+   * take the click. `50vw - column/2` is the margin between this box and the
+   * window's edge, so where that margin is smaller than the pill needs, the
+   * action row gives up the difference and Send steps aside. Where it is not
+   * (any width with room around it), the row keeps its own padding and nothing
+   * moves. Both cases are one `max()`, which also means resizing the window
+   * needs no measuring and no re-render.
+   */
+  columnWidth: string;
   /** The prompt was accepted by the server; show it before the transcript has it. */
   onSent?: (text: string) => void;
   /**
@@ -298,14 +316,14 @@ export function Composer({
 
   return (
     // The page's own background, so the conversation scrolls under this rather
-    // than through it.
-    <div className="relative shrink-0 bg-[var(--bg)] px-4 pt-1 pb-3">
+    // than through it — which it now literally does: this is stuck to the bottom
+    // of the scroller the turns are in.
+    <div className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3">
       {/* Above the box, below the conversation: where the next message goes.
           Not a modal — a question is no reason to stop the app being usable. */}
       {status?.question && (
         <QuestionPanel
           question={status.question}
-          maxWidth={maxWidth}
           busy={answering}
           onAnswer={(answers, annotations) => answer(answers, undefined, annotations)}
           onDecline={() => answer(null)}
@@ -314,7 +332,7 @@ export function Composer({
       )}
       {/* Slash commands this CLI really has, offered as you type `/`. */}
       {suggestions.length > 0 && (
-        <div className="mx-auto mb-1.5" style={{ maxWidth }}>
+        <div className="mb-1.5">
           <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg">
             {suggestions.map((name) => (
               <button
@@ -342,7 +360,7 @@ export function Composer({
         aria-hidden
         className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-b from-transparent to-[var(--bg)]"
       />
-      <div className="mx-auto" style={{ maxWidth }}>
+      <div>
         {notice && (
           <div
             className={`mb-1.5 rounded-lg px-3 py-1.5 text-xs ${
@@ -379,7 +397,10 @@ export function Composer({
             }}
             className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)]"
           />
-          <div className="flex items-center gap-1 px-2 pt-0.5 pb-2">
+          <div
+            className="flex items-center gap-1 px-2 pt-0.5 pb-2"
+            style={{ paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }}
+          >
             {/* No running CLI, no model list — so instead of a stale guess,
                 the offer to go and get the real one. Sending works without it:
                 the prompt goes out on whatever answered this session last. */}

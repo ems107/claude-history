@@ -93,8 +93,6 @@ export function SessionViewPage() {
   const [showTokens, setShowTokens] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
-  // Keyed on the session id: opening another one starts unfollowed.
-  const follow = useFollowBottom(id);
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
@@ -412,6 +410,16 @@ export function SessionViewPage() {
     () => (pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined),
     [pending.length, liveInfo],
   );
+  /**
+   * The follow-the-end pill. Keyed on the session id, so opening another one
+   * starts unfollowed — unless something is being written into it: a live or
+   * busy session opens at its end, following, which is what it was opened for.
+   *
+   * An anchor in the URL says otherwise and wins. `?msg=` / `?tool=` is a
+   * request to stand somewhere in particular, and the two would fight over the
+   * scroll for as long as the turn lasted.
+   */
+  const follow = useFollowBottom(id, liveInfo !== null && !msg && !tool);
   /** Inside the list, so an echoed prompt is spaced like the turn it is about to become. */
   const pendingTurns = useMemo(
     () =>
@@ -526,12 +534,16 @@ export function SessionViewPage() {
           {showLineage && <LineagePanel sessionId={id} />}
           {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
           {agentsOpen && <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} />}
-          {/* The pill is a sibling of the scroller, not a child: inside it, it would
-              scroll away with the conversation. */}
+          {/* The scroller reaches the foot of the window, and the composer rides
+              INSIDE it, stuck to the bottom. Nothing is cut off half way down any
+              more: the scrollbar runs the full height, the conversation slides
+              under the box instead of stopping short of it, and the pill has a
+              bottom to sit at. The pill is still a sibling of the scroller — a
+              child of it would scroll away with the conversation. */}
           <div className="relative min-h-0 flex-1">
-            {/* `both-edges` so the scrollbar does not shift the centre: the composer
-                below is centred on the full width, and reserving the gutter on one
-                side only left the two misaligned by half a scrollbar (measured: 5 px). */}
+            {/* `both-edges` so the scrollbar does not shift the centre: reserving
+                the gutter on one side only moved the conversation off the middle
+                of the window by half a scrollbar (measured: 5 px). */}
             {/* Selecting a message is one listener on the scroller, and it is
                 always on: it is a feature of the conversation, not of the find
                 bar, which only reads it. On the SCROLLER and not on the
@@ -544,16 +556,24 @@ export function SessionViewPage() {
             <div
               ref={follow.scrollRef}
               onClick={selectFromClick}
-              className="h-full overflow-y-auto px-4 py-4 [scrollbar-gutter:stable_both-edges]"
+              className={`h-full overflow-y-auto px-4 pt-4 [scrollbar-gutter:stable_both-edges] ${
+                // With no composer there is nothing to keep the last bubble off
+                // the window's edge, so the padding comes back.
+                chatEnabled ? '' : 'pb-4'
+              }`}
             >
               {/* Width on the outer box, zoom on an inner one — never both on the
                   same element: a max-width INSIDE a zoomed box is a length like any
                   other and would be scaled with it, so 896 px would drift to 1344
                   at 150 %. And `zoom` is only ever set when it is not 100, so the
-                  default view runs through no zoom at all. */}
+                  default view runs through no zoom at all.
+                  `min-h-full` and the column are what put the composer at the foot
+                  of a SHORT conversation: the box fills the scroller exactly, so
+                  `mt-auto` below has somewhere to push to and nothing becomes
+                  scrollable that was not. */}
               <div
                 ref={follow.contentRef}
-                className="mx-auto"
+                className="mx-auto flex min-h-full flex-col"
                 style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
               >
                 <div style={view.zoom === ZOOM_DEFAULT ? undefined : { zoom: `${view.zoom}%` }}>
@@ -587,25 +607,41 @@ export function SessionViewPage() {
                     <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
                   )}
                 </div>
+                {/* The last thing in the conversation's own column, and stuck to
+                    the bottom of it: `mt-auto` puts it at the foot of a short
+                    session, `sticky` keeps it there through a long one. Inside
+                    the column it needs no width of its own to line up with the
+                    bubbles, and being inside the followed box means the pinning
+                    ResizeObserver sees it grow as you type.
+                    Never inside the zoomed div: an input is not the reading.
+                    The click is stopped here, and only here: everywhere else in
+                    the scroller a click means "nobody is selected", and typing a
+                    prompt is not clicking away from the message you were on.
+                    `data-sticky-bottom` is how `revealRange` knows the last
+                    stretch of this scroller is behind something. */}
+                {chatEnabled && (
+                  <div
+                    data-sticky-bottom
+                    className="sticky bottom-0 mt-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Composer
+                      sessionId={id}
+                      // The column's real width, which is the limit OR the window
+                      // when the window is the smaller of the two — the box does
+                      // arithmetic with it and both cases put Send under the pill.
+                      columnWidth={view.width === WIDTH_FULL ? '100vw' : `min(${view.width}px, 100vw)`}
+                      onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
+                      lastModel={lastAnswer?.model ?? null}
+                      lastEffort={lastAnswer?.effort ?? null}
+                      lastMode={lastMode}
+                    />
+                  </div>
+                )}
               </div>
             </div>
-            {follow.scrollable && <FollowBottomButton following={follow.following} toggle={follow.toggle} />}
+            <FollowBottomButton following={follow.following} toggle={follow.toggle} />
           </div>
-          {/* A sibling of the scroller, not a child: the root is a column and the
-              scroller is the only min-h-0 flex-1, so this sits at the foot without
-              taking part in the scrolling. It takes the conversation's own width so
-              it lines up with the bubbles — the width lives on the outer box here
-              too, never on something zoomed. */}
-          {chatEnabled && (
-            <Composer
-              sessionId={id}
-              maxWidth={view.width === WIDTH_FULL ? undefined : `${view.width}px`}
-              onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
-              lastModel={lastAnswer?.model ?? null}
-              lastEffort={lastAnswer?.effort ?? null}
-              lastMode={lastMode}
-            />
-          )}
           {agentId && (
             <SubagentDrawer
               sessionId={id}

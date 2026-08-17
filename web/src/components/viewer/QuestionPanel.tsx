@@ -19,14 +19,12 @@ import { Sketch } from './Sketch.tsx';
  */
 export function QuestionPanel({
   question,
-  maxWidth,
   onAnswer,
   onDecline,
   onPlanDecision,
   busy,
 }: {
   question: ChatQuestion;
-  maxWidth?: string;
   onAnswer: (answers: Record<string, string | string[]>, annotations: Record<string, { notes?: string }>) => void;
   onDecline: () => void;
   /** The three answers a plan takes — see `PlanApproval`. */
@@ -115,10 +113,11 @@ export function QuestionPanel({
   const hasSketches = !!current?.options.some((o) => o.preview);
 
   return (
-    // No gutter of its own: it renders inside the composer's, so the panel and
-    // the box below it line up on the same edges as the bubbles.
+    // No gutter or width of its own: it renders inside the composer, which is
+    // itself inside the conversation's column, so the panel and the box below it
+    // line up on the same edges as the bubbles.
     <div className="pb-2">
-      <div className="mx-auto" style={{ maxWidth }}>
+      <div className="mx-auto">
         <div className="rounded-lg border border-[var(--accent-dim)] bg-[var(--accent)]/5 shadow-lg">
           <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--accent-dim)]/40 px-3 py-1.5">
             {/* Same wording as the card it becomes in the transcript, and as

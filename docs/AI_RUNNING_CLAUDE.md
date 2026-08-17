@@ -120,7 +120,7 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 
 ## The composer: sending a prompt from the app
 
-`core/sessionChat.ts`, off by default behind `chatEnabled`, `GET`/`POST /api/sessions/:id/chat`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>`, `permissionMode` from the composer — `auto` unless plan mode was asked for), kept alive between turns.
+`core/sessionChat.ts`, off by default behind `chatEnabled`, `GET`/`POST /api/sessions/:id/chat`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>`, `permissionMode` from the composer — `auto` unless plan mode was asked for), kept alive between turns. Where the box sits on screen — inside the conversation's own scroller — is in [AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation).
 
 ### Why the SDK, and what it must produce
 

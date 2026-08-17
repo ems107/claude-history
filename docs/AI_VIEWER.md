@@ -21,6 +21,8 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **Typing never moves the page** — a step unfolds things that do not fold back.
 - **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
 - **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
+- **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
+- **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 
 ## Two layout rules that keep breaking
 
@@ -325,6 +327,52 @@ The `100%` keyframe names no `border-color`: an omitted property takes the eleme
 - A `~/...` reference is expanded against the home directory **server-side**: resolved against the project it becomes `<project>\~\.claude\settings.json`, a "not found" for a file that is right there. The panel sends the **path**, never the formatted reference — `frmActualizador.frm:1068` as a filename finds nothing.
 - The target line is a stripe positioned by arithmetic on one `LINE_H`, so the body must stay `whitespace-pre`: one wrapped line and the gutter, the stripe and the text disagree from there down. **Everything neutralising `.hljs` on the highlighted `<code>` is a style, not a class** — `github-dark.css` loads after Tailwind and wins every tie. Its background covered the stripe; its `padding: 1em` then pushed the text 12 px below its own line number, so the highlight sat two thirds of a line off, and only where highlighting happened at all, which made it look intermittent.
 
+## The end of the conversation
+
+The scroller reaches the **foot of the window** and the composer rides inside it:
+last in the conversation's own column, `mt-auto` so it sits at the bottom of a
+short session and `sticky bottom-0` so it stays there through a long one. Nothing
+stops half way up the window any more — the scrollbar runs the full height, the
+last bubble slides under the box instead of meeting a hard edge, and the follow
+pill has a bottom to sit at. It costs no measuring either: as content, the box IS
+the gap that keeps the last message clear of it, and `min-h-full` on the column is
+what stops a two-line session becoming scrollable.
+
+Three things follow from the composer being inside the scroller, each of them a
+bug until it was named:
+
+- **The click that deselects stops at the composer.** The scroller's one
+  `onClick` means "nobody is selected", and typing a prompt is not clicking away
+  from the message you were reading.
+- **`revealRange` must not count the covered strip as visible.** The bottom of
+  the scrollport is *behind* the box, so a match in the last message could be
+  "revealed" by being left exactly where nothing can be read.
+  `[data-sticky-bottom]` is how the function measures what covers it.
+- **The pill's corner is the corner `Send` sits in.** At `Full` width — or at any
+  width in a window not much wider than it — the box reaches into the bottom
+  right, and the pill, floating on top, would take the click. The action row gives
+  up its end where the margin is narrower than the pill needs, as one `max()` over
+  the column's width, so resizing the window needs neither a measurement nor a
+  render.
+
+**A `scroll` event does not say who fired it, and only the reader may arm or
+release the follow.** Three things move that scroll with nobody touching it: the
+browser clamps a `scrollTop` past the end when content shrinks, scroll anchoring
+scrolls under content that grows above the viewport, and the pinning itself
+scrolls on purpose. All three land AT the bottom when the reader was already
+there — which is why switching the follow off used to last exactly one message.
+So an event counts as the reader's only while `scrollHeight` is the one the
+previous event left behind, and the `ResizeObserver` that does the pinning
+re-reads that geometry after every content change, in the frame the content
+changed and before the browser's own scroll event is dispatched.
+
+**A live or busy session opens at its end, following**, because that is what it
+was opened for: once per session, never over a reader who has already scrolled,
+and never when the URL carries an anchor — `?msg=` / `?tool=` is a request to
+stand somewhere, and the two would fight over the scroll for as long as the turn
+lasted. The pill is offered whether or not there is anything to scroll; with
+nothing to scroll it is the switch that says the next message will be followed.
+
 ## The working indicator
 
 **It takes its status from the `['live']` query, NOT from `detail.summary.live`**, though both carry the same field. `['session', id]` is invalidated by `sessions-changed` — the transcript grew — while the busy/idle flip is a write under `~/.claude/sessions` and fires only `live-changed`. Read off the detail, the indicator would hang on "working" after the turn's last line was written, and the alternative (re-parsing a multi-MB transcript on every status flip) is absurd next to a query that reads two small files.
@@ -337,4 +385,4 @@ Why it says "working" rather than "writing", and why the silence it fills is so 
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page), 26 (the find bar).
+[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page), 26 (the find bar), 27 (the foot of the conversation).
