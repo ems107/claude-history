@@ -240,6 +240,14 @@ export interface StarUpdateResponse {
   ok: boolean;
   /** The record as stored, or null when the star was removed. */
   star: StarEntry | null;
+  /**
+   * Whether a stored star was actually dropped. A toggle is idempotent, so
+   * unstarring something that was not starred is not an error — but it must not
+   * report success either: a star is keyed on the message's CANONICAL uuid, and
+   * a caller passing one of a streamed answer's aliases would otherwise be told
+   * a removal happened that did not. The app always sends the canonical uuid.
+   */
+  removed: boolean;
 }
 
 export interface ResumeResponse {

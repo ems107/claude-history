@@ -23,6 +23,8 @@ import type {
   SessionDetailResponse,
   SessionMatchesResponse,
   SessionsResponse,
+  StarsResponse,
+  StarUpdateResponse,
   SubagentDetailResponse,
   ToolResultFileResponse,
   UpdateLogResponse,
@@ -124,6 +126,22 @@ export const api = {
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json();
+  },
+  stars: () => getJson<StarsResponse>('/api/starred'),
+  /**
+   * Star or unstar one message. Starring parses the session server-side to take
+   * its own copy of the text, so this is the only request that ever costs a
+   * parse — the Starred page then reads none.
+   */
+  starMessage: async (sessionId: string, uuid: string, starred: boolean) => {
+    const res = await fetch(`/api/sessions/${sessionId}/messages/${uuid}/star`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ starred }),
+    });
+    const body = (await res.json().catch(() => ({}))) as StarUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
   },
   renameSession: async (id: string, title: string) => {
     const res = await fetch(`/api/sessions/${id}/title`, {

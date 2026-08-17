@@ -98,6 +98,12 @@ export function useEvents(): void {
           void queryClient.invalidateQueries({ queryKey: ['sessions'] });
           void queryClient.invalidateQueries({ queryKey: ['live'] });
           break;
+        // Only the stars. Never `['session', id]`: the transcript did not
+        // change, and re-parsing a multi-MB one to redraw a star would be the
+        // most expensive way possible to colour a glyph.
+        case 'stars-changed':
+          void queryClient.invalidateQueries({ queryKey: ['stars'] });
+          break;
         // Already throttled to one per second by the server. Cheap: both
         // queries are local reads, and the day parse is cached and incremental.
         case 'logs-appended':
