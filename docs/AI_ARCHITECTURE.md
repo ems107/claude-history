@@ -5,7 +5,7 @@
 ## Invariants
 
 - **`~/.claude` is read-only to this app** — never write, create or lock anything inside it.
-- **Our writes go to exactly three places**: the cache dir, `userdata.json` and `logs\`.
+- **Our writes go to exactly four places**: the cache dir, `userdata.json`, its `backups\` and `logs\`.
 - **The server binds `127.0.0.1` only.** Never `0.0.0.0`.
 - **Every state-changing request must come from our own pages** (`isSameOrigin`, 403 otherwise).
 - **A path or a cwd never comes from the request** — it comes from the index.
@@ -73,6 +73,7 @@ The scripts shipped inside the release zip, and the packaging/release tooling �
 | --- | --- | --- |
 | List summaries, enrichment, search text | `%LOCALAPPDATA%\claude-history\cache\` | yes — deleting it is always safe |
 | Renames, pins, starred messages, price table, settings | `userdata.json`, **beside** the cache dir | **no** |
+| Dated copies of that file | `backups\`, beside it | yes — but they are the only way back to a lost `userdata.json` |
 | Logs | `logs\`, beside the cache dir | yes (pruned by `logRetentionDays`) |
 | Filters, scroll position, view toggles | browser `localStorage` / `sessionStorage`, and the URL | yes |
 
@@ -87,6 +88,25 @@ It holds the only state that cannot be rebuilt, and **several browser windows wr
 - **Writes are serialized per path** (`writeTextAtomic` in `cache.ts`). Two overlapping writes shared one `.tmp`, and the old path failed both ways at once — **measured with 8 concurrent 4 MB writes: 4 of the 8 rejected with ENOENT** (their `rename` found the tmp already moved away by another) **and ~40% of the rows in the file came from a different writer**. It parsed there only because every document happened to be the same length; two of different lengths leave JSON nothing can read. With the queue: 0 failures, 0 mixed rows. The queue is per path and keeps the fixed tmp name, which cleans itself up — a unique name left behind by a process that died between the write and the rename would stay on disk for good. `DiskCache` writes through the same queue, which also keeps its debounced `index.json` write off whatever wrote it last.
 - **Every write to it needs an event of its own**, because a browser cannot see a file. Renames and pins ride `session-updated`, stars ride `stars-changed`, and settings and the price table have `settings-changed` / `prices-changed`. Those two were added when a second window was found running the OLD settings for as long as it stayed open — `['settings']` is mounted for the life of the page by the usage widget in the header, so the query never remounts, and `refetchOnWindowFocus` is off — and that included the switches deciding whether this app touches the network at all. **`settings-changed` must never invalidate `['usage']`**: that turns one person's toggle into a network read in every open window, and the window that saved already does its own labelled read.
 - **An unparseable one is kept, not stepped over** (`readJsonFileOrQuarantine`): it becomes `userdata.json.corrupt-<stamp>` and the failure is logged at `error`. Answering null for "broken" the way the cache readers do meant the defaults loaded silently and the first write of the run buried the evidence. The app still opens — refusing to start over one bad file is the worse failure — so the log line is the only notice, which is why it is an `error` and names what was replaced.
+- **And there is something to put back** (`core/userdataBackups.ts`, `backups\` beside the file — never inside the cache dir, which is documented as safe to delete). A start-up that finds the file broken restores **the newest copy that parses**, writes it back so a crash cannot lose it twice, and reports it on `GET /api/userdata/backups` as well as in the log.
+
+### What each copy is for
+
+The triggers are not a schedule, they are one per way of losing the file, and each is deduplicated against the newest copy held — a day on which nothing changed costs nothing.
+
+| Copy | Taken when | Guards against |
+| --- | --- | --- |
+| `initial` / `daily` | first write of a day, and at start-up | a change made days ago and noticed now (kept for 14 days) |
+| `version-X` | start-up under a version that did not write last (`backups\state.json`) | a regression arriving with a new build, including one installed by hand |
+| `pre-update-X` | the moment an update is accepted, by the version still running | the same, for our own updater — taken by code known to work |
+| `pre-loss` | a write about to zero renames, pins or stars that had content | **a valid but incomplete file**, which nothing else can catch |
+| `pre-restore` | restoring a copy | picking the wrong line in a list of dates |
+| `manual` | `POST /api/userdata/backups` | about to edit prices, about to try something |
+
+- **`pre-loss` is the one that matters most**, because it is the only guard against the accident the quarantine structurally cannot see: `saveUserdata()` writes the whole file from one literal, so a key missing from it parses perfectly and is simply gone. The write is never refused — clearing every star by hand is a real thing to do — only preceded by a copy and a `warn`.
+- **A copy's name is its clock** (`userdata.json.<yyyy-mm-dd_hh-mm-ss>.<reason>.bak`, local time). Never the mtime: copying the folder or restoring the machine rewrites every mtime at once, which would make the newest copy look like all of them and the 14-day window meaningless. The reason lives in the name too, so the folder answers "why do I have this" with no index file that could itself go bad.
+- **Retention counts KINDS, not reasons**: `pre-update-1.0.0` and `pre-update-1.0.1` are the same kind, and counting by the full reason kept one copy per version for ever (measured: four survived a rule that keeps three). Plus a total-size ceiling, because a starred message can be 200,000 characters — and the newest copy is never pruned whatever the rules say.
+- **Restoring happens in place** (`SessionIndex.restoreBackup`): it takes its `pre-restore` copy, re-reads through the same `applyUserdata` the start-up uses, and announces itself with the ordinary events (`sessions-changed` for the ids whose row can differ, then `stars-changed`, `settings-changed`, `prices-changed` — whose listeners re-apply the log level and the auto-reload signature). A restore that needed a restart is a restore nobody performs.
 
 ## Security and containment
 

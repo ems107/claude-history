@@ -1011,6 +1011,43 @@ export interface UpdateLogResponse {
   modifiedAt: string | null;
 }
 
+// ---- dated copies of userdata.json ----
+
+/**
+ * One stored copy. `name` is a file NAME and never a path: it is what the
+ * restore request sends back, and a path from a request is the thing this app
+ * does not do.
+ */
+export interface UserdataBackup {
+  name: string;
+  at: string;
+  /** `initial`, `daily`, `manual`, `pre-loss`, `pre-restore`, `version-X`, `pre-update-X`. */
+  reason: string;
+  sizeBytes: number;
+  /** What restoring it would bring back, or null when the copy itself does not parse. */
+  contents: {
+    titleOverrides: number;
+    pins: number;
+    stars: number;
+    hasPrices: boolean;
+    hasSettings: boolean;
+  } | null;
+}
+
+export interface UserdataBackupsResponse {
+  backupsDir: string;
+  backups: UserdataBackup[];
+  /** Set when this start-up found the file unreadable and put a copy back. */
+  recovered: { from: string; at: string } | null;
+}
+
+export interface UserdataRestoreResponse {
+  ok: true;
+  restoredFrom: string;
+  /** The copy taken of what was replaced, so a wrong restore is undoable. */
+  backedUpTo: string | null;
+}
+
 // ---- SSE events on /api/events ----
 
 export type ServerEvent =

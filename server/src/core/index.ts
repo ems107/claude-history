@@ -23,6 +23,7 @@ import {
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFileOrQuarantine, writeJsonAtomic, type CacheKey } from './cache.ts';
+import { UserdataBackups } from './userdataBackups.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
 import { appendedText, safeParse, str } from './jsonl.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
@@ -133,8 +134,12 @@ export class SessionIndex {
   cacheHits = 0;
   private enriching = false;
 
+  /** Dated copies of `userdata.json` — the only state that cannot be rebuilt. */
+  readonly backups: UserdataBackups;
+
   constructor(private readonly config: AppConfig) {
     this.cache = new DiskCache(config.cacheDir);
+    this.backups = new UserdataBackups(config.userdataFile);
     this.events.setMaxListeners(100); // one set of listeners per SSE client
   }
 
@@ -164,17 +169,29 @@ export class SessionIndex {
         { parseError: String(stored.error) },
       );
     }
-    const userdata = stored.data;
-    this.titleOverrides = userdata?.titleOverrides ?? {};
-    this.pins = new Set(userdata?.pins ?? []);
-    this.stars = new Map((userdata?.stars ?? []).map((s) => [starKey(s.sessionId, s.uuid), s]));
-    this.prices = userdata?.prices ?? null;
-    // Only keys we still have: a setting that is retired would otherwise live
-    // on in userdata.json forever, be served by /api/settings and read as
-    // current — which is exactly what happened to chatModel/chatEffort.
-    const saved = (userdata?.settings ?? {}) as Record<string, unknown>;
-    const known = Object.fromEntries(Object.keys(DEFAULT_SETTINGS).filter((k) => k in saved).map((k) => [k, saved[k]]));
-    this.settings = { ...DEFAULT_SETTINGS, ...(known as Partial<AppSettings>) };
+    // Quarantining the broken file was only half of it: something has to go back
+    // in its place, or every rename, pin and star is still gone. The newest copy
+    // that parses is that something.
+    let userdata = stored.data;
+    let recoveredFrom: string | null = null;
+    if (!userdata && (stored.movedTo || stored.moveError)) {
+      const fromBackup = (await this.backups.recoverFromBackup()) as typeof userdata;
+      if (fromBackup) {
+        userdata = fromBackup;
+        recoveredFrom = this.backups.recovery?.from ?? null;
+        log.error(`restored ${this.config.userdataFile} from the backup ${recoveredFrom ?? '(unknown)'}`);
+      } else {
+        log.error('there was no usable backup to restore — starting from the defaults');
+      }
+    }
+    this.applyUserdata(userdata);
+    // Before any write of this run, so the guard that spots one emptying the
+    // file has something to compare against, and so a version change or a new
+    // day is recorded even on an install nobody touches.
+    await this.backups.start(this.userdataCounts());
+    // Put the recovered state back on disk rather than leaving it in memory: a
+    // crash before the next star would otherwise lose it a second time.
+    if (recoveredFrom) await this.saveUserdata();
 
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
@@ -385,12 +402,77 @@ export class SessionIndex {
     };
   }
 
+  /** What the file holds right now, as the backup guard counts it. */
+  private userdataCounts(): { titleOverrides: number; pins: number; stars: number } {
+    return {
+      titleOverrides: Object.keys(this.titleOverrides).length,
+      pins: this.pins.size,
+      stars: this.stars.size,
+    };
+  }
+
+  /**
+   * Take what was read from `userdata.json` — or from a backup — into memory.
+   *
+   * Separate from `build()` because a restore has to do exactly this, in a
+   * running server, and two copies of it would drift on the first key added.
+   */
+  private applyUserdata(userdata: {
+    titleOverrides?: Record<string, string>;
+    pins?: string[];
+    stars?: StarredMessage[];
+    prices?: PriceTable;
+    settings?: Partial<AppSettings>;
+  } | null): void {
+    this.titleOverrides = userdata?.titleOverrides ?? {};
+    this.pins = new Set(userdata?.pins ?? []);
+    this.stars = new Map((userdata?.stars ?? []).map((s) => [starKey(s.sessionId, s.uuid), s]));
+    this.prices = userdata?.prices ?? null;
+    // Only keys we still have: a setting that is retired would otherwise live
+    // on in userdata.json forever, be served by /api/settings and read as
+    // current — which is exactly what happened to chatModel/chatEffort.
+    const saved = (userdata?.settings ?? {}) as Record<string, unknown>;
+    const known = Object.fromEntries(Object.keys(DEFAULT_SETTINGS).filter((k) => k in saved).map((k) => [k, saved[k]]));
+    this.settings = { ...DEFAULT_SETTINGS, ...(known as Partial<AppSettings>) };
+  }
+
+  /**
+   * Put a stored copy back, in place, with the server running.
+   *
+   * A restore is itself a write that replaces everything, so it takes its own
+   * `pre-restore` copy first — picking the wrong line in a list of dates has to
+   * be undoable. Everything then re-reads through the ordinary events: the ids
+   * that gained or lost a rename or a pin, the stars, the settings (whose
+   * listeners re-apply the log level and the auto-reload signature) and the
+   * prices.
+   */
+  async restoreBackup(name: string): Promise<{ restoredFrom: string; backedUpTo: string | null }> {
+    const data = (await this.backups.read(name)) as Parameters<typeof this.applyUserdata>[0];
+    const backedUpTo = await this.backups.create('pre-restore');
+    const touched = new Set([...Object.keys(this.titleOverrides), ...this.pins]);
+    this.applyUserdata(data);
+    for (const id of [...Object.keys(this.titleOverrides), ...this.pins]) touched.add(id);
+    await this.saveUserdata();
+    log.info(`restored userdata.json from ${name}`, { ...this.userdataCounts(), backedUpTo });
+    // One event for the whole list rather than one per id: the ids are only the
+    // ones whose row can look different, and `assistantIds` stays empty because
+    // nothing was answered — that field is what triggers a usage read.
+    this.events.emit('sessions-changed', { ids: [...touched], assistantIds: [] });
+    this.events.emit('stars-changed');
+    this.events.emit('settings-changed', this.settings);
+    this.events.emit('prices-changed');
+    return { restoredFrom: name, backedUpTo };
+  }
+
   /**
    * The whole file, every time. Anything missing from this literal is dropped
    * from disk on the next rename — so a new kind of user data has to be added
-   * here as well as to the read above.
+   * here as well as to `applyUserdata` above.
    */
   private async saveUserdata(): Promise<void> {
+    // Copies first: the file still holds what this write is about to replace,
+    // which is the only moment a copy of it can be taken.
+    await this.backups.beforeWrite(this.userdataCounts());
     await writeJsonAtomic(this.config.userdataFile, {
       titleOverrides: this.titleOverrides,
       pins: [...this.pins],

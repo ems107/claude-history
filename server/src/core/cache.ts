@@ -96,7 +96,7 @@ const writesInFlight = new Map<string, Promise<void>>();
  * The bytes are built by the CALLER, before queueing, so what lands on disk is
  * the state as of the call and the order on disk is the order asked for.
  */
-async function writeTextAtomic(filePath: string, text: string): Promise<void> {
+export async function writeTextAtomic(filePath: string, text: string): Promise<void> {
   const previous = writesInFlight.get(filePath);
   const write = async (): Promise<void> => {
     const tmp = `${filePath}.tmp`;

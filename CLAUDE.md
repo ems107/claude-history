@@ -73,7 +73,7 @@ scripts/        package.mjs · release.mjs
 
 ## Hard rules
 
-- **The app only READS `~/.claude`.** Never write, create or lock anything inside it — `.credentials.json` included. Our writes go to the cache dir, `userdata.json` and `logs\`, and nowhere else. → [Architecture](docs/AI_ARCHITECTURE.md)
+- **The app only READS `~/.claude`.** Never write, create or lock anything inside it — `.credentials.json` included. Our writes go to the cache dir, `userdata.json`, its `backups\` and `logs\`, and nowhere else. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **Exactly two automatic network calls exist**, both switchable off in Settings: the update-availability check (a conditional GET to `api.github.com`, downloads nothing) and the subscription-usage read. Everything else is user-triggered: fetching prices (`POST /api/prices/fetch` scrapes `platform.claude.com/docs/en/about-claude/pricing.md` — there is no pricing API; preview only, nothing persists until saved, and the parser fails loudly so the UI can fall back to manual editing), applying an update (confirmed, SHA-256 verified) and the auto-reload's "Send it now". **Never add a third.**
 - **Subscription usage is read-only**: never refresh the token, never write `.credentials.json`. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **The server binds `127.0.0.1` only**, and every state-changing request must come from our own pages (403 otherwise). A path or a cwd never comes from the request — it comes from the index. → [Architecture](docs/AI_ARCHITECTURE.md)

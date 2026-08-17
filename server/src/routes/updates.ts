@@ -21,6 +21,12 @@ export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): voi
     }
     try {
       const started = ctx.updates.apply(ctx.config.port, request.body?.version);
+      // Taken here, by the version that is still running and known to work: a
+      // regression arriving with the new one is the reason this copy exists, and
+      // after the handover this code is no longer the code taking it. Awaited so
+      // a copy is on disk before the download starts, and never fatal — the
+      // service logs its own failures and an update must not be blocked by one.
+      await ctx.index.backups.create(`pre-update-${started.version}`).catch(() => null);
       return { ok: true, ...started };
     } catch (err) {
       return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) });

@@ -23,6 +23,7 @@ import { registerStarRoutes } from './routes/stars.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
 import { registerUpdateRoutes } from './routes/updates.ts';
+import { registerUserdataRoutes } from './routes/userdata.ts';
 
 /**
  * Fastify logs through pino, which writes straight to file descriptor 1 and
@@ -98,6 +99,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerChatRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
+  registerUserdataRoutes(app, ctx);
   registerRetentionRoutes(app, ctx);
   registerAutoReloadRoutes(app, ctx);
   registerLogRoutes(app, ctx);
