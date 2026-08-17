@@ -61,6 +61,12 @@ Many sessions are throwaway stubs (≤16 lines, only slash commands, no title): 
 - **Tool-returned screenshots are the same shape and the opposite problem**: 519 image blocks nested in `tool_result.content[]`, **116 MB inside ONE session** (whose transcript is 334 MB). They follow the tool-output rule ([AI_SEARCH.md](AI_SEARCH.md)) — if they are ever rendered it must be on demand, from an endpoint that re-reads the line, never in the conversation payload.
 - Base64 must stay out of both search corpora. It does because every text extractor picks named fields (`text`) instead of stringifying blocks — `extractResultText`, `toolResultText` and the enricher all do. One `JSON.stringify(block)` would put megabytes of it into the index.
 
+**`SendUserFile` delivers files by PATH and keeps no bytes at all** — the third shape, and the opposite of both above. The call carries `files[]` (absolute, and both separators occur), `caption`, `status` (`normal` or `proactive`) and sometimes `display` (`render`, absent in 3 of 10 calls). The `tool_result.content` is a plain **string** — `N files delivered to user.` and then one `<path> → file_uuid: <uuid>` per line — and the carrying line's `toolUseResult` holds `caption`, `display` and `attachments[]` with `path`, `size`, `isImage`, `media_type`, `pathValidated` and `file_uuid`. **There is no `image` block anywhere in a delivery**: 10 calls, 19 files, 5 sessions, 0 bytes.
+
+- So the paths are read from the CALL, which is the authoritative list and is never truncated, and the sizes from `attachments`, joined on the path. Never from the result's prose: a filename containing ` → ` or a newline would yield a path that opens nothing, and `file_uuid` — the id of the upload to claude.ai — is worth nothing locally, which is why it is the one field deliberately not carried.
+- The bytes live only in the session's temp scratchpad (`%TEMP%\claude\<project-encoded>\<session>\scratchpad`), which is swept. `f3384d17`'s three PNGs are already gone while `fbc2e20c`'s three are still there, so **"the file no longer exists" is an ordinary state of a delivery**, not a failure — and any check that wants to see a picture has to find its own fixture ([AI_TESTING.md](AI_TESTING.md)).
+- The same PNG can be in the transcript twice over and still not through this: `fbc2e20c` also `Read` those files, and a `Read` of an image writes its base64 into `tool_result.content[]` **and** again into `toolUseResult.file.base64` — ~145 KB per line, for one screenshot.
+
 ## Who wrote a `user` line
 
 `user` `message.content` is a **string** or an **array** (the tool_result carrier) — always distinguish. But a string is NOT proof a human typed it:
@@ -172,4 +178,4 @@ Claude Code deletes its own history, and the app that browses it has to say so �
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 1, 11 (replays), 15 (retention), 16 (forks and rewinds), 17 (injected and queued lines), 18 (live/working).
+[AI_TESTING.md](AI_TESTING.md) — checks 1, 11 (replays), 15 (retention), 16 (forks and rewinds), 17 (injected and queued lines), 18 (live/working), 28 (delivered files).

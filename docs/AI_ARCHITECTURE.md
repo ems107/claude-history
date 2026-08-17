@@ -55,7 +55,9 @@ The rest, each documented where it belongs: `updates` (self-update lifecycle —
 
 REST endpoints; the response shapes are in `shared/src/api.ts` and are not restated here.
 
-`files` is the one endpoint that leaves `~/.claude` — see below. Every state it can report — missing, a folder, binary, truncated — is a 200 the panel draws, because the path is still worth showing and the folder still worth opening.
+`files` is the one endpoint that leaves `~/.claude` — see below. Every state its `read` can report — missing, a folder, binary, truncated — is a 200 the panel draws, because the path is still worth showing and the folder still worth opening.
+
+Its `image` sibling serves the bytes of one picture to an `<img src>`, and **diverges on exactly that point**: a missing file is a **404** there, because the consumer is an `<img>` with no state to draw, only `onError`. It exists because `read` structurally cannot do this — a PNG has NUL bytes in its signature, so it is a `binary: true` with nothing attached — and because bytes must not ride in the conversation payload ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)): `SendUserFile` keeps none, so the payload would read disk on every parse and a live session re-parses on every event. Its own `isSameOrigin` is what makes it safe to point an `<img>` at rather than a hole opened by one — a subresource of our page sends `Sec-Fetch-Site: same-origin`, a foreign page embedding the same URL sends `cross-site` and gets 403.
 
 ### `web/src/`
 
@@ -82,6 +84,7 @@ The index itself is in memory and rebuilt on every start.
 
 - **The app only reads from `~/.claude`** — never write, create or lock anything inside it, `.credentials.json` included. Two features indirectly add files there (the auto-reload and the composer) and only because **Claude Code itself** writes its own transcript when we spawn it; we still never touch that data and never delete what it leaves behind.
 - **`~/.claude` is the only place it reads on its own initiative.** The file viewer (`routes/files.ts`) reads a path a transcript names, anywhere on disk and with no containment rule — a session links to another repo, to `~/.claude/settings.json`, to a file since moved — but only when the user clicks the link, and it still **never writes**. Two things pay for that, and both must survive any change to the endpoint: the reference is resolved against the session's project path taken from the **index**, never from the request (the `/resume` model), and the GET carries **its own `isSameOrigin` check**, because the hook in `app.ts` guards only the methods that change state while this one can read anything the user can.
+- **A served file's `Content-Type` comes from our own extension allowlist, never from the transcript.** `attachments[].media_type` is written by another process into a file we only read, and echoing it back as a header would serve arbitrary content **from our own origin**. `svg` is off the list on purpose: it is a document that can carry script, and `image/svg+xml` from `127.0.0.1:7433` is same-origin execution reached from a transcript. Plus `nosniff`, a size cap answering **413 and never a truncated image** (half a PNG draws as a broken one and reads as a deleted file), and 415 for anything not on the list — not 404, because the file may be right there and "we do not serve this" is a different fact.
 - **Every state-changing request must come from our own pages** (`util/sameOrigin.ts`, an `onRequest` hook in `app.ts`, 403 otherwise). Binding to `127.0.0.1` keeps other machines out and says nothing about the browser already running on this one: any page the user has open can POST to `127.0.0.1:7433`, and these endpoints open terminals, stop the server and run Claude with auto-approved tools. It cannot read the reply and does not need to — **the side effect is the attack**. `Sec-Fetch-Site` answers it (the browser sets it and a page cannot forge it), `Origin` covers the rest, and neither present means it is not a browser at all (curl, the installer's health check) and is allowed through.
 - **The server binds `127.0.0.1` only. Never `0.0.0.0`.**
 - `POST /api/sessions/:id/resume` validates the id (UUID regex + membership in the index) and takes `cwd` **only from the index**, never from the request.
@@ -128,4 +131,4 @@ written.
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 1, 5, 21 (the files endpoint), 25 (starred messages), and the same-origin cases in 19.
+[AI_TESTING.md](AI_TESTING.md) — checks 1, 5, 21 (the files endpoint), 25 (starred messages), 28 (the image endpoint), and the same-origin cases in 19.
