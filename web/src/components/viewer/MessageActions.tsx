@@ -101,7 +101,7 @@ export function CopyActions({
   markdown: () => string;
   /** The rendered node, whose HTML the formatted copy takes. */
   body: RefObject<HTMLDivElement | null>;
-  /** Anything that belongs in the same toolbar — the star. */
+  /** Anything that belongs in the same toolbar — the star, drawn after the buttons. */
   children?: ReactNode;
 }) {
   const [done, setDone] = useState<'rich' | 'md' | null>(null);
@@ -131,7 +131,6 @@ export function CopyActions({
     // The click never belongs to whatever is underneath: a folded bubble
     // unfolds its turn.
     <span className="-my-0.5 flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-      {children}
       <button
         type="button"
         className={cls}
@@ -152,6 +151,11 @@ export function CopyActions({
       >
         {done === 'md' ? 'Copied ✓' : '⧉ Copy as Markdown'}
       </button>
+      {/* Last in the row, so a set star sits right against the model and the
+          pills — the part of the header that is always there. Put first, it
+          floated alone in the middle of the row whenever the copy buttons were
+          hidden. */}
+      {children}
     </span>
   );
 }

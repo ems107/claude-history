@@ -28,8 +28,11 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 
 ## The star on a message
 
-`MessageActions` is the toolbar in a bubble's header row, and the star sits there
-beside the two copy buttons — never on the bubble, which takes no `onClick` and
+`MessageActions` is the toolbar in a bubble's header row, and the star is its
+last item — after the two copy buttons, so a set star sits right against the
+model and the pills, the part of the header that is always drawn; first in the
+row it floated alone in the middle of it whenever the copy buttons were hidden.
+Never on the bubble, though, which takes no `onClick` and
 must not be recoloured: an outline means recolouring `[data-bubble-tail]` too
 (its own element, its own opaque fill, its own keyframes) and `match-flash`
 already animates that border for 2.5 s, so a deep link arriving would fight it.
