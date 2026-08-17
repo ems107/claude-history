@@ -341,6 +341,13 @@ export const api = {
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
+  /**
+   * Where an `<img>` finds the bytes of a local image. A URL builder and not a
+   * fetcher: the browser does the fetching, and this exists so the encoding of
+   * the two parameters lives in one place.
+   */
+  fileImageUrl: (sessionId: string, ref: string) =>
+    `/api/files/image?session=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(ref)}`,
   fileOpen: async (req: FileOpenRequest) => {
     const res = await fetch('/api/files/open', {
       method: 'POST',

@@ -163,6 +163,14 @@ export interface FileReadResponse {
   error?: string;
 }
 
+/**
+ * `GET /api/files/image?session=&path=` has no shape to declare: it answers the
+ * bytes of one image with the content type from the server's own extension
+ * allowlist, for an `<img src>` to fetch. It is the one endpoint here that
+ * returns no JSON on success — 415 (not an image it serves), 413 (over the
+ * cap), 404 (gone) and 403 (cross-origin) carry `{ error }` like the rest.
+ */
+
 /** Launch a local file, its folder, or an editor at it (`POST /api/files/open`). */
 export interface FileOpenRequest {
   /** Session id: the reference is resolved against ITS project path, and that

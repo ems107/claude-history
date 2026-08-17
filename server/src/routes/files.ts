@@ -15,6 +15,36 @@ const log = createLogger('files');
 const MAX_BYTES = 2 * 1024 * 1024;
 /** A NUL in the head is the classic "this is not text" test. */
 const SNIFF_BYTES = 8 * 1024;
+/**
+ * Generous for a 4K screenshot — the ones in this corpus run from 6 KB to
+ * 160 KB. Over it the answer is 413 and never a truncated image: half a PNG
+ * draws as a broken one, and a reader reads that as "the file is gone".
+ */
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * What `/api/files/image` will serve, and the content type it serves it as.
+ *
+ * OUR list, keyed on the extension — never the `media_type` the transcript
+ * carries. That field is written by another process into a file we only ever
+ * read, and echoing it back as a header would turn this into arbitrary content
+ * served from our own origin.
+ *
+ * `svg` is absent deliberately. An SVG is a document that can carry script, and
+ * `image/svg+xml` from `127.0.0.1:7433` is same-origin script execution reached
+ * from a transcript. The panel shows one as the XML it is, which is also more
+ * useful.
+ */
+const IMAGE_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+};
 
 type Resolved = { ok: true; path: string } | { ok: false; code: number; error: string };
 
@@ -134,6 +164,77 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       } catch (err) {
         log.warn(`could not read ${file}: ${String(err)}`);
         return { ...base, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  );
+
+  /**
+   * The bytes of one image, for an `<img src>`.
+   *
+   * `/api/files/read` cannot do this and could not be made to: a PNG has NUL
+   * bytes in its signature, so it is structurally a `binary: true` with no bytes
+   * — and an `<img>` needs a URL the browser fetches itself, not a field in a
+   * JSON reply. Nor can the bytes ride along in the conversation: `SendUserFile`
+   * keeps none of them in the transcript, so the payload would have to read disk
+   * on every parse, and a live session re-parses on every SSE event.
+   *
+   * Same `resolveRef` and same own `isSameOrigin` as the read route above, for
+   * the same reason. It holds for an `<img>` too, which is what makes this safe
+   * to point one at: a subresource of our own page sends
+   * `Sec-Fetch-Site: same-origin`, and a foreign page embedding the same URL
+   * sends `cross-site` and gets 403.
+   *
+   * Unlike the read route this answers 404 for a missing file rather than a 200
+   * saying so. The consumer is an `<img>`: it has no state to draw, only
+   * `onError`. The scratchpad these files live in is swept, so that is an
+   * ordinary answer here and not a failure.
+   */
+  app.get<{ Querystring: { session?: string; path?: string } }>(
+    '/api/files/image',
+    async (request, reply): Promise<void> => {
+      if (!isSameOrigin(request)) {
+        log.warn('refused a cross-origin image read', { path: request.query.path });
+        return reply.code(403).send({ error: 'Cross-origin requests are not allowed.' });
+      }
+      const resolved = resolveRef(ctx, request.query.session ?? '', request.query.path ?? '');
+      if (!resolved.ok) return reply.code(resolved.code).send({ error: resolved.error });
+      const file = resolved.path;
+
+      const ext = /\.([A-Za-z0-9]+)$/.exec(file)?.[1].toLowerCase() ?? '';
+      const contentType = IMAGE_TYPES[ext];
+      if (!contentType) {
+        // Not 404: the file may be right there. "We do not serve this" is a
+        // different fact, and the panel says which one it got.
+        return reply.code(415).send({ error: `Not an image this app will serve: .${ext || '(no extension)'}` });
+      }
+
+      let stat: Awaited<ReturnType<typeof fsp.stat>>;
+      try {
+        stat = await fsp.stat(file);
+      } catch {
+        log.debug(`image not found: ${file}`);
+        return reply.code(404).send({ error: `File no longer exists: ${file}` });
+      }
+      if (stat.isDirectory()) return reply.code(404).send({ error: `Not a file: ${file}` });
+      if (stat.size > MAX_IMAGE_BYTES) {
+        return reply.code(413).send({ error: `Image is ${String(stat.size)} bytes, over the ${String(MAX_IMAGE_BYTES)} limit.` });
+      }
+
+      // Revalidated rather than cached: the scratchpad is temporary and
+      // rewritable, which is the same reason the panel puts `modifiedAt` on
+      // screen. The tag makes the zoom overlay free — it mounts a SECOND `<img>`
+      // on the same src.
+      const etag = `"${String(stat.size)}-${String(Math.floor(stat.mtimeMs))}"`;
+      reply.header('Cache-Control', 'no-cache').header('ETag', etag).header('X-Content-Type-Options', 'nosniff');
+      if (request.headers['if-none-match'] === etag) return reply.code(304).send();
+
+      try {
+        const buf = await fsp.readFile(file);
+        log.debug(`served ${file} (${String(buf.length)} bytes, ${contentType})`);
+        return reply.type(contentType).send(buf);
+      } catch (err) {
+        log.warn(`could not read image ${file}: ${String(err)}`);
+        return reply.code(500).send({ error: `Failed to read: ${String(err)}` });
       }
     },
   );
