@@ -213,6 +213,15 @@ Then Chrome over CDP, with check 9's harness:
 - **The gates**: Ctrl+F must NOT open the bar while `?agent=` has the drawer up;
   Escape with the file panel open closes the file and leaves the bar open, and a
   second Escape closes the bar.
+- **A live session is the one part a test cannot fake.** `refetchOnWindowFocus`
+  is off on the client, so only a transcript really growing invalidates
+  `['session', id]` — run this from inside a live Claude Code turn, as check 18
+  does: with the bar open, `M` may grow, the reader must stay on the same match
+  and `scrollTop` must not be yanked. What CAN be provoked without one is the
+  half that actually breaks a mark — React re-rendering the whole conversation
+  and throwing away the text node the range pointed into — by toggling
+  Compactions or Thinking twice. Checked: same scrollTop, same "1 of 113", same
+  marked text afterwards.
 
 **18. The working indicator** needs a genuinely busy session, so run it from inside a live Claude Code turn: `/api/live` carries `status: "busy"` and a `statusUpdatedAt` matching the turn's start, and the page holds one `[data-bubble="assistant"]` reading `Claude is working… <counter>`, the counter advancing by exactly the seconds waited. A session that is not live has none.
 
