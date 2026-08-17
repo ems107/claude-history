@@ -383,6 +383,23 @@ previous event left behind, and the `ResizeObserver` that does the pinning
 re-reads that geometry after every content change, in the frame the content
 changed and before the browser's own scroll event is dispatched.
 
+**What lands while the follow is off is counted on the pill**, as a badge in the
+app's one shape for "there is something here you have not seen" — `UpdateButton`'s,
+amber with a ring in the page's background colour so two digits stay legible over
+a bubble. The pill itself does not change with it: the badge is the news, and
+turning the whole control amber would read as a warning about the button.
+
+It counts **messages** — `turn.items`, the unit the header already counts as
+prompts and responses. Not blocks (a turn's thirty tool calls are one message
+doing thirty things) and not turns (which would sit at 1 through a whole answer
+arriving). A message whose blocks are all tool calls draws a run rather than a
+bubble, so the badge can read one ahead of the bubbles you can point at:
+something did arrive below, which is all it claims. Three rules keep the number
+honest — it is 0 while following, 0 again the moment the follow is armed, and **a
+conversation arriving is not growth**: the count is 0 while the query is in
+flight, for this session and for the one before it, so reading that transition as
+news would open every session claiming its whole history.
+
 **A live or busy session opens at its end, following**, because that is what it
 was opened for: once per session, never over a reader who has already scrolled,
 and never when the URL carries an anchor — `?msg=` / `?tool=` is a request to

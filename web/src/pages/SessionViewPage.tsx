@@ -362,9 +362,18 @@ export function SessionViewPage() {
     [starredUuids, starBusy, id, queryClient],
   );
 
-  const { thinkingCount, toolCount, compactionCount } = useMemo(() => {
-    const blocks = (detail.data?.turns ?? []).flatMap((t) => t.items).flatMap((i) => i.blocks);
+  const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {
+    const items = (detail.data?.turns ?? []).flatMap((t) => t.items);
+    const blocks = items.flatMap((i) => i.blocks);
     return {
+      // What the follow pill's badge counts: messages, the unit the header
+      // already counts as prompts and responses. Not blocks — a turn's thirty
+      // tool calls are one message doing thirty things — and not turns either,
+      // which would sit at 1 through a whole answer arriving. A message whose
+      // blocks are all tool calls draws a run rather than a bubble, so the badge
+      // can read one ahead of the bubbles you can point at: something did arrive
+      // below, which is all the badge claims.
+      messageCount: items.length,
       thinkingCount: blocks.filter((b) => b.kind === 'thinking').length,
       toolCount: blocks.filter((b) => b.kind === 'tool').length,
       compactionCount: blocks.filter((b) => b.kind === 'compact').length,
@@ -419,7 +428,10 @@ export function SessionViewPage() {
    * request to stand somewhere in particular, and the two would fight over the
    * scroll for as long as the turn lasted.
    */
-  const follow = useFollowBottom(id, liveInfo !== null && !msg && !tool);
+  const follow = useFollowBottom(id, {
+    autoFollow: liveInfo !== null && !msg && !tool,
+    messageCount,
+  });
   /** Inside the list, so an echoed prompt is spaced like the turn it is about to become. */
   const pendingTurns = useMemo(
     () =>
@@ -646,7 +658,7 @@ export function SessionViewPage() {
                 )}
               </div>
             </div>
-            <FollowBottomButton following={follow.following} toggle={follow.toggle} />
+            <FollowBottomButton following={follow.following} toggle={follow.toggle} unseen={follow.unseen} />
           </div>
           {agentId && (
             <SubagentDrawer

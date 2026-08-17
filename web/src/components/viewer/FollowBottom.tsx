@@ -6,11 +6,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * make "scrolled to the end" almost unreachable.
  */
 const BOTTOM_SLACK = 24;
+/** Past this the badge stops counting and starts saying "a lot". */
+const UNSEEN_MAX = 99;
 
 export interface FollowBottom {
   /** Pinned to the bottom: new content keeps the view at the end. */
   following: boolean;
   toggle: () => void;
+  /**
+   * Messages that have landed since the reader let go of the end. Always 0 while
+   * following — what arrives is on screen as it arrives — so it is only ever a
+   * number while the pill reads "To the end".
+   */
+  unseen: number;
 }
 
 /**
@@ -36,14 +44,26 @@ export interface FollowBottom {
 export function useFollowBottom(
   /** Changing this releases the follow — a different session starts fresh. */
   resetKey?: string,
-  /**
-   * Arm it as the session opens: a live or busy conversation is one being
-   * written, and it is opened to watch that arrive. Once per session, and never
-   * over the top of a reader who has already scrolled — this arrives a moment
-   * after the page does (the live query is a round trip), and yanking the view
-   * to the end then would be the app fighting whoever is reading.
-   */
-  autoFollow = false,
+  {
+    autoFollow = false,
+    messageCount = 0,
+  }: {
+    /**
+     * Arm it as the session opens: a live or busy conversation is one being
+     * written, and it is opened to watch that arrive. Once per session, and never
+     * over the top of a reader who has already scrolled — this arrives a moment
+     * after the page does (the live query is a round trip), and yanking the view
+     * to the end then would be the app fighting whoever is reading.
+     */
+    autoFollow?: boolean;
+    /**
+     * How many messages the conversation holds right now. The count of what the
+     * reader has not seen is the same question as the follow — what has arrived
+     * at the end while they were not looking at it — so it is answered here,
+     * where "not following" and "another session" already live.
+     */
+    messageCount?: number;
+  } = {},
 ): FollowBottom & {
   /** Callback refs, NOT ref objects: the elements appear a render after this
    * hook first runs (the page renders a loading state first), and a ref object
@@ -72,12 +92,32 @@ export function useFollowBottom(
   const touched = useRef(false);
   /** Armed once per session, whatever the live query does afterwards. */
   const armed = useRef(false);
+  const [unseen, setUnseen] = useState(0);
+  /** What the count was when it was last read, to tell growth from a redraw. */
+  const lastCount = useRef(messageCount);
 
   useEffect(() => {
     setFollowing(false);
+    setUnseen(0);
     touched.current = false;
     armed.current = false;
   }, [resetKey]);
+
+  useEffect(() => {
+    const before = lastCount.current;
+    lastCount.current = messageCount;
+    // Following means watching them land, so there is never anything unseen.
+    if (following) {
+      setUnseen(0);
+      return;
+    }
+    // Only growth counts, and a conversation ARRIVING is not growth: `before` is
+    // 0 while the query is in flight — for this session and for the one before
+    // it — so counting that would open every session claiming its whole history
+    // as news.
+    if (before === 0 || messageCount <= before) return;
+    setUnseen((n) => n + (messageCount - before));
+  }, [messageCount, following]);
 
   useEffect(() => {
     if (!scrollEl) return;
@@ -150,6 +190,7 @@ export function useFollowBottom(
   return {
     following,
     toggle,
+    unseen,
     scrollRef: setScrollEl,
     contentRef: setContentEl,
     footerRef: setFooterEl,
@@ -163,8 +204,25 @@ export function useFollowBottom(
  * to stand. Always offered, whether or not there is anything to scroll: with
  * nothing to scroll it is the switch that says the next message will be
  * followed, which is exactly the state a live session is opened in.
+ *
+ * While it is NOT following, what arrives is counted on a badge — the app's own
+ * shape for "there is something here you have not seen", the same one
+ * `UpdateButton` wears for a new version, down to the ring in the page's
+ * background colour that keeps a two-digit number legible over a bubble. The
+ * pill itself does not change colour with it: the badge is the news, and turning
+ * the whole control amber would read as a warning about the button.
  */
-export function FollowBottomButton({ following, toggle }: { following: boolean; toggle: () => void }) {
+export function FollowBottomButton({
+  following,
+  toggle,
+  unseen,
+}: {
+  following: boolean;
+  toggle: () => void;
+  /** Messages landed since the reader let go of the end; 0 draws no badge. */
+  unseen: number;
+}) {
+  const badge = following ? 0 : unseen;
   return (
     <button
       type="button"
@@ -172,7 +230,9 @@ export function FollowBottomButton({ following, toggle }: { following: boolean; 
       title={
         following
           ? 'Following the end of the conversation — click, or scroll up, to stop'
-          : 'Jump to the end and follow new messages'
+          : badge > 0
+            ? `${badge} new message${badge === 1 ? '' : 's'} below — click to jump to the end and follow`
+            : 'Jump to the end and follow new messages'
       }
       className={`absolute right-4 bottom-4 flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-lg backdrop-blur-sm transition-colors ${
         following
@@ -182,6 +242,16 @@ export function FollowBottomButton({ following, toggle }: { following: boolean; 
     >
       <span aria-hidden="true">↓</span>
       {following ? 'Following' : 'To the end'}
+      {badge > 0 && (
+        // aria-hidden: the count is already in the title, and a live region here
+        // would announce every message arriving while nobody asked for it.
+        <span
+          aria-hidden="true"
+          className="absolute -top-1.5 -right-1.5 min-w-4 rounded-full border-2 border-[var(--bg)] bg-amber-400 px-1 text-[9px] leading-3 font-bold text-black"
+        >
+          {badge > UNSEEN_MAX ? `${UNSEEN_MAX}+` : badge}
+        </span>
+      )}
     </button>
   );
 }
