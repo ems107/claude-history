@@ -355,6 +355,34 @@ export interface PlanOutcome {
   feedback: string | null;
 }
 
+/**
+ * One file `SendUserFile` handed to the user, as the transcript recorded it.
+ *
+ * The pixels are NOT here and never were: the tool's result is the one-line
+ * prose `N files delivered to user.`, and `toolUseResult.attachments` is the
+ * only copy of everything else. So a viewer that wants to show the file has to
+ * read it off disk — from `path`, which is absolute and usually points inside
+ * the session's scratchpad, i.e. a directory that gets cleaned. "The file is
+ * gone" is therefore an ordinary state here, not a failure.
+ *
+ * `size` and `media_type` are what was SENT. The file on disk may since have
+ * changed or vanished, which is why the viewer shows the real `modifiedAt`
+ * beside them the moment it opens one.
+ *
+ * `file_uuid` is deliberately NOT carried: it is the id of the upload to
+ * claude.ai, and nothing on this machine can do anything with it.
+ */
+export interface SentAttachment {
+  path: string;
+  /** `size` — as sent, not as it is on disk now. Null when the line wrote none. */
+  sizeBytes: number | null;
+  isImage: boolean;
+  /** `media_type`, e.g. `image/png` or `text/markdown`. */
+  mediaType: string | null;
+  /** Whether Claude Code found the file where the model said it was. */
+  pathValidated: boolean | null;
+}
+
 export interface ToolResultInfo {
   text: string;
   truncated: boolean;
@@ -422,6 +450,16 @@ export interface ToolResultInfo {
    * answer — which is a real state, not a missing one.
    */
   plan: PlanOutcome | null;
+  /**
+   * `SendUserFile` only: the files that were handed over, off
+   * `toolUseResult.attachments`. Null on every other tool.
+   *
+   * The call's own input already names the files, so this is not how the viewer
+   * learns THAT something was sent — it is the only place the size, the media
+   * type and `pathValidated` exist. 10 calls in this corpus, 9 of screenshots
+   * and one of a `.md`.
+   */
+  attachments: SentAttachment[] | null;
 }
 
 export type ContentBlock =

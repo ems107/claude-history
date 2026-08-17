@@ -8,6 +8,7 @@ import type {
   MessageUsage,
   PlanOutcome,
   PrLink,
+  SentAttachment,
   SessionDetail,
   SessionSummary,
   SubagentMeta,
@@ -136,6 +137,32 @@ function toAnnotations(raw: unknown): Record<string, { preview?: string; notes?:
 }
 
 /**
+ * The files `SendUserFile` handed over, off the carrying line's `attachments`.
+ *
+ * Same defensive shape as the two above: every field is read from a transcript,
+ * so an entry without a `path` is dropped rather than passed on as a row with
+ * nothing to open. `isImage` defaults to false and the rest to null — a viewer
+ * saying "unknown size" is right, one saying "0 bytes" is not.
+ */
+function toSentAttachments(raw: unknown): SentAttachment[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: SentAttachment[] = [];
+  for (const entry of raw) {
+    if (!isRec(entry)) continue;
+    const filePath = str(entry.path);
+    if (!filePath) continue;
+    out.push({
+      path: filePath,
+      sizeBytes: num(entry.size) ?? null,
+      isImage: entry.isImage === true,
+      mediaType: str(entry.media_type),
+      pathValidated: typeof entry.pathValidated === 'boolean' ? entry.pathValidated : null,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
  * What the user did with a plan, off the `ExitPlanMode` result line.
  *
  * The two answers are two different types, not two shapes of one: approving
@@ -218,6 +245,7 @@ function buildResult(
   annotations: Record<string, { preview?: string; notes?: string }> | null,
   response: string | null,
   plan: PlanOutcome | null,
+  attachments: SentAttachment[] | null,
 ): ToolResultInfo {
   let text = extractResultText(c.content);
   const totalChars = text.length;
@@ -246,6 +274,7 @@ function buildResult(
     annotations,
     response,
     plan,
+    attachments,
   };
 }
 
@@ -295,6 +324,17 @@ function summarizeInput(toolName: string, input: unknown): string {
       const asked = questions.map((q) => (isRec(q) ? str(q.question) : null)).filter((q): q is string => !!q);
       if (asked.length === 0) return '';
       return asked.length === 1 ? asked[0] : `${asked[0]} (+${String(asked.length - 1)} more)`;
+    }
+    // The paths are absolute and long — three of them run past 400 characters,
+    // all sharing the same scratchpad prefix, so the default would fill the
+    // header with the same directory written three times. The filenames are what
+    // tells one delivery from another; the card below shows the whole paths.
+    case 'SendUserFile': {
+      const files = Array.isArray(input.files) ? input.files : [];
+      const names = files
+        .map((f) => (typeof f === 'string' ? (f.split(/[\\/]/).pop() ?? '') : ''))
+        .filter((n) => n.length > 0);
+      return names.join(', ');
     }
     default: {
       const s = first('description', 'command', 'file_path', 'pattern', 'query', 'url', 'prompt');
@@ -710,6 +750,9 @@ export async function parseTranscript(
         // means "approved" only on an ExitPlanMode result — everywhere else it
         // is just the structured output of whatever tool ran.
         const planOutcome = toPlanOutcome(o.toolUseResult, o);
+        // And the same again: plenty of tools write an `attachments` array, and
+        // only on a SendUserFile result does it mean "these were handed over".
+        const sentAttachments = isRec(o.toolUseResult) ? toSentAttachments(o.toolUseResult.attachments) : null;
         const userBlocks: ContentBlock[] = [];
         for (const c of content) {
           if (!isRec(c)) continue;
@@ -725,6 +768,7 @@ export async function parseTranscript(
                 tool.toolName === 'AskUserQuestion' ? askedAnnotations : null,
                 tool.toolName === 'AskUserQuestion' ? askedResponse : null,
                 tool.toolName === 'ExitPlanMode' ? planOutcome : null,
+                tool.toolName === 'SendUserFile' ? sentAttachments : null,
               );
             }
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
