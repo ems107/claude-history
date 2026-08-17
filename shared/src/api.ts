@@ -1040,4 +1040,16 @@ export type ServerEvent =
    * nothing in it.
    */
   | { type: 'stars-changed' }
+  /**
+   * Settings were saved. Its own event because a window has no other way to
+   * hear about a save it did not make: `['settings']` is mounted for the life of
+   * the page by the usage widget in the header, so it never remounts, and
+   * `refetchOnWindowFocus` is off — a second window kept its copy for as long as
+   * it stayed open, **including the switches that decide whether this app talks
+   * to the network at all**. Turning the usage read off in one window left every
+   * other one reading.
+   */
+  | { type: 'settings-changed' }
+  /** The price table was saved. The list, the stats page and three panels in the viewer all cost tokens in the browser from it. */
+  | { type: 'prices-changed' }
   | { type: 'logs-appended' };

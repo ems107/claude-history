@@ -470,6 +470,9 @@ export class SessionIndex {
   async setPriceTable(prices: PriceTable | null): Promise<void> {
     this.prices = prices;
     await this.saveUserdata();
+    // Costs are computed in the browser from this table, everywhere they appear,
+    // so a window that did not save it goes on pricing tokens with the old one.
+    this.events.emit('prices-changed');
   }
 
   async setTitleOverride(id: string, title: string | null): Promise<void> {

@@ -104,6 +104,27 @@ export function useEvents(): void {
         case 'stars-changed':
           void queryClient.invalidateQueries({ queryKey: ['stars'] });
           break;
+        /**
+         * Settings saved in ANOTHER window. Nothing else would ever refetch
+         * them here: the usage widget in the header keeps `['settings']` mounted
+         * for the life of the page, so the query never remounts, and
+         * `refetchOnWindowFocus` is off. That left a second window running the
+         * old policy — including whether it reads subscription usage at all.
+         *
+         * Deliberately NOT invalidating `['usage']`: that would turn one
+         * person's toggle into a network read in every open window, and the one
+         * that made the change already does its own labelled read. Both queries
+         * here are local reads.
+         */
+        case 'settings-changed':
+          void queryClient.invalidateQueries({ queryKey: ['settings'] });
+          void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
+          break;
+        // Costs are computed in the browser wherever they appear, so a saved
+        // table has to reach the windows that did not save it.
+        case 'prices-changed':
+          void queryClient.invalidateQueries({ queryKey: ['prices'] });
+          break;
         // Already throttled to one per second by the server. Cheap: both
         // queries are local reads, and the day parse is cached and incremental.
         case 'logs-appended':
