@@ -204,6 +204,22 @@ body {
   color: #fff;
 }
 
+/* The find bar's two. Dimmer than the deep link's, because they stay on the
+   page for as long as the bar is open rather than fading after 8 s, and there
+   can be hundreds of them at once; the one the reader is standing on is the
+   solid colour, so "which of these am I on" is answered without reading the
+   counter. Registered under names of their own so a deep link arriving cannot
+   replace the set and then delete it. */
+::highlight(find-match) {
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+}
+
+::highlight(find-current) {
+  background-color: var(--accent);
+  color: #14100e;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

@@ -18,8 +18,23 @@ const WHOLE_WORD_PARAM = 'hlw';
 export const TOOL_PARAM = 'tool';
 /** The registered name of the CSS highlight; `::highlight()` in styles.css must match. */
 const HIGHLIGHT_NAME = 'search-match';
+/**
+ * The find bar's own two, kept separate from the one above on purpose: a deep
+ * link arriving while the bar is open would otherwise replace the bar's whole
+ * set with its own handful and then delete it 8 seconds later.
+ */
+export const FIND_NAME = 'find-match';
+export const FIND_CURRENT_NAME = 'find-current';
 /** A term can match hundreds of times in one long answer; marks past this add nothing. */
 const MAX_MARKS = 400;
+/** The same idea over a whole conversation rather than one box. */
+const MAX_FIND_MARKS = 4000;
+/** And per box, so one 20,000-character tool result cannot eat the whole budget. */
+const MAX_BOX_MARKS = 1000;
+/** No cap at all: what "the 137th occurrence in this box" needs. */
+const NO_CAP = Number.MAX_SAFE_INTEGER;
+/** The two elements marks are allowed inside — see `markMatches` on why. */
+const BOX_SELECTOR = '[data-bubble-body], [data-tool-id]';
 
 /** The querystring a link into a session carries so the hit can be marked there. */
 export function highlightSearchParams(query: SearchQueryEcho): URLSearchParams {
@@ -130,6 +145,46 @@ export function revealRange(range: Range): void {
   }
 }
 
+/** Whether this browser can mark at all. Without it the flash still says where the hit is. */
+function canHighlight(): boolean {
+  return typeof CSS !== 'undefined' && 'highlights' in CSS;
+}
+
+/** Every non-empty text node under `root`, in document order. */
+function textNodesIn(root: HTMLElement): Text[] {
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if ((node as Text).data.length > 0) nodes.push(node as Text);
+  }
+  return nodes;
+}
+
+/** The spans `matchSpans` found, as live DOM ranges. */
+function rangesOf(nodes: Text[], hl: MatchHighlight, max: number): Range[] {
+  return matchSpans(
+    nodes.map((n) => n.data),
+    hl,
+    max,
+  ).map((span) => {
+    const range = document.createRange();
+    range.setStart(nodes[span.start.piece], Math.min(span.start.offset, nodes[span.start.piece].data.length));
+    range.setEnd(nodes[span.end.piece], Math.min(span.end.offset, nodes[span.end.piece].data.length));
+    return range;
+  });
+}
+
+/**
+ * Every occurrence of `hl` inside one element, in document order and with no
+ * cap — which is what picking the Nth match of a box needs. `matchSpans` applies
+ * its own cap inside the per-term loop and BEFORE sorting, so a capped result is
+ * "the first few of each term" and cannot be counted through.
+ */
+export function boxRanges(box: HTMLElement, hl: MatchHighlight): Range[] {
+  if (!canHighlight()) return [];
+  return rangesOf(textNodesIn(box), hl, NO_CAP);
+}
+
 /**
  * Marks every occurrence of `hl` inside `root` and returns what it did.
  *
@@ -141,28 +196,79 @@ export function revealRange(range: Range): void {
  */
 export function markMatches(root: HTMLElement, hl: MatchHighlight): { first: Range | null; clear: () => void } {
   const nothing = { first: null, clear: () => {} };
-  if (typeof CSS === 'undefined' || !('highlights' in CSS)) return nothing;
+  if (!canHighlight()) return nothing;
 
-  const nodes: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if ((node as Text).data.length > 0) nodes.push(node as Text);
-  }
-  const spans = matchSpans(
-    nodes.map((n) => n.data),
-    hl,
-  );
-  if (spans.length === 0) return nothing;
+  const ranges = rangesOf(textNodesIn(root), hl, MAX_MARKS);
+  if (ranges.length === 0) return nothing;
 
-  const ranges = spans.map((span) => {
-    const range = document.createRange();
-    range.setStart(nodes[span.start.piece], Math.min(span.start.offset, nodes[span.start.piece].data.length));
-    range.setEnd(nodes[span.end.piece], Math.min(span.end.offset, nodes[span.end.piece].data.length));
-    return range;
-  });
   CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
   return {
     first: ranges[0],
     clear: () => CSS.highlights.delete(HIGHLIGHT_NAME),
   };
+}
+
+/**
+ * The find bar's pass: every occurrence in every marking box of a conversation,
+ * grouped by the box it fell in.
+ *
+ * One walk, and each text node is handed to the NEAREST box above it
+ * (`closest`), which buys three things at once. A tool call rendered inside an
+ * assistant bubble is counted as the call and not as the answer around it; a
+ * phrase cannot run out of the prose and into a nested call's JSON; and the
+ * boxes come out in document order, which is the order the bar steps through.
+ * A text node with no box above it — a header, a clock, a cost pill, the bar's
+ * own panel — is not marked at all.
+ *
+ * The grouping is also what the "visible" scope reads: a box whose body is
+ * folded away has no text nodes, so it yields nothing, which is exactly what
+ * "not on screen" means.
+ */
+export function markConversation(
+  root: HTMLElement,
+  hl: MatchHighlight,
+): { boxes: Map<HTMLElement, Range[]>; count: number; clear: () => void } {
+  const boxes = new Map<HTMLElement, Range[]>();
+  const nothing = { boxes, count: 0, clear: () => {} };
+  if (!canHighlight() || hl.terms.length === 0) return nothing;
+
+  const byBox = new Map<HTMLElement, Text[]>();
+  for (const node of textNodesIn(root)) {
+    const box = node.parentElement?.closest<HTMLElement>(BOX_SELECTOR);
+    if (!box) continue;
+    const list = byBox.get(box);
+    if (list) list.push(node);
+    else byBox.set(box, [node]);
+  }
+
+  const all: Range[] = [];
+  let count = 0;
+  for (const [box, nodes] of byBox) {
+    const ranges = rangesOf(nodes, hl, MAX_BOX_MARKS);
+    if (ranges.length === 0) continue;
+    boxes.set(box, ranges);
+    count += ranges.length;
+    if (all.length < MAX_FIND_MARKS) all.push(...ranges.slice(0, MAX_FIND_MARKS - all.length));
+  }
+  if (all.length === 0) return nothing;
+  CSS.highlights.set(FIND_NAME, new Highlight(...all));
+  return { boxes, count, clear: () => CSS.highlights.delete(FIND_NAME) };
+}
+
+/**
+ * The one match the reader is standing on, painted over the rest. Its own
+ * registration rather than a class or a style, for the same reason the others
+ * are ranges: the text belongs to React. `priority` is set explicitly — the
+ * overlap with `find-match` must always resolve the same way, and registration
+ * order is not something to depend on.
+ */
+export function setCurrentMark(range: Range | null): void {
+  if (!canHighlight()) return;
+  if (!range) {
+    CSS.highlights.delete(FIND_CURRENT_NAME);
+    return;
+  }
+  const highlight = new Highlight(range);
+  highlight.priority = 2;
+  CSS.highlights.set(FIND_CURRENT_NAME, highlight);
 }
