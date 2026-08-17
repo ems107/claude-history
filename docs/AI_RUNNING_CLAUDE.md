@@ -154,11 +154,12 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 
 ### Two writers on one transcript
 
-That is the thing being prevented — it is what produces the duplicated uuids and replayed segments the parser has to undo — so the block is real, not advisory. It is also the one guard with a race left in it: a terminal opened in the second between the check and the write.
+That is the thing being prevented — it is what produces the duplicated uuids and replayed segments the parser has to undo — so the blocks are real, not advisory. They also keep a race in them: a terminal opened in the second between the check and the write.
 
 - **A `--print` run registers itself in `~/.claude/sessions/<pid>.json` exactly like an interactive one** (`entrypoint: "sdk-cli"`, and the pid is the `claude.exe` we spawned), so the guard must exclude our own pids or **the feature blocks itself the moment it starts working**. That file carries no `status` field for these, though, so `/api/live` never reports them busy however long they work — hence the synthesised `LiveInfo` in `SessionViewPage` rather than a second indicator.
 - **`index.liveSessions` is only rebuilt when something writes to that directory**, and a CLI killed outright writes nothing on the way out. Its file stays, no event ever announces it, and a guard that trusts the list stays blocked forever with nothing running (measured). **Re-check `pidAlive` at the moment of the decision.**
 - **One string, `sendBlockedReason()`**, for the endpoint and the composer both: the same shape as `runBlockedReason()`, and for the same reason — a disabled control with nothing to say is the bug.
+- **Both doors are guarded, not only the composer's.** `POST /api/sessions/:id/resume` used to launch a terminal on a session already open in one, which is the same corruption the composer refuses — through the door that is likelier to be used twice, with a window open per monitor. It answers 409 as well: **our own process first** (`chat.status(id).running`), because the CLI we spawn registers a pid file like any other and the live check would otherwise blame a terminal that does not exist, and a live pid after that. Only the launch is refused — **"Copy resume cmd" stays live**, so doing it anyway remains possible and deliberate. The button says which of the two it is before the click, from `summary.live`; the 409 is the authority, because that field takes a moment to appear.
 
 ### Rendering
 

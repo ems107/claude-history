@@ -42,6 +42,14 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
   const btn =
     'cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-50';
 
+  // Resuming a session something else already holds gives the transcript two
+  // writers, which is what leaves the duplicated uuids the parser has to undo.
+  // The server refuses it (409) and that is the authority; this only says so
+  // before the click, because a button that launches nothing and explains
+  // afterwards is the worse version. "Copy resume cmd" stays live throughout:
+  // doing it anyway should be possible, just deliberate.
+  const holder = session.live;
+
   return (
     <span className="inline-flex items-center gap-1.5">
       <button
@@ -63,9 +71,15 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
       <button
         type="button"
         onClick={launch}
-        disabled={state === 'launching'}
+        disabled={state === 'launching' || holder !== null}
         className={state === 'error' ? `${btn} border-red-400 text-red-400` : btn}
-        title={state === 'error' ? error : `Open a terminal in ${session.projectPath} and resume this session`}
+        title={
+          state === 'error'
+            ? error
+            : holder
+              ? `This session is already open (pid ${String(holder.pid)}) — resuming it twice would corrupt its transcript`
+              : `Open a terminal in ${session.projectPath} and resume this session`
+        }
       >
         {/* Same ❯ used by the "cli" entrypoint chip elsewhere. */}
         {state === 'launching'
@@ -74,7 +88,11 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
             ? 'Launched ✓'
             : state === 'error'
               ? 'Failed ✕'
-              : '❯ Resume in terminal'}
+              : holder
+                ? // Why it is dead, without waiting for a hover — the label is
+                  // the only part read at a glance.
+                  '❯ Already open'
+                : '❯ Resume in terminal'}
       </button>
       <button type="button" onClick={copy} className={btn} title={command}>
         {copied ? 'Copied ✓' : '📋 Copy resume cmd'}
