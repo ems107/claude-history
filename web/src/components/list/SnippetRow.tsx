@@ -75,12 +75,11 @@ export function SnippetRow({
         active ? 'ring-1 ring-[var(--accent)] bg-[var(--bg-hover)]' : ''
       }`}
     >
-      <span className="mr-2 inline-block w-14 shrink-0 text-right font-semibold text-[var(--text-dim)]/70 uppercase">
-        {snippet.role}
-      </span>
+      {/* When before who: the rows come out in reading order, so the clock is
+          the column that lines up down the list and gives it its shape. Short
+          here and full on the hover — the row is one line, and every character
+          the clock takes is a character of the match itself. */}
       {when && (
-        // Short here and full on the hover: the row is one line and every
-        // character the clock takes is a character of the match itself.
         <span
           className="mr-2 inline-block shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60"
           title={`${formatDateTimeFull(when)} · ${relativeTime(when)}`}
@@ -88,6 +87,9 @@ export function SnippetRow({
           {formatDateTimeShort(when)}
         </span>
       )}
+      <span className="mr-2 inline-block w-14 shrink-0 text-right font-semibold text-[var(--text-dim)]/70 uppercase">
+        {snippet.role}
+      </span>
       {snippet.parts.map((part, pi) =>
         part.hit ? (
           <mark key={pi} className="rounded-sm bg-[var(--accent)]/30 px-0.5 text-[var(--text)]">

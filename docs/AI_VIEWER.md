@@ -283,8 +283,9 @@ folded text is a decision, not somewhere to find yourself.
   and nothing after it is.
 - **Kinds are chips with their own counts**, so turning one off is informed
   rather than a guess, and a kind with nothing in it disables itself.
-- **A row in the list says WHEN**, short beside the role and full on the hover
-  with the relative time. The rows are lines lifted out of a conversation, and a
+- **A row in the list leads with WHEN**, before the role: the rows come out in
+  reading order, so the clock is the column that lines up down the list and
+  gives it its shape. Short there and full on the hover, with the relative time. The rows are lines lifted out of a conversation, and a
   hundred of them all reading TOOL are otherwise the same row a hundred times;
   the clock is the only thing that puts them back. `SearchSnippet` carries no
   timestamp — the server's rows have none to give — so it rides on `FindUnit`

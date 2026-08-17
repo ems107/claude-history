@@ -227,8 +227,8 @@ Then Chrome over CDP, with check 9's harness:
   `N more in the whole conversation` button sits BESIDE that sentence rather
   than replacing it. The two reach notes carry a `title` each, because "3 long
   outputs searched only in part" is not self-evident.
-- **Every row in the panel carries a clock**, short in the row and full plus
-  relative on the hover.
+- **Every row in the panel leads with a clock**, before the role, short in the
+  row and full plus relative on the hover.
 - **Selecting works with the bar shut**, which is the point of it being its own
   feature: click a bubble on arrival and `[data-selected]` must be on it with
   the ring drawn, click the empty gutter and it must go. And **a deep link
