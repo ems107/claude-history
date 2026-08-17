@@ -611,8 +611,13 @@ export function SessionViewPage() {
                     the bottom of it: `mt-auto` puts it at the foot of a short
                     session, `sticky` keeps it there through a long one. Inside
                     the column it needs no width of its own to line up with the
-                    bubbles, and being inside the followed box means the pinning
-                    ResizeObserver sees it grow as you type.
+                    bubbles, and `footerRef` is what makes growing it scroll the
+                    conversation clear instead of covering it.
+                    `pt-6` is a real gap in the flow, and the composer's own fade
+                    is drawn exactly over it: at the end of the conversation the
+                    last bubble stops above the fade rather than dissolving into
+                    it, and the strip stays transparent, so what scrolls behind it
+                    is faded out rather than cut off.
                     Never inside the zoomed div: an input is not the reading.
                     The click is stopped here, and only here: everywhere else in
                     the scroller a click means "nobody is selected", and typing a
@@ -621,8 +626,9 @@ export function SessionViewPage() {
                     stretch of this scroller is behind something. */}
                 {chatEnabled && (
                   <div
+                    ref={follow.footerRef}
                     data-sticky-bottom
-                    className="sticky bottom-0 mt-auto"
+                    className="sticky bottom-0 mt-auto pt-6"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Composer

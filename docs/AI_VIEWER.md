@@ -23,6 +23,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
 - **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
+- **Nothing the composer does may hide a message** — growing it scrolls the conversation clear of it.
 
 ## Two layout rules that keep breaking
 
@@ -338,8 +339,24 @@ pill has a bottom to sit at. It costs no measuring either: as content, the box I
 the gap that keeps the last message clear of it, and `min-h-full` on the column is
 what stops a two-line session becoming scrollable.
 
-Three things follow from the composer being inside the scroller, each of them a
-bug until it was named:
+**The whole conversation stays readable, whatever the box is doing.** Two rules
+hold that up, and both were bugs first:
+
+- **The strip the fade covers is a real gap in the flow** (`pt-6` on the sticky
+  wrapper, transparent, with the composer's own gradient drawn exactly over it).
+  Without it the last bubble ended flush against the box and the fade dissolved
+  its last 20 px — the message was on screen and unreadable, which looked exactly
+  like being cut off.
+- **Growing the box scrolls the conversation clear of it** rather than covering
+  it: the growth is also new scrollable height, so moving `scrollTop` by the same
+  difference hands back precisely what was covered (and shrinking gives it back).
+  That is `footerRef`, and it is the half the pinning cannot do — with the follow
+  switched off, nothing else would move. Six lines typed into the box, measured:
+  composer 119 → 255 px, `scrollTop` +136, the last bubble still against the top
+  of the gap, and the pill still reading `To the end`.
+
+Three more things follow from the composer being inside the scroller, each of them
+a bug until it was named:
 
 - **The click that deselects stops at the composer.** The scroller's one
   `onClick` means "nobody is selected", and typing a prompt is not clicking away

@@ -50,9 +50,17 @@ export function useFollowBottom(
    * being filled in silently would leave the effects below never armed. */
   scrollRef: (el: HTMLDivElement | null) => void;
   contentRef: (el: HTMLDivElement | null) => void;
+  /**
+   * The box stuck to the foot of the scroller — the composer. It is content like
+   * any other, so growing it makes the conversation shorter on screen: without
+   * this the last message would go behind it, which is not the same thing as
+   * being at the end of it.
+   */
+  footerRef: (el: HTMLDivElement | null) => void;
 } {
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
+  const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
   const [following, setFollowing] = useState(false);
   // Read inside the observer, which must not be rebuilt on every toggle.
   const followingRef = useRef(false);
@@ -95,17 +103,28 @@ export function useFollowBottom(
 
   useEffect(() => {
     if (!scrollEl || !contentEl) return;
+    /** Null until the first callback, which is the one that only measures. */
+    let footerHeight: number | null = null;
     const observer = new ResizeObserver(() => {
+      const height = footerEl?.offsetHeight ?? 0;
+      const grew = footerHeight === null ? 0 : height - footerHeight;
+      footerHeight = height;
+      // The stuck box changed size — a line typed, a question arriving. It grew
+      // over the conversation, and the growth is also new scrollable height, so
+      // scrolling by the difference hands the view back exactly what was just
+      // covered. Shrinking gives it back the other way.
+      if (grew !== 0) scrollEl.scrollTop += grew;
       if (followingRef.current) scrollEl.scrollTop = scrollEl.scrollHeight;
-      // AFTER the pin, and on every content change whether we pinned or not:
-      // this is the geometry the next scroll event is compared against, and
-      // what the content did to it is not the reader scrolling.
+      // AFTER both, and on every content change whether we moved or not: this is
+      // the geometry the next scroll event is compared against, and neither the
+      // content nor this is the reader scrolling.
       lastTop.current = scrollEl.scrollTop;
       lastHeight.current = scrollEl.scrollHeight;
     });
     observer.observe(contentEl);
+    if (footerEl) observer.observe(footerEl);
     return () => observer.disconnect();
-  }, [scrollEl, contentEl]);
+  }, [scrollEl, contentEl, footerEl]);
 
   useEffect(() => {
     if (!autoFollow || !scrollEl || armed.current || touched.current) return;
@@ -128,7 +147,13 @@ export function useFollowBottom(
     if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
   }, [scrollEl]);
 
-  return { following, toggle, scrollRef: setScrollEl, contentRef: setContentEl };
+  return {
+    following,
+    toggle,
+    scrollRef: setScrollEl,
+    contentRef: setContentEl,
+    footerRef: setFooterEl,
+  };
 }
 
 /**
