@@ -501,6 +501,19 @@ and could only be the turn.
 - The absolute clock is on the hover, per figure. The row wraps rather than
   overflowing (measured: it still fits on one line inside a 417 px bubble at a
   520 px window, where the app's own layout is already the wider problem).
+- **The number is brighter than its caption, and both pass AA.** One figure could
+  be a bare number at `/70` of `--text-dim`; three of them written that way were
+  one flat grey string to be read word by word, at 3.6:1 on the bubble — under AA
+  for 12 px. The captions now carry the full dim (5.9:1) and the seconds carry
+  `--text` (9.5:1), so the row is scanned rather than read. Not `font-mono`: the
+  figures are already tabular, and mono spaced `3 min 25 s` out into something
+  wider and clumsier than the sans.
+- **The figures stay at the left of the bubble**, tempting as the empty half is.
+  At `Full` width the column reaches the window edge and the follow pill floats
+  in exactly that band — the last figure at x 1380-1447 against the pill's
+  1375-1470 — so a right-aligned row would slide under it as the composer
+  shrinks. It is the same corner `Send` already gives up, and the reason is the
+  one written there.
 
 ## Verify
 

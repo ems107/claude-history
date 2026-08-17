@@ -26,12 +26,21 @@ export function isWorking(live: LiveInfo | null | undefined): boolean {
  * One elapsed figure. The clock it counts from is on the hover, because the
  * span alone cannot say WHEN — and the span is the thing worth reading at a
  * glance, so the absolute time may not take a character of the row.
+ *
+ * **The number is brighter than its caption**, and both are readable. Three
+ * figures written in one flat grey were a single grey string the eye had to
+ * parse word by word, and the whole row sat at `/70` of `--text-dim`: 3.6:1 on
+ * the bubble, under AA for 12 px text. Now the captions carry the full dim
+ * (5.9:1) and the seconds — the only part that changes — carry `--text` (9.5:1),
+ * so the row is scanned as three numbers with quiet labels rather than read.
+ * Not `font-mono`: the tabular figures are already aligned, and mono spaced
+ * "3 min 25 s" out into something wider and clumsier than the sans.
  */
 function Figure({ label, at, hint }: { label?: string; at: number; hint: string }) {
   return (
     <span className="whitespace-nowrap" title={`${hint} ${formatDateTime(at)}`}>
       {label ? `${label} ` : ''}
-      {elapsed(at)}
+      <span className="text-[var(--text)]/90">{elapsed(at)}</span>
     </span>
   );
 }
@@ -117,7 +126,12 @@ export function WorkingIndicator({
           {since !== null && (
             // Out of the announced text: a screen reader repeating the seconds
             // every second would drown the one thing worth saying.
-            <span aria-hidden="true" className="tabular-nums text-xs text-[var(--text-dim)]/70">
+            // NOT pushed to the right of the bubble, tempting as the empty half
+            // is: at `Full` width the column reaches the window edge and the
+            // follow pill floats in exactly that band (measured: the last figure
+            // at x 1380-1447 against the pill's 1375-1470), so the figures would
+            // end up under it — the same corner `Send` already gives up.
+            <span aria-hidden="true" className="tabular-nums text-xs text-[var(--text-dim)]">
               {/* Labelled like the two beside it: bare, it was the only figure
                   and could only be the turn, but next to "last message" a naked
                   number is one of three and says nothing about which. */}
