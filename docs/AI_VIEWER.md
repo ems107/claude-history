@@ -15,6 +15,10 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **Marks are `Range`s in the CSS Custom Highlight API**, never `<mark>` nodes in React's markdown.
 - **A message bubble takes no `onClick`.**
 - **A starred message says so without being hovered, and nothing is drawn on the bubble.**
+- **A fold that can be a jump's destination opens and then LETS GO** — never `open={targeted || open}`.
+- **What the find bar counts is what unfolding can put inside a marking box** (`[data-bubble-body]`, `[data-tool-id]`).
+- **A find is a gesture, not a location**: the bar never writes to the URL.
+- **Typing never moves the page** — a step unfolds things that do not fold back.
 
 ## Two layout rules that keep breaking
 
@@ -100,12 +104,123 @@ Three things are lifted out from between the tool calls, because each is a turn 
 - **The marks are `Range`s given to the CSS Custom Highlight API, never `<mark>` elements.** The text is markdown React re-renders every few seconds in a live session, and inserting nodes into it is a fight with React that nothing wins; this way the DOM is untouched and clearing is one `delete`. `::highlight(search-match)` in `styles.css` must keep the name `markMatches` registers, and it inherits nothing — background AND colour both have to be set. A browser without the API still gets the flash.
 - **The terms travel folded, one `hl` per term** (`highlightSearchParams`): a phrase term contains spaces and a joined list could not be split back. Folded is also the point — they are the ones the server matched, so an accented query marks its accented hits.
 - **A hit in tool output is anchored by `?tool=<toolUseId>`, not by a message.** A line uuid cannot identify a call (one assistant message makes several) and the line carrying a `tool_result` is rendered NOWHERE, so `SearchSnippet.toolUseId` is the only anchor those hits have. It outranks `?msg=` when both are there: a `call` hit carries the uuid of the message that made it, which would flash a whole answer instead of the one call among a run of thirty. Subagent text gets neither — its tool ids exist only inside its own transcript.
+- **A tool block is its own box, EXCEPT when the message that made the call also wrote prose.** Then the run is drawn into that message's own bubble (`tools-before-ask`), and `closest('[data-bubble]')` climbed past the one call to the whole answer — 25 calls over the 20 largest sessions, and `b343d4ac`'s `toolu_01CyGpmXFjFcBj8apDVmAXck` flashed 19,383 characters to point at 17,047 of them. `anchorBox` tests `[data-tool-id]` first, which is safe because nothing carrying a message uuid has that attribute. (The third `ToolGroup`, the one for calls made BETWEEN two pieces of prose, was also the only one not passing `targetTool`. No transcript here takes that path — 0 of 6,295 calls, because Claude writes and then calls — so it opened no link anyone clicked; it was a third case written to differ from its two siblings.)
 - **Landing on a tool means opening three things**: the turn (`locate` holds tool ids beside message uuids), its run (`ToolGroup`, whose target effect is declared AFTER the `expandAll` one so it has the last word on mount) and the call itself (`ToolBlock`, `data-tool-id`). Each opens and then lets go — `open={targeted || open}` would make it impossible to fold back with the link still in the URL — and only the run holding the target opens, never the session (checked: 4 tool blocks in the DOM of a 210-call session).
 - **The anchor is polled for, not waited out once.** That chain is five state updates deep (segment, rewound branch, turn, run, block) and a single 100 ms guess at the end of it is a race on a big session.
 - **The effect keys on the link and NOT on the data** — that is what stops a live session being yanked back to the anchor every few seconds — and the price is that asking for the SAME anchor twice does nothing at all, which is exactly what clicking a row of the subagent list again is. Hence `jumpNonce`: bumped on every jump ASKED for, in the deps, and deliberately **not** in the URL, because it is a gesture and not part of the link.
 - **An offloaded tool output loads itself when it is the target** (`OffloadedResult autoLoad`): the deep scan reads those files, so the words looked for can be in one and nowhere else, and arriving at a "Load full output" button is the wrong answer to "show me the hit". It lands after the first marking pass, so the marks are re-run once — and only if the text really changed.
 - **Showing a match is not the same as scrolling to its box**: a tool result renders inside a `max-h-96 overflow-auto` pre, so a hit 2,000 lines down was "on screen" only in the sense that its container was. `revealRange` walks every scroller between the text and the window, innermost first, and moves nothing when the mark is already visible.
 - `matchSpans` is pure and takes plain strings — the text nodes' data — so the index arithmetic is checkable without a browser. It folds the pieces **concatenated**, not one by one: markdown splits a sentence into a node per emphasis, link and code span, and a phrase crossing one of those is exactly what a search finds and a reader cannot.
+
+## Finding a word in the conversation
+
+The browser's own Ctrl+F reads the DOM, and the DOM is whichever half of a
+session happens to be unfolded — every tool run, every compacted stretch, every
+rewound branch and every thinking block renders behind `{open && …}`. So it
+finds an arbitrary fraction and says nothing about the rest, which is the one
+thing this app refuses to do for a deep link. `FindBar` (`useFindBar` beside it,
+the `FollowBottom` pattern) scans the data instead and travels the deep link's
+road to whatever it finds.
+
+**One rule holds the whole thing together: what the bar counts is what unfolding
+can put inside a marking box.** A marking box is `[data-bubble-body]` or
+`[data-tool-id]` — the two `markMatches` knows how to paint, and the two that
+keep marks off headers, clocks and cost pills. `buildFindCorpus` emits exactly
+one unit per box (`lib/findInSession.ts`, pure and checkable without a browser),
+so a hit always has somewhere to land, and anything drawn outside a box (a
+`/context` table, a compaction's arithmetic, a plan-mode marker) is neither
+scanned nor counted. `InjectedNotice`, `CompactSummaryPanel` and `SystemItem`
+grew a `data-bubble-body` to join in — the first of those also fixed the deep
+link marking a notice's origin chip and clock.
+
+- **A tool call is ONE unit, not three.** Header, input and result fold
+  separately but share a `[data-tool-id]`, and a hit's ordinal only lines up
+  with the DOM if they are counted as the one run of text the reader sees. Its
+  input is folded as it is RENDERED — pretty-printed — and not in the compact
+  form the deep scan reads.
+- **The order is `turns` order**, which means imitating `TurnView`'s tool
+  accumulator: a message's trailing calls are drawn AFTER its bubble and its
+  leading calls inside it, so a flat walk that ignored that would sort them
+  wrong. Thinking is always in the corpus whatever the toggle says — hiding it
+  can only remove a bubble, never reorder what is left — and the toggle stays a
+  filter over the hits, with the count of what it is holding back on the bar.
+- **A `system` line is cut at 400 characters**, where `SystemItem` cuts it: it
+  has no fold to open, so counting past there would offer matches nothing can
+  show. `SYSTEM_CHARS` lives in `findInSession.ts` and the component reads it.
+- **Three things are outside the corpus and are said with a number**: outputs
+  offloaded to disk, whatever exceeds `MAX_RESULT_CHARS` of a result, and
+  subagent transcripts. 0.3% of calls here, and *Search ▸ deep* is what reads
+  them.
+- **The corpus is transcript text; the marks are painted on rendered markdown.**
+  They agree for words. A query containing markdown's own syntax is counted and
+  not painted, which is the price of counting what is folded.
+
+**`RevealContext` generalises `targeted`.** `ToolBlock` could open itself from a
+prop; a thinking block and an agent's report could not, so a match inside either
+was countable and unshowable. The destination is published once, in the anchors
+a jump already speaks (`msg:<uuid>`, `tool:<toolUseId>`), and `useFoldable`
+holds the "open, then let go" contract for all of them. **`ToolGroup` reads it
+too**, and must: a block cannot open a run it is not mounted in — without that,
+the first real test scrolled to the message and marked nothing.
+
+**Three highlight names, never one shared.** `search-match` is the deep link's,
+8 s, untouched; `find-match` is every hit while the bar is open; `find-current`
+is the one being stood on, with `priority` set explicitly rather than trusting
+registration order. Sharing a name would let a deep link arriving replace the
+bar's whole set and delete it 8 s later. Caps differ by question: 4,000 for the
+conversation, 1,000 per box, and **none at all** for `boxRanges`, because
+`matchSpans` caps inside its per-term loop and before the sort — a capped result
+is "the first few of each term", fine for painting and useless for "the 137th in
+document order".
+
+**The repaint is a `MutationObserver`, and it is safe here only because the
+marks are ranges.** Painting writes nothing into the DOM, so the pass cannot
+trigger the observer that ran it; with `<mark>` elements this would be an
+infinite loop. It is what catches a turn unfolding, a run opening, a block's own
+fold, an offloaded output arriving and a live refetch replacing fifteen hundred
+blocks, all with one mechanism — and it is where the current mark is resolved
+again, because React may have thrown away the node it pointed into.
+
+- **Typing never moves the page.** A step unfolds segment, branch, turn, run and
+  block, and none of them fold back; jumping per keystroke would leave the
+  conversation shredded open before the word was finished. The counter reads
+  "47 matches" until the first Enter and "12 of 47" after. Chrome jumps as you
+  type because Chrome has nothing to unfold.
+- **No `match-flash` while stepping.** The reader typed the word and
+  `find-current` says which one this is; 2.5 s of animation per Enter would be
+  noise fighting `revealRange` for the scroll.
+- **The first Enter is measured by what is ABOVE.** Most matches are folded and
+  have no element to measure, and treating "no element" as "not yet reached"
+  opened at the ninth of 113 with the page at the very top. An unmeasurable hit
+  inherits the position of the last measurable one before it.
+- **Where the reader stands is stored by identity** (`{key, ordinal}`), not by
+  index: a live session appending a turn must not slide them onto another match.
+- **Data decides, the DOM paints.** `N of M` comes from the pure scan and the
+  ranges from `matchSpans` over rendered text, so the ordinal is clamped to the
+  last range there is. The worst case is landing on a neighbouring match in the
+  SAME box, and every match in that box is painted anyway.
+- **Stepping leaves tool blocks open.** That is what was asked for. Check 9's
+  "4 tool blocks in the DOM of a 210-call session" is about a deep LINK and must
+  not be re-read as a statement about the bar.
+
+**Scope and kinds live in component state, not in the URL.** `hl` means the
+terms the SERVER matched; overloading it with a live client query would give one
+parameter two provenances, and writing per keystroke into `useSearchParams`
+re-renders the page for every character. The bar reads `hl` once, on open, to
+seed itself — which turns "the search sent me here, now walk all of them" into
+one keystroke — and writes nothing back. Whatever is off its default is said on
+the bar itself, not only inside the panel: the same rule `tuningChanges` applies
+to the session list.
+
+**The focus is a click, and `Bubble` still takes no `onClick`.** One delegated
+listener over the conversation resolves `focusKeyAt`; the invariant survives to
+the letter, and its reason — a stray click folding the turn you were reading —
+does not reach something that only draws a ring. The listener is attached **only
+while the bar is open**, and that is not tidiness: the focus is React state, so
+every move of it re-renders the conversation, measured at 65-110 ms on the two
+largest sessions here. The ring is a `box-shadow` and **repaints
+`[data-bubble-tail]` with it**, for the reason below; a plain declaration, so
+`match-flash` overrides it for its 2.5 s and it comes back afterwards.
 
 ### The flash animation
 
@@ -144,4 +259,4 @@ Why it says "working" rather than "writing", and why the silence it fills is so 
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page).
+[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page), 26 (the find bar).

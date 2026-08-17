@@ -1,12 +1,13 @@
 # Search
 
-**Load this when:** you touch `server/src/core/search.ts`, `searchText.ts`, `deepSearch.ts`, `shared/src/fold.ts`, `shared/src/match.ts`, the search box, the results list or the paged match list.
+**Load this when:** you touch `server/src/core/search.ts`, `searchText.ts`, `deepSearch.ts`, `shared/src/fold.ts`, `shared/src/match.ts`, `shared/src/searchText.ts`, the search box, the results list or the paged match list. The find bar inside a session is a reader of the same fold and lives in [AI_VIEWER.md](AI_VIEWER.md#finding-a-word-in-the-conversation).
 
 ## Invariants
 
 - **Tool calls and tool output are NEVER indexed** — with exactly one exception, a plan.
 - **The deep scan re-matches the indexed text too**, so it is a superset of the plain search by construction.
 - **One predicate decides what is searchable** (`skipBlock`), shared by the index, the deep scan and both paged match lists.
+- **A find bar counts occurrences; a match page counts places.**
 - **There is exactly one `normalize('NFD')` in the repo** (`shared/src/fold.ts`) and it must stay that way.
 - **Every occurrence belongs to exactly one window** (`matchWindows`), or the counts stop adding up.
 - **A partial answer must never read as a complete one** (`stoppedEarly`).
@@ -27,6 +28,10 @@ Measured on this machine: the indexed text (titles, typed prompts, assistant pro
 It also reads what nothing else can: the outputs offloaded to `tool-results/` (path validated against `projectsDir` first — it comes out of a transcript, not from us) and **every subagent transcript**, 54 MB that no search could otherwise reach. Subagent snippets carry `uuid: null` on purpose: the viewer knows only the parent transcript, so an anchor there would resolve nowhere.
 
 It is **cancellable and bounded, and says so**. The abort signal comes from the RESPONSE closing unfinished (`reply.raw`), not from the request — the body arrived long before and its close event says nothing about who is listening. `BUDGET_MS` and `MAX_HITS` set `stoppedEarly`, which the results header shows.
+
+**There is a third reader of the same fold, and it holds neither corpus: the viewer's find bar.** It scans the copy of one conversation the browser already has — prose, tool input as it is rendered, and the first `MAX_RESULT_CHARS` of each result — so it reaches thinking and tool output, which the index never carries, and knows nothing of session or agent ids, which mean nothing inside a session. A subset of `deep=1` by construction, and it says what it cannot reach rather than implying it found everything. Behaviour is in [AI_VIEWER.md](AI_VIEWER.md#finding-a-word-in-the-conversation); what matters here is that the matcher is the same one, so its idea of a match cannot drift from the server's.
+
+**`matchWindows` deliberately stayed server-side** when `buildSnippet` moved to `shared`. Its whole contract is grouping occurrences into PLACES so a paged list's figures add up — and **a find bar counts occurrences while a match page counts places**. Borrowing it would mean reporting "3 of 38 places" where the reader expects "3 of 46 matches", which is the distinction the paragraph above spends itself on.
 
 ## A hit's count has to be reachable
 
@@ -60,7 +65,7 @@ Imported by both sides — there is exactly one `normalize('NFD')` in the repo a
 - **A phrase is the one-term case**, which is why a single scan serves both modes and quotes need no second code path. In phrase mode quotes are therefore literal characters, which is why the panel only offers them for loose searches.
 - Blocks are **deduplicated by uuid+text** on load: some transcripts re-append a line they already wrote, verbatim (57 of 246 messages in one session), which doubled every count. Identical text under a different uuid is a real repetition and stays.
 
-`shared/src/match.ts` is that argument applied to finding a term: the server scans with `occurrences` / `parseTerms` and the viewer marks the words a search landed on with the same ones, so the whole-word rule cannot exist twice.
+`shared/src/match.ts` is that argument applied to finding a term: the server scans with `occurrences` / `parseTerms`, the viewer marks the words a search landed on with the same ones, and the find bar scans its own corpus with them too — so the whole-word rule cannot exist twice. `shared/src/searchText.ts` is the same argument applied to cutting the snippet around one: the server's results list and the find bar's both go through `buildSnippet`, or they would disagree about where a snippet starts the day one of them learned something.
 
 ## Tuning
 
@@ -68,4 +73,4 @@ The advanced panel's tuning lives in the **URL only** — no settings, no persis
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 3 and 9 (search, deep search, paging, ids, marking).
+[AI_TESTING.md](AI_TESTING.md) — checks 3 and 9 (search, deep search, paging, ids, marking), and 26 for the find bar's own corpus and its agreement with this one.

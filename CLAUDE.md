@@ -9,7 +9,7 @@ The detail lives in `docs/`, one document per area. **Load the ones that match w
 | [Transcripts](docs/AI_TRANSCRIPTS.md) | anything that reads `~/.claude`: the JSONL format, who wrote a line, the tree a `/rewind` leaves, forks, replays, live sessions, retention |
 | [Tokens, cost and context](docs/AI_COST_AND_CONTEXT.md) | counting tokens, pricing a message, cost/context pills, re-cached context, compaction |
 | [Subagents, questions and plans](docs/AI_AGENTS_QUESTIONS_PLANS.md) | the ⑂ panel, `AskUserQuestion`, plan mode, offloaded tool output |
-| [The viewer](docs/AI_VIEWER.md) | anything under `web/src/`: folding, deep links, highlighting, file references, the working indicator |
+| [The viewer](docs/AI_VIEWER.md) | anything under `web/src/`: folding, deep links, highlighting, the find bar, file references, the working indicator |
 | [Search](docs/AI_SEARCH.md) | the index, the deep scan, folding/matching, the paged match list |
 | [Architecture](docs/AI_ARCHITECTURE.md) | the scan → summarize → cache → enrich pipeline, a new endpoint, where state lives, containment rules |
 | [Running Claude](docs/AI_RUNNING_CLAUDE.md) | subscription usage, the auto-reload, the composer — anything that talks to Anthropic or spawns `claude` |
@@ -56,7 +56,7 @@ The server has no build step in dev: TypeScript runs via `tsx`, and `@claude-his
 ## Workspace map
 
 ```
-shared/src/     types.ts · api.ts · prices.ts · recache.ts · fold.ts · match.ts
+shared/src/     types.ts · api.ts · prices.ts · recache.ts · fold.ts · match.ts · searchText.ts
                 (anything both sides must agree on lives here, and only here)
 server/src/
   config.ts     data root / cache dir / logs dir resolution

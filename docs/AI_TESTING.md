@@ -50,7 +50,7 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 
 **1.** `pnpm dev` → the list shows the real sessions; case-variant project dirs merge into one project tag.
 
-**2.** Open the largest session (multi-MB) → renders quickly, tool blocks collapsed.
+**2.** Open the largest session (multi-MB) → renders quickly, tool blocks collapsed. Pressing Ctrl+F there costs the corpus build once (~40-50 ms, check 26) and leaves the blocks collapsed until one is stepped onto.
 
 **4.** Start/stop a real Claude Code session → the LIVE badge appears and disappears.
 
@@ -68,6 +68,8 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 - **Deep**: a string only in a `tool_use` input (`old_string`) → 0 normally, ~35 sessions in ~4 s deep. One only in tool output (`TS2339`) → 0 then 1. A prose word plus a tool-only word in session scope → 0 then a hit (the pairing that justifies re-matching the indexed text). Cancel mid-scan (`curl --max-time 1`) and the log must read `deep search cancelled` with the bytes it got through, not the full corpus.
 - **Paging is arithmetic — check it without a browser.** Page `/api/search/session/:id/matches` to the end: `pageMatches` must sum to `matchCount`, snippets to `total`, and `matchCount` must equal what `/api/search` said (`compact` → 46/46 in 38 places). With `deep=1` on a deep-only hit: `old_string` → 503/503 in 502 places for `f3384d17`, 6 pages of 100, ~16 MB re-read each, `call`/`tool`/`agent` rows among them. Page that same hit **without** the flag and it must come back short. `offset` past the end → 0 snippets, totals intact; `limit=999` → clamped to 200. Every mode behaves the same (words + session scope, whole words, `in=user` whose rows all read USER).
 - **Links**: every snippet link with an anchor carries `hl` (one per term, folded — an accented query gives `hl=sesion`) plus `hlw=1` under whole words, and no anchor may travel without them.
+- **The find bar must not disturb any of this.** It registers `find-match` and `find-current`; `search-match` is the deep link's alone, and the `<mark>` prohibition covers both. The "4 tool blocks in the DOM of a 210-call session" assertion below is about a deep LINK — the bar deliberately leaves every block it steps onto open.
+- **A tool block is not always outside a bubble.** A run that ends at a question or a plan, in a message that also wrote prose, is drawn INTO that bubble, and `anchorBox` has to test `[data-tool-id]` first: `b343d4ac`'s `toolu_01CyGpmXFjFcBj8apDVmAXck` must flash 17,047 characters, not the 19,383 of the answer around it.
 - **`matchSpans` needs no browser**: feed it the pieces a markdown sentence breaks into; every span must cut out exactly the matched text. Cases: a phrase across three text nodes, one across a newline (`is invalid\naccording`), a haystack in NFD against a folded needle, `is` under whole-words, and the cap keeping the FIRST marks.
 - **The rest needs Chrome over CDP** (no dependency needed — Node has `WebSocket`): navigate to the link; `[data-bubble].match-flash` must exist, `CSS.highlights.get('search-match')` must hold ranges whose `toString()` is the term, the first must be inside the viewport even with the bubble's top hundreds of pixels above it (verified at top −647), and 9 s later both must be gone on their own. **A `<mark>` in the DOM means somebody went back to mutating React's markdown.**
 - **Tool hits**, same check against `[data-tool-id="<toolUseId>"]`, four cases: a `call` (`old_string` → an `Edit`, marked inside the input JSON); an inline `tool` result (`TS2339` → a `Read`); a call inside a COMPACTED segment (`toolu_01CkCY9SSEF…` in `432b1d41` — only 4 tool blocks may be in the DOM afterwards, out of 210, or something opened the session instead of the run); and an OFFLOADED output (`toolu_01LnH4KFDcZ…` in `4a1483ba`, `NOTION_TOKEN`, which exists only in the 90 KB file — no "Load full output" button may be left, and the pre must be scrolled to the first mark).
@@ -103,7 +105,7 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 - `ancestry.forkedFrom` on the child AND `descendants` on the parent — the link is written when the CHILD is enriched, so check both ends.
 - `runIds` shown as "resumed ×N" and **never** as lineage.
 - `usage` holding only what was spent after the fork, `carriedOverUsage` the copied tokens (`c0f70eda`: 55,432 written against 1,066,693 carried over).
-- A session rewound twice renders **two** "rewound away" folds, not one (`c0f70eda`: `eff860cf`, 9 turns 15:21:24 → 15:34:50, then `558b670e`, 2 turns 17:38:45 → 17:39:08). One fold spanning both means the branch identity was lost. Nothing inside either may appear in the page until its fold is opened, and the live conversation must not read as answering them.
+- A session rewound twice renders **two** "rewound away" folds, not one (`c0f70eda`: `eff860cf`, 9 turns 15:21:24 → 15:34:50, then `558b670e`, 2 turns 17:38:45 → 17:39:08). One fold spanning both means the branch identity was lost. Nothing inside either may appear in the page until its fold is opened, and the live conversation must not read as answering them. **The find bar counts what is inside them and opens the branch on arrival** (check 26) — which is the one way that text is allowed on screen without a click.
 - **The corpus-wide guard, which is what catches a wrong tree: no session may lose a large share of itself.** `0f5b1c8b` had to keep 6 compaction panels and 0 folded turns (44 orphan tool-results, none a whole turn) and `cae7f9f5` 0; either going to 99% meant the `logicalParentUuid` bridge, the last-occurrence resolution or the boundary rule had broken. Run the equivalent over whatever sessions carry compactions today.
 - The mixed case (`e663c8d5`: one turn with 18 of 21 messages cut away) shows the inline "rewound away" notice and **no** fold header.
 - The viewer can be checked without a browser: `renderToStaticMarkup` over `TokenPanel` + `TurnList` against the real payload (a `QueryClientProvider`, a `MemoryRouter` and the `.css` loader stub) and count the strings.
@@ -126,6 +128,7 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 - **The cost is arithmetic**: per session with agents, `enrichment.subagentUsageByModel` priced with `computeMessageCost` must equal the sum of pricing each assistant message of each `/api/sessions/:id/subagents/:agentId` the same way — the server's streaming aggregate against the browser's per-message path, 10 of 10 sessions, worst delta **2.7e-15** — and `daily[].subagentByModel` must add up to the same figure. `15a86025`: **$1.49 own + $10.53 in 11 agents = $12.01**, the list row reads `$12.01 ⑂` with the split in its tooltip, and the token panel shows three rows (`sonnet-5`, `⑂ 11 subagents`, `session total`) with no redundant subtotal. `f3384d17` has four rows plus `↳ of which re-cached` and the compaction caveat ("Not in any of these figures: the 2 compactions"). A session with no agents shows neither the subagent row nor the `session total` row. In Stats, the ≈ Cost card moves by exactly the corpus subagent total ($45.19) while the re-cached percentage keeps its parent-only denominator (10.8% of session spend, not 10.5% of everything).
 - **Nesting: `15a86025`** — 11 agents, **7 `fork` at depth 1 and 4 `general-purpose` at depth 2**, all four spawned by the fork "Investigar lib, list, pages y hooks web" ($4.30). Those four must be indented **under that row and nowhere else** (`marginLeft` on exactly 4 of the 11; 0 of 5 in `980751cb`, 0 of 6 in `19ebb1d5`), carry their own `sent` / `→ back` times and `brief` / `report` folds, read `sent out by ⑂ fork · …`, carry the status of the report filed **inside that agent** (`completed`, not "no report"), and send both jumps to the PARENT's drawer — `↑ the call` onto its `[data-tool-id]` with `.match-flash`, `↓ the report` onto the notice panel — with the URL showing `agentTool=` / `agentMsg=` and never both. **Check the flash within 2.5 s**: it takes itself off, and looking at 3 s reads as "nothing happened". Those four reports exist only because a notification inside a subagent transcript is `isMeta: true`.
 - **Ids**: every row and the drawer header prints the 17-hex id, and pasting it — whole or as a prefix — into the search returns that session with an `id` row linking to `?agents=1&agent=<id>`.
+- **The notice panel now has a `[data-bubble-body]`**, so re-run the `[data-bubble]` count around opening a report and the `↓ the report` flash. Marks must land inside that body — a deep link used to paint the origin chip, the status and the clock along with the text — and the report opens itself when the find bar steps onto it, which is a report's only route into a search of any kind.
 
 **23. Plan mode.** Parse first, comparing before and after over the whole corpus: only `items` may move, only in sessions that touch plan mode, and by exactly the number of markers emitted (`f3384d17` +7 = 2 enter + 1 reentry + 2 exit + 2 reference; `980751cb` +3). **Turns, prompts and the four token totals identical everywhere** — a turn that grows means a marker opened one instead of joining the one already open.
 
@@ -153,6 +156,63 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 - **Order and grouping** (both pages): descending puts the newest message first; `Group = Session` gives one header per session **ordered by each session's newest** starred message, with the counts adding up to the flat total; `↑` reverses groups and members together; and the choice survives leaving the page and coming back (`localStorage`, not the URL).
 
 ## The viewer's own machinery
+
+**26. Find in the conversation.** The arithmetic first, no browser
+(`node --experimental-strip-types`, or the repo's own `tsx` — `findInSession.ts`
+is pure) over real `GET /api/sessions/:id` payloads.
+
+- **`foldText(raw) === folded` for every unit**, and the last segment's end is
+  the folded length (1,479 units in `f3384d17`, 1,223 in `980751cb`). That
+  equality is what lets `hitSnippet` rebuild the fold map on demand instead of
+  carrying 8 bytes per folded character for the life of the session; break it and
+  every snippet is cut at the wrong place.
+- **Offsets rise and ordinals are contiguous from 0 within a unit**, and
+  `byRole` sums to the hit count. Turning a chip off must subtract exactly its
+  own count and nothing else (3,022 of 3,189 for tools on `f3384d17`).
+- **Against the server, on prose they both hold**: the client's `assistant`
+  count must equal `matches?in=assistant` — "session" and "transcript" give
+  16=16, 31=31, 3=3 and three 0=0 over the three largest sessions. A difference
+  means one side stopped folding the way the other does.
+- **The pairing that justifies the feature**: a string living only in an inline
+  tool result (`TS2353` in `f3384d17`) is found here and returns 0 sessions from
+  the indexed search. And the honest gap the other way: `NOTION_TOKEN` in
+  `4a1483ba` must give **0** here, with the bar's own note reporting the
+  offloaded and truncated outputs it cannot reach.
+- **Recorded cost, so a regression shows**: building the corpus is ~40 ms for
+  2.04 M folded characters and ~50 ms for 2.42 M; a scan is 1.4–48 ms; and a
+  one-character phrase (`a`, 121,893 occurrences) must stop at `MAX_FIND_HITS`
+  rather than collect them.
+
+Then Chrome over CDP, with check 9's harness:
+
+- **The whole point, in one assertion.** Pick a word from a tool result that is
+  nowhere in `document.body.innerText` at rest — folded away, so the browser's
+  own Ctrl+F could never reach it. Ctrl+F must open the bar with the input
+  focused, typing it must leave `scrollTop` **unchanged** while the counter names
+  a number, and Enter must open the run and the block and leave exactly one
+  `find-current` range reading that word, inside a marking box and inside the
+  viewport. (Verified on `f3384d17`: "instruction", 7 matches, scrollTop 0 → 564.)
+- `search-match` must be absent throughout, and
+  `document.querySelectorAll('mark').length === 0` — a `<mark>` means somebody
+  went back to mutating React's markdown. Escape must take `find-match`,
+  `find-current` and every `[data-find-scope]` with it.
+- **Wrapping, from the top**: 1 of N, and Shift+Enter from there gives N of N.
+  From anywhere else the first Enter lands on the first match at or below the
+  reading position, which is the point of `fromReadingPosition` and the thing
+  that broke when folded hits were skipped for having no element (it opened at
+  the ninth of 113 with the page at the very top).
+- **The three scopes**: All ≥ Visible always; opening the runs by hand raises
+  Visible without moving All (17 → 29 of 113 on `b343d4ac`); Focused is disabled
+  until a box is clicked, then narrows to it with exactly one ring on the page.
+- **The ring repaints the tail**: `[data-find-scope] > [data-bubble-tail]` must
+  have the accent border, or the tail's opaque fill punches a notch in the ring.
+  And the cost of the click that sets it — 65-110 ms of re-render on the two
+  largest sessions — is why the listener is attached only while the bar is open.
+- **The seed**: arriving at `?hl=…&hlw=1` and pressing Ctrl+F must open the bar
+  on those words with whole-words already on, and must never write them back.
+- **The gates**: Ctrl+F must NOT open the bar while `?agent=` has the drawer up;
+  Escape with the file panel open closes the file and leaves the bar open, and a
+  second Escape closes the bar.
 
 **18. The working indicator** needs a genuinely busy session, so run it from inside a live Claude Code turn: `/api/live` carries `status: "busy"` and a `statusUpdatedAt` matching the turn's start, and the page holds one `[data-bubble="assistant"]` reading `Claude is working… <counter>`, the counter advancing by exactly the seconds waited. A session that is not live has none.
 
