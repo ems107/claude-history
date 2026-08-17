@@ -4,6 +4,7 @@ import { formatContextTokens } from '../../lib/context.ts';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
 import { CopyActions } from './MessageActions.tsx';
+import { useFoldable } from './RevealContext.ts';
 
 const fmt = (n: number | null) => (n === null ? '—' : n.toLocaleString());
 
@@ -215,7 +216,9 @@ export function CompactBoundaryPanel({ boundary }: { boundary: CompactBoundary }
  * default, and rendered as the markdown it is when opened.
  */
 export function CompactSummaryPanel({ id, text }: { id: string; text: string }) {
-  const [open, setOpen] = useState(false);
+  // 17,000 characters of prose behind one fold: worth finding, so it opens when
+  // a jump points at it, and then lets go.
+  const [open, setOpen] = useFoldable(`msg:${id}`);
   const body = useRef<HTMLDivElement>(null);
   return (
     // `group/bubble` so the copy buttons reveal on hover exactly as they do on a
@@ -239,7 +242,10 @@ export function CompactSummaryPanel({ id, text }: { id: string; text: string }) 
         {open && <CopyActions markdown={() => text} body={body} />}
       </div>
       {open && (
-        <div ref={body} className="mt-2 border-t border-[var(--border)] pt-2">
+        // `data-bubble-body` for the same reason a bubble has one: this is the
+        // one thing here that IS a message's worth of text, and marks belong in
+        // it rather than on the chip and the character count above.
+        <div ref={body} data-bubble-body className="mt-2 border-t border-[var(--border)] pt-2">
           <Markdown text={text} />
         </div>
       )}

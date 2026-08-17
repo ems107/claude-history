@@ -38,6 +38,15 @@ export function useRevealed(revealKey: string | null): boolean {
 }
 
 /**
+ * The destination itself, for the one caller that cannot name its own key: a run
+ * of tool calls has no identity of its own, and has to open when the jump is for
+ * ANY of the calls inside it — the block cannot open a run it is not mounted in.
+ */
+export function useRevealTarget(): RevealContextValue {
+  return useContext(RevealContext) ?? { key: null, nonce: 0 };
+}
+
+/**
  * Open state for a fold that can be a jump's destination: it opens when pointed
  * at, and then LETS GO.
  *

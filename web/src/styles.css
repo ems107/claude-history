@@ -220,6 +220,23 @@ body {
   color: #14100e;
 }
 
+/* The message or tool call the reader clicked, while the find bar is open — the
+   "focused" scope made visible. A ring drawn as a box-shadow, exactly like
+   `match-flash`: a transform, a filter or an opacity animation here would make
+   the box the containing block for the cost and context popovers inside it,
+   which are position: fixed. It is a plain declaration, so the flash's own
+   animation overrides it for its 2.5 s and the ring comes back afterwards. */
+[data-find-scope] {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+/* And the tail with it. It is a separate element with its own border and its
+   own OPAQUE fill, so it does not merely keep the old colour — it paints over
+   the ring, punching a dark notch in the very line the ring is. */
+[data-find-scope] > [data-bubble-tail] {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

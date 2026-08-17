@@ -22,10 +22,21 @@ export function SnippetRow({
   sessionId,
   snippet,
   query,
+  onSelect,
+  active = false,
 }: {
   sessionId: string;
   snippet: SearchSnippet;
   query: SearchQueryEcho;
+  /**
+   * The find bar's rows step the reader through a conversation already on
+   * screen, so the click is handled here rather than navigated. The `<a>` and
+   * its href stay: copy-link, middle click and ctrl+click keep working, and a
+   * `<button>` would make the snippet unselectable.
+   */
+  onSelect?: () => void;
+  /** The row the reader is standing on. A ring, never a filter. */
+  active?: boolean;
 }) {
   let to = `/session/${sessionId}`;
   if (snippet.agentId) {
@@ -43,7 +54,17 @@ export function SnippetRow({
   return (
     <Link
       to={to}
-      className="block truncate rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)]"
+      onClick={
+        onSelect &&
+        ((e) => {
+          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          onSelect();
+        })
+      }
+      className={`block truncate rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] ${
+        active ? 'ring-1 ring-[var(--accent)] bg-[var(--bg-hover)]' : ''
+      }`}
     >
       <span className="mr-2 inline-block w-14 shrink-0 text-right font-semibold text-[var(--text-dim)]/70 uppercase">
         {snippet.role}

@@ -150,6 +150,37 @@ function canHighlight(): boolean {
   return typeof CSS !== 'undefined' && 'highlights' in CSS;
 }
 
+/**
+ * Which unit of the find bar's corpus an element belongs to — the same key
+ * `unitKey` builds from the data, so a box on screen and a box in the corpus can
+ * be told apart from either side.
+ *
+ * A tool block says so itself. Everything else is inside a panel carrying the
+ * message's uuid as its `id`: a bubble, a notice, a carried-over summary, a
+ * system line. The walk stops before the app's own root, so a click on the page
+ * behind the conversation is nothing rather than everything.
+ */
+export function boxKeyOf(el: HTMLElement | null): string | null {
+  for (let node = el; node; node = node.parentElement) {
+    const toolId = node.getAttribute('data-tool-id');
+    if (toolId) return `tool:${toolId}`;
+    if (node.id && node.id !== 'root') return `msg:${node.id}`;
+  }
+  return null;
+}
+
+/**
+ * The box a click landed in, for the find bar's focus. Wider than a marking box
+ * on purpose: clicking a bubble's header, its timestamp or its fold row is still
+ * clicking that message, and having the focus fall off when you miss the prose
+ * by three pixels would be its own bug.
+ */
+export function focusKeyAt(node: EventTarget | null): string | null {
+  const start = node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
+  const box = start?.closest<HTMLElement>(`${BOX_SELECTOR}, [data-bubble]`);
+  return boxKeyOf(box ?? null);
+}
+
 /** Every non-empty text node under `root`, in document order. */
 function textNodesIn(root: HTMLElement): Text[] {
   const nodes: Text[] = [];

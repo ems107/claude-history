@@ -118,6 +118,8 @@ export function SessionHeader({
   onToggleFiles,
   showAgents,
   onToggleAgents,
+  findOpen,
+  onToggleFind,
   actions,
   live,
 }: {
@@ -146,6 +148,8 @@ export function SessionHeader({
   onToggleFiles: () => void;
   showAgents: boolean;
   onToggleAgents: () => void;
+  findOpen: boolean;
+  onToggleFind: () => void;
   actions?: import('react').ReactNode;
 }) {
   const s = detail.summary;
@@ -298,6 +302,15 @@ export function SessionHeader({
             ⑂ Subagents ({detail.subagents.length})
           </button>
         )}
+        {/* Ctrl+F opens it too, and this is how anyone finds that out. */}
+        <button
+          type="button"
+          onClick={onToggleFind}
+          className={toggleClass(findOpen)}
+          title="Find in this conversation (Ctrl+F) — reaches what is folded away, which the browser's own find cannot"
+        >
+          Find
+        </button>
         {actions}
       </div>
       {s.titleSource === 'local' && s.originalTitle && (

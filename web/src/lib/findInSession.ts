@@ -59,8 +59,12 @@ export const ROLE_LABEL: Record<FindRole, string> = {
   system: 'System',
 };
 
-/** A `system` line is drawn cut at this length and has no fold to open. */
-const SYSTEM_CHARS = 400;
+/**
+ * A `system` line is drawn cut at this length and has no fold to open, so the
+ * corpus stops here too — counting a match nothing can show is the one thing
+ * this whole feature exists to stop. `SystemItem` reads it from here.
+ */
+export const SYSTEM_CHARS = 400;
 /**
  * A one-character phrase matches a hundred thousand times in a big session, and
  * `parseTerms` applies no minimum length in phrase mode. The scan stops here and
@@ -143,6 +147,15 @@ function unitOf(uuid: string, toolUseId: string | null, pieces: Piece[], short: 
     segments.push({ end: folded.length, role: piece.role });
   }
   return { uuid, toolUseId, raw: kept.map((p) => p.raw).join('\n'), folded, segments, short };
+}
+
+/**
+ * What names a unit on both sides of the glass: the corpus builds it from the
+ * data, `boxKeyOf` reads it off an element, and the two have to agree for the
+ * "visible" scope to mean anything.
+ */
+export function unitKey(unit: FindUnit): string {
+  return unit.toolUseId ? `tool:${unit.toolUseId}` : `msg:${unit.uuid}`;
 }
 
 /** Which piece a folded offset fell in. */

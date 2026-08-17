@@ -10,6 +10,7 @@ import { buildSubagentIndex } from '../lib/subagents.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
+import { FindBar, useFindBar } from '../components/viewer/FindBar.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
 import { FileRefContext, type FileRefContextValue } from '../components/viewer/FileRefContext.ts';
 import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
@@ -225,6 +226,17 @@ export function SessionViewPage() {
     [id, projectPath, setSearchParams],
   );
 
+  /**
+   * Ctrl+F. Off while a layer owns the screen: the file panel is a single <pre>
+   * the browser's own find handles perfectly well, and the subagent drawer holds
+   * another transcript, which this bar does not read (its `find` prop is already
+   * the right shape to serve that list when it does).
+   */
+  const finder = useFindBar(detail.data?.turns ?? EMPTY_TURNS, id, {
+    showThinking,
+    enabled: !fileRef && !agentId,
+  });
+
   const navigate = useNavigate();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -234,14 +246,20 @@ export function SessionViewPage() {
       // Innermost first: the file sits on top of the subagent drawer, which sits
       // on top of the list that opened it — a path is often clicked from inside a
       // subagent report, and that whole stack has to unwind in order.
+      //
+      // The find bar comes after all three and before going back: those are
+      // layers drawn OVER the conversation, while the bar sits beside it. Its
+      // own input handles Escape itself and stops it here, so this branch is for
+      // an Escape pressed while reading, with the bar still open behind you.
       if (fileRef) closeFile();
       else if (agentId) closeAgent();
       else if (agentsOpen) toggleAgents();
+      else if (finder.isOpen) finder.close();
       else navigate(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [fileRef, closeFile, agentId, closeAgent, agentsOpen, toggleAgents, navigate]);
+  }, [fileRef, closeFile, agentId, closeAgent, agentsOpen, toggleAgents, finder.isOpen, finder.close, navigate]);
 
   /**
    * Drop an echoed prompt as soon as the real one arrives, matched on its text
@@ -453,6 +471,8 @@ export function SessionViewPage() {
             onToggleFiles={() => setShowFiles((v) => !v)}
             showAgents={agentsOpen}
             onToggleAgents={toggleAgents}
+            findOpen={finder.isOpen}
+            onToggleFind={() => (finder.isOpen ? finder.close() : finder.openBar())}
             actions={
               <>
                 <ViewButton view={view} />
@@ -461,6 +481,7 @@ export function SessionViewPage() {
               </>
             }
           />
+          <FindBar {...finder.bar} />
           {showTokens && <TokenPanel summary={detail.data.summary} turns={detail.data.turns} />}
           {showLineage && <LineagePanel sessionId={id} />}
           {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
@@ -480,8 +501,19 @@ export function SessionViewPage() {
                   other and would be scaled with it, so 896 px would drift to 1344
                   at 150 %. And `zoom` is only ever set when it is not 100, so the
                   default view runs through no zoom at all. */}
+              {/* One delegated click for the whole conversation, which is what
+                  keeps `Bubble` free of the `onClick` it must not have: this
+                  marks which message or call the find bar's "focused" scope
+                  means, and changes nothing that is drawn or folded.
+                  Attached only while the bar is OPEN, and that is not tidiness:
+                  the focus is React state, so every click that moves it
+                  re-renders the conversation — 65-110 ms on the two largest
+                  sessions here, measured. Once, deliberately, while searching is
+                  a fair price; on every click made while reading it would be a
+                  stutter the reader never asked for. */}
               <div
                 ref={follow.contentRef}
+                onClick={finder.isOpen ? finder.onConversationClick : undefined}
                 className="mx-auto"
                 style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
               >
@@ -505,6 +537,8 @@ export function SessionViewPage() {
                       scrollToTool={tool}
                       jumpNonce={jumpNonce}
                       highlight={highlight}
+                      find={finder.find}
+                      onFindMarks={finder.onFindMarks}
                       onOpenAgent={openAgent}
                       // Handed to the list, which hangs it off the last turn's rail:
                       // an answer being written belongs where the answers are, not at

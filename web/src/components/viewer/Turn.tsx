@@ -2,6 +2,7 @@ import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@c
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
+import { SYSTEM_CHARS } from '../../lib/findInSession.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { foldedCounts } from '../../lib/folding.ts';
 import { parsePlan } from '../../lib/plans.ts';
@@ -17,6 +18,7 @@ import { InjectedNotice } from './InjectedNotice.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
 import { PlanCard, PlanModeMarker } from './PlanCard.tsx';
+import { useRevealTarget } from './RevealContext.ts';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
 
@@ -191,14 +193,23 @@ function ToolGroup({
   targetTool?: string | null;
 }) {
   const holdsTarget = !!targetTool && tools.some((t) => t.block.toolUseId === targetTool);
-  const [open, setOpen] = useState(expandAll || holdsTarget);
+  // The find bar's destination, read from the context rather than threaded: a
+  // run has no identity of its own, so it has to recognise the call inside it.
+  // A block cannot open a run it is not mounted in, which is why this exists at
+  // all — without it a hit in a folded run scrolled to the message and stopped.
+  const reveal = useRevealTarget();
+  const holdsReveal = tools.some((t) => !!t.block.toolUseId && `tool:${t.block.toolUseId}` === reveal.key);
+  const [open, setOpen] = useState(expandAll || holdsTarget || holdsReveal);
   useEffect(() => setOpen(expandAll), [expandAll]);
   // AFTER the one above, and that order is the whole of it: effects run in
-  // declaration order, and a mount runs both — so this one has the last word and
-  // a run holding the link's target opens whatever the Tools toggle says.
+  // declaration order, and a mount runs both — so these have the last word and
+  // a run holding the target opens whatever the Tools toggle says.
   useEffect(() => {
     if (holdsTarget) setOpen(true);
   }, [holdsTarget]);
+  useEffect(() => {
+    if (holdsReveal) setOpen(true);
+  }, [holdsReveal, reveal.nonce]);
 
   const blocks = tools.map((t) => t.block);
   const names = [...new Set(blocks.map((b) => b.toolName))];
@@ -403,7 +414,12 @@ function SystemItem({ item }: { item: MessageItem }) {
       <span className="mr-2 rounded bg-zinc-500/15 px-1 py-px text-[10px] font-semibold uppercase">
         {item.systemSubtype ?? 'system'}
       </span>
-      <span className="whitespace-pre-wrap">{text.length > 400 ? `${text.slice(0, 400)}…` : text}</span>
+      {/* The searchable half — the subtype chip beside it is not. The cut is
+          hard: there is no fold to open, so the find bar stops counting here
+          too, or it would offer matches nothing can show. */}
+      <span data-bubble-body className="whitespace-pre-wrap">
+        {text.length > SYSTEM_CHARS ? `${text.slice(0, SYSTEM_CHARS)}…` : text}
+      </span>
     </div>
   );
 }
