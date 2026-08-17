@@ -235,6 +235,9 @@ export function SessionViewPage() {
   const finder = useFindBar(detail.data?.turns ?? EMPTY_TURNS, id, {
     showThinking,
     enabled: !fileRef && !agentId,
+    // Read once, on open, and never written back: `hl` belongs to the search
+    // that produced it, and a find is a gesture rather than a location.
+    seed: highlight,
   });
 
   const navigate = useNavigate();

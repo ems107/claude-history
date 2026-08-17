@@ -60,7 +60,23 @@ export interface FindBarProps {
  * the hook is the feature and the component is its face, and splitting them
  * would mean an interface between two halves that are never used apart.
  */
-export function useFindBar(turns: Turn[], sessionId: string, opts: { showThinking: boolean; enabled: boolean }) {
+export function useFindBar(
+  turns: Turn[],
+  sessionId: string,
+  opts: {
+    showThinking: boolean;
+    enabled: boolean;
+    /**
+     * The words a search link brought the reader here with. Opening the bar on
+     * such a page starts from them — "the search sent me here, now walk all of
+     * them" becomes one keystroke, which is the most useful thing this bar can
+     * do for somebody who did not type the query in the first place. They arrive
+     * already folded, which is what was matched; folding is idempotent, so
+     * re-parsing them changes nothing.
+     */
+    seed?: MatchHighlight | null;
+  },
+) {
   const [open, setOpen] = useState(false);
   /** The corpus is built the first time the bar is opened and not before: a reader who never presses Ctrl+F pays nothing. */
   const [everOpened, setEverOpened] = useState(false);
@@ -139,18 +155,29 @@ export function useFindBar(turns: Turn[], sessionId: string, opts: { showThinkin
 
   /**
    * Where the first step goes: the first match at or below where the reader is
-   * already reading, wrapping to the top. Continuing from the top of a
-   * three-hundred-message session would be the wrong answer to Enter.
+   * already reading. Starting at the top of a three-hundred-message session
+   * would be the wrong answer to Enter.
+   *
+   * It is measured by what is ABOVE, not by what is below, and that is the whole
+   * subtlety: most of these matches are folded away and have no element to
+   * measure at all. Taking "no element" as "not yet reached" would skip every
+   * hidden match before the first visible one — with the page at the very top it
+   * still opened at the ninth of 113. So an unmeasurable hit inherits the
+   * position of the last measurable one before it, which document order makes
+   * sound, and the walk stops at the first box that is on screen.
    */
   const fromReadingPosition = useCallback((): number => {
+    let lastAbove = -1;
     for (let i = 0; i < hits.length; i++) {
       const unit = units[hits[i].unit];
       const el = unit.toolUseId
         ? document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(unit.toolUseId)}"]`)
         : document.getElementById(unit.uuid);
-      if (el && el.getBoundingClientRect().top >= 0) return i;
+      if (!el) continue;
+      if (el.getBoundingClientRect().top >= 0) break;
+      lastAbove = i;
     }
-    return 0;
+    return lastAbove + 1;
   }, [hits, units]);
 
   const next = useCallback(() => stepTo(at < 0 ? fromReadingPosition() : at + 1), [at, stepTo, fromReadingPosition]);
@@ -181,16 +208,22 @@ export function useFindBar(turns: Turn[], sessionId: string, opts: { showThinkin
     });
   }, []);
 
+  const seed = opts.seed;
   const openBar = useCallback(() => {
     setEverOpened(true);
     setOpen(true);
+    setTyped((prev) => {
+      if (prev.length > 0 || !seed) return prev;
+      setWholeWord(seed.wholeWord);
+      return seed.terms.join(' ');
+    });
     // Focus after the strip has been drawn, and select what is there so typing
     // replaces the previous search rather than extending it.
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
     });
-  }, []);
+  }, [seed]);
 
   const close = useCallback(() => {
     setOpen(false);
