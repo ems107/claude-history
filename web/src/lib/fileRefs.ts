@@ -73,7 +73,26 @@ const KNOWN_EXT = new Set([
   'ini', 'cfg', 'conf', 'env', 'txt', 'log', 'xml', 'csv', 'tsv', 'lock', 'vue', 'svelte', 'php',
   'bas', 'frm', 'cls', 'vbp', 'vbw', 'ctl', 'dsr', 'resx', 'csproj', 'sln', 'props', 'targets',
   'gradle', 'dockerfile', 'gitignore', 'editorconfig', 'npmrc', 'nvmrc', 'prettierrc',
+  // Images. They earn a place here only because the panel can now draw one: a
+  // link to a picture that answered "binary — cannot be shown" was a worse
+  // reply than plain text, which is why they were kept out until it could.
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif', 'svg',
 ]);
+
+/**
+ * The extensions the panel draws as a picture rather than as text.
+ *
+ * `svg` is NOT one of them, and that is the same line the server draws in its
+ * own allowlist: an SVG is a document that can carry script, and it is far more
+ * useful read as the XML it is. `LANGUAGES` below already highlights one.
+ */
+const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif']);
+
+/** Whether this path names an image the app can show. The one home for that question. */
+export function isImagePath(path: string): boolean {
+  const ext = EXT_RE.exec(refBasename(path))?.[1].toLowerCase();
+  return !!ext && IMAGE_EXT.has(ext);
+}
 
 /**
  * A reference, or null when the string is not one.

@@ -2,9 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import hljs from 'highlight.js/lib/common';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
-import { type FileRef, languageForPath, refBasename } from '../../lib/fileRefs.ts';
+import { type FileRef, isImagePath, languageForPath, refBasename } from '../../lib/fileRefs.ts';
 import { formatBytes, formatDateTime } from '../../lib/format.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
+import { ZoomableImage } from './ZoomableImage.tsx';
 
 /**
  * One constant for the gutter rows, the code and the target stripe. The three
@@ -57,6 +58,23 @@ export function FileViewerPanel({
   const [copied, setCopied] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
   const [openError, setOpenError] = useState('');
+  /**
+   * The endpoint refused the picture, or it went away between the read and the
+   * fetch. Reset whenever the panel points somewhere else or the file changes
+   * underneath — otherwise one failure sticks to every image opened after it.
+   */
+  const [imageFailed, setImageFailed] = useState(false);
+
+  /**
+   * Drawn as a picture, decided on the PATH and not on the text sniff.
+   *
+   * `binary` would be the tempting test and it is the wrong one: it means "there
+   * is a NUL in the first 8 KB", which a small GIF can miss — and then the panel
+   * would draw a picture's bytes as mojibake instead. What the extension names
+   * is what the app can show, and it is the same list the endpoint serves.
+   */
+  const isPicture = !!data?.exists && !data.isDirectory && isImagePath(data.path);
+  const showAsImage = isPicture && !data.error && data.sizeBytes > 0 && !imageFailed;
 
   const lines = useMemo(() => (data?.text ? data.text.split('\n') : []), [data?.text]);
   const language = useMemo(() => (data ? languageForPath(data.path) : null), [data]);
@@ -79,6 +97,8 @@ export function FileViewerPanel({
 
   const target = data?.text && fileRef.line && fileRef.line <= lines.length ? fileRef.line : null;
   const targetEnd = target ? Math.min(fileRef.endLine ?? target, lines.length) : null;
+
+  useEffect(() => setImageFailed(false), [refPath, data?.modifiedAt]);
 
   // After the body is in the DOM, and again if the file is reloaded. The fixed
   // line height is what makes this arithmetic rather than a ref per line.
@@ -127,7 +147,7 @@ export function FileViewerPanel({
     <div className="fixed inset-y-0 right-0 z-30 flex w-[52rem] max-w-[92vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl">
       <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-2">
         <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-300">
-          📄 {refBasename(fileRef.path)}
+          {isImagePath(fileRef.path) ? '🖼' : '📄'} {refBasename(fileRef.path)}
           {fileRef.line ? `:${fileRef.line}` : ''}
         </span>
         <span
@@ -251,7 +271,26 @@ export function FileViewerPanel({
         </div>
       )}
       {data?.isDirectory && <div className="p-4 text-sm text-[var(--text-dim)]">This is a folder, not a file.</div>}
-      {data?.binary && (
+      {/* The picture itself, off the image endpoint — the read above answered
+          `binary` and carries no bytes, which is what it is for. It is a second
+          request, made only for the files this panel can draw. */}
+      {showAsImage && (
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          <ZoomableImage
+            src={api.fileImageUrl(sessionId, refPath)}
+            alt={refBasename(data.path)}
+            label="click to view full size"
+            onError={() => setImageFailed(true)}
+          />
+        </div>
+      )}
+      {imageFailed && data?.exists && (
+        <div className="p-4 text-sm text-[var(--text-dim)]">
+          The image could not be loaded — it may be larger than this app will serve, or it may have gone since
+          the file was read. The buttons above still open it.
+        </div>
+      )}
+      {data?.binary && !isPicture && (
         <div className="p-4 text-sm text-[var(--text-dim)]">
           Binary file — {formatBytes(data.sizeBytes)}. Not shown.
         </div>
@@ -260,7 +299,10 @@ export function FileViewerPanel({
         <div className="p-4 text-sm text-[var(--text-dim)]">Empty file.</div>
       )}
 
-      {data?.text && data.text.length > 0 && (
+      {/* `!isPicture`, not `!showAsImage`: a small GIF can carry no NUL in its
+          first 8 KB, come back as `text`, and be drawn as mojibake under the
+          picture that failed to load. */}
+      {data?.text && data.text.length > 0 && !isPicture && (
         <div ref={scroller} className="relative min-h-0 flex-1 overflow-auto bg-black/40 font-mono text-xs">
           {/* min-w-max so the row grows to the longest line: otherwise the stripe
               would stop at the viewport edge instead of running the whole line. */}
