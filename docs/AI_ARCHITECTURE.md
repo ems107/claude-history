@@ -80,6 +80,13 @@ The index itself is in memory and rebuilt on every start.
 
 **Retired settings are dropped on load**: `SessionIndex.build` keeps only keys still in `DEFAULT_SETTINGS`. `chatModel` and `chatEffort` outlived their own removal in `userdata.json` and were still being served by `/api/settings`.
 
+### `userdata.json` is the one file a write may not lose
+
+It holds the only state that cannot be rebuilt, and **several browser windows write it at once** — a star in one and a pin in the other land in the same tick, through the same in-memory index.
+
+- **Writes are serialized per path** (`writeTextAtomic` in `cache.ts`). Two overlapping writes shared one `.tmp`, and the old path failed both ways at once — **measured with 8 concurrent 4 MB writes: 4 of the 8 rejected with ENOENT** (their `rename` found the tmp already moved away by another) **and ~40% of the rows in the file came from a different writer**. It parsed there only because every document happened to be the same length; two of different lengths leave JSON nothing can read. With the queue: 0 failures, 0 mixed rows. The queue is per path and keeps the fixed tmp name, which cleans itself up — a unique name left behind by a process that died between the write and the rename would stay on disk for good. `DiskCache` writes through the same queue, which also keeps its debounced `index.json` write off whatever wrote it last.
+- **An unparseable one is kept, not stepped over** (`readJsonFileOrQuarantine`): it becomes `userdata.json.corrupt-<stamp>` and the failure is logged at `error`. Answering null for "broken" the way the cache readers do meant the defaults loaded silently and the first write of the run buried the evidence. The app still opens — refusing to start over one bad file is the worse failure — so the log line is the only notice, which is why it is an `error` and names what was replaced.
+
 ## Security and containment
 
 - **The app only reads from `~/.claude`** — never write, create or lock anything inside it, `.credentials.json` included. Two features indirectly add files there (the auto-reload and the composer) and only because **Claude Code itself** writes its own transcript when we spawn it; we still never touch that data and never delete what it leaves behind.

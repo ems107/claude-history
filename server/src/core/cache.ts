@@ -19,20 +19,106 @@ export const CACHE_VERSION = 12;
 
 const cacheLog = createLogger('cache');
 
-/** Read a JSON file, null on any failure. */
-export async function readJsonFile<T>(filePath: string): Promise<T | null> {
+/** What `readJsonFileOrQuarantine` found, beyond the value itself. */
+export interface JsonReadOutcome<T> {
+  data: T | null;
+  /** Where an unparseable file was kept, when there was one to keep. */
+  movedTo?: string;
+  /** Why it would not parse. */
+  error?: unknown;
+  /** Set when the copy could not be made either — nothing was preserved. */
+  moveError?: unknown;
+}
+
+/**
+ * Read a JSON file, keeping anything unparseable instead of stepping over it.
+ *
+ * The cache's own readers below answer null for both "there is nothing there"
+ * and "what is there is broken", which is right for a cache that is always safe
+ * to lose and wrong for `userdata.json`: starting from the defaults there drops
+ * every rename, pin, star, price and setting — the only state this app cannot
+ * regenerate — and the next write buries the evidence. One rename keeps it
+ * recoverable by hand.
+ *
+ * It still answers null and lets the caller carry on with the defaults: an app
+ * that refuses to open because of one bad file is the worse failure.
+ */
+export async function readJsonFileOrQuarantine<T>(filePath: string): Promise<JsonReadOutcome<T>> {
+  let text: string;
   try {
-    return JSON.parse(await fsp.readFile(filePath, 'utf8')) as T;
+    text = await fsp.readFile(filePath, 'utf8');
   } catch {
-    return null;
+    // Missing is the ordinary case — a first run — and is not worth a word.
+    return { data: null };
+  }
+  try {
+    return { data: JSON.parse(text) as T };
+  } catch (error) {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+    const movedTo = `${filePath}.corrupt-${stamp}`;
+    try {
+      await fsp.rename(filePath, movedTo);
+      return { data: null, movedTo, error };
+    } catch {
+      // The rename can fail on a file something else holds open. The text is
+      // already in hand, so write the copy instead: without it, the first write
+      // of the new run overwrites the only evidence of what was lost.
+      try {
+        await fsp.writeFile(movedTo, text, 'utf8');
+        return { data: null, movedTo, error };
+      } catch (moveError) {
+        return { data: null, error, moveError };
+      }
+    }
   }
 }
 
-/** Atomic JSON write (tmp + rename); throws on failure. */
+/**
+ * Writes in flight per path, so two of them never share the temporary file.
+ *
+ * Every write here is tmp + rename against a tmp name derived from the target,
+ * and two overlapping writes to one path meant two `writeFile` calls truncating
+ * that same tmp — the bytes of both interleaved into JSON nobody can parse —
+ * followed by two renames, the second failing with ENOENT because the first had
+ * already moved the file away. Several browser windows make that a real
+ * sequence: a star in one and a pin in the other land in the same tick, and
+ * `userdata.json` is the file that cannot be regenerated.
+ *
+ * A queue rather than unique tmp names: `${filePath}.tmp` cleans itself up
+ * because the next write overwrites it, while a unique name left behind by a
+ * process that died between the write and the rename stays on disk for good.
+ */
+const writesInFlight = new Map<string, Promise<void>>();
+
+/**
+ * Write one file through tmp + rename, behind whatever is already writing it.
+ *
+ * The bytes are built by the CALLER, before queueing, so what lands on disk is
+ * the state as of the call and the order on disk is the order asked for.
+ */
+async function writeTextAtomic(filePath: string, text: string): Promise<void> {
+  const previous = writesInFlight.get(filePath);
+  const write = async (): Promise<void> => {
+    const tmp = `${filePath}.tmp`;
+    await fsp.writeFile(tmp, text, 'utf8');
+    await fsp.rename(tmp, filePath);
+  };
+  // A failure belongs to the caller that caused it and to nobody else, so the
+  // next writer in line runs either way.
+  const mine = previous ? previous.then(write, write) : write();
+  const tail = mine.catch(() => undefined);
+  writesInFlight.set(filePath, tail);
+  try {
+    await mine;
+  } finally {
+    // Only when nobody queued behind us — otherwise we would drop their turn.
+    if (writesInFlight.get(filePath) === tail) writesInFlight.delete(filePath);
+  }
+}
+
+/** Atomic JSON write (tmp + rename), serialized per path; throws on failure. */
 export async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
-  const tmp = `${filePath}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(value, null, 2), 'utf8');
-  await fsp.rename(tmp, filePath);
+  await writeTextAtomic(filePath, JSON.stringify(value, null, 2));
 }
 
 export interface CacheKey {
@@ -111,10 +197,11 @@ export class DiskCache {
   }
 
   private async writeAtomic(filePath: string, value: unknown): Promise<void> {
-    const tmp = `${filePath}.tmp`;
     try {
-      await fsp.writeFile(tmp, JSON.stringify(value), 'utf8');
-      await fsp.rename(tmp, filePath);
+      // Not `writeJsonAtomic`: these files are large and nobody reads them by
+      // eye, so they go out unindented. The per-path queue is the same one, which
+      // is what keeps the debounced index write off whatever wrote it last.
+      await writeTextAtomic(filePath, JSON.stringify(value));
     } catch (err) {
       cacheLog.warn(`write failed: ${filePath}`, err);
     }

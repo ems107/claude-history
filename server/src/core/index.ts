@@ -22,7 +22,7 @@ import {
   MIN_USAGE_RATE_LIMIT_SECONDS,
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
-import { CACHE_VERSION, DiskCache, readJsonFile, writeJsonAtomic, type CacheKey } from './cache.ts';
+import { CACHE_VERSION, DiskCache, readJsonFileOrQuarantine, writeJsonAtomic, type CacheKey } from './cache.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
 import { appendedText, safeParse, str } from './jsonl.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
@@ -143,13 +143,28 @@ export class SessionIndex {
     await this.cache.init();
     const indexCache = await this.cache.loadIndex<IndexCacheFile>();
     this.history = await readHistoryData(this.config.historyFile);
-    const userdata = await readJsonFile<{
+    // This is the one file whose loss is permanent, so a copy of anything
+    // unparseable is kept before we carry on with the defaults and the first
+    // write of the run overwrites it.
+    const stored = await readJsonFileOrQuarantine<{
       titleOverrides?: Record<string, string>;
       pins?: string[];
       stars?: StarredMessage[];
       prices?: PriceTable;
       settings?: Partial<AppSettings>;
     }>(this.config.userdataFile);
+    if (stored.moveError) {
+      log.error(
+        `${this.config.userdataFile} does not parse and no copy of it could be made — the renames, pins, stars, prices and settings in it are about to be replaced by the defaults`,
+        { parseError: String(stored.error), moveError: String(stored.moveError) },
+      );
+    } else if (stored.movedTo) {
+      log.error(
+        `${this.config.userdataFile} does not parse — kept it as ${stored.movedTo} and started from the defaults`,
+        { parseError: String(stored.error) },
+      );
+    }
+    const userdata = stored.data;
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
     this.stars = new Map((userdata?.stars ?? []).map((s) => [starKey(s.sessionId, s.uuid), s]));
