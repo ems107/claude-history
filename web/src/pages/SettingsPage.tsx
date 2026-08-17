@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
+import { BackupsPanel } from '../components/BackupsPanel.tsx';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
 
@@ -719,6 +720,10 @@ export function SettingsPage() {
             you — and then it asks in the conversation, above the box. Your MCP servers are loaded as usual, so the
             first prompt of a session takes a moment longer than the ones after it.
           </div>
+        </Section>
+
+        <Section title="Your data, and how to get it back" id="backups" highlight={flashed === 'backups'}>
+          <BackupsPanel />
         </Section>
 
         {/* Claude Code's setting, not ours — shown and explained, never written.

@@ -37,14 +37,19 @@ function messageText(item: MessageItem): string {
  */
 function toEntry(ctx: AppContext, record: StarredMessage): StarEntry {
   const summary = ctx.index.get(record.sessionId);
-  const project = summary?.projectPath ?? record.project;
+  // `?? ''` and not `record.project`: the type says that field is always there
+  // and the endpoint always writes it, but this file can now arrive from a
+  // restored backup — one taken by an older version, or edited by hand — and
+  // `path.basename(undefined)` threw a 500 that took the whole page down
+  // instead of one row. An orphaned star is exactly the one that must still show.
+  const project = summary?.projectPath ?? record.project ?? '';
   return {
     ...record,
-    sessionTitle: summary?.title ?? record.sessionTitle,
+    sessionTitle: summary?.title ?? record.sessionTitle ?? 'untitled',
     project,
     sessionExists: summary !== undefined,
-    projectKey: summary?.projectKey ?? normalizeProjectKey(project),
-    projectName: summary?.projectName ?? path.basename(project),
+    projectKey: summary?.projectKey ?? (project ? normalizeProjectKey(project) : ''),
+    projectName: summary?.projectName ?? (project ? path.basename(project) : 'unknown project'),
   };
 }
 

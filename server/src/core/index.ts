@@ -164,10 +164,11 @@ export class SessionIndex {
         { parseError: String(stored.error), moveError: String(stored.moveError) },
       );
     } else if (stored.movedTo) {
-      log.error(
-        `${this.config.userdataFile} does not parse — kept it as ${stored.movedTo} and started from the defaults`,
-        { parseError: String(stored.error) },
-      );
+      // What happens NEXT is not decided here — a backup may put it all back —
+      // so this line says what was found and nothing about the outcome.
+      log.error(`${this.config.userdataFile} does not parse — kept it as ${stored.movedTo}`, {
+        parseError: String(stored.error),
+      });
     }
     // Quarantining the broken file was only half of it: something has to go back
     // in its place, or every rename, pin and star is still gone. The newest copy
@@ -179,9 +180,13 @@ export class SessionIndex {
       if (fromBackup) {
         userdata = fromBackup;
         recoveredFrom = this.backups.recovery?.from ?? null;
-        log.error(`restored ${this.config.userdataFile} from the backup ${recoveredFrom ?? '(unknown)'}`);
+        log.error(
+          `restored ${this.config.userdataFile} from the backup ${recoveredFrom ?? '(unknown)'} — nothing was lost`,
+        );
       } else {
-        log.error('there was no usable backup to restore — starting from the defaults');
+        log.error(
+          `there is no usable backup in ${this.backups.directory} — starting from the defaults, and the renames, pins, stars, prices and settings that were in that file are gone`,
+        );
       }
     }
     this.applyUserdata(userdata);
@@ -426,7 +431,15 @@ export class SessionIndex {
   } | null): void {
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
-    this.stars = new Map((userdata?.stars ?? []).map((s) => [starKey(s.sessionId, s.uuid), s]));
+    // Keyed on two fields, so a record without them would answer for the key
+    // "undefined:undefined" and shadow the next one like it. Worth filtering
+    // because this data no longer comes only from our own endpoint: a restored
+    // backup may have been written by an older version, or edited by hand.
+    this.stars = new Map(
+      (userdata?.stars ?? [])
+        .filter((s) => typeof s?.sessionId === 'string' && typeof s.uuid === 'string')
+        .map((s) => [starKey(s.sessionId, s.uuid), s]),
+    );
     this.prices = userdata?.prices ?? null;
     // Only keys we still have: a setting that is retired would otherwise live
     // on in userdata.json forever, be served by /api/settings and read as

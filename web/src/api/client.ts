@@ -30,6 +30,8 @@ import type {
   UpdateLogResponse,
   UpdateStatusResponse,
   UsageResponse,
+  UserdataBackupsResponse,
+  UserdataRestoreResponse,
 } from '@claude-history/shared';
 import { applyTuning, type SearchTuning } from '../lib/searchTuning.ts';
 import { markUsageReadFailed, takeUsageRead } from './usageReason.ts';
@@ -232,6 +234,32 @@ export const api = {
     });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json() as Promise<{ settings: AppSettings }>;
+  },
+  userdataBackups: () => getJson<UserdataBackupsResponse>('/api/userdata/backups'),
+  createUserdataBackup: async () => {
+    const res = await fetch('/api/userdata/backups', { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as { name?: string | null; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    // A null name means the file is byte-identical to the newest copy already
+    // held: nothing was written, and saying so beats inventing a file name.
+    return body.name ?? null;
+  },
+  /**
+   * Replace every rename, pin, star, price and setting with a stored copy.
+   *
+   * The one call in this app that overwrites user data wholesale — hence the
+   * confirmation in the panel, and the `pre-restore` copy the server takes
+   * before doing it.
+   */
+  restoreUserdata: async (name: string) => {
+    const res = await fetch('/api/userdata/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const body = (await res.json().catch(() => ({}))) as UserdataRestoreResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
   },
   // Claude Code's own `cleanupPeriodDays`, read from its settings files. We only
   // ever read it: changing it is a manual edit, explained in Settings.
