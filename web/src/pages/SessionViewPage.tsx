@@ -8,6 +8,7 @@ import { useFoldState } from '../lib/folding.ts';
 import { focusKeyAt, parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
 import { selectMessage } from '../lib/selectedMessage.ts';
 import { buildSubagentIndex } from '../lib/subagents.ts';
+import { turnActivity } from '../lib/turnActivity.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
@@ -410,14 +411,23 @@ export function SessionViewPage() {
   }, [chat.data?.turnStartedAt, pending, live.data, id]);
 
   /**
+   * The two clocks the indicator shows beside the turn's own. Read off the
+   * conversation rather than off `/api/live`, which knows when the turn started
+   * and nothing about what has happened inside it — and memoised on the parse,
+   * so a re-render that changed no message leaves the indicator's props alone.
+   */
+  const activity = useMemo(() => turnActivity(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
+
+  /**
    * Hung off the last turn's rail rather than after the list: an answer being
    * written belongs where the answers are. Passed only while it has something to
    * draw, and never while a prompt is still waiting for the transcript — the
    * indicator belongs under THAT instead, as the exchange being answered.
    */
   const workingFooter = useMemo(
-    () => (pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined),
-    [pending.length, liveInfo],
+    () =>
+      pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} activity={activity} /> : undefined,
+    [pending.length, liveInfo, activity],
   );
   /**
    * The follow-the-end pill. Keyed on the session id, so opening another one
@@ -437,10 +447,16 @@ export function SessionViewPage() {
     () =>
       pending.map((p, i) => (
         <PendingTurn key={`${p.at}:${i}`} text={p.text}>
-          {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
+          {/* `activity` too, and it draws nothing here on purpose: while the echo
+              stands, the last turn in the transcript is the PREVIOUS one, whose
+              messages are all older than this turn's start and are filtered out
+              by exactly the test that keeps the figures inside their own turn. */}
+          {i === pending.length - 1 && isWorking(liveInfo) ? (
+            <WorkingIndicator live={liveInfo} activity={activity} />
+          ) : null}
         </PendingTurn>
       )),
-    [pending, liveInfo],
+    [pending, liveInfo, activity],
   );
 
   if (detail.isLoading) {
