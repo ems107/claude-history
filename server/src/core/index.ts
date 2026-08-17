@@ -15,6 +15,7 @@ import {
   CLAUDE_MODELS,
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
+  defaultSettings,
   LOG_LEVEL_CHOICES,
   MIN_CHAT_IDLE_MINUTES,
   MIN_LOG_RETENTION_DAYS,
@@ -446,7 +447,9 @@ export class SessionIndex {
     // current — which is exactly what happened to chatModel/chatEffort.
     const saved = (userdata?.settings ?? {}) as Record<string, unknown>;
     const known = Object.fromEntries(Object.keys(DEFAULT_SETTINGS).filter((k) => k in saved).map((k) => [k, saved[k]]));
-    this.settings = { ...DEFAULT_SETTINGS, ...(known as Partial<AppSettings>) };
+    // A dev instance starts from its own defaults (DEV_SETTING_OVERRIDES), and
+    // only where nothing was saved: anything switched on there stays on.
+    this.settings = { ...defaultSettings(this.config.devInstance), ...(known as Partial<AppSettings>) };
   }
 
   /**

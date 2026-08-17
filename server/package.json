@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts --serve-static ../web/dist",
+    "dev": "tsx watch src/main.ts --dev-instance",
+    "start": "tsx src/main.ts --dev-instance --serve-static ../web/dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
 import { GearIcon } from './components/icons.tsx';
 import { api } from './api/client.ts';
@@ -35,6 +36,15 @@ export function App() {
   const navigate = useNavigate();
   // Same query the UpdateButton uses — deduped by TanStack, no extra request.
   const { data: update } = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });
+  // Which of the two instances this tab is. Deduped with every other ['meta']
+  // reader, and the answer never changes for the life of the server.
+  const { data: meta } = useQuery({ queryKey: ['meta'], queryFn: api.meta });
+  const dev = meta?.devInstance ?? false;
+  // Two tabs that look alike on two ports is the one way to confuse them, and
+  // the tab strip is where they are told apart before anything is clicked.
+  useEffect(() => {
+    document.title = dev ? `dev · claude history :${window.location.port}` : 'claude history';
+  }, [dev]);
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2">
@@ -51,17 +61,26 @@ export function App() {
           >
             <span className="text-[var(--accent)]">claude</span> history
           </Link>
-          {update && (
+          {dev ? (
             <span
-              className="font-mono text-[11px] text-[var(--text-dim)]"
-              title={
-                update.installed
-                  ? `Installed version ${update.currentVersion}`
-                  : 'Running from source (not an installed release)'
-              }
+              className="rounded border border-amber-500/40 px-1 font-mono text-[11px] text-amber-400"
+              title={`Development instance on port ${window.location.port} — its own data folder, beside the installed release on 7433, which it never touches.`}
             >
-              {update.currentVersion === 'dev' ? 'dev' : `v${update.currentVersion}`}
+              dev
             </span>
+          ) : (
+            update && (
+              <span
+                className="font-mono text-[11px] text-[var(--text-dim)]"
+                title={
+                  update.installed
+                    ? `Installed version ${update.currentVersion}`
+                    : 'Running from source (not an installed release)'
+                }
+              >
+                {update.currentVersion === 'dev' ? 'dev' : `v${update.currentVersion}`}
+              </span>
+            )
           )}
         </span>
         <nav className="ml-4 flex items-center gap-1">

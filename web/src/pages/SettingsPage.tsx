@@ -2,6 +2,7 @@ import {
   type AppSettings,
   CLAUDE_MODELS,
   DEFAULT_SETTINGS,
+  defaultSettings,
   LOG_LEVEL_CHOICES,
   MIN_CHAT_IDLE_MINUTES,
   MIN_USAGE_INTERVAL_SECONDS,
@@ -132,6 +133,18 @@ function TextSetting({
 }
 
 /**
+ * The defaults THIS server starts from. A dev instance's are not the shipped
+ * ones (`DEV_SETTING_OVERRIDES` turns the two automatic network calls off), and
+ * a marker offering to restore a value the server never had would be a lie.
+ * Read from the `['meta']` query rather than passed down: every badge shares
+ * the one cache entry, so nineteen of them still cost one request.
+ */
+function useDefaults(): AppSettings {
+  const { data } = useQuery({ queryKey: ['meta'], queryFn: api.meta });
+  return defaultSettings(data?.devInstance ?? false);
+}
+
+/**
  * Shown only next to a setting that no longer holds its default, and clicking
  * it puts the default back. It spells the default value out because that is
  * the question the marker raises ("changed from what?"), which also saves
@@ -149,7 +162,7 @@ function DefaultBadge<K extends keyof AppSettings>({
   value: AppSettings[K];
   save: (patch: Partial<AppSettings>) => void;
 }) {
-  const fallback = DEFAULT_SETTINGS[field];
+  const fallback = useDefaults()[field];
   if (value === fallback) return null;
   return (
     <button
@@ -352,6 +365,8 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const update = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });
+  const meta = useQuery({ queryKey: ['meta'], queryFn: api.meta });
+  const dev = meta.data?.devInstance ?? false;
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
@@ -795,6 +810,15 @@ export function SettingsPage() {
             <span className="break-all">{data.paths.logsDir}</span>
             <span className="opacity-60">installed in</span>
             <span className="break-all">{data.paths.installRoot ?? 'not a managed install (source or portable)'}</span>
+            {dev && (
+              <>
+                <span className="opacity-60">instance</span>
+                <span className="text-amber-400">
+                  dev on port {window.location.port} — every path above is its own. The installed release on 7433 keeps
+                  its own data and is never touched from here.
+                </span>
+              </>
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
             <button type="button" className={btn} onClick={() => void api.openDataFolder()}>
@@ -830,7 +854,14 @@ export function SettingsPage() {
               className={`${btn} border-red-500/40 text-red-300 hover:border-red-400`}
               disabled={stopped}
               onClick={() => {
-                if (!confirm('Stop the claude-history server? This page will stop working until you start it again from the Start Menu shortcut or Task Scheduler.')) return;
+                // Whichever instance this page belongs to is the one that
+                // exits — the request goes to the port it was served from —
+                // so the way back differs: the release has a shortcut and a
+                // task, the dev instance has dev.ps1 and nothing else.
+                const question = dev
+                  ? 'Stop the dev server? This page will stop working until you start it again with dev.ps1. The installed release on 7433 is not affected.'
+                  : 'Stop the claude-history server? This page will stop working until you start it again from the Start Menu shortcut or Task Scheduler.';
+                if (!confirm(question)) return;
                 setStopped(true);
                 // The server refuses while an update is being installed:
                 // stopping would abort the download and lose it.
@@ -854,8 +885,17 @@ export function SettingsPage() {
           </div>
           {stopped && (
             <p className="text-[11px] text-amber-400">
-              Server stopping. Start it again with the claude-history shortcut in the Start Menu, or from Task Scheduler
-              (task “claude-history” → Run).
+              {dev ? (
+                <>
+                  Dev server stopping. Start it again with <span className="font-mono">.\dev.ps1</span> in the repo. The
+                  installed release on 7433 goes on running.
+                </>
+              ) : (
+                <>
+                  Server stopping. Start it again with the claude-history shortcut in the Start Menu, or from Task
+                  Scheduler (task “claude-history” → Run).
+                </>
+              )}
             </p>
           )}
           {note && <p className="text-[11px] text-[var(--text-dim)]">{note}</p>}

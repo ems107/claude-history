@@ -8,6 +8,7 @@ Everything here was verified on this machine. The user-facing half (what the ins
 
 - **NEVER cut a release on your own initiative.**
 - **A local build is always version `dev`** — never hand a real version number to `pnpm package`.
+- **Nothing here is how you develop.** Packaging and installing exist to verify the shipped artifact, not to run your changes: that is the [dev instance](../CLAUDE.md#two-instances-and-the-line-between-them) on 7434, which installs nothing. Installing over the user's release replaces the copy that always works — only do it when the installer itself is what is being tested, and say so first.
 - **Scheduled task, never a Windows service.**
 - **Installer scripts stay pure ASCII and Windows PowerShell 5.1 compatible.**
 - **Anything that must outlive the server has to be started by the Task Scheduler, not spawned by us.**
@@ -31,7 +32,7 @@ Everything here was verified on this machine. The user-facing half (what the ins
 └── versions\vX.Y.Z\{node\node.exe, server.cjs, web\, start-hidden.vbs, update-helper.ps1}
 ```
 
-`install.ps1` **relocates** the app to `%LOCALAPPDATA%\Programs\claude-history` (overridable with `-InstallTo`), so the user can extract the zip anywhere and delete it afterwards. `-Portable` skips the managed install entirely and just runs the server in the console — no task, no shortcut, no `install.json`, so the updater reports `installed: false` and refuses to apply. **`Program Files` is deliberately NOT supported**: self-update writes into the install folder and would need elevation on every update.
+`install.ps1` **relocates** the app to `%LOCALAPPDATA%\Programs\claude-history` (overridable with `-InstallTo`), so the user can extract the zip anywhere and delete it afterwards. `-Portable` skips the managed install entirely and just runs the server in the console — no task, no shortcut, no `install.json`, so the updater reports `installed: false` and refuses to apply. A **dev instance is not an install either** and is detected the same way: `detectInstall()` resolves from the running entry path, so a source run can never find — let alone swap — the release's `current` junction, whatever port it is on. **`Program Files` is deliberately NOT supported**: self-update writes into the install folder and would need elevation on every update.
 
 ### Scheduled-task rules
 

@@ -13,5 +13,6 @@ export function registerMetaRoutes(app: FastifyInstance, ctx: AppContext): void 
     enrichedCount: ctx.index.enrichedCount,
     cacheHits: ctx.index.cacheHits,
     version: APP_VERSION,
+    devInstance: ctx.config.devInstance,
   }));
 }

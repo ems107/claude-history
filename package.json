@@ -9,7 +9,7 @@
     "build": "pnpm --filter @claude-history/web build",
     "start": "pnpm --filter @claude-history/server start",
     "start:bg": "powershell -NoProfile -Command \"Start-Process -FilePath 'pnpm' -ArgumentList 'start' -WindowStyle Hidden\"",
-    "stop": "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7433 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force; Write-Host ('claude-history stopped (pid ' + $_ + ')') }\"",
+    "stop": "powershell -NoProfile -Command \"$p = if ($env:PORT) { [int]$env:PORT } else { 7434 }; if ($p -eq 7433) { throw 'Port 7433 belongs to the installed release. Stop it from Task Scheduler, not from here.' }; Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force; Write-Host ('claude-history dev stopped (pid ' + $_ + ')') }\"",
     "typecheck": "pnpm -r typecheck",
     "package": "node scripts/package.mjs",
     "release": "node scripts/release.mjs"

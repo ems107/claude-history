@@ -35,21 +35,28 @@ Package manager **pnpm**, workspace `shared` + `server` + `web`.
 | Command | What it does |
 | --- | --- |
 | `pnpm install` | install all workspace deps |
-| `pnpm dev` | Fastify API on `http://127.0.0.1:7433` (tsx watch) + Vite UI on `http://localhost:5173` (proxies `/api`) |
+| `.\dev.ps1` | **start the dev instance** on `http://127.0.0.1:7434` (builds if needed, detached, opens the browser). `-Build` `-Restart` `-Stop` `-Foreground` `-Seed` |
+| `pnpm dev` | Fastify API on `http://127.0.0.1:7434` (tsx watch) + Vite UI on `http://localhost:5173` (proxies `/api`) |
 | `pnpm build` | build the web app to `web/dist` |
-| `pnpm start` | the Fastify server serves `web/dist` and the API on `http://localhost:7433` |
-| `pnpm start:bg` / `pnpm stop` | launch detached (hidden window) / kill the port-7433 listener |
+| `pnpm start` | the Fastify server serves `web/dist` and the API on `http://127.0.0.1:7434` |
+| `pnpm start:bg` / `pnpm stop` | launch detached (hidden window) / kill the **dev** port's listener (refuses 7433) |
 | `pnpm typecheck` | `tsc --noEmit` in all packages |
 | `pnpm package` | build the portable zip — always version `dev`; see [Distribution](docs/AI_DISTRIBUTION.md) |
 | `pnpm release -- --version X.Y.Z --notes-file <path>` | cut a release — **only when asked**; see [Distribution](docs/AI_DISTRIBUTION.md) |
 
 The server has no build step in dev: TypeScript runs via `tsx`, and `@claude-history/shared` is consumed as TS source by both sides. Logging needs no flag in any mode ([Logging](docs/AI_LOGGING.md)); `start:bg` runs detached with a hidden window, so the log files are the only trace of anything a background job does.
 
-> **Always leave the app running after changing it.** The user browses `http://127.0.0.1:7433` and expects to find his edits there — never end a turn with that port dead or serving the old code. After any change: `pnpm build`, then leave the source server up on 7433.
+### Two instances, and the line between them
+
+> **The installed release owns port 7433 and `%LOCALAPPDATA%\claude-history`. Never take either.** It is the copy that always works and the one whose composer answers while everything else is being rebuilt, so no command in this repo may stop it, rebuild it, or bind its port. Stopping the `claude-history` scheduled task is the user's call alone.
 >
-> **If you are Claude and the user is talking to you through the composer, restarting the server kills you.** Your own session is being answered by a `claude` process this server spawned, so `chat.shutdown()` takes it down with everything else — mid-turn, mid-sentence, and the work in flight is lost. `POST /api/server/stop` refuses with 409 while a turn is running, but `pnpm stop` bypasses the API and kills the port's owner outright. Check first (`GET /api/sessions/<your-session-id>/chat` — `running: true` means you are the one about to die), and if the server really must be reloaded, make it the LAST action of the turn, after everything is committed. Verified the hard way, twice.
+> **Everything run from this checkout is the dev instance**, and one flag is what makes it so: `--dev-instance` (in `server/package.json`'s `dev` and `start` scripts) moves the port to **7434** and the whole data folder to **`%LOCALAPPDATA%\claude-history-dev`** — cache, `userdata.json`, its `backups\` and `logs\`, all four resolved from that one name in `config.ts`. `PORT` / `--port` and `CLAUDE_HISTORY_CACHE` still override. The packaged build never passes the flag, so a release is unaffected by all of this.
 >
-> That port belongs to the installed release, started by the `claude-history` scheduled task, so the sequence is: `Stop-ScheduledTask claude-history` → wait until nothing listens on 7433 (the old process needs a moment to release it) → `pnpm start:bg` → poll `/api/meta` until it answers, and check it reports version `dev` (proof the source instance won the port, not a surviving release one). To hand the port back: `pnpm stop` then `Start-ScheduledTask claude-history`. A logon does it anyway — the detached dev process does not survive one, and the task's AtLogOn trigger fires.
+> The two share exactly one thing: `~/.claude`, which both only read. Nothing else is common — not the settings, not the stars, not the logs. The dev instance also starts with the two automatic network calls off (`DEV_SETTING_OVERRIDES`): checking for updates is pointless where none can be applied, and doubled usage reads rate-limit **per account**, i.e. a 429 earned here would blank the release's widget too.
+>
+> **Always leave the dev instance running after changing it.** The user browses `http://127.0.0.1:7434` and expects to find his edits there — never end a turn with it dead or serving the old code. After any change: `pnpm build`, then `.\dev.ps1 -Restart -NoBrowser`, and check `/api/meta` answers with `devInstance: true`.
+>
+> **If you are Claude and the user is talking to you through the composer, restarting the server that spawned you kills you.** `chat.shutdown()` takes your `claude` process down with everything else — mid-turn, mid-sentence, work in flight lost. `POST /api/server/stop` refuses with 409 while a turn is running, but `pnpm stop` and `dev.ps1 -Stop` bypass the API and kill the port's owner outright. This is what the split is for: the composer session normally belongs to the release on 7433, which nothing here restarts. Check anyway when in doubt (`GET /api/sessions/<your-session-id>/chat` — `running: true` on the port you are about to kill means you are the one about to die), and if that server really must be reloaded, make it the LAST action of the turn, after everything is committed. Verified the hard way, twice.
 
 > **NEVER cut a release on your own initiative.** `pnpm release` publishes a public GitHub release and makes every installed instance offer the update — that is the user's call, always. Commit and push freely; tag and release ONLY when the user explicitly asks for it in that turn. "Finish this feature" is not a request to release it.
 
@@ -59,7 +66,7 @@ The server has no build step in dev: TypeScript runs via `tsx`, and `@claude-his
 shared/src/     types.ts · api.ts · prices.ts · recache.ts · fold.ts · match.ts · searchText.ts
                 (anything both sides must agree on lives here, and only here)
 server/src/
-  config.ts     data root / cache dir / logs dir resolution
+  config.ts     data root / cache dir / logs dir / port resolution, dev-instance split
   core/         scanner → summarizer → cache → enricher → watcher, parser, index,
                 search · deepSearch · searchText, usage · autoReload · sessionChat,
                 updates · updateLogImport, logger · logReader, retention
@@ -81,9 +88,10 @@ scripts/        package.mjs · release.mjs
 - **A starred message keeps its own copy of the text**, keyed on the message's canonical uuid, and starring never invalidates `['session', id]`. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **The reading half is ours; the Agent SDK is only used to run Claude.** → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **Everything in `~/.claude` has an expiry date** (`cleanupPeriodDays`), fixtures included. → [Transcripts](docs/AI_TRANSCRIPTS.md)
+- **The installed release is never touched from here** — not its port, not its data folder, not its scheduled task. Everything this repo runs is the dev instance. → [Two instances](#two-instances-and-the-line-between-them)
 - **Never log with `console.*`** in new code. → [Logging](docs/AI_LOGGING.md)
 - **Wrap every `JSON.parse` of a transcript line in try/catch.** Lines can be corrupt or half-written, and active files grow while being read.
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 28 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 29 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

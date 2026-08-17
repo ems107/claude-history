@@ -21,6 +21,8 @@ export interface MetaResponse {
   enrichedCount: number;
   cacheHits: number;
   version: string;
+  /** Started with `--dev-instance`: own port, own data folder, beside the release. */
+  devInstance: boolean;
 }
 
 export type SessionsResponse = SessionSummary[];
@@ -450,6 +452,26 @@ export const DEFAULT_SETTINGS: AppSettings = {
   logLevel: 'info',
   logRetentionDays: 14,
 };
+
+/**
+ * What a dev instance starts with instead, on its own fresh `userdata.json`.
+ *
+ * The two automatic network calls belong to the installed release. A second
+ * instance polling beside it doubles the update checks — pointless there, since
+ * a source run can never apply one — and, the half that actually bites, the
+ * usage reads: those rate-limit per account, so a 429 earned here silences the
+ * release's widget too. Both are ordinary settings and can be switched on when
+ * the dev instance is what you are testing.
+ */
+export const DEV_SETTING_OVERRIDES: Partial<AppSettings> = {
+  updateAutoCheck: false,
+  usageOnInterval: false,
+};
+
+/** The defaults this instance actually starts from, and the ones its UI offers back. */
+export function defaultSettings(devInstance: boolean): AppSettings {
+  return devInstance ? { ...DEFAULT_SETTINGS, ...DEV_SETTING_OVERRIDES } : DEFAULT_SETTINGS;
+}
 
 /** Floor on log retention: keeping zero days would mean keeping nothing. */
 export const MIN_LOG_RETENTION_DAYS = 1;

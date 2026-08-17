@@ -59,19 +59,25 @@ Removes the scheduled task and the Start Menu shortcut. Your local data (renames
 
 ## Run from source (development)
 
+Everything you run from the source tree is a **dev instance**: port `7434` and its own data folder, `%LOCALAPPDATA%\claude-history-dev`. Your installed release keeps port `7433` and `%LOCALAPPDATA%\claude-history` and is never stopped, rebuilt or read from — so it stays up, working, and usable while you develop.
+
 ```
 pnpm install
-pnpm dev      # UI on http://localhost:5173 (API on 127.0.0.1:7433)
+.\dev.ps1     # build if needed, start detached on http://127.0.0.1:7434, open it
 ```
 
-Production-ish mode:
+`-Build` rebuilds the web app first, `-Restart` replaces a running dev instance, `-Stop` stops it, `-Foreground` runs it in the window, `-Seed` copies your release's `userdata.json` and cache into the dev folder on first run (one way — nothing is ever copied back), `-Port` picks another port (7433 is refused).
+
+By hand, if you prefer:
 
 ```
-pnpm build
-pnpm start    # everything on http://localhost:7433 (Ctrl+C stops it)
+pnpm dev      # UI on http://localhost:5173 with HMR (API on 127.0.0.1:7434)
+pnpm build && pnpm start    # everything on http://127.0.0.1:7434 (Ctrl+C stops it)
 ```
 
-Run it detached (no terminal window): `pnpm start:bg` / `pnpm stop`.
+`pnpm start:bg` / `pnpm stop` are the detached pair, and `pnpm stop` only ever kills the dev port.
+
+The dev instance starts with the automatic update check and the interval usage read **off**: neither belongs to a second instance running beside the release (updates cannot be applied from source, and usage reads rate-limit per account). Both are ordinary settings you can switch on.
 
 Cut a release (build + tag + push + publish, all from this machine — there is no CI):
 
@@ -92,6 +98,7 @@ A source instance reports version `dev` and can check for updates but not apply 
 | Claude data root | `~/.claude` | `--data-root <path>` or `CLAUDE_CONFIG_DIR` |
 | Cache dir | `%LOCALAPPDATA%\claude-history\cache` | `CLAUDE_HISTORY_CACHE` |
 | Port | `7433` | `PORT` or `--port` |
+| Dev instance (port `7434`, data in `…\claude-history-dev`) | off | `--dev-instance` or `CLAUDE_HISTORY_DEV=1` |
 | Update feed repo | `ems107/claude-history` | `CLAUDE_HISTORY_UPDATE_REPO` |
 
 The app is read-only over `~/.claude` and binds to `127.0.0.1` only.
@@ -112,6 +119,7 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 
 - `userdata.json` sits **next to** (not inside) the cache dir on purpose: wiping the cache never loses your renames. If you point `CLAUDE_HISTORY_CACHE` elsewhere, `userdata.json` is created next to that directory.
 - Deleting `cache\` is always safe — the next server start rebuilds it from `~/.claude` in seconds. Entries are schema-versioned and keyed by file size+mtime, so they self-invalidate when transcripts change or the format evolves.
+- A **dev instance** (`--dev-instance`) keeps the same layout under `%LOCALAPPDATA%\claude-history-dev` instead: separate cache, `userdata.json`, backups and logs, so developing can neither disturb nor lose what the installed release holds. The only thing the two share is `~/.claude`, which both merely read.
 - `logs\` holds one file per day, written by every way of running the app (installed, from source, portable) so the trail is never split across builds. Files older than the retention window (14 days by default) are deleted automatically, and **Settings → Logs** sets the level written and opens the viewer: filter by day, level and subsystem, search the text, and read the installer's `update.log` from the same screen.
 - Minor UI state lives in the browser, not in files: `localStorage` (thinking toggle, sidebar width) and per-tab `sessionStorage` (list filters/scroll for back-navigation, and which message you had selected in a conversation). Active filters are also reflected in the URL.
 - An **installed** instance additionally keeps app files (never your data) in its install folder: `versions\` (the app versions themselves), the `current` junction, `install.json` (install marker) and `update.log`. Reinstalling or updating never touches `%LOCALAPPDATA%\claude-history`.

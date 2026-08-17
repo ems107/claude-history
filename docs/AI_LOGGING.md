@@ -2,7 +2,9 @@
 
 **Load this when:** you add logging anywhere, touch `core/logger.ts` / `core/logReader.ts` / `core/updateLogImport.ts`, or need to work out what an installed instance did — the installed server runs hidden, so these files are the only trace.
 
-One JSONL file per **local** day in `%LOCALAPPDATA%\claude-history\logs\YYYY-MM-DD.log`, written by every way of running the server (installed, source, portable, dev). That single location is the point: the previous design took a `--log-file` path, so the installed release and the source server wrote to different files, and alternating between them split the evidence — which is exactly how a "why did the background job not fire?" question became unanswerable after the fact.
+One JSONL file per **local** day, in the data folder of the instance that wrote it: `%LOCALAPPDATA%\claude-history\logs\YYYY-MM-DD.log` for the installed release and any portable run, `%LOCALAPPDATA%\claude-history-dev\logs\` for a [dev instance](../CLAUDE.md#two-instances-and-the-line-between-them).
+
+**Within one instance the location never varies** — installed, from source, portable, `pnpm dev`, all the same file. That is the point: the previous design took a `--log-file` path, so the installed release and the source server wrote to different files, and alternating between them split the evidence — which is exactly how a "why did the background job not fire?" question became unanswerable after the fact. What separates the files now is *which server ran*, which is the one distinction worth keeping: a dev instance restarted twenty times in an afternoon has nothing to say about the release, and its log viewer reads its own folder, so each screen shows one machine's story.
 
 ## Invariants
 

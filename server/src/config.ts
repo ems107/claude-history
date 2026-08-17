@@ -30,12 +30,31 @@ export interface AppConfig {
    */
   exitWithParent: boolean;
   /**
+   * A source checkout run beside the installed release, never instead of it.
+   *
+   * The release owns port 7433 and `%LOCALAPPDATA%\claude-history`, and nothing
+   * we do while developing may take either from it: it is the copy that always
+   * works, and the one whose composer answers while this instance restarts.
+   * So the flag moves BOTH — the port and the whole data folder, cache,
+   * `userdata.json`, its backups and the logs with it — and the two instances
+   * share only `~/.claude`, which is read-only for both.
+   *
+   * It is explicit rather than inferred from "am I installed?": a portable run
+   * of a release is not installed either, and it should behave like the release
+   * it is. The repo's own `pnpm dev` / `pnpm start` pass it.
+   */
+  devInstance: boolean;
+  /**
    * Problems found while reading the arguments. Collected instead of printed:
    * config is resolved before logging is up, so a warning printed here would
    * never reach the log files.
    */
   warnings: string[];
 }
+
+/** The installed release's port. A dev instance must never bind it. */
+export const RELEASE_PORT = 7433;
+export const DEV_PORT = 7434;
 
 function parseArgs(argv: string[]): Map<string, string> {
   const args = new Map<string, string>();
@@ -66,11 +85,16 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     args.get('data-root') || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
   );
 
+  const devInstance = args.has('dev-instance') || process.env.CLAUDE_HISTORY_DEV === '1';
+  // One name change carries the cache, userdata.json, its backups and the logs:
+  // all four are resolved from this folder, so nothing else has to know.
+  const folder = devInstance ? 'claude-history-dev' : 'claude-history';
+
   const cacheBase =
     process.env.CLAUDE_HISTORY_CACHE ||
     (process.env.LOCALAPPDATA
-      ? path.join(process.env.LOCALAPPDATA, 'claude-history', 'cache')
-      : path.join(os.homedir(), '.claude-history', 'cache'));
+      ? path.join(process.env.LOCALAPPDATA, folder, 'cache')
+      : path.join(os.homedir(), `.${folder}`, 'cache'));
 
   const warnings: string[] = [];
   let staticDir: string | null = null;
@@ -84,6 +108,13 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     }
   }
 
+  const port = Number(process.env.PORT || args.get('port') || (devInstance ? DEV_PORT : RELEASE_PORT));
+  if (devInstance && port === RELEASE_PORT) {
+    warnings.push(
+      `--dev-instance was asked to bind ${RELEASE_PORT}, the installed release's port. It will fail to listen if the release is running.`,
+    );
+  }
+
   const cacheDir = path.resolve(cacheBase);
   return {
     dataRoot,
@@ -95,9 +126,10 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     userdataFile: path.resolve(cacheDir, '..', 'userdata.json'),
     logsDir: args.get('logs-dir') ? path.resolve(args.get('logs-dir') as string) : path.resolve(cacheDir, '..', 'logs'),
     host: '127.0.0.1',
-    port: Number(process.env.PORT || args.get('port') || 7433),
+    port,
     staticDir,
     exitWithParent: args.has('exit-with-parent'),
+    devInstance,
     warnings,
   };
 }

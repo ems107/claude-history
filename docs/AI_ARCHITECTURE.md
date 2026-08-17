@@ -24,7 +24,9 @@ What both sides must agree on: `types.ts` (domain), `api.ts` (endpoint response 
 
 ### `server/src/config.ts`
 
-Data root: `--data-root` flag → `CLAUDE_CONFIG_DIR` env → `~/.claude`. Cache dir: `CLAUDE_HISTORY_CACHE` env → `%LOCALAPPDATA%\claude-history\cache`. Logs dir: `--logs-dir` → sibling `logs\`.
+Data root: `--data-root` flag → `CLAUDE_CONFIG_DIR` env → `~/.claude`. Cache dir: `CLAUDE_HISTORY_CACHE` env → `%LOCALAPPDATA%\claude-history\cache`. Logs dir: `--logs-dir` → sibling `logs\`. Port: `PORT` env → `--port` → 7433.
+
+**`--dev-instance` moves the port and the data folder together, and nothing else knows.** It swaps one folder name — `claude-history-dev` — and the cache, `userdata.json`, its `backups\` and the logs all follow, because all four are resolved from it here; the port default follows too (7434). That is the whole mechanism behind [two instances side by side](../CLAUDE.md#two-instances-and-the-line-between-them): no second install, no second scheduled task, no code path that asks which instance it is except the two places that must say so out loud (`/api/meta`'s `devInstance`, and the settings defaults in `DEV_SETTING_OVERRIDES`).
 
 **Argument problems go into `config.warnings` instead of being printed**: config is resolved before logging exists, so a `console.warn` here would never reach the log files.
 
@@ -77,7 +79,7 @@ The scripts shipped inside the release zip, and the packaging/release tooling �
 | Logs | `logs\`, beside the cache dir | yes (pruned by `logRetentionDays`) |
 | Filters, scroll position, view toggles | browser `localStorage` / `sessionStorage`, and the URL | yes |
 
-The index itself is in memory and rebuilt on every start.
+The index itself is in memory and rebuilt on every start. Every path in that table is relative to the instance's data folder, so a dev instance has its own set of all four — none of it is shared, and a dev run cannot corrupt or lose what the release holds.
 
 **Retired settings are dropped on load**: `SessionIndex.build` keeps only keys still in `DEFAULT_SETTINGS`. `chatModel` and `chatEffort` outlived their own removal in `userdata.json` and were still being served by `/api/settings`.
 
