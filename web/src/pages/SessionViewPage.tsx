@@ -5,8 +5,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, parseFileRef } from '../lib/fileRefs.ts';
 import { useFoldState } from '../lib/folding.ts';
-import { focusKeyAt, parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
-import { selectMessage } from '../lib/selectedMessage.ts';
+import { anchorOfKey, focusKeyAt, parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
+import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { buildSubagentIndex } from '../lib/subagents.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
@@ -246,8 +246,25 @@ export function SessionViewPage() {
    * else, and the conversation is left alone.
    */
   const selectFromClick = useCallback((e: React.MouseEvent) => selectMessage(focusKeyAt(e.target)), []);
-  // Another conversation, nobody selected.
-  useEffect(() => selectMessage(null), [id]);
+  /**
+   * The ring this tab was left on, adopted as the conversation opens — and
+   * nobody at all for a conversation nothing was clicked in, which is what used
+   * to happen always. F5 has to come back to the message that was being read,
+   * still selected and still on screen; see `useRestoredSelection` for why that
+   * is remembered outside the URL and why the message, rather than a scroll
+   * offset, is what a reload can be trusted to find again.
+   */
+  const restoredKey = useRestoredSelection(id, !!msg || !!tool);
+  const restored = anchorOfKey(restoredKey);
+  /**
+   * The two anchors, resolved in one place: the link first, then the remembered
+   * ring. Everything downstream reads these rather than the parameters, because
+   * a restored message is a request to stand somewhere exactly as `?msg=` is —
+   * the jump travels the same road (it is the only one that unfolds its way in)
+   * and the follow stands down for both.
+   */
+  const anchorUuid = msg ?? restored.uuid;
+  const anchorTool = tool ?? restored.toolUseId;
 
   const navigate = useNavigate();
   useEffect(() => {
@@ -444,12 +461,12 @@ export function SessionViewPage() {
    * starts unfollowed — unless something is being written into it: a live or
    * busy session opens at its end, following, which is what it was opened for.
    *
-   * An anchor in the URL says otherwise and wins. `?msg=` / `?tool=` is a
-   * request to stand somewhere in particular, and the two would fight over the
-   * scroll for as long as the turn lasted.
+   * An anchor says otherwise and wins — the link's, or the ring a reload
+   * restored. `?msg=` / `?tool=` is a request to stand somewhere in particular,
+   * and the two would fight over the scroll for as long as the turn lasted.
    */
   const follow = useFollowBottom(id, {
-    autoFollow: liveInfo !== null && !msg && !tool,
+    autoFollow: liveInfo !== null && !anchorUuid && !anchorTool,
     messageCount,
   });
   /** Inside the list, so an echoed prompt is spaced like the turn it is about to become. */
@@ -630,8 +647,8 @@ export function SessionViewPage() {
                       expandTools={expandTools}
                       fold={fold}
                       expandSegments={expandSegments}
-                      scrollToUuid={msg}
-                      scrollToTool={tool}
+                      scrollToUuid={anchorUuid}
+                      scrollToTool={anchorTool}
                       jumpNonce={jumpNonce}
                       highlight={highlight}
                       find={finder.find}

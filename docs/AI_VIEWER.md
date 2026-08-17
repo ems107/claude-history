@@ -20,6 +20,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A find is a gesture, not a location**: the bar never writes to the URL.
 - **Typing never moves the page** — a step unfolds things that do not fold back.
 - **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
+- **The ring survives F5**: remembered per conversation in `sessionStorage`, never in the URL, and restored by travelling the deep link's road back to it.
 - **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
 - **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
@@ -167,6 +168,47 @@ about it depends on the bar being open.
   the reason in the flash section below. A plain declaration, so `match-flash`
   overrides it for its 2.5 s and it comes back — which is exactly what a deep
   link should look like now: a flash that hands over to a mark that stays.
+
+### F5 lands back on it
+
+The ring is remembered per conversation in `sessionStorage` — `ch:selected:<id>`,
+beside the session list's own two keys in `lib/listState.ts` — adopted as the page
+mounts (`useRestoredSelection`) and then made visible the only way anything in
+this viewer is made visible: `SessionViewPage` resolves the remembered key into
+the same `scrollToUuid` / `scrollToTool` a link would have given, and the jump
+unfolds its way in. A reload therefore comes back to the message that was being
+read, still ringed, rather than to the top of a three-hundred-message session.
+
+- **The message is the address; a scroll offset is not.** A reload rebuilds every
+  fold from its default — the compacted segments fold back, `expandSegments` is
+  not persisted — so the pixel the reader was at points at a different part of the
+  conversation afterwards. Landing on the message is the one thing that survives
+  being refolded, and it is what "the same place" can honestly mean here. It is
+  also why a reader who had selected nothing gets exactly what they got before:
+  there is no address, so the session opens at the top.
+- **Not in the URL, and that is the whole design decision.** The ring moves on
+  every click, so `?msg=` would make every click a deep link — a flash, a scroll,
+  and a fight with the follow in a live session — and would give one parameter two
+  provenances, "the message a link asked for" and "the message somebody is
+  pointing at". `sessionStorage` says the other true thing about it: it belongs to
+  the tab that is reading, which is what F5 is, and a new tab starts with nothing
+  selected.
+- **A link outranks it**, and the restore is skipped entirely while `?msg=` /
+  `?tool=` is in the querystring — that link is a request to stand somewhere and
+  leaves a ring of its own on arrival, which then becomes what is remembered.
+- **The follow stands down for it**, exactly as it does for a link: `autoFollow`
+  reads the resolved anchors, not the parameters, or a live session would drag the
+  page back to its end for as long as the turn lasted. Checked inside a live turn:
+  the pill reads `To the end` with the restored message on screen 3,180 px above
+  the end, while the spinner is still going.
+- **It flashes.** `match-flash` is the reload's answer to the same question it
+  answers for a search hit — which of these did I mean — and then wears off,
+  leaving the ring as the record.
+- **The slot is read once per conversation**, into a ref. Every click writes to
+  it, so a second read on a later render would hand the page a fresh anchor and
+  turn an ordinary click into a jump.
+- Deselecting empties the slot, so clicking the gutter and reloading opens at the
+  top: the reader said "nobody", and that is remembered too.
 
 ## Finding a word in the conversation
 

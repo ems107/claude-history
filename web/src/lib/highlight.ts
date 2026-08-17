@@ -186,6 +186,16 @@ export function boxKeyOf(el: Element | null): string | null {
 }
 
 /**
+ * The inverse of `boxKeyOf`: which anchor a key names. The two prefixes are
+ * known here and nowhere else, so the ring that reads a key back and the jump
+ * that travels to it cannot drift about what one looks like.
+ */
+export function anchorOfKey(key: string | null): { uuid: string | null; toolUseId: string | null } {
+  if (key?.startsWith('tool:')) return { uuid: null, toolUseId: key.slice(5) };
+  return { uuid: key?.startsWith('msg:') ? key.slice(4) : null, toolUseId: null };
+}
+
+/**
  * Which message or call a click landed in.
  *
  * The walk is the whole of it, and it is deliberately wider than a marking box:

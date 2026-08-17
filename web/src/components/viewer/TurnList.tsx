@@ -184,6 +184,12 @@ export const TurnList = memo(function TurnList({
   fold: FoldState;
   /** Unfold every compacted segment at once (the header toggle). */
   expandSegments?: boolean;
+  /**
+   * The message to open the way in to and scroll to: `?msg=`, or — when the URL
+   * carries no anchor at all — the ring this tab was left on before a reload
+   * (`useRestoredSelection`). Both are somebody asking to stand somewhere, and
+   * this is the only road that unfolds its way there.
+   */
   scrollToUuid?: string | null;
   /**
    * A tool call to open and go to (`?tool=`), which is the only anchor a hit in

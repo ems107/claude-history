@@ -247,6 +247,43 @@ Then Chrome over CDP, with check 9's harness:
   message must still be the one and only `[data-selected]`.
 - **The ring repaints the tail**: `[data-selected] > [data-bubble-tail]` must
   have the accent border, or the tail's opaque fill punches a notch in the ring.
+- **And it survives F5** ([AI_VIEWER.md](AI_VIEWER.md#f5-lands-back-on-it)).
+  Click a bubble well down a session, then `Page.reload`: `sessionStorage` must
+  hold `ch:selected:<id>` = `msg:<uuid>` before it, and after it the SAME uuid
+  must be the one and only `[data-selected]`, on screen, with `scrollTop` still
+  down the page, `location.search` still **empty** (the ring is not a link), and
+  `match-flash` on it — then gone 2.5 s later with the ring left behind. Verified
+  on `517bdf9b` (scrollTop 4229 → 3972, box top 443 of 806), `980751cb` and
+  `f3384d17`, where the box top reads **−832**: a bubble taller than the window is
+  centred, so "on screen" is `top < innerHeight && bottom > 0` and nothing
+  narrower. Then the four cases that are each their own mechanism:
+  - **A tool call**, `tool:<toolUseId>`, must reopen its run — `toolu_012kqwsm…`
+    on `517bdf9b`, selected again with **7** tool blocks in the DOM, so the
+    restore opened one run and not the session (check 9's assertion, from the
+    other direction).
+  - **A message inside a compacted segment** must unfold its way in: on
+    `432b1d41`, 4 bubbles are drawn while the segment is folded and 54 when it is
+    open, and after F5 the header must read `▾` with all 54 back and the message
+    centred (scrollTop 4227). This is the assertion that fails if the restore
+    stops travelling the deep link's road.
+  - **A live session must not be dragged to its end.** Run it against your own
+    session with `localStorage.expandTools = 'true'` (a live transcript is mostly
+    folded runs and renders too short for "away from the end" to exist): it opens
+    on `Following` at `distance` 0, click the pill, select a message far up, then
+    F5 — the pill must read `To the end`, `distance` must stay in the thousands
+    (measured 3,027 → 3,180 as the turn grew) and `.turn-spinner` must still be
+    there, or the check proved nothing about the live path.
+  - **`?msg=` outranks it**, and becomes what is remembered; and deselecting must
+    empty the slot, so a reload after clicking the gutter has no ring and
+    `scrollTop` 0.
+  > Two traps in the harness itself, both of which cost a run. Chrome throttles
+  > `requestAnimationFrame` and timers in an **occluded** window to a standstill,
+  > which reads exactly like the app having hung — launch with
+  > `--disable-backgrounding-occluded-windows --disable-renderer-backgrounding
+  > --disable-background-timer-throttling` and drive the page on `setTimeout`. And
+  > never `await` a `Browser.close` unbounded in a `finally`: once the socket is
+  > gone that promise never settles, the real error is swallowed and the run ends
+  > silently with no output at all.
 - **A click must cost nothing.** With every tool run open, click eight bubbles
   under a `longtask` PerformanceObserver: **no entry at all**. Before `TurnList`
   was memoised this was 65-110 ms every time, on `f3384d17` and `980751cb` — so
