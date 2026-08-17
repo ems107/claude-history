@@ -511,12 +511,23 @@ and could only be the turn.
   `--text` (9.5:1), so the row is scanned rather than read. Not `font-mono`: the
   figures are already tabular, and mono spaced `3 min 25 s` out into something
   wider and clumsier than the sans.
-- **The figures stay at the left of the bubble**, tempting as the empty half is.
-  At `Full` width the column reaches the window edge and the follow pill floats
-  in exactly that band — the last figure at x 1380-1447 against the pill's
-  1375-1470 — so a right-aligned row would slide under it as the composer
-  shrinks. It is the same corner `Send` already gives up, and the reason is the
-  one written there.
+- **The clocks sit at the far right of the bubble**, which is what makes the row
+  a status line rather than a sentence with telemetry glued to it: the sentence
+  owns the left, the clocks own the right, and the empty half between them is the
+  separation. It also anchors the RIGHT edge, so `total` growing from `59 s` to
+  `1 min 0 s` pushes leftwards and `last tool` — the figure that moves every
+  second, the one being watched — never shifts under the eye.
+- **Which means giving up the pill's corner, exactly as `Send` does.** The follow
+  pill floats over the scroller's bottom-right, so where the column reaches the
+  window's edge the two share that band: at `Full` width with no composer between
+  them the pill covered `last tool` outright (measured: the figure at x 1380-1447
+  under the pill's 1375-1470). The row gives up the difference with the same
+  `max()` over `columnWidth` the composer uses — `PILL_CORNER_PX` lives in
+  `FollowBottom.tsx` now, because it is a fact about the pill and two places
+  spend it — and the floor is 0 rather than the composer's `0.5rem`: a flush edge
+  is the point of aligning right. Checked at both widths, with the composer
+  hidden: 48 px of clearance at `Full`, and at the default width the figures end
+  1 px inside the bubble's own padding — no gutter where the pill cannot reach.
 
 ## Verify
 

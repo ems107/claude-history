@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { elapsed, formatDateTime } from '../../lib/format.ts';
 import { NO_ACTIVITY, type TurnActivity } from '../../lib/turnActivity.ts';
 import { Bubble } from './Bubble.tsx';
+import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
 /**
  * Claude Code stamps `status` on ~/.claude/sessions/<pid>.json the moment a turn
@@ -70,10 +71,23 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
 export function WorkingIndicator({
   live,
   activity = NO_ACTIVITY,
+  columnWidth,
 }: {
   live: LiveInfo | null;
   /** What has landed since this turn began — see `turnActivity`. */
   activity?: TurnActivity;
+  /**
+   * The width of the conversation's column, as a CSS length — the same string
+   * the composer takes, for the same corner. The clocks sit at the far right of
+   * the bubble, and the follow pill floats in the scroller's bottom-right: where
+   * the column reaches the window's edge (`Full` width) the two share that band,
+   * and with no composer between them the pill covers `last tool` outright
+   * (measured: the figure at x 1380-1447 under the pill's 1375-1470). So the row
+   * gives up exactly the difference, as one `max()` over the column — the same
+   * arithmetic that moves `Send` aside, with the floor at 0 because the flush
+   * edge is what right alignment is for. Absent, nothing is given up.
+   */
+  columnWidth?: string;
 }) {
   const busy = isWorking(live);
   const since = live?.statusUpdatedAt ?? live?.updatedAt ?? null;
@@ -126,12 +140,22 @@ export function WorkingIndicator({
           {since !== null && (
             // Out of the announced text: a screen reader repeating the seconds
             // every second would drown the one thing worth saying.
-            // NOT pushed to the right of the bubble, tempting as the empty half
-            // is: at `Full` width the column reaches the window edge and the
-            // follow pill floats in exactly that band (measured: the last figure
-            // at x 1380-1447 against the pill's 1375-1470), so the figures would
-            // end up under it — the same corner `Send` already gives up.
-            <span aria-hidden="true" className="tabular-nums text-xs text-[var(--text-dim)]">
+            // `ml-auto` puts them at the far end of the bubble, which is what
+            // makes the row a status line instead of a sentence with telemetry
+            // glued to it: the sentence owns the left, the clocks own the right,
+            // and the empty half between them is the separation. It also anchors
+            // the RIGHT edge, so `total` growing from "59 s" to "1 min 0 s"
+            // pushes leftwards and the figure being watched — `last tool`, the
+            // one that moves every second — never shifts under the eye.
+            <span
+              aria-hidden="true"
+              className="ml-auto tabular-nums text-xs text-[var(--text-dim)]"
+              style={
+                columnWidth
+                  ? { paddingRight: `max(0px, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }
+                  : undefined
+              }
+            >
               {/* Labelled like the two beside it: bare, it was the only figure
                   and could only be the turn, but next to "last message" a naked
                   number is one of three and says nothing about which. */}

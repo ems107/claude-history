@@ -203,6 +203,18 @@ export function useFollowBottom(
 }
 
 /**
+ * How much of the scroller's bottom-right corner this pill needs: its own width
+ * plus the 16 px it floats off the edge (`right-4 bottom-4` below).
+ *
+ * It lives here because it is a fact about the pill, and two places have to give
+ * that corner up wherever the conversation's column reaches the window's edge:
+ * the composer's action row, so `Send` is not covered, and the working
+ * indicator's clocks, so `last tool` is not. Both do it with the same `max()`
+ * over the column width — no measuring, no re-render on resize.
+ */
+export const PILL_CORNER_PX = 120;
+
+/**
  * Floating pill over the bottom-right of the conversation, at the foot of the
  * window — over the composer rather than above it, because the composer is
  * inside the scroller now (see `SessionViewPage`) and there is no lower place

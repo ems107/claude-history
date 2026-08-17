@@ -9,15 +9,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { shortModel } from '../../lib/format.ts';
+import { PILL_CORNER_PX } from './FollowBottom.tsx';
 import { QuestionPanel } from './QuestionPanel.tsx';
 
 /** Grow with the text, but never eat the conversation above. */
 const MAX_TEXTAREA_PX = 220;
-/**
- * How much of the scroller's bottom-right corner the follow-the-end pill needs:
- * its own width plus the 16 px it floats off the edge. See `columnWidth`.
- */
-const PILL_CORNER_PX = 120;
 
 /**
  * `claude-sonnet-5` and `sonnet` are the same choice wearing two names: the

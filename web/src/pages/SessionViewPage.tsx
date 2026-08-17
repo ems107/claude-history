@@ -419,6 +419,14 @@ export function SessionViewPage() {
   const activity = useMemo(() => turnActivity(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
 
   /**
+   * The column's real width, which is the limit OR the window when the window is
+   * the smaller of the two. Two things do arithmetic with it against the follow
+   * pill's corner — the composer's action row and the working indicator's clocks
+   * — so it is written once here rather than twice at the two call sites.
+   */
+  const columnWidth = view.width === WIDTH_FULL ? '100vw' : `min(${view.width}px, 100vw)`;
+
+  /**
    * Hung off the last turn's rail rather than after the list: an answer being
    * written belongs where the answers are. Passed only while it has something to
    * draw, and never while a prompt is still waiting for the transcript — the
@@ -426,8 +434,10 @@ export function SessionViewPage() {
    */
   const workingFooter = useMemo(
     () =>
-      pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} activity={activity} /> : undefined,
-    [pending.length, liveInfo, activity],
+      pending.length === 0 && isWorking(liveInfo) ? (
+        <WorkingIndicator live={liveInfo} activity={activity} columnWidth={columnWidth} />
+      ) : undefined,
+    [pending.length, liveInfo, activity, columnWidth],
   );
   /**
    * The follow-the-end pill. Keyed on the session id, so opening another one
@@ -452,11 +462,11 @@ export function SessionViewPage() {
               messages are all older than this turn's start and are filtered out
               by exactly the test that keeps the figures inside their own turn. */}
           {i === pending.length - 1 && isWorking(liveInfo) ? (
-            <WorkingIndicator live={liveInfo} activity={activity} />
+            <WorkingIndicator live={liveInfo} activity={activity} columnWidth={columnWidth} />
           ) : null}
         </PendingTurn>
       )),
-    [pending, liveInfo, activity],
+    [pending, liveInfo, activity, columnWidth],
   );
 
   if (detail.isLoading) {
@@ -661,10 +671,10 @@ export function SessionViewPage() {
                   >
                     <Composer
                       sessionId={id}
-                      // The column's real width, which is the limit OR the window
-                      // when the window is the smaller of the two — the box does
-                      // arithmetic with it and both cases put Send under the pill.
-                      columnWidth={view.width === WIDTH_FULL ? '100vw' : `min(${view.width}px, 100vw)`}
+                      // The box does arithmetic with it: without this, Send ends
+                      // up under the follow pill at the widths where the column
+                      // reaches the window's edge.
+                      columnWidth={columnWidth}
                       onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
                       lastModel={lastAnswer?.model ?? null}
                       lastEffort={lastAnswer?.effort ?? null}
