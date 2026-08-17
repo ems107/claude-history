@@ -84,13 +84,20 @@ export function useFoldState(turns: Turn[], showThinking: boolean, resetKey?: st
   const hideAll = useCallback(() => setClosed(new Set(foldable)), [foldable]);
   const showAll = useCallback(() => setClosed(new Set()), []);
 
-  return {
-    isOpen: (key: string) => !closed.has(key),
-    toggle,
-    open,
-    hideAll,
-    showAll,
-    canHide: foldable.some((k) => !closed.has(k)),
-    canShow: foldable.some((k) => closed.has(k)),
-  };
+  // Memoised, and that is load-bearing rather than tidy: this object is a prop
+  // of `TurnList`, which is memoised in turn, and a fresh identity here would
+  // re-render every bubble and every tool block whenever anything else on the
+  // page changed — a click, a panel opening, a star being set.
+  return useMemo(
+    () => ({
+      isOpen: (key: string) => !closed.has(key),
+      toggle,
+      open,
+      hideAll,
+      showAll,
+      canHide: foldable.some((k) => !closed.has(k)),
+      canShow: foldable.some((k) => closed.has(k)),
+    }),
+    [closed, foldable, toggle, open, hideAll, showAll],
+  );
 }

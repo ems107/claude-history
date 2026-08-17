@@ -10,7 +10,8 @@ import {
   unitKey,
   type FindRole,
 } from '../../lib/findInSession.ts';
-import { focusKeyAt, type MatchHighlight } from '../../lib/highlight.ts';
+import type { MatchHighlight } from '../../lib/highlight.ts';
+import { useSelectedMessage } from '../../lib/selectedMessage.ts';
 import { SnippetRow } from '../list/SnippetRow.tsx';
 import type { FindState, FindTarget } from './TurnList.tsx';
 
@@ -19,9 +20,17 @@ const DEBOUNCE_MS = 150;
 /** Rows the panel draws before asking. A common word matches thousands of times. */
 const PAGE_ROWS = 40;
 
-/** Where the bar is allowed to look. */
-export type FindScope = 'all' | 'visible' | 'focused';
-const SCOPE_LABEL: Record<FindScope, string> = { all: 'All', visible: 'Visible', focused: 'Focused' };
+/**
+ * Where the bar is allowed to look.
+ *
+ * Two of the three follow the selected message on their own: clicking a message
+ * means "search in this one", clicking away means "search what I can see". Only
+ * `all` is ever chosen by hand, and it is left again the moment the selection
+ * changes — a scope that reaches into folded text is a decision, not a default
+ * somebody should find themselves in.
+ */
+export type FindScope = 'all' | 'visible' | 'current';
+const SCOPE_LABEL: Record<FindScope, string> = { all: 'All', visible: 'Visible', current: 'Current message' };
 
 export interface FindBarProps {
   open: boolean;
@@ -31,7 +40,9 @@ export interface FindBarProps {
   setWholeWord: (v: boolean) => void;
   scope: FindScope;
   setScope: (s: FindScope) => void;
-  hasFocus: boolean;
+  hasSelected: boolean;
+  /** Matches in the whole conversation, so a narrowed scope can say what it is holding back. */
+  totalEverywhere: number;
   off: Set<FindRole>;
   toggleRole: (r: FindRole) => void;
   byRole: Record<FindRole, number>;
@@ -83,11 +94,16 @@ export function useFindBar(
   const [query, setQuery] = useState('');
   const [typed, setTyped] = useState('');
   const [wholeWord, setWholeWord] = useState(false);
-  const [scope, setScope] = useState<FindScope>('all');
+  const [scope, setScope] = useState<FindScope>('visible');
   const [off, setOff] = useState<Set<FindRole>>(() => new Set());
   const [panel, setPanel] = useState(false);
   const [rowLimit, setRowLimit] = useState(PAGE_ROWS);
-  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  /**
+   * Read, never owned: the selection is its own feature and outlives the bar.
+   * This is the one subscription to it in the page, which is what keeps a click
+   * from redrawing the conversation — see `lib/selectedMessage.ts`.
+   */
+  const selected = useSelectedMessage();
   /** Where the reader is standing, by identity: a live session appending a turn must not slide them onto another match. */
   const [standing, setStanding] = useState<{ key: string; ordinal: number } | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -120,10 +136,17 @@ export function useFindBar(
 
   const index = useMemo(() => (highlight ? findHits(units, highlight, roles) : null), [units, highlight, roles]);
 
+  /**
+   * The selection drives the scope, and only ever away from `all`. Clicking a
+   * message asks to search inside it; clicking away asks for what is on screen.
+   * Nothing puts the reader into `all` but the button.
+   */
+  useEffect(() => setScope(selected ? 'current' : 'visible'), [selected]);
+
   const hits = useMemo(() => {
     if (!index) return [];
-    if (scope === 'focused') {
-      return focusedKey ? index.hits.filter((h) => unitKey(units[h.unit]) === focusedKey) : [];
+    if (scope === 'current') {
+      return selected ? index.hits.filter((h) => unitKey(units[h.unit]) === selected) : [];
     }
     if (scope === 'visible') {
       // A box's DOM ranges are the truth about what is on screen: a folded body
@@ -131,7 +154,7 @@ export function useFindBar(
       return index.hits.filter((h) => h.ordinal < (visible.get(unitKey(units[h.unit])) ?? 0));
     }
     return index.hits;
-  }, [index, scope, focusedKey, visible, units]);
+  }, [index, scope, selected, visible, units]);
 
   // A new question means a new place to stand.
   useEffect(() => setStanding(null), [highlight, scope, roles]);
@@ -194,10 +217,7 @@ export function useFindBar(
     // only moves for a step that was asked for.
   }, [at, hits, units, nonce]);
 
-  const find = useMemo<FindState | null>(
-    () => (open ? { highlight, focusedKey, target } : null),
-    [open, highlight, focusedKey, target],
-  );
+  const find = useMemo<FindState | null>(() => (open ? { highlight, target } : null), [open, highlight, target]);
 
   const onFindMarks = useCallback((counts: Map<string, number>) => {
     // Only when it really changed, or the marking pass and this state would keep
@@ -231,15 +251,14 @@ export function useFindBar(
     setStanding(null);
   }, []);
 
-  // Another session starts clean: what was searched here says nothing about there.
+  // Another session starts clean: what was searched here says nothing about
+  // there. The selection is cleared by the page, which owns it.
   useEffect(() => {
     setOpen(false);
     setPanel(false);
     setTyped('');
     setQuery('');
     setStanding(null);
-    setFocusedKey(null);
-    setScope('all');
     setOff(new Set());
   }, [sessionId]);
 
@@ -280,7 +299,7 @@ export function useFindBar(
     setWholeWord,
     scope,
     setScope,
-    hasFocus: focusedKey !== null,
+    hasSelected: selected !== null,
     off,
     toggleRole: (role) =>
       setOff((prev) => {
@@ -293,6 +312,7 @@ export function useFindBar(
     setPanel,
     at,
     total: hits.length,
+    totalEverywhere: index?.hits.length ?? 0,
     capped: index?.capped ?? false,
     rows,
     moreRows: Math.max(0, hits.length - rowLimit),
@@ -306,19 +326,7 @@ export function useFindBar(
     inputRef,
   };
 
-  /**
-   * One delegated listener over the conversation, which is what keeps `Bubble`
-   * free of the `onClick` it must not have. Clicking a message or a call marks
-   * it; clicking anywhere else clears the mark. It changes nothing that is
-   * drawn or folded — the whole reason the invariant's argument does not reach
-   * it — so a drag that ends in another bubble simply focuses that one.
-   */
-  const onConversationClick = useCallback(
-    (e: React.MouseEvent) => setFocusedKey(focusKeyAt(e.target)),
-    [],
-  );
-
-  return { bar, find, onFindMarks, openBar, close, isOpen: open, onConversationClick };
+  return { bar, find, onFindMarks, openBar, close, isOpen: open };
 }
 
 const control =
@@ -330,12 +338,22 @@ export function FindBar(p: FindBarProps) {
   if (!p.open) return null;
   const asked = p.query.trim().length > 0;
   const nothing = asked && p.total === 0;
+  /**
+   * What the scope is holding back, and the way to it.
+   *
+   * The default scope is `Visible`, which is most of a conversation short — so
+   * a word that lives only in a folded tool result reads as "no matches", which
+   * is precisely the answer this bar exists to stop anyone getting. It cannot
+   * simply widen: `All` is never chosen for the reader. So it says the number
+   * and makes it the button.
+   */
+  const held = asked && p.scope !== 'all' ? p.totalEverywhere - p.total : 0;
   // What is off its default, and what this corpus cannot reach. Both belong out
   // here rather than in the panel: a panel nobody has open must never change the
   // results in silence. The reach notes wait for a question — with an empty box
   // they are trivia about the session, not a caveat about an answer.
   const notes: string[] = [];
-  if (p.scope !== 'all') notes.push(SCOPE_LABEL[p.scope]);
+  if (p.scope !== 'all' && held <= 0) notes.push(SCOPE_LABEL[p.scope]);
   if (p.off.size > 0) notes.push(`${FIND_ROLES.length - p.off.size} of ${FIND_ROLES.length} kinds`);
   if (asked && p.hiddenThinking > 0) notes.push(`${p.hiddenThinking} in hidden thinking`);
   if (asked && p.short.offloaded > 0) {
@@ -373,10 +391,14 @@ export function FindBar(p: FindBarProps) {
           Aa
         </button>
         <span className={`min-w-24 text-right ${nothing ? 'text-amber-400' : 'text-[var(--text-dim)]'}`}>
-          {p.query.trim().length === 0
+          {!asked
             ? ''
             : nothing
-              ? 'no matches'
+              ? // "no matches" would be a lie when the scope is what is hiding
+                // them; say where you looked instead.
+                p.totalEverywhere > 0
+                ? `none in ${SCOPE_LABEL[p.scope].toLowerCase()}`
+                : 'no matches'
               : p.at < 0
                 ? `${p.total}${p.capped ? '+' : ''} match${p.total === 1 ? '' : 'es'}`
                 : `${p.at + 1} of ${p.total}${p.capped ? '+' : ''}`}
@@ -397,28 +419,40 @@ export function FindBar(p: FindBarProps) {
 
       {/* Whatever is off its default says so out here, where it can be seen: a
           panel nobody has open must never change the results in silence. */}
-      {notes.length > 0 && (
-        <div className="mx-auto max-w-5xl pt-1 text-[11px] text-[var(--text-dim)]/80">{notes.join(' · ')}</div>
+      {(notes.length > 0 || held > 0) && (
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-2 pt-1 text-[11px] text-[var(--text-dim)]/80">
+          {held > 0 && (
+            <button
+              type="button"
+              onClick={() => p.setScope('all')}
+              title="Search the whole conversation, folded away or not"
+              className="cursor-pointer rounded px-1 font-semibold text-[var(--accent)] hover:bg-[var(--bg-hover)]"
+            >
+              {held} more in the whole conversation →
+            </button>
+          )}
+          {notes.length > 0 && <span>{notes.join(' · ')}</span>}
+        </div>
       )}
 
       {p.panel && (
         <div className="mx-auto mt-2 max-w-5xl space-y-2 border-t border-[var(--border)] pt-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">Look in</span>
-            {(['all', 'visible', 'focused'] as FindScope[]).map((s) => (
+            {(['current', 'visible', 'all'] as FindScope[]).map((s) => (
               <button
                 key={s}
                 type="button"
-                disabled={s === 'focused' && !p.hasFocus}
+                disabled={s === 'current' && !p.hasSelected}
                 onClick={() => p.setScope(s)}
                 title={
                   s === 'visible'
                     ? 'Only what is unfolded right now — what the browser’s own Ctrl+F would have reached'
-                    : s === 'focused'
-                      ? p.hasFocus
-                        ? 'Only the message or tool call you clicked'
-                        : 'Click a message or a tool call first'
-                      : 'The whole conversation, folded or not'
+                    : s === 'current'
+                      ? p.hasSelected
+                        ? 'Only the message or tool call you have selected'
+                        : 'Select a message or a tool call by clicking it'
+                      : 'The whole conversation, folded or not — the only scope that is never chosen for you'
                 }
                 className={`${control} ${p.scope === s ? on : idle}`}
               >

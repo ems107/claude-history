@@ -188,10 +188,13 @@ Then Chrome over CDP, with check 9's harness:
 - **The whole point, in one assertion.** Pick a word from a tool result that is
   nowhere in `document.body.innerText` at rest — folded away, so the browser's
   own Ctrl+F could never reach it. Ctrl+F must open the bar with the input
-  focused, typing it must leave `scrollTop` **unchanged** while the counter names
-  a number, and Enter must open the run and the block and leave exactly one
-  `find-current` range reading that word, inside a marking box and inside the
-  viewport. (Verified on `f3384d17`: "instruction", 7 matches, scrollTop 0 → 564.)
+  focused and typing it must leave `scrollTop` **unchanged**. The bar opens on
+  `Visible`, so the counter must read `none in visible` — never "no matches",
+  which would be the lie this whole feature exists to stop — with a button
+  offering `N more in the whole conversation`. One click on it, and Enter must
+  open the run and the block and leave exactly one `find-current` range reading
+  that word, inside a marking box and inside the viewport. (Verified on
+  `f3384d17`: "instruction", 7 matches, scrollTop 0 → 564.)
 - `search-match` must be absent throughout, and
   `document.querySelectorAll('mark').length === 0` — a `<mark>` means somebody
   went back to mutating React's markdown. Escape must take `find-match`,
@@ -202,12 +205,26 @@ Then Chrome over CDP, with check 9's harness:
   that broke when folded hits were skipped for having no element (it opened at
   the ninth of 113 with the page at the very top).
 - **The three scopes**: All ≥ Visible always; opening the runs by hand raises
-  Visible without moving All (17 → 29 of 113 on `b343d4ac`); Focused is disabled
-  until a box is clicked, then narrows to it with exactly one ring on the page.
-- **The ring repaints the tail**: `[data-find-scope] > [data-bubble-tail]` must
+  Visible without moving All (17 → 29 of 113 on `b343d4ac`); `Current message`
+  is disabled until a box is selected, then narrows to it with exactly one ring
+  on the page.
+- **The selection drives the scope, and only away from `All`.** Opening with a
+  message selected must land on `Current message`; clicking the empty gutter
+  must fall back to `Visible` and disable `Current message`; selecting again
+  must return to `Current message`. `All` must stick while nothing is clicked
+  and be left the moment the selection changes.
+- **Selecting works with the bar shut**, which is the point of it being its own
+  feature: click a bubble on arrival and `[data-selected]` must be on it with
+  the ring drawn, click the empty gutter and it must go. And **a deep link
+  leaves it selected**: follow `?msg=`, wait out the 2.5 s flash, and that
+  message must still be the one and only `[data-selected]`.
+- **The ring repaints the tail**: `[data-selected] > [data-bubble-tail]` must
   have the accent border, or the tail's opaque fill punches a notch in the ring.
-  And the cost of the click that sets it — 65-110 ms of re-render on the two
-  largest sessions — is why the listener is attached only while the bar is open.
+- **A click must cost nothing.** With every tool run open, click eight bubbles
+  under a `longtask` PerformanceObserver: **no entry at all**. Before `TurnList`
+  was memoised this was 65-110 ms every time, on `f3384d17` and `980751cb` — so
+  a regression here is a prop that stopped being memoised (`fold`, `footer`,
+  `pending`), not a change to the bar.
 - **The seed**: arriving at `?hl=…&hlw=1` and pressing Ctrl+F must open the bar
   on those words with whole-words already on, and must never write them back.
 - **The gates**: Ctrl+F must NOT open the bar while `?agent=` has the drawer up;

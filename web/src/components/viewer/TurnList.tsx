@@ -1,6 +1,6 @@
 import type { PriceTable, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
@@ -15,6 +15,7 @@ import {
   setCurrentMark,
 } from '../../lib/highlight.ts';
 import { buildSegments, groupTurns, type SegmentTurn } from '../../lib/segments.ts';
+import { applySelection, selectMessage } from '../../lib/selectedMessage.ts';
 import { CompactedSegment } from './CompactedSegment.tsx';
 import { DiscardedBranch } from './DiscardedBranch.tsx';
 import { RevealContext, type RevealContextValue } from './RevealContext.ts';
@@ -146,13 +147,21 @@ export interface FindTarget {
 export interface FindState {
   /** The words to paint. Null while nothing has been typed. */
   highlight: MatchHighlight | null;
-  /** The box the reader clicked, drawn with a ring. */
-  focusedKey: string | null;
   /** Where the reader is standing. Null until the first step. */
   target: FindTarget | null;
 }
 
-export function TurnList({
+/**
+ * Memoised, because the page above it re-renders for things this list has no
+ * part in: a click selecting a message, a side panel opening, a star being set,
+ * the composer accepting a prompt. Drawing a large conversation is 65-110 ms on
+ * the two biggest sessions here, measured, and doing it for a click that only
+ * moves a ring is the difference between the app feeling instant and feeling
+ * stuck. Every prop is memoised at the other end for the same reason — `fold`
+ * in `useFoldState`, `footer` and `pending` in the page — so this comparison is
+ * worth making.
+ */
+export const TurnList = memo(function TurnList({
   turns,
   showThinking,
   expandTools = false,
@@ -318,6 +327,12 @@ export function TurnList({
       box.scrollIntoView({ block: 'center' });
       box.classList.add('match-flash');
       bag.after(FLASH_MS, () => box.classList.remove('match-flash'));
+      // And the link LEAVES it selected. The flash answers "which one" and then
+      // gets out of the way, which is right for an animation and wrong as the
+      // only record: arriving from the search, from Prompts or from Starred, the
+      // message you came for should still be the one the page is pointing at a
+      // minute later — and it is then what Ctrl+F offers to search inside.
+      selectMessage(boxKeyOf(box));
 
       const hl = highlightRef.current;
       if (!hl) return;
@@ -424,7 +439,6 @@ export function TurnList({
   const rootRef = useRef<HTMLDivElement>(null);
   const findOpen = !!find;
   const findHl = find?.highlight ?? null;
-  const focusedKey = find?.focusedKey ?? null;
   useEffect(() => {
     const root = rootRef.current;
     if (!root || !findOpen) return;
@@ -448,19 +462,6 @@ export function TurnList({
           onFindMarks(counts);
         }
       } else onFindMarks?.(new Map());
-
-      // The ring on the box the reader clicked. An attribute rather than React
-      // state read by three hundred bubbles, which would re-render all of them
-      // on every click — the state decides and the DOM applies it, the same
-      // shape the marks have. Reapplied here because a re-render drops it.
-      for (const el of root.querySelectorAll('[data-find-scope]')) el.removeAttribute('data-find-scope');
-      const key = state?.focusedKey ?? null;
-      if (key) {
-        const el = key.startsWith('tool:')
-          ? root.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(key.slice(5))}"]`)
-          : document.getElementById(key.slice(4));
-        el?.setAttribute('data-find-scope', '');
-      }
 
       // React may have thrown away the node the current mark pointed into, so it
       // is resolved again rather than kept. This is also what covers an offloaded
@@ -491,10 +492,21 @@ export function TurnList({
       cancelAnimationFrame(frame);
       clear?.();
       setCurrentMark(null);
-      for (const el of root.querySelectorAll('[data-find-scope]')) el.removeAttribute('data-find-scope');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [findOpen, findHl, focusedKey, onFindMarks]);
+  }, [findOpen, findHl, onFindMarks]);
+
+  /**
+   * The selected message's ring, put back after every render of the list.
+   *
+   * No dependency array, deliberately: React owns these nodes and drops a
+   * hand-written attribute whenever it rebuilds one, and every reason the list
+   * re-renders is a reason the ring may have gone. Two `querySelectorAll`s
+   * against several hundred re-rendered bubbles is not a cost worth a dependency
+   * that could be wrong. The other half — a click while nothing re-renders — is
+   * applied by `selectMessage` itself.
+   */
+  useEffect(applySelection);
 
   /**
    * What the folds inside a box read to know a step is coming for them. Built
@@ -615,4 +627,4 @@ export function TurnList({
       </div>
     </RevealContext>
   );
-}
+});

@@ -5,7 +5,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, parseFileRef } from '../lib/fileRefs.ts';
 import { useFoldState } from '../lib/folding.ts';
-import { parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
+import { focusKeyAt, parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
+import { selectMessage } from '../lib/selectedMessage.ts';
 import { buildSubagentIndex } from '../lib/subagents.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
@@ -240,6 +241,15 @@ export function SessionViewPage() {
     seed: highlight,
   });
 
+  /**
+   * Which message the reader has clicked. It lives outside React entirely — see
+   * `lib/selectedMessage.ts` — so this handler redraws the find bar and nothing
+   * else, and the conversation is left alone.
+   */
+  const selectFromClick = useCallback((e: React.MouseEvent) => selectMessage(focusKeyAt(e.target)), []);
+  // Another conversation, nobody selected.
+  useEffect(() => selectMessage(null), [id]);
+
   const navigate = useNavigate();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -363,15 +373,6 @@ export function SessionViewPage() {
     };
   }, [detail.data]);
 
-  if (detail.isLoading) {
-    return <div className="p-8 text-[var(--text-dim)]">Parsing conversation…</div>;
-  }
-  if (detail.isError || !detail.data) {
-    return <div className="p-8 text-red-400">Failed to load session: {String(detail.error ?? 'not found')}</div>;
-  }
-
-  const color =
-    projects.data?.find((p) => p.key === detail.data.summary.projectKey)?.color ?? FALLBACK_COLOR;
   /**
    * A turn we started gets a LiveInfo of its own rather than a second
    * indicator: `WorkingIndicator` already knows how to draw "working since",
@@ -383,18 +384,54 @@ export function SessionViewPage() {
    * that win meant the indicator never appeared at all while the composer was
    * working (the browser check missed it: it caught the seconds before the
    * watcher had picked the file up).
+   *
+   * Above the early returns, and memoised, because the two nodes below are
+   * props of a memoised `TurnList`: rebuilt on every render they would defeat
+   * the comparison and redraw the whole conversation for anything at all.
    */
-  const busySince =
+  const liveInfo = useMemo<LiveInfo | null>(() => {
     // The server's figure when it has arrived, and until then the moment the
     // prompt was accepted. Waiting for the round trip left the indicator dark
     // for about a second after the click, which on a short turn is most of it —
     // the prompt was already on screen with nothing to say it was being worked on.
-    chat.data?.turnStartedAt != null ? Date.parse(chat.data.turnStartedAt) : (pending[0]?.at ?? null);
-  const chatLive: LiveInfo | null =
-    busySince !== null
-      ? { pid: 0, status: 'busy', name: null, startedAt: null, updatedAt: null, statusUpdatedAt: busySince }
-      : null;
-  const liveInfo = chatLive ?? live.data?.find((l) => l.sessionId === id) ?? null;
+    const busySince =
+      chat.data?.turnStartedAt != null ? Date.parse(chat.data.turnStartedAt) : (pending[0]?.at ?? null);
+    if (busySince !== null) {
+      return { pid: 0, status: 'busy', name: null, startedAt: null, updatedAt: null, statusUpdatedAt: busySince };
+    }
+    return live.data?.find((l) => l.sessionId === id) ?? null;
+  }, [chat.data?.turnStartedAt, pending, live.data, id]);
+
+  /**
+   * Hung off the last turn's rail rather than after the list: an answer being
+   * written belongs where the answers are. Passed only while it has something to
+   * draw, and never while a prompt is still waiting for the transcript — the
+   * indicator belongs under THAT instead, as the exchange being answered.
+   */
+  const workingFooter = useMemo(
+    () => (pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined),
+    [pending.length, liveInfo],
+  );
+  /** Inside the list, so an echoed prompt is spaced like the turn it is about to become. */
+  const pendingTurns = useMemo(
+    () =>
+      pending.map((p, i) => (
+        <PendingTurn key={`${p.at}:${i}`} text={p.text}>
+          {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
+        </PendingTurn>
+      )),
+    [pending, liveInfo],
+  );
+
+  if (detail.isLoading) {
+    return <div className="p-8 text-[var(--text-dim)]">Parsing conversation…</div>;
+  }
+  if (detail.isError || !detail.data) {
+    return <div className="p-8 text-red-400">Failed to load session: {String(detail.error ?? 'not found')}</div>;
+  }
+
+  const color =
+    projects.data?.find((p) => p.key === detail.data.summary.projectKey)?.color ?? FALLBACK_COLOR;
   /**
    * How this session was last answered — the composer's starting point. Read
    * from the end backwards, because that is the state the conversation is
@@ -495,8 +532,18 @@ export function SessionViewPage() {
             {/* `both-edges` so the scrollbar does not shift the centre: the composer
                 below is centred on the full width, and reserving the gutter on one
                 side only left the two misaligned by half a scrollbar (measured: 5 px). */}
+            {/* Selecting a message is one listener on the scroller, and it is
+                always on: it is a feature of the conversation, not of the find
+                bar, which only reads it. On the SCROLLER and not on the
+                width-limited box inside it, so the empty gutters either side
+                count as clicking away — which deselects.
+                `Bubble` still takes no `onClick`: React delegates from the root
+                whatever you write, so one handler here and three hundred there
+                cost the same to dispatch, and this one keeps the invariant and
+                the closures. */}
             <div
               ref={follow.scrollRef}
+              onClick={selectFromClick}
               className="h-full overflow-y-auto px-4 py-4 [scrollbar-gutter:stable_both-edges]"
             >
               {/* Width on the outer box, zoom on an inner one — never both on the
@@ -504,19 +551,8 @@ export function SessionViewPage() {
                   other and would be scaled with it, so 896 px would drift to 1344
                   at 150 %. And `zoom` is only ever set when it is not 100, so the
                   default view runs through no zoom at all. */}
-              {/* One delegated click for the whole conversation, which is what
-                  keeps `Bubble` free of the `onClick` it must not have: this
-                  marks which message or call the find bar's "focused" scope
-                  means, and changes nothing that is drawn or folded.
-                  Attached only while the bar is OPEN, and that is not tidiness:
-                  the focus is React state, so every click that moves it
-                  re-renders the conversation — 65-110 ms on the two largest
-                  sessions here, measured. Once, deliberately, while searching is
-                  a fair price; on every click made while reading it would be a
-                  stutter the reader never asked for. */}
               <div
                 ref={follow.contentRef}
-                onClick={finder.isOpen ? finder.onConversationClick : undefined}
                 className="mx-auto"
                 style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
               >
@@ -543,24 +579,8 @@ export function SessionViewPage() {
                       find={finder.find}
                       onFindMarks={finder.onFindMarks}
                       onOpenAgent={openAgent}
-                      // Handed to the list, which hangs it off the last turn's rail:
-                      // an answer being written belongs where the answers are, not at
-                      // the root level beside the prompt. Passed only while it has
-                      // something to draw — see isWorking. While a prompt is still
-                      // waiting for the transcript, the indicator belongs under THAT
-                      // instead: it is the exchange being answered.
-                      footer={
-                        pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined
-                      }
-                      // Inside the list, so an echoed prompt is spaced like the turn
-                      // it is about to become.
-                      pending={pending.map((p, i) => (
-                        <PendingTurn key={`${p.at}:${i}`} text={p.text}>
-                          {i === pending.length - 1 && isWorking(liveInfo) ? (
-                            <WorkingIndicator live={liveInfo} />
-                          ) : null}
-                        </PendingTurn>
-                      ))}
+                      footer={workingFooter}
+                      pending={pendingTurns}
                     />
                   </StarContext>
                   {detail.data.turns.length === 0 && pending.length === 0 && (

@@ -19,6 +19,8 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **What the find bar counts is what unfolding can put inside a marking box** (`[data-bubble-body]`, `[data-tool-id]`).
 - **A find is a gesture, not a location**: the bar never writes to the URL.
 - **Typing never moves the page** — a step unfolds things that do not fold back.
+- **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
+- **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
 
 ## Two layout rules that keep breaking
 
@@ -112,6 +114,43 @@ Three things are lifted out from between the tool calls, because each is a turn 
 - **Showing a match is not the same as scrolling to its box**: a tool result renders inside a `max-h-96 overflow-auto` pre, so a hit 2,000 lines down was "on screen" only in the sense that its container was. `revealRange` walks every scroller between the text and the window, innermost first, and moves nothing when the mark is already visible.
 - `matchSpans` is pure and takes plain strings — the text nodes' data — so the index arithmetic is checkable without a browser. It folds the pieces **concatenated**, not one by one: markdown splits a sentence into a node per emphasis, link and code span, and a phrase crossing one of those is exactly what a search finds and a reader cannot.
 
+## The selected message
+
+Clicking a message — or a tool call — selects it, and it stays selected until
+something else is clicked or a click lands on the empty space beside it. A deep
+link leaves the message it landed on selected too: the flash answers "which
+one" and then gets out of the way, which is right for an animation and wrong as
+the only record, so arriving from the search, from Prompts or from Starred now
+leaves a mark that is still there a minute later.
+
+It is **its own feature**, not the find bar's. The bar reads it; nothing else
+about it depends on the bar being open.
+
+- **`Bubble` still takes no `onClick`.** One handler on the scroller resolves
+  `focusKeyAt`, so the invariant holds to the letter and its reason — a stray
+  click folding the turn you were reading — never applies to something that only
+  draws a ring. On the SCROLLER rather than the width-limited box inside it, so
+  the empty gutters count as clicking away. (One handler versus three hundred is
+  not what makes this fast: React delegates from the root either way. What it
+  buys is the invariant and three hundred closures.)
+- **The value lives outside React** (`lib/selectedMessage.ts`): a module
+  variable, a `data-selected` attribute put on the element directly, and a
+  subscription only where somebody really has to redraw — which is the find bar
+  and nothing else. The same shape the search marks have, for the same reason.
+  `TurnList` re-applies the attribute in an effect with **no dependency array**,
+  because React owns those nodes and drops it whenever it rebuilds one.
+- **`TurnList` is memoised, and that is what makes a click free.** Drawing a
+  large conversation is 65-110 ms on the two biggest sessions here, and before
+  the memo every click paid it. Every prop had to be memoised with it — `fold`
+  in `useFoldState`, `footer` and `pending` in the page — or the comparison
+  would never hold. Measured after: **no task over 50 ms at all**. It also stops
+  the conversation redrawing for a panel opening, a star being set or a prompt
+  being accepted.
+- The ring is a `box-shadow` and **repaints `[data-bubble-tail]` with it**, for
+  the reason in the flash section below. A plain declaration, so `match-flash`
+  overrides it for its 2.5 s and it comes back — which is exactly what a deep
+  link should look like now: a flash that hands over to a mark that stays.
+
 ## Finding a word in the conversation
 
 The browser's own Ctrl+F reads the DOM, and the DOM is whichever half of a
@@ -203,6 +242,23 @@ again, because React may have thrown away the node it pointed into.
   "4 tool blocks in the DOM of a 210-call session" is about a deep LINK and must
   not be re-read as a statement about the bar.
 
+**The scope follows the selected message, and only `All` is ever chosen by
+hand.** Selecting a message means "search in this one" (`Current message`);
+clicking away means "search what I can see" (`Visible`, which is also where the
+bar opens); and `All` is never entered for the reader, though it is left again
+the moment the selection changes. A scope that reaches into folded text is a
+decision, not somewhere to find yourself.
+
+- **The cost of that default is real and is paid for out loud.** `Visible` is
+  most of a conversation short, so a word living only in a folded tool result
+  would read as "no matches" — precisely the answer this bar exists to stop
+  anyone getting. So it never says that while a wider scope has more: the
+  counter says **where it looked** (`none in visible`) and the line under it is
+  a button, `N more in the whole conversation →`. One click, chosen by the
+  reader, which is what "never automatically" means.
+- **Kinds are chips with their own counts**, so turning one off is informed
+  rather than a guess, and a kind with nothing in it disables itself.
+
 **Scope and kinds live in component state, not in the URL.** `hl` means the
 terms the SERVER matched; overloading it with a live client query would give one
 parameter two provenances, and writing per keystroke into `useSearchParams`
@@ -211,16 +267,6 @@ seed itself — which turns "the search sent me here, now walk all of them" into
 one keystroke — and writes nothing back. Whatever is off its default is said on
 the bar itself, not only inside the panel: the same rule `tuningChanges` applies
 to the session list.
-
-**The focus is a click, and `Bubble` still takes no `onClick`.** One delegated
-listener over the conversation resolves `focusKeyAt`; the invariant survives to
-the letter, and its reason — a stray click folding the turn you were reading —
-does not reach something that only draws a ring. The listener is attached **only
-while the bar is open**, and that is not tidiness: the focus is React state, so
-every move of it re-renders the conversation, measured at 65-110 ms on the two
-largest sessions here. The ring is a `box-shadow` and **repaints
-`[data-bubble-tail]` with it**, for the reason below; a plain declaration, so
-`match-flash` overrides it for its 2.5 s and it comes back afterwards.
 
 ### The flash animation
 
