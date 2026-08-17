@@ -1,6 +1,6 @@
 import type { SessionDetail } from '@claude-history/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { entrypointLabel, formatDateTimeFull, shortModel } from '../../lib/format.ts';
@@ -153,7 +153,20 @@ export function SessionHeader({
   actions?: import('react').ReactNode;
 }) {
   const s = detail.summary;
-  const e = s.enrichment;
+  /**
+   * The figures survive their own recalculation. A transcript that grows
+   * invalidates the cached enrichment, so `GET /api/sessions/:id` answers
+   * WITHOUT it for as long as the enricher takes — measured at ~105 ms — and the
+   * counts row is the only row in this header that comes and goes. Losing it for
+   * that moment took 22 px out of the page, so every message a live session
+   * wrote shoved the whole conversation down and pulled it back: the shake.
+   * Keeping the last figures is stiller and no less true — they are one message
+   * stale for a tenth of a second instead of absent — and a session with no
+   * enrichment at all still draws no row, because there is nothing to remember.
+   */
+  const lastEnrichment = useRef(s.enrichment);
+  if (s.enrichment) lastEnrichment.current = s.enrichment;
+  const e = s.enrichment ?? lastEnrichment.current;
   const [editing, setEditing] = useState(false);
   const queryClient = useQueryClient();
 
@@ -334,12 +347,15 @@ export function SessionHeader({
         <SessionBadges session={s} omitPr live={live} onSubagentsClick={onToggleAgents} />
         <AncestryChips label="forked from" ids={detail.ancestry.forkedFrom ? [detail.ancestry.forkedFrom] : []} />
         <AncestryChips label="branched into" ids={detail.ancestry.descendants} />
-        {(s.enrichment?.runIds.length ?? 0) > 0 && (
+        {/* `e`, not `s.enrichment`: this chip lives in a wrapping row, so it
+            coming and going with every recalculation could take the row to two
+            lines and back — the same shake, one row higher up. */}
+        {e && e.runIds.length > 0 && (
           <span
-            title={`Appended to by ${s.enrichment!.runIds.length} other Claude Code run(s) — what the transcript records in session_id: ${s.enrichment!.runIds.join(', ')}. Those are the ids of the CLI processes that resumed this session, not sessions it came from.`}
+            title={`Appended to by ${e.runIds.length} other Claude Code run(s) — what the transcript records in session_id: ${e.runIds.join(', ')}. Those are the ids of the CLI processes that resumed this session, not sessions it came from.`}
           >
             <span className="opacity-60">resumed ×</span>
-            {s.enrichment!.runIds.length}
+            {e.runIds.length}
           </span>
         )}
         {detail.prLinks.map((pr) => (

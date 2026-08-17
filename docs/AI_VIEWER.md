@@ -24,6 +24,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 - **Nothing the composer does may hide a message** — growing it scrolls the conversation clear of it.
+- **No row above the conversation may come and go** — least of all one gated on the enrichment.
 
 ## Two layout rules that keep breaking
 
@@ -407,7 +408,48 @@ stand somewhere, and the two would fight over the scroll for as long as the turn
 lasted. The pill is offered whether or not there is anything to scroll; with
 nothing to scroll it is the switch that says the next message will be followed.
 
+## Nothing above the conversation may change height
+
+A new message arriving made the whole page tremble, and the follow had nothing to
+do with it. Sampled frame by frame in a live session (`scrollTop`, `scrollHeight`
+and `clientHeight` on every `raf`, `scroll` and `ResizeObserver` tick), the growth
+itself was clean — the content grew, the pin corrected it 1.5-2.9 ms later, inside
+the same frame, and the sticky composer never left the foot of the window. What
+moved was the **scroller's own height**: 762 → 784 → 762 px, twice per message,
+about 105 ms apart.
+
+The 22 px was the header's counts row (`9 prompts · 227 responses · …`), which was
+drawn as `{e && …}` over `summary.enrichment` — and a session that has just grown
+answers without its enrichment while the background parse catches up
+([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)). So the row fell out of the page and
+came back on every message, shoving the conversation down 22 px and pulling it
+back. **`SessionHeader` remembers the last figures** and draws those while the new
+ones are being computed: one message stale for a tenth of a second instead of
+absent, and a session with no enrichment at all still draws no row, because there
+is nothing to remember. The `resumed ×N` chip reads the remembered value for the
+same reason — it sits in a wrapping row, where a chip coming and going can cost a
+whole line.
+
+The rule generalises past this one row: **anything above the conversation that
+appears and disappears is a shake**, because the scroller is the flexible one and
+takes the difference. And the follow's `ResizeObserver` watches the scroller
+itself as well as the content, so if the end does leave the view that way — a
+window being resized is the honest case — being pinned still means being at the
+end.
+
 ## The working indicator
+
+**The pill spins while a turn is in flight.** The indicator bubble says it far
+better, but it says it at the END of the conversation: scroll up, or fold the turn
+away, and the one thing left to know is whether anything more is coming. The pill
+is on screen whatever the scroll is doing, so it carries the answer — the ring the
+update button already spins, in place of the pill's own arrow, in the same 12 px
+box so nothing changes width when a turn starts or ends. It is driven by
+`isWorking(liveInfo)` and NOT by whether the footer is being rendered: the footer
+is held back while a prompt of ours is still an echo, and the turn is in flight all
+the same. Reduced motion is answered as the dots below answer it — the rotation
+goes, a breath of opacity stays, because a frozen spinner says the turn has ended.
+
 
 **It takes its status from the `['live']` query, NOT from `detail.summary.live`**, though both carry the same field. `['session', id]` is invalidated by `sessions-changed` — the transcript grew — while the busy/idle flip is a write under `~/.claude/sessions` and fires only `live-changed`. Read off the detail, the indicator would hang on "working" after the turn's last line was written, and the alternative (re-parsing a multi-MB transcript on every status flip) is absurd next to a query that reads two small files.
 

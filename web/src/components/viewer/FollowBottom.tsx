@@ -163,6 +163,11 @@ export function useFollowBottom(
     });
     observer.observe(contentEl);
     if (footerEl) observer.observe(footerEl);
+    // The scroller itself too: the end can leave the view without the content
+    // changing at all — the window being resized, or anything above the
+    // conversation gaining a row — and following means being at the end however
+    // the end got away.
+    observer.observe(scrollEl);
     return () => observer.disconnect();
   }, [scrollEl, contentEl, footerEl]);
 
@@ -216,11 +221,20 @@ export function FollowBottomButton({
   following,
   toggle,
   unseen,
+  working = false,
 }: {
   following: boolean;
   toggle: () => void;
   /** Messages landed since the reader let go of the end; 0 draws no badge. */
   unseen: number;
+  /**
+   * A turn is in flight. The `Claude is working…` bubble says so far better, but
+   * it says it at the END of the conversation — scroll up, or fold the turn away,
+   * and the one question left is whether anything more is coming. This pill is on
+   * screen whatever the scroll is doing, so it answers that: spinning means the
+   * answer is still arriving, still means it has landed.
+   */
+  working?: boolean;
 }) {
   const badge = following ? 0 : unseen;
   return (
@@ -228,11 +242,14 @@ export function FollowBottomButton({
       type="button"
       onClick={toggle}
       title={
-        following
-          ? 'Following the end of the conversation — click, or scroll up, to stop'
+        // The turn comes first: it is news about the session, while the rest is
+        // about this control.
+        (working ? 'Claude is working — ' : '') +
+        (following
+          ? 'following the end of the conversation; click, or scroll up, to stop'
           : badge > 0
             ? `${badge} new message${badge === 1 ? '' : 's'} below — click to jump to the end and follow`
-            : 'Jump to the end and follow new messages'
+            : 'jump to the end and follow new messages')
       }
       className={`absolute right-4 bottom-4 flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-lg backdrop-blur-sm transition-colors ${
         following
@@ -240,7 +257,16 @@ export function FollowBottomButton({
           : 'border-[var(--border)] bg-[var(--bg-raised)]/90 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'
       }`}
     >
-      <span aria-hidden="true">↓</span>
+      {/* Both live in the same 12 px box, so the pill does not change width when
+          a turn starts or ends — and the spinner takes the arrow's place rather
+          than sitting beside it, because that is where the eye already is. */}
+      <span aria-hidden="true" className="flex size-3 items-center justify-center">
+        {working ? (
+          <span className="turn-spinner size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : (
+          '↓'
+        )}
+      </span>
       {following ? 'Following' : 'To the end'}
       {badge > 0 && (
         // aria-hidden: the count is already in the title, and a live region here

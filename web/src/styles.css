@@ -195,6 +195,19 @@ body {
   }
 }
 
+/* The turn spinner on the follow pill, which says a turn is in flight when the
+   indicator bubble itself is scrolled out of sight. The ring and its rotation are
+   Tailwind's `animate-spin` — the same shape the update button already spins, and
+   using the utility is also what guarantees the `spin` keyframes are emitted.
+   This class exists for the reduced-motion half only, and it answers it the way
+   the dots above do: the rotation goes, the breath stays, because a frozen
+   spinner says the turn has ended. */
+@media (prefers-reduced-motion: reduce) {
+  .turn-spinner {
+    animation: working-dot-soft 2s ease-in-out infinite;
+  }
+}
+
 /* The words themselves, marked through the CSS Custom Highlight API — the
    ranges are handed to the browser, so nothing in React's DOM is rewritten.
    These properties are the only ones a highlight pseudo takes, and it inherits

@@ -658,7 +658,15 @@ export function SessionViewPage() {
                 )}
               </div>
             </div>
-            <FollowBottomButton following={follow.following} toggle={follow.toggle} unseen={follow.unseen} />
+            {/* `isWorking(liveInfo)` and not `workingFooter`: the footer is held
+                back while a prompt of ours is still an echo, and the turn is in
+                flight all the same. */}
+            <FollowBottomButton
+              following={follow.following}
+              toggle={follow.toggle}
+              unseen={follow.unseen}
+              working={isWorking(liveInfo)}
+            />
           </div>
           {agentId && (
             <SubagentDrawer
