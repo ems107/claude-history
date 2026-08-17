@@ -1,7 +1,8 @@
 import type { ContentBlock, MessageItem } from '@claude-history/shared';
-import { type RefObject, useState } from 'react';
+import { type ReactNode, type RefObject, useState } from 'react';
 import { copyPlain, copyRich } from '../../lib/clipboard.ts';
 import { blocksMarkdown, type ExportOptions } from '../../lib/exportMarkdown.ts';
+import { useStars } from './StarContext.ts';
 
 /**
  * What a copy takes: the bubble's own content. Tool runs live outside it (and
@@ -20,8 +21,8 @@ const COPY_OPTS: ExportOptions = {
 const FLASH_MS = 1500;
 
 /**
- * The two copy buttons on a message, revealed on hover like the rename/pin
- * buttons in the session header.
+ * The star and the two copy buttons on a message, revealed on hover like the
+ * rename/pin buttons in the session header.
  *
  * "Copy" reads the HTML back out of the DOM node that is already on screen,
  * rather than re-rendering the markdown through a second pipeline: what lands
@@ -39,7 +40,51 @@ export function MessageActions({
   /** The bubble's content node, for the formatted copy. */
   body: RefObject<HTMLDivElement | null>;
 }) {
-  return <CopyActions markdown={() => blocksMarkdown(item, blocks, COPY_OPTS)} body={body} />;
+  return (
+    <CopyActions markdown={() => blocksMarkdown(item, blocks, COPY_OPTS)} body={body}>
+      <StarButton item={item} />
+    </CopyActions>
+  );
+}
+
+/**
+ * The star, which is the one button here that stays visible with the pointer
+ * elsewhere: a starred message has to say so while you are scrolling past it.
+ *
+ * Nothing is drawn to the bubble itself. Recolouring its outline means
+ * recolouring `[data-bubble-tail]` too — a separate element with its own opaque
+ * fill and its own keyframes — and `match-flash` already animates that same
+ * border for 2.5 s, so the two would fight over a deep link's arrival.
+ *
+ * Absent context means there is nothing to star against (the subagent drawer,
+ * whose uuids belong to another transcript), and then there is no button.
+ */
+function StarButton({ item }: { item: MessageItem }) {
+  const stars = useStars();
+  if (!stars) return null;
+  const starred = stars.isStarred(item);
+  const busy = stars.busy === item.uuid;
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => stars.toggle(item)}
+      // `hidden` rather than `opacity-0` (which is what the session header's pin
+      // uses): an invisible button still takes its width, and here that left a
+      // permanent gap in the header row.
+      className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-normal tracking-normal normal-case ${
+        busy ? 'cursor-default opacity-60' : 'cursor-pointer'
+      } ${
+        starred
+          ? 'text-amber-400 hover:bg-[var(--bg-hover)] hover:text-amber-300'
+          : 'hidden text-[var(--text-dim)] group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-amber-400'
+      }`}
+      title={starred ? 'Remove from Starred' : 'Star this message (kept locally, with a copy of its text)'}
+      aria-pressed={starred}
+    >
+      {starred ? '★' : '☆'}
+    </button>
+  );
 }
 
 /**
@@ -50,11 +95,14 @@ export function MessageActions({
 export function CopyActions({
   markdown,
   body,
+  children,
 }: {
   /** The source form, for the Markdown button. */
   markdown: () => string;
   /** The rendered node, whose HTML the formatted copy takes. */
   body: RefObject<HTMLDivElement | null>;
+  /** Anything that belongs in the same toolbar — the star. */
+  children?: ReactNode;
 }) {
   const [done, setDone] = useState<'rich' | 'md' | null>(null);
   const flash = (which: 'rich' | 'md') => {
@@ -62,15 +110,17 @@ export function CopyActions({
     setTimeout(() => setDone(null), FLASH_MS);
   };
 
+  // `hidden`, not `opacity-0`: invisible buttons still take their width, and
+  // here that left a permanent gap in the header. It sits on each button rather
+  // than on the row, because the star stays visible once it is set.
   const cls =
-    'shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case hover:bg-[var(--bg-hover)] hover:text-[var(--text)]';
+    'hidden shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-[var(--text)]';
 
   return (
-    // `hidden`, not `opacity-0`: invisible buttons still take their width, and
-    // here that left a permanent gap in the header. They sit right before the
-    // model/cost/context run, after a `flex-1` spacer that absorbs their width,
-    // so appearing shrinks the spacer instead of shoving those pills sideways
-    // exactly when the pointer is heading for them.
+    // The row sits right before the model/cost/context run, after a `flex-1`
+    // spacer that absorbs its width, so a button appearing shrinks the spacer
+    // instead of shoving those pills sideways exactly when the pointer is
+    // heading for them.
     //
     // `-my-0.5` cancels the buttons' own vertical padding from the row's
     // height: the assistant's pills are bare text (the `inline` HoverCard
@@ -80,10 +130,8 @@ export function CopyActions({
     //
     // The click never belongs to whatever is underneath: a folded bubble
     // unfolds its turn.
-    <span
-      className="-my-0.5 hidden items-center gap-0.5 group-hover/bubble:flex"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <span className="-my-0.5 flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      {children}
       <button
         type="button"
         className={cls}

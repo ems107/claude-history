@@ -1,5 +1,5 @@
-import type { ChatPermissionMode, LiveInfo, SubagentMeta, Turn } from '@claude-history/shared';
-import { useQuery } from '@tanstack/react-query';
+import type { ChatPermissionMode, LiveInfo, MessageItem, SubagentMeta, Turn } from '@claude-history/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
@@ -18,6 +18,7 @@ import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
+import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
 import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
@@ -38,6 +39,7 @@ const AGENT_MSG_PARAM = 'agentMsg';
 
 export function SessionViewPage() {
   const { id = '' } = useParams();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const detail = useQuery({ queryKey: ['session', id], queryFn: () => api.session(id), enabled: !!id });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
@@ -296,6 +298,41 @@ export function SessionViewPage() {
     [subagentIndex, openAgent, jumpTo],
   );
 
+  /**
+   * The stars, for the toolbar inside every bubble. One query for the whole
+   * corpus — it is a small list and the Starred page reads the same one, so
+   * opening it afterwards costs nothing — filtered here to this session.
+   *
+   * A write invalidates `['stars']` and NOTHING else. `['session', id]` would
+   * re-parse the transcript to redraw a glyph, and the server agrees: it emits
+   * `stars-changed` rather than `session-updated`.
+   */
+  const stars = useQuery({ queryKey: ['stars'], queryFn: api.stars });
+  const [starBusy, setStarBusy] = useState<string | null>(null);
+  const starredUuids = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stars.data ?? []) if (s.sessionId === id) set.add(s.uuid);
+    return set;
+  }, [stars.data, id]);
+  const starContext = useMemo<StarContextValue>(
+    () => ({
+      // The alias check is what makes this survive a re-parse: a star is stored
+      // under the canonical uuid, and a merged answer answers to any of them.
+      isStarred: (item: MessageItem) =>
+        starredUuids.has(item.uuid) || item.aliasUuids.some((u) => starredUuids.has(u)),
+      toggle: (item: MessageItem) => {
+        const starred = starredUuids.has(item.uuid) || item.aliasUuids.some((u) => starredUuids.has(u));
+        setStarBusy(item.uuid);
+        void api
+          .starMessage(id, item.uuid, !starred)
+          .then(() => queryClient.invalidateQueries({ queryKey: ['stars'] }))
+          .finally(() => setStarBusy(null));
+      },
+      busy: starBusy,
+    }),
+    [starredUuids, starBusy, id, queryClient],
+  );
+
   const { thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const blocks = (detail.data?.turns ?? []).flatMap((t) => t.items).flatMap((i) => i.blocks);
     return {
@@ -449,37 +486,46 @@ export function SessionViewPage() {
                 style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
               >
                 <div style={view.zoom === ZOOM_DEFAULT ? undefined : { zoom: `${view.zoom}%` }}>
-                  <TurnList
-                    // Keyed on the session: what the user unfolded here must not
-                    // carry over to the next session's segments and turns.
-                    key={id}
-                    turns={detail.data.turns}
-                    showThinking={showThinking}
-                    expandTools={expandTools}
-                    fold={fold}
-                    expandSegments={expandSegments}
-                    scrollToUuid={msg}
-                    scrollToTool={tool}
-                    jumpNonce={jumpNonce}
-                    highlight={highlight}
-                    onOpenAgent={openAgent}
-                    // Handed to the list, which hangs it off the last turn's rail:
-                    // an answer being written belongs where the answers are, not at
-                    // the root level beside the prompt. Passed only while it has
-                    // something to draw — see isWorking. While a prompt is still
-                    // waiting for the transcript, the indicator belongs under THAT
-                    // instead: it is the exchange being answered.
-                    footer={
-                      pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined
-                    }
-                    // Inside the list, so an echoed prompt is spaced like the turn
-                    // it is about to become.
-                    pending={pending.map((p, i) => (
-                      <PendingTurn key={`${p.at}:${i}`} text={p.text}>
-                        {i === pending.length - 1 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : null}
-                      </PendingTurn>
-                    ))}
-                  />
+                  {/* Only the conversation, deliberately: the drawer below
+                      renders the same `TurnList` over a SUBAGENT's transcript,
+                      whose uuids are in that file and not in this session — a
+                      star there would key on a message this session does not
+                      have. No context, no star button. */}
+                  <StarContext value={starContext}>
+                    <TurnList
+                      // Keyed on the session: what the user unfolded here must not
+                      // carry over to the next session's segments and turns.
+                      key={id}
+                      turns={detail.data.turns}
+                      showThinking={showThinking}
+                      expandTools={expandTools}
+                      fold={fold}
+                      expandSegments={expandSegments}
+                      scrollToUuid={msg}
+                      scrollToTool={tool}
+                      jumpNonce={jumpNonce}
+                      highlight={highlight}
+                      onOpenAgent={openAgent}
+                      // Handed to the list, which hangs it off the last turn's rail:
+                      // an answer being written belongs where the answers are, not at
+                      // the root level beside the prompt. Passed only while it has
+                      // something to draw — see isWorking. While a prompt is still
+                      // waiting for the transcript, the indicator belongs under THAT
+                      // instead: it is the exchange being answered.
+                      footer={
+                        pending.length === 0 && isWorking(liveInfo) ? <WorkingIndicator live={liveInfo} /> : undefined
+                      }
+                      // Inside the list, so an echoed prompt is spaced like the turn
+                      // it is about to become.
+                      pending={pending.map((p, i) => (
+                        <PendingTurn key={`${p.at}:${i}`} text={p.text}>
+                          {i === pending.length - 1 && isWorking(liveInfo) ? (
+                            <WorkingIndicator live={liveInfo} />
+                          ) : null}
+                        </PendingTurn>
+                      ))}
+                    />
+                  </StarContext>
                   {detail.data.turns.length === 0 && pending.length === 0 && (
                     <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
                   )}
