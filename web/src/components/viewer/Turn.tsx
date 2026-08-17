@@ -827,7 +827,7 @@ export function TurnView({
         pendingTools = [];
       }
       if (b.kind === 'thinking') {
-        rendered.push(<ThinkingBlock key={i} text={b.text} />);
+        rendered.push(<ThinkingBlock key={i} text={b.text} owner={item.uuid} />);
         prose.push(b);
       } else if (b.kind === 'text') {
         rendered.push(<Markdown key={i} text={b.text} />);

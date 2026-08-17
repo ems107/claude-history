@@ -4,6 +4,7 @@ import { api } from '../../api/client.ts';
 import { formatBytes } from '../../lib/format.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
+import { useFoldable, useRevealed } from './RevealContext.ts';
 import { useSubagents } from './SubagentContext.ts';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
@@ -82,12 +83,11 @@ export function ToolBlock({
   /** A deep link points at this call: open it, and show the whole of its output. */
   targeted?: boolean;
 }) {
-  const [open, setOpen] = useState(targeted);
-  // Deliberately not `open={targeted || open}`: this opens it and then lets go,
-  // so the reader can still fold it back with the link's parameter still in the URL.
-  useEffect(() => {
-    if (targeted) setOpen(true);
-  }, [targeted]);
+  // Two ways to be pointed at, one contract: the deep link's prop and the find
+  // bar's context. `useFoldable` is where "open, then let go" lives now.
+  const revealKey = block.toolUseId ? `tool:${block.toolUseId}` : null;
+  const revealed = useRevealed(revealKey);
+  const [open, setOpen] = useFoldable(revealKey, targeted);
   const result = block.result;
   const statusColor = result ? (result.isError ? 'bg-red-400' : 'bg-emerald-400') : 'bg-zinc-500';
   const subagents = useSubagents();
@@ -160,7 +160,10 @@ export function ToolBlock({
                 {result.text}
               </pre>
               {result.offloadedFile && (
-                <OffloadedResult path={result.offloadedFile} sizeBytes={null} autoLoad={targeted} />
+                // The find bar counts none of this file — it is not in the
+                // payload — but a reader who lands here from either route is
+                // asking to see the output, not a button that fetches it.
+                <OffloadedResult path={result.offloadedFile} sizeBytes={null} autoLoad={targeted || revealed} />
               )}
             </>
           )}

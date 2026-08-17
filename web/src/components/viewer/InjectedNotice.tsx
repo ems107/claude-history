@@ -1,10 +1,11 @@
 import type { ContentBlock, MessageItem } from '@claude-history/shared';
-import { type ReactNode, useState } from 'react';
+import type { ReactNode } from 'react';
 import { formatTokens } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime } from '../../lib/format.ts';
 import { hasSelection } from '../../lib/selection.ts';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
+import { useFoldable } from './RevealContext.ts';
 import { useSubagents } from './SubagentContext.ts';
 
 type Notice = Extract<ContentBlock, { kind: 'notice' }>;
@@ -39,7 +40,10 @@ export function InjectedNotice({
   onClick?: () => void;
 }) {
   const subagents = useSubagents();
-  const [showReport, setShowReport] = useState(false);
+  // The report is the only copy of what an agent handed back — 22.5 KB at the
+  // median, and reachable by no server-side search — so a jump has to be able to
+  // open it. Same key as the notice itself: `?msg=` is what points here.
+  const [showReport, setShowReport] = useFoldable(`msg:${item.uuid}`);
   // A `<task-id>` is an agent's only if the session has that transcript: a
   // background command notifies through the same channel with an id of its own.
   const agent = notice.taskId ? (subagents?.byId.get(notice.taskId) ?? null) : null;
@@ -92,50 +96,56 @@ export function InjectedNotice({
         <span className="flex-1" />
         {badge}
       </div>
-      <div className="mt-1 whitespace-pre-wrap text-[var(--text)]">{notice.text}</div>
-      {/* Everything below is interactive inside a box that folds the turn on a
-          click, so the whole region stops the event here — otherwise reading a
-          report would collapse the conversation around it. */}
-      {(notice.result || agent) && (
-        <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
-          <div className="flex flex-wrap items-center gap-2">
-            {notice.result && (
-              <FoldHeader
-                open={showReport}
-                onToggle={() => setShowReport((v) => !v)}
-                className="rounded px-1 py-0.5 text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-              >
-                {showReport ? '▾' : '▸'} report · {formatTokens(notice.result.length)} chars
-              </FoldHeader>
-            )}
-            {agent && subagents && (
-              <button
-                type="button"
-                onClick={() => subagents.openAgent(agent.agentId)}
-                className="cursor-pointer rounded bg-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-400 hover:bg-sky-500/25"
-                title="Open the subagent's own transcript"
-              >
-                ⑂ transcript
-              </button>
-            )}
-            {notice.toolUseId && subagents?.hasCall(notice.toolUseId) && (
-              <button
-                type="button"
-                onClick={() => subagents.goToCall(notice.toolUseId!)}
-                className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
-                title="Go to the call that started it"
-              >
-                ↑ the call
-              </button>
+      {/* The searchable half, and only that: `data-bubble-body` is where marks
+          are allowed, so the origin chip, the status and the clock above stay
+          out of them — the same split a bubble makes. One element and not two,
+          because a box is the unit the find bar counts in. */}
+      <div data-bubble-body>
+        <div className="mt-1 whitespace-pre-wrap text-[var(--text)]">{notice.text}</div>
+        {/* Everything below is interactive inside a box that folds the turn on a
+            click, so the whole region stops the event here — otherwise reading a
+            report would collapse the conversation around it. */}
+        {(notice.result || agent) && (
+          <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex flex-wrap items-center gap-2">
+              {notice.result && (
+                <FoldHeader
+                  open={showReport}
+                  onToggle={() => setShowReport((v) => !v)}
+                  className="rounded px-1 py-0.5 text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+                >
+                  {showReport ? '▾' : '▸'} report · {formatTokens(notice.result.length)} chars
+                </FoldHeader>
+              )}
+              {agent && subagents && (
+                <button
+                  type="button"
+                  onClick={() => subagents.openAgent(agent.agentId)}
+                  className="cursor-pointer rounded bg-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-400 hover:bg-sky-500/25"
+                  title="Open the subagent's own transcript"
+                >
+                  ⑂ transcript
+                </button>
+              )}
+              {notice.toolUseId && subagents?.hasCall(notice.toolUseId) && (
+                <button
+                  type="button"
+                  onClick={() => subagents.goToCall(notice.toolUseId!)}
+                  className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+                  title="Go to the call that started it"
+                >
+                  ↑ the call
+                </button>
+              )}
+            </div>
+            {showReport && notice.result && (
+              <div className="mt-1.5 rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+                <Markdown text={notice.result} />
+              </div>
             )}
           </div>
-          {showReport && notice.result && (
-            <div className="mt-1.5 rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
-              <Markdown text={notice.result} />
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

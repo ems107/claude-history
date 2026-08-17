@@ -1,8 +1,11 @@
-import { useState } from 'react';
 import { FoldHeader } from './FoldHeader.tsx';
+import { useFoldable } from './RevealContext.ts';
 
-export function ThinkingBlock({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+export function ThinkingBlock({ text, owner }: { text: string; owner?: string }) {
+  // `owner` is the message this block belongs to, which is the only name a jump
+  // has for it: thinking carries no id of its own, and the bubble around it is
+  // what `?msg=` points at.
+  const [open, setOpen] = useFoldable(owner ? `msg:${owner}` : null);
   return (
     <div className="my-1.5 rounded border border-dashed border-[var(--border)]">
       <FoldHeader
