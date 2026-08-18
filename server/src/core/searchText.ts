@@ -19,6 +19,7 @@ export {
   type SearchBlock,
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
+  SYSTEM_CHARS,
 } from '@claude-history/shared';
 
 export interface SearchOptions {
@@ -55,6 +56,23 @@ export const PLAN_ROLE = 'plan';
  * plan it stays out of `in=user`, being nothing the user wrote.
  */
 export const INTENT_ROLE = 'intent';
+
+/**
+ * And the role of a recap: the `away_summary` system line Claude Code writes at
+ * the end of a turn, for whoever comes back to the session
+ * ([AI_TRANSCRIPTS.md](../../../docs/AI_TRANSCRIPTS.md)).
+ *
+ * Not tool traffic at all — the rule this escapes is a different one, that a
+ * `system` line is plumbing. A recap is the opposite: 148 of them here, 38 KB,
+ * and each is the one paragraph in a session that says what the session was
+ * FOR. It carries no `toolUseId`, only the line's own uuid, which is what
+ * `SystemItem` puts on its `id` and `locate` already holds.
+ *
+ * **Indexed cut at `SYSTEM_CHARS`**, because that is where `SystemItem` cuts it
+ * and there is no fold to open the rest — one of the 148 runs to 465
+ * characters, and the tail of that one is text no hit could ever be shown in.
+ */
+export const RECAP_ROLE = 'recap';
 
 /**
  * Whether this query may look at session ids at all. The app writes ids as

@@ -15,9 +15,10 @@ import { createLogger } from './logger.ts';
  * 10: what the session's subagents spent became part of the enrichment. 11: their
  * ids joined the search index, and a nested agent's report stopped being dropped.
  * 12: an `ExitPlanMode` plan joined it too. 13: and what the model said it was
- * doing when it made a call (`toolIntent`).
+ * doing when it made a call (`toolIntent`). 14: and the recap of a session
+ * (`away_summary`), the first `system` line any search could reach.
  */
-export const CACHE_VERSION = 13;
+export const CACHE_VERSION = 14;
 
 const cacheLog = createLogger('cache');
 

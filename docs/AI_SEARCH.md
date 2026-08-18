@@ -5,6 +5,8 @@
 ## Invariants
 
 - **Tool calls and tool output are NEVER indexed** — with exactly two exceptions, a plan and a call's stated intent.
+- **`system` lines are not indexed either** — with exactly one exception, a recap — and none of them is read by the deep scan.
+- **Nothing may be indexed past where the viewer will DRAW it** (`SYSTEM_CHARS`).
 - **The deep scan re-matches the indexed text too**, so it is a superset of the plain search by construction.
 - **One predicate decides what is searchable** (`skipBlock`), shared by the index, the deep scan and both paged match lists.
 - **A find bar counts occurrences; a match page counts places.**
@@ -26,6 +28,11 @@ Measured on this machine: the indexed text (titles, typed prompts, assistant pro
 **What the model said it was DOING is indexed too** (`INTENT_ROLE`, `toolIntent`), and it is the cheapest prose in the corpus: the `description` Claude Code makes the model write for every Bash and PowerShell call — **4,907 calls here, 100% of both tools, 40% of all 12,612 calls** — plus the `activeForm` of a task. One short line each, against the 34% of the bytes that tool OUTPUT is, so the size rule is untouched. It is skipped when `summarizeInput` already returns it (`Task`/`Agent` are named by their description), which is what keeps the indexed text equal to the text the collapsed header draws. Same treatment as a plan otherwise: anchored on the CALL, and out of `in=user`.
 
 - **De-duplication, once more, and this time it was the input itself.** `description` and `activeForm` are stripped from the JSON `toolCallText` stringifies, or the sentence would come back twice under the same `toolUseId` — once as the indexed row and once inside the call. **Only when the transcript was indexed at all**: inside a subagent's own file nothing was, so there the input keeps them and is the only copy there is. (Checked: `Commit the firewall UX fix` → one `intent` place in `bfbdf4c2`, deep and plain, 1/1 paging; a description living only in `19ebb1d5`'s agents still comes back, as an `agent` row.)
+
+**A recap is indexed, and it is the only `system` line that is** (`RECAP_ROLE`; `away_summary`, see [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#system-lines-by-subtype)). A different rule from the two above — this one is not tool traffic, it is the line that says what the whole session was FOR, written for whoever comes back to it: **148 of them here, 38 KB**. It anchors on the line's own uuid, which `locate` already holds and `SystemItem` puts on its `id`, and it stays out of `in=user`.
+
+- **It is cut at `SYSTEM_CHARS`, and that is the rule worth remembering: nothing may be indexed past where the viewer will DRAW it.** `SystemItem` stops at 400 characters and offers no fold for the rest, so a hit in the tail would be a match nothing could ever show — the same reason the find bar has always stopped there. One of the 148 runs to 465 characters, which is why the number moved to `shared/src/searchText.ts` rather than being assumed on the server. (Checked on `aa686022`'s 465-character recap: its opening phrase → 1 hit, role `recap`, 1/1 paging deep; a phrase from beyond character 400 → 0, plain and deep.)
+- **The deep scan reads no `system` line at all** (it walks `message.content`, and a system line has none), so there is no second copy to strip this time — and it stays a superset only because it re-matches the index.
 
 **The deep scan re-matches the indexed text**, rather than merging two result sets: only that way can "all words anywhere in the session" pair a word from a prompt with one that exists solely in a tool result. It is a superset of the plain search by construction, snippet budget included (6 a session against 3, so pressing the button never shows less than not pressing it).
 

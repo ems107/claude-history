@@ -19,6 +19,18 @@ export const SNIPPET_BEFORE = 60;
 export const SNIPPET_AFTER = 90;
 
 /**
+ * How much of a `system` line is DRAWN — and therefore how much of one may be
+ * searched. `SystemItem` cuts it here and offers no fold to open, so a match
+ * past this point is one nothing can ever show.
+ *
+ * It is shared for the reason the fold is: the viewer's find bar stops here and
+ * so must the server's index, or the two would disagree about a recap. One of
+ * the 148 recaps in this corpus is 465 characters long, which is the whole
+ * reason this is a number and not an assumption.
+ */
+export const SYSTEM_CHARS = 400;
+
+/**
  * One searchable piece of a session, whatever produced it: the enricher's index,
  * the deep scan's stream of tool output, or the browser's own copy of the
  * conversation. Only the text is scanned; the rest is what a hit needs to point

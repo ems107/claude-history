@@ -26,6 +26,7 @@ import {
   type SearchSnippet,
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
+  SYSTEM_CHARS,
   type Turn,
 } from '@claude-history/shared';
 import type { MatchHighlight } from './highlight.ts';
@@ -62,9 +63,12 @@ export const ROLE_LABEL: Record<FindRole, string> = {
 /**
  * A `system` line is drawn cut at this length and has no fold to open, so the
  * corpus stops here too — counting a match nothing can show is the one thing
- * this whole feature exists to stop. `SystemItem` reads it from here.
+ * this whole feature exists to stop. It moved to `shared` when the SERVER grew
+ * a reason to know it (a recap is indexed, and the index must not claim more of
+ * one than `SystemItem` will draw); re-exported because this module is where
+ * `SystemItem` and the bar were written to read it from.
  */
-export const SYSTEM_CHARS = 400;
+export { SYSTEM_CHARS };
 /**
  * A one-character phrase matches a hundred thousand times in a big session, and
  * `parseTerms` applies no minimum length in phrase mode. The scan stops here and

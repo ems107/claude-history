@@ -247,7 +247,10 @@ link marking a notice's origin chip and clock.
   filter over the hits, with the count of what it is holding back on the bar.
 - **A `system` line is cut at 400 characters**, where `SystemItem` cuts it: it
   has no fold to open, so counting past there would offer matches nothing can
-  show. `SYSTEM_CHARS` lives in `findInSession.ts` and the component reads it.
+  show. `SYSTEM_CHARS` now lives in `shared/src/searchText.ts`, re-exported from
+  `findInSession.ts` where this component and the bar were written to read it:
+  a recap is INDEXED ([AI_SEARCH.md](AI_SEARCH.md)), so the server has to cut it
+  at the same place this draws it, and one number cannot be in two files.
   Its chip is a NAME, not the raw subtype (`lib/systemLines.ts`, shared with the
   markdown export so the two cannot call one line two things) — an `away_summary`
   reads `RECAP`, which is Claude Code's own word for it, with the tooltip saying

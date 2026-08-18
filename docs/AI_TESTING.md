@@ -24,6 +24,7 @@ Fixtures are sessions in `~/.claude/projects`, and Claude Code sweeps them on `c
 | Plan mode | `b343d4ac`, `f3384d17`, `980751cb` | — |
 | File references in prose | `20a73271` (DistribVB6_0) | — |
 | Files delivered to the user (`SendUserFile`) | `fbc2e20c` (3 PNGs, `display:"render"`, **files still on disk**), `b343d4ac` (4 calls), `15dd6c99` (3 calls, **no `display` field**), `f3384d17` (3 PNGs, **files already swept** — the "gone" state, and the one message that carries a second call), `0dd71f3d` (a `.md`, `isImage:false`) | — |
+| A recap longer than `SYSTEM_CHARS` | `aa686022` (465 chars — the only one over 400, of 148 recaps in 56 sessions) | — |
 | Clean control (no compaction, no re-cache) | `3b326b6c` | — |
 
 **A fork has to be made on purpose now**: run `/branch` in a session with live context.
@@ -37,6 +38,7 @@ rg -c '"queued_command"'      # queued lines (prompts AND notifications)
 rg -c 'task-notification'     # notifications (noisy — confirm by origin.kind)
 ls */*/subagents/*.jsonl      # sessions with agents
 rg -c '"SendUserFile"'        # deliveries (then Test-Path the attachments[].path — the scratchpad is swept)
+rg -c '"away_summary"'        # recaps (the LONGEST one is the fixture — measure, do not grep for it)
 ```
 
 Duplicate uuids (replays) and branching parents (rewinds) need a real parse: count `uuid` seen twice, and `parentUuid` values with more than one child.
@@ -68,6 +70,7 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 - `is invalid` in words mode: 31 sessions → 12 with **Whole words only** (`is` inside `asistente`).
 - A query of only accents, or of single letters: 0 hits in ~0 ms, never spinning.
 - **A call's stated intent is indexed, once.** A phrase living only in a Bash `description` (`Commit the firewall UX fix`, `bfbdf4c2`) must come back from the PLAIN search — role `intent`, carrying the call's `toolUseId` — and the deep scan must report the same single place, not two: `matchCount` 1, `deep=1` paging 1/1. Then the other side of the same rule: a description that exists only in a **subagent** transcript (`Read CLAUDE.md, copilot instructions, find md files`, `19ebb1d5`) is indexed nowhere, so it must still surface deep, as an `agent` row — stripping it there would lose the only copy. After changing any of this, `CACHE_VERSION` must be bumped or `/api/meta` will answer from a stale index (`cacheHits: 0` on the first restart says it re-enriched).
+- **A recap is indexed, and cut where it is drawn.** Take the LONGEST `away_summary` in the corpus (`aa686022`'s, 465 characters — re-find it by parsing, it is the only one over 400). Its opening phrase (`Recapping the session state`) → 1 hit, role `recap`, `uuid` equal to the system item's own and no `toolUseId`; deep says the same single place and `deep=1` pages 1/1. A phrase from **beyond character 400** (`que recargues la página y pruebes`) → **0 hits, plain and deep** — the viewer will never draw that tail, so nothing may claim a match in it. `in=user` drops the row. No other `system` subtype may produce a hit at all.
 - **Deep**: a string only in a `tool_use` input (`old_string`) → 0 normally, ~35 sessions in ~4 s deep. One only in tool output (`TS2339`) → 0 then 1. A prose word plus a tool-only word in session scope → 0 then a hit (the pairing that justifies re-matching the indexed text). Cancel mid-scan (`curl --max-time 1`) and the log must read `deep search cancelled` with the bytes it got through, not the full corpus.
 - **Paging is arithmetic — check it without a browser.** Page `/api/search/session/:id/matches` to the end: `pageMatches` must sum to `matchCount`, snippets to `total`, and `matchCount` must equal what `/api/search` said (`compact` → 46/46 in 38 places). With `deep=1` on a deep-only hit: `old_string` → 503/503 in 502 places for `f3384d17`, 6 pages of 100, ~16 MB re-read each, `call`/`tool`/`agent` rows among them. Page that same hit **without** the flag and it must come back short. `offset` past the end → 0 snippets, totals intact; `limit=999` → clamped to 200. Every mode behaves the same (words + session scope, whole words, `in=user` whose rows all read USER).
 - **Links**: every snippet link with an anchor carries `hl` (one per term, folded — an accented query gives `hl=sesion`) plus `hlw=1` under whole words, and no anchor may travel without them.
