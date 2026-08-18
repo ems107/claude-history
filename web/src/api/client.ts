@@ -117,6 +117,13 @@ export const api = {
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
+  /** Delete the Block rules left behind by cancelling Windows' own dialog. */
+  removeFirewallBlocks: async () => {
+    const res = await fetch('/api/firewall/blocks', { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; removed?: number; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),
@@ -408,6 +415,24 @@ export const api = {
       throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     }
     return { ok: true };
+  },
+  /**
+   * Stop and come back. The only way to change where the server listens, and
+   * refused (409) mid-update or mid-answer for the same reasons stopping is.
+   */
+  restartServer: async () => {
+    const res = await fetch('/api/server/restart', { method: 'POST' });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    }
+    return { ok: true };
+  },
+  /** Answers as soon as the server is back up. Used to wait out a restart. */
+  health: async () => {
+    const res = await fetch('/api/health');
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    return res.json() as Promise<{ ok?: boolean }>;
   },
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
   lineage: (id: string) => getJson<LineageResponse>(`/api/sessions/${id}/lineage`),

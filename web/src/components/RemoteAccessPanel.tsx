@@ -1,5 +1,5 @@
 import type { AppSettings } from '@claude-history/shared';
-import { MIN_PASSWORD_LENGTH } from '@claude-history/shared';
+import { BIND_REASONS, MIN_PASSWORD_LENGTH } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api/client.ts';
@@ -11,13 +11,23 @@ const inputClass =
   'w-44 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
 
 /**
- * Turning remote access on, and the two things that have to be true for it to
- * work: credentials, and a hole in the firewall.
+ * Turning remote access on, and the three things that have to be true for it to
+ * work: credentials, a hole in the firewall, and a server that has listened on
+ * the network since the hole existed.
  *
- * Both of those can only be done here, at the machine — the credentials because
+ * The first two can only be done here, at the machine — the credentials because
  * being here IS the recovery story for a forgotten password, and the firewall
  * because Windows puts its administrator prompt on this desktop. So the panel
  * greys itself out over the network rather than pretending otherwise.
+ *
+ * The third is why this panel now reports rather than promises. The switch used
+ * to be the whole story; it is not, because a server that opens a listening
+ * socket on the network with no rule to permit it makes Windows raise its "allow
+ * this app?" dialog — on every update, since the `node.exe` path changes each
+ * time. So the bind is decided at startup from what the firewall already allows
+ * (`server/src/core/bind.ts`), and the switch is a wish until a restart grants
+ * it. Saying so is the panel's job: the alternative is a switch that reads "on"
+ * beside a port nothing can reach.
  */
 export function RemoteAccessPanel({
   settings,
@@ -93,8 +103,46 @@ export function RemoteAccessPanel({
     save({ remoteAccessEnabled: on });
   };
 
+  /**
+   * Restart, and wait it out here rather than reloading the page.
+   *
+   * The server comes back in a few seconds — the helper waits for the scheduled
+   * task to report Ready before starting it again — and a reload fired into that
+   * gap is a browser error page on the one screen that just asked for this.
+   */
+  const restart = () => {
+    if (!confirm('Restart the server now? This page reconnects on its own in a few seconds.')) return;
+    setNote(null);
+    setError(null);
+    setBusy('restart');
+    void (async () => {
+      try {
+        await api.restartServer();
+        let back = false;
+        for (let i = 0; i < 60 && !back; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          back = await api
+            .health()
+            .then(() => true)
+            .catch(() => false);
+        }
+        setNote(back ? 'The server restarted.' : 'The server was asked to restart but has not answered yet.');
+        await queryClient.invalidateQueries();
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(null);
+      }
+    })();
+  };
+
   const rule = firewall.data;
   const publicProfile = rule?.activeProfiles.includes('Public') ?? false;
+  const blocks = rule?.blockingRules ?? [];
+  // Shown while the switch is on, and also while it is off and the socket from
+  // before it was turned off is still open — that second state needs a restart
+  // to end, so hiding it would hide the button that ends it.
+  const showBind = settings.remoteAccessEnabled || rule?.listening === 'network';
 
   return (
     <>
@@ -180,7 +228,10 @@ export function RemoteAccessPanel({
 
       {settings.remoteAccessEnabled && (
         <div className="space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
-          {rule?.addresses.length ? (
+          {/* The URL is only printed once it is a URL that answers. Offering it
+              while the server listens on loopback alone would send someone to
+              another room to type an address that refuses the connection. */}
+          {rule?.listening === 'network' && rule.addresses.length ? (
             <p>
               From another machine, open{' '}
               <span className="font-mono text-[var(--text)]">
@@ -197,66 +248,152 @@ export function RemoteAccessPanel({
         </div>
       )}
 
-      {!firewallOnly.disabled && settings.remoteAccessEnabled && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[var(--text-dim)]">
-            Windows Firewall:{' '}
-            {/* The state, and while one is being changed the WAIT — never the
-                old answer with the click already gone, which reads as nothing
-                having happened. It holds until the rule has been re-read, not
-                until the elevated command returns. */}
-            {busy === 'firewall' ? (
-              <span className="inline-flex items-center gap-1.5 text-[var(--text)]">
-                <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Waiting for Windows…
+      {!firewallOnly.disabled && showBind && (
+        <div className="space-y-2 rounded border border-[var(--border)] p-2">
+          {settings.remoteAccessEnabled && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[var(--text-dim)]">
+                Windows Firewall:{' '}
+                {/* The state, and while one is being changed the WAIT — never the
+                    old answer with the click already gone, which reads as nothing
+                    having happened. It holds until the rule has been re-read, not
+                    until the elevated command returns. */}
+                {busy === 'firewall' ? (
+                  <span className="inline-flex items-center gap-1.5 text-[var(--text)]">
+                    <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    Waiting for Windows…
+                  </span>
+                ) : rule === undefined ? (
+                  'reading…'
+                ) : rule.ruleExists === null ? (
+                  'could not be read'
+                ) : rule.ruleExists ? (
+                  `port ${String(rule.port)} is open on private networks`
+                ) : (
+                  `port ${String(rule.port)} is closed — no machine can reach this one`
+                )}
               </span>
-            ) : rule === undefined ? (
-              'reading…'
-            ) : rule.ruleExists === null ? (
-              'could not be read'
-            ) : rule.ruleExists ? (
-              `port ${String(rule.port)} is open on private networks`
-            ) : (
-              `port ${String(rule.port)} is closed — no machine can reach this one`
-            )}
-          </span>
-          {/* The label says what the click DOES, never what is happening: a
-              button is a verb, and one that renames itself to a status is both
-              a worse verb and a worse status. Disabled is the honest way to say
-              "not now" — visibly unusable, and it claims nothing. */}
-          <button
-            type="button"
-            className={btn}
-            disabled={busy !== null || rule === undefined || rule.ruleExists === null}
-            title={firewallOnly.reason ?? 'Windows will ask for administrator approval'}
-            onClick={() => {
-              const allow = !rule?.ruleExists;
-              setBusy('firewall');
-              setError(null);
-              void (async () => {
-                try {
-                  await api.setFirewallRule(allow);
-                } catch (e: unknown) {
-                  setError(e instanceof Error ? e.message : String(e));
-                } finally {
-                  // Awaited on purpose: this re-reads the rule through
-                  // PowerShell and takes a moment, and clearing `busy` first
-                  // put the STALE answer back on screen — "closed" beside a
-                  // live button, seconds after the port was opened.
-                  await queryClient.invalidateQueries({ queryKey: ['firewall'] });
-                  setBusy(null);
-                }
-              })();
-            }}
-          >
-            {rule?.ruleExists ? 'Close the port' : 'Open the port'}
-          </button>
-          {publicProfile && (
-            <span className="text-amber-400">
-              This machine is on a network Windows calls Public, where the rule does not apply. Set that connection to
-              Private, or nothing will get through.
-            </span>
+              {/* The label says what the click DOES, never what is happening: a
+                  button is a verb, and one that renames itself to a status is both
+                  a worse verb and a worse status. Disabled is the honest way to say
+                  "not now" — visibly unusable, and it claims nothing. */}
+              <button
+                type="button"
+                className={btn}
+                disabled={busy !== null || rule === undefined || rule.ruleExists === null}
+                title={firewallOnly.reason ?? 'Windows will ask for administrator approval'}
+                onClick={() => {
+                  const allow = !rule?.ruleExists;
+                  setBusy('firewall');
+                  setError(null);
+                  void (async () => {
+                    try {
+                      await api.setFirewallRule(allow);
+                    } catch (e: unknown) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      // Awaited on purpose: this re-reads the rule through
+                      // PowerShell and takes a moment, and clearing `busy` first
+                      // put the STALE answer back on screen — "closed" beside a
+                      // live button, seconds after the port was opened.
+                      await queryClient.invalidateQueries({ queryKey: ['firewall'] });
+                      setBusy(null);
+                    }
+                  })();
+                }}
+              >
+                {rule?.ruleExists ? 'Close the port' : 'Open the port'}
+              </button>
+              {publicProfile && (
+                <span className="text-amber-400">
+                  This machine is on a network Windows calls Public, where the rule does not apply. Set that connection
+                  to Private, or nothing will get through.
+                </span>
+              )}
+            </div>
           )}
+
+          {/* What the server is actually doing, which is a different fact from
+              what the switch says — and the only one that decides whether
+              anything can reach this machine right now. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={rule && rule.wantsNetwork && rule.listening === 'local' ? 'text-amber-400' : 'text-[var(--text-dim)]'}>
+              {busy === 'restart' ? (
+                <span className="inline-flex items-center gap-1.5 text-[var(--text)]">
+                  <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Restarting…
+                </span>
+              ) : rule === undefined ? (
+                'Listening: reading…'
+              ) : rule.listening === 'network' ? (
+                rule.wantsNetwork
+                  ? 'Listening on every interface: other machines can reach this one.'
+                  : 'Still listening on every interface until the next restart, and refusing every request that arrives from the network.'
+              ) : (
+                `Listening on this machine only, because ${BIND_REASONS[rule.bindReason]}`
+              )}
+            </span>
+            {rule?.restartNeeded && busy !== 'restart' && (
+              <button
+                type="button"
+                className={btn}
+                disabled={busy !== null}
+                title="Where the server listens is decided when it starts, so this is what applies the change."
+                onClick={restart}
+              >
+                Restart the server
+              </button>
+            )}
+          </div>
+
+          {/* The leftovers from answering the Windows dialog with Cancel: one
+              pair per version, each nailed to that version's node.exe, and every
+              one of them beating the rule above. */}
+          {blocks.length > 0 && (
+            <div className="space-y-1 text-[11px] leading-relaxed">
+              <p className="text-amber-400">
+                {blocks.length === 1 ? 'One rule blocks' : `${String(blocks.length)} rules block`} this app in the
+                firewall — what Windows writes when its "allow this app?" dialog is answered with Cancel. A block beats
+                the rule above, so while they are there nothing gets through.
+              </p>
+              <ul className="text-[var(--text-dim)]">
+                {blocks.map((b) => (
+                  <li key={`${b.program}-${b.protocol}`} className="font-mono text-[10px] break-all">
+                    {b.protocol} · {b.program}
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                className={btn}
+                disabled={busy !== null}
+                title={firewallOnly.reason ?? 'Windows will ask for administrator approval'}
+                onClick={() => {
+                  if (!confirm(`Delete ${String(blocks.length)} blocking rule(s) from the Windows Firewall?`)) return;
+                  setBusy('firewall');
+                  setError(null);
+                  void (async () => {
+                    try {
+                      const body = await api.removeFirewallBlocks();
+                      setNote(`${String(body.removed ?? 0)} blocking rule(s) removed.`);
+                    } catch (e: unknown) {
+                      setError(e instanceof Error ? e.message : String(e));
+                    } finally {
+                      await queryClient.invalidateQueries({ queryKey: ['firewall'] });
+                      setBusy(null);
+                    }
+                  })();
+                }}
+              >
+                Remove them
+              </button>
+            </div>
+          )}
+
+          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
+            Turning this on does not open the port by itself, and that is the point: the server waits until Windows
+            already allows it, so installing an update can never make Windows ask you for permission.
+          </p>
         </div>
       )}
 
