@@ -401,6 +401,10 @@ $fw = New-Object -ComObject HNetCfg.FwPolicy2
 
 `act=0` is Block, `dir=1` is inbound. If ours is there, the panel's *Remove them* button is what clears it, and that is its own first test.
 
+**Read that list before concluding anything about the dialog**, in both directions. A `node.exe` already carrying an Allow rule cannot raise one whatever the profiles say, so "no dialog" means nothing there; a `node.exe` carrying no rules at all is the only clean instrument for the question — and on such a machine the wide bind was taken and **none appeared**. That result does not need a witness at the screen: a dialog answered either way writes program-scoped rules, so re-running the command above immediately after the bind and still counting **zero** is the assertion.
+
+**Every "restart" in the matrix below means `.\preview.ps1 -Restart`.** The panel's own *Restart the server* button answers **400 — "not a managed install (source or portable)"** on preview, which is correct behaviour and is check 36's last clause, not a failure to work around.
+
 Then walk the matrix with `.\preview.ps1`, reading `GET /api/firewall` at each step (`listening`, `bindReason`, `restartNeeded`) and confirming the LAN address behaves accordingly:
 
 | State | Expected | The LAN address |
