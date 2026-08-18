@@ -1,128 +1,73 @@
-import { execFile } from 'node:child_process';
-import os from 'node:os';
-import { promisify } from 'node:util';
 import type { FirewallStatusResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { createLogger } from '../core/logger.ts';
+import {
+  blockingRules,
+  createRule,
+  evaluateFirewall,
+  localAddresses,
+  probeFirewall,
+  removeBlockingRules,
+  removeRule,
+  ruleNameFor,
+} from '../util/firewall.ts';
 
 const log = createLogger('firewall');
-const run = promisify(execFile);
-
-/** The rule this app manages. Matched by name, so it can be found and removed again. */
-const RULE_NAME = 'claude-history';
-/** A UAC prompt is a person reading a dialog, not a command running. */
-const ELEVATED_TIMEOUT_MS = 120_000;
-const READ_TIMEOUT_MS = 20_000;
-
-/**
- * Run PowerShell without a single quoting problem.
- *
- * `-EncodedCommand` takes base64 of UTF-16LE, so the script can contain quotes,
- * parentheses and anything else without meeting either Windows' argv escaping
- * or PowerShell's own parser on the way in. Worth it here because the scripts
- * below nest one command inside another.
- */
-function powershell(script: string, timeout: number): Promise<{ stdout: string }> {
-  const encoded = Buffer.from(script, 'utf16le').toString('base64');
-  return run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
-    timeout,
-    windowsHide: true,
-    encoding: 'utf8',
-  });
-}
-
-/**
- * Ask for the rule to be created or removed, with administrator rights.
- *
- * Windows will not let a per-user process touch the firewall, and this app is
- * installed per user with no elevation at all (`installer/launch.vbs`). So the
- * work is handed to an elevated child, and the UAC dialog that authorises it
- * appears on the machine's own desktop — which is exactly why this endpoint is
- * local-only: over the network it would pop a dialog nobody is there to accept.
- *
- * Two things this got wrong the first time, both worth keeping written down:
- *
- * - **One statement per line, and no backticks.** A backtick continues a
- *   STATEMENT; putting one after `$ErrorActionPreference = 'Stop'` glued the
- *   next statement onto it and PowerShell answered `Unexpected token '$p'`
- *   before ever reaching the UAC prompt.
- * - **The outcome is reported on stdout, not through the exit code.** A failing
- *   `powershell.exe` makes `execFile` reject with an Error whose `message` is
- *   the entire command line — a 500-character base64 blob — and whose `stderr`
- *   is PowerShell's CLIXML. Both went straight into the panel. Catching inside
- *   the script means what reaches the user is "The operation was canceled by
- *   the user", which is what actually happened.
- */
-async function elevate(innerScript: string): Promise<void> {
-  const inner = Buffer.from(innerScript, 'utf16le').toString('base64');
-  const outer = [
-    "$ErrorActionPreference = 'Stop'",
-    'try {',
-    `  $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${inner}')`,
-    "  if ($p.ExitCode -eq 0) { 'ok' } else { 'failed: the elevated command exited with ' + $p.ExitCode }",
-    '} catch {',
-    "  'failed: ' + $_.Exception.Message",
-    '}',
-  ].join('\n');
-  const { stdout } = await powershell(outer, ELEVATED_TIMEOUT_MS);
-  const answer = stdout.trim();
-  if (answer === 'ok') return;
-  throw new Error(answer.replace(/^failed:\s*/, '') || 'PowerShell said nothing at all.');
-}
-
-/**
- * This machine's own IPv4 addresses, so the panel can print the URL to type on
- * the other computer instead of leaving it to be hunted down with `ipconfig`.
- * Loopback is left out — it is the one address that cannot be the answer here.
- */
-function localAddresses(): string[] {
-  return Object.values(os.networkInterfaces())
-    .flatMap((entries) => entries ?? [])
-    .filter((entry) => entry.family === 'IPv4' && !entry.internal)
-    .map((entry) => entry.address);
-}
 
 export function registerFirewallRoutes(app: FastifyInstance, ctx: AppContext): void {
   const port = ctx.config.port;
+  const ruleName = ruleNameFor(port);
 
   /**
-   * Whether the port is open, and on which profiles this machine currently is.
+   * Everything about "can another machine reach this one", in one read: where
+   * this process is listening and why (decided at startup, `core/bind.ts`), and
+   * what the firewall says right now.
    *
-   * The profile matters as much as the rule: the rule below is created for the
-   * Private profile, so a home network Windows has decided to call Public would
-   * stay closed and look like a bug in the rule. Reading needs no elevation.
+   * The two are separate facts and both are needed. The bind is history — it is
+   * what the firewall said when the process started, and it cannot change while
+   * it runs. The rule is the present, and it is what says whether a restart
+   * would help. A panel that showed only one of them would have to lie about
+   * the other.
    */
   app.get('/api/firewall', async (): Promise<FirewallStatusResponse> => {
-    const base = { ruleName: RULE_NAME, port, activeProfiles: [] as string[], addresses: localAddresses() };
-    try {
-      const { stdout } = await powershell(
-        [
-          "$rule = Get-NetFirewallRule -DisplayName '" + RULE_NAME + "' -ErrorAction SilentlyContinue",
-          '$profiles = @(Get-NetConnectionProfile | ForEach-Object { $_.NetworkCategory.ToString() })',
-          '@{ exists = [bool]$rule; profiles = $profiles } | ConvertTo-Json -Compress',
-        ].join('\n'),
-        READ_TIMEOUT_MS,
-      );
-      const parsed = JSON.parse(stdout.trim()) as { exists?: boolean; profiles?: string[] | string };
-      const profiles = parsed.profiles === undefined ? [] : Array.isArray(parsed.profiles) ? parsed.profiles : [parsed.profiles];
-      return { ...base, ruleExists: parsed.exists === true, activeProfiles: profiles, error: null };
-    } catch (err) {
+    const wantsNetwork = ctx.index.getSettings().remoteAccessEnabled && ctx.index.getAuth() !== null;
+    const listening = ctx.bind.network ? 'network' : 'local';
+    // No waiting for a network here: by the time anyone opens Settings the
+    // answer is whatever it is, and a panel that stalls ten seconds to say "no
+    // networks" is not an improvement on saying it at once.
+    const probe = await probeFirewall(port, false);
+    const verdict = evaluateFirewall(probe, port, ctx.bind.exePath);
+    const blocks = await blockingRules(ctx.bind.exePath, ctx.updates.install?.root ?? null);
+    return {
+      ruleName,
+      port,
       // Null rather than false: "we could not look" and "it is not there" lead
       // to different buttons, and guessing between them would offer to create a
       // rule that already exists.
-      log.warn('could not read the firewall rule', err);
-      return { ...base, ruleExists: null, error: err instanceof Error ? err.message : String(err) };
-    }
+      ruleExists: probe.error ? null : verdict.rule !== null,
+      ruleCoversPort: verdict.ruleCoversPort,
+      ruleProfiles: verdict.rule?.profiles ?? [],
+      activeProfiles: probe.activeProfiles,
+      addresses: localAddresses(),
+      notifyOnListen: probe.notifyOnListen,
+      defaultInboundAllow: probe.defaultInboundAllow,
+      blockingRules: blocks.map(({ displayName, program, protocol }) => ({ displayName, program, protocol })),
+      listening,
+      bindReason: ctx.bind.reason,
+      wantsNetwork,
+      // Only true when a restart would actually change something: wanting the
+      // network with the door now open, or no longer wanting it while the socket
+      // is still wide. Wanting it with the port still shut is not a restart
+      // problem, and offering one would waste a restart.
+      restartNeeded: wantsNetwork ? listening === 'local' && verdict.permitted : listening === 'network',
+      error: probe.error,
+    };
   });
 
   app.post('/api/firewall', async (_request, reply) => {
     try {
-      await elevate(
-        `New-NetFirewallRule -DisplayName '${RULE_NAME}' -Description 'Browse claude-history from another machine on this network' ` +
-          `-Direction Inbound -Action Allow -Protocol TCP -LocalPort ${String(port)} -Profile Private | Out-Null`,
-      );
-      log.info(`inbound rule created for port ${String(port)} on the Private profile`);
+      await createRule(port);
       return { ok: true };
     } catch (err) {
       // Cancelling the UAC dialog lands here too, and it is the likeliest way
@@ -136,13 +81,34 @@ export function registerFirewallRoutes(app: FastifyInstance, ctx: AppContext): v
 
   app.delete('/api/firewall', async (_request, reply) => {
     try {
-      await elevate(`Remove-NetFirewallRule -DisplayName '${RULE_NAME}' -ErrorAction Stop`);
-      log.info('inbound rule removed');
+      await removeRule(port);
       return { ok: true };
     } catch (err) {
       log.warn('could not remove the firewall rule', err);
       return reply.code(409).send({
         error: `The rule was not removed — Windows has to approve it on this machine. ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  });
+
+  /**
+   * Delete the Block rules Windows wrote when its dialog was answered with
+   * Cancel — one pair per version, each nailed to that version's `node.exe`,
+   * and every one of them beating the port rule this panel creates.
+   *
+   * The list is re-read here and never taken from the request: what gets
+   * deleted from a firewall is not something a page gets to name.
+   */
+  app.delete('/api/firewall/blocks', async (_request, reply) => {
+    const found = await blockingRules(ctx.bind.exePath, ctx.updates.install?.root ?? null);
+    if (found.length === 0) return { ok: true, removed: 0 };
+    try {
+      await removeBlockingRules(found.map((r) => r.id));
+      return { ok: true, removed: found.length };
+    } catch (err) {
+      log.warn('could not remove the blocking rules', err);
+      return reply.code(409).send({
+        error: `Nothing was removed — Windows has to approve it on this machine. ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   });

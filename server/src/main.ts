@@ -1,6 +1,7 @@
 import { buildApp } from './app.ts';
-import { isLoopbackHost, loadConfig } from './config.ts';
+import { loadConfig } from './config.ts';
 import { AutoReloadService } from './core/autoReload.ts';
+import { decideBind, logBind } from './core/bind.ts';
 import { SessionIndex } from './core/index.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
@@ -32,6 +33,13 @@ async function main(): Promise<void> {
     `${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`,
   );
 
+  // Before anything is served: whether this process may listen on the network at
+  // all. It reads the switch (loaded a moment ago) and, only if that is on, asks
+  // the Windows Firewall — so a machine with remote access off pays nothing for
+  // it. See core/bind.ts for why the permission has to exist BEFORE the socket.
+  const bind = await decideBind(config, index.getSettings(), index.getAuth() !== null);
+  logBind(bind);
+
   const search = new SearchService(index);
   const deepSearch = new DeepSearchService(config, index, search);
   const updates = new UpdateService();
@@ -42,7 +50,7 @@ async function main(): Promise<void> {
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const chat = new SessionChatService(config, index, () => index.getSettings());
-  const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload, chat });
+  const app = await buildApp({ config, bind, index, search, deepSearch, updates, usage, autoReload, chat });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
   chat.start();
@@ -71,12 +79,12 @@ async function main(): Promise<void> {
   }
 
   try {
-    await app.listen({ host: config.host, port: config.port });
+    await app.listen({ host: bind.host, port: config.port });
     // `http://0.0.0.0:7433` is not an address anyone can open, so the URL is
     // always the local one and the bind is reported beside it — the two are
     // different facts now, and which interfaces are open is the one worth
-    // finding in a log.
-    const scope = isLoopbackHost(config.host) ? 'this machine only' : `bound to ${config.host}`;
+    // finding in a log. The WHY of that bind was logged by logBind() above.
+    const scope = bind.network ? `bound to ${bind.host}` : 'this machine only';
     log.info(
       `listening on http://127.0.0.1:${config.port} (${scope}, data root: ${config.dataRoot})`,
     );

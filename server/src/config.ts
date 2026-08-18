@@ -20,20 +20,20 @@ export interface AppConfig {
   /** Daily JSONL log files. Same place for every way of running the server. */
   logsDir: string;
   /**
-   * The address to bind. `0.0.0.0` for a release, `127.0.0.1` for a dev
-   * instance, `--host` over both.
+   * `--host`, and nothing else. Null unless it was given by hand.
    *
-   * A release listens on every interface ALWAYS, whatever `remoteAccessEnabled`
-   * says, and that is deliberate: a request that is refused can be answered and
-   * explained ("remote access is off, here is how to turn it on"), while one
-   * that never reaches a socket is a browser error page nobody can act on. It
-   * also means the setting can be flipped without re-listening.
+   * The bind is NOT a config value any more: it is decided at startup by
+   * `core/bind.ts` from the switch, the credentials and what the Windows
+   * Firewall already allows. The reason is that listening on anything but
+   * loopback with no rule to decide the matter makes Windows raise its "allow
+   * this app?" dialog — at `listen()`, and about the `node.exe` path, which is
+   * a new path on every update. A dialog nobody asked for is what this avoids.
    *
-   * What pays for it is `routes/auth.ts` plus the hook in `app.ts`: anything
-   * arriving from a non-loopback address gets NOTHING until it authenticates.
-   * These two are one feature — never widen the bind without it.
+   * `--host` skips that gate entirely, which makes it the only remaining way to
+   * get the dialog. That is on purpose: it is what makes remote access testable
+   * (`preview.ps1`, checks 30-36) and it warns about itself below.
    */
-  host: string;
+  hostOverride: string | null;
   port: number;
   /** Absolute path to built web assets, or null in dev (Vite serves the UI). */
   staticDir: string | null;
@@ -139,14 +139,17 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     );
   }
 
-  // A dev instance stays on loopback: remote access belongs to the release, and
-  // a checkout that opens a port on the LAN every time it is started is not
-  // something anyone asked for. `--host` overrides both, for the one case this
-  // cannot guess (a machine with several interfaces and a reason to pick one).
-  const host = args.get('host') || (devInstance ? LOOPBACK_HOST : ANY_HOST);
-  if (devInstance && !isLoopbackHost(host)) {
+  // Everything else about the bind is decided in `core/bind.ts`; this only
+  // records the one answer a person can give by hand.
+  const hostOverride = args.get('host') || null;
+  if (hostOverride !== null && !isLoopbackHost(hostOverride)) {
     warnings.push(
-      `--dev-instance was asked to bind ${host}. A dev instance has no remote access and no authentication: anything reaching it is treated as local.`,
+      `--host ${hostOverride} was given by hand, so the firewall was not consulted. This is the only way left to open a listening socket that Windows may ask permission for — everything else waits until the rule exists.`,
+    );
+  }
+  if (devInstance && hostOverride !== null && !isLoopbackHost(hostOverride)) {
+    warnings.push(
+      `--dev-instance was asked to bind ${hostOverride}. A dev instance has no remote access and no authentication: anything reaching it is treated as local.`,
     );
   }
 
@@ -160,7 +163,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     cacheDir,
     userdataFile: path.resolve(cacheDir, '..', 'userdata.json'),
     logsDir: args.get('logs-dir') ? path.resolve(args.get('logs-dir') as string) : path.resolve(cacheDir, '..', 'logs'),
-    host,
+    hostOverride,
     port,
     staticDir,
     exitWithParent: args.has('exit-with-parent'),
