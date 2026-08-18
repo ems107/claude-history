@@ -8,6 +8,7 @@ import { foldedCounts } from '../../lib/folding.ts';
 import { parsePlan } from '../../lib/plans.ts';
 import { isPromptItem } from '../../lib/segments.ts';
 import { parseSentFiles } from '../../lib/sentFiles.ts';
+import { systemLabel, systemTitle } from '../../lib/systemLines.ts';
 import { AnsweredQuestionCard, parseAskUserQuestion } from './AnsweredQuestion.tsx';
 import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
@@ -413,8 +414,13 @@ function SystemItem({ item }: { item: MessageItem }) {
   return (
     <div id={item.uuid} className="px-2 py-0.5 text-xs text-[var(--text-dim)]/70">
       <Anchors item={item} />
-      <span className="mr-2 rounded bg-zinc-500/15 px-1 py-px text-[10px] font-semibold uppercase">
-        {item.systemSubtype ?? 'system'}
+      {/* The chip is a name, not an identifier — `systemLines.ts` holds the
+          three that have one, and anything else keeps its raw subtype. */}
+      <span
+        className="mr-2 rounded bg-zinc-500/15 px-1 py-px text-[10px] font-semibold uppercase"
+        title={systemTitle(item.systemSubtype)}
+      >
+        {systemLabel(item.systemSubtype)}
       </span>
       {/* The searchable half — the subtype chip beside it is not. The cut is
           hard: there is no fold to open, so the find bar stops counting here

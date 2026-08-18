@@ -3,6 +3,7 @@ import { parseAskUserQuestion } from '../components/viewer/AnsweredQuestion.tsx'
 import { parseSentFiles } from './sentFiles.ts';
 import { formatDateTime, shortModel } from './format.ts';
 import { parsePlan } from './plans.ts';
+import { systemLabel } from './systemLines.ts';
 
 export interface ExportOptions {
   includeTools: boolean;
@@ -62,7 +63,9 @@ function systemLines(item: MessageItem): string[] {
     return out;
   }
   const text = first?.kind === 'text' ? first.text : '';
-  return [`> ⚙️ **${item.systemSubtype ?? 'system'}:** ${text.replace(/\n/g, ' ').slice(0, 500)}`, ''];
+  // The same name the chip shows — an export that called it `away_summary`
+  // while the page called it a recap would be a second answer to one question.
+  return [`> ⚙️ **${systemLabel(item.systemSubtype)}:** ${text.replace(/\n/g, ' ').slice(0, 500)}`, ''];
 }
 
 /**

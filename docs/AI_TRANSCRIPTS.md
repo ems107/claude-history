@@ -50,6 +50,26 @@ Many sessions are throwaway stubs (≤16 lines, only slash commands, no title): 
 
 `entrypoint` is per line, but resuming in another client creates a NEW session file, so files are uniform in practice (verified: no mixed files).
 
+### `system` lines, by subtype
+
+Seven exist in this corpus, and **only three ever carry `content`** — the rest keep their payload in fields of their own, so the parser's `if (!text) continue` drops them and nothing downstream has to know they were there.
+
+| subtype | lines | What it is |
+| --- | --- | --- |
+| `turn_duration` | 364 | per-turn timing; dropped outright (its `messageCount` is read from the head/tail scan instead) |
+| `away_summary` | 147 | **the recap below** |
+| `local_command` | 65 | the slash command that was typed, as `<command-name>` markup |
+| `stop_hook_summary` | 40 | a Stop hook's report — in `hookInfos` / `hookErrors`, **no `content`** |
+| `compact_boundary` | 4 | its own panel; the arithmetic is in `compactMetadata` ([AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTEXT.md)) |
+| `informational` | 2 | a notice Claude Code wrote to the transcript (auto mode explaining itself) |
+| `api_error` | 1 | the error and its retry counters, **no `content`** |
+
+**`away_summary` is the best paragraph a session contains about itself**, and the one thing here written to be read by a human who was not watching: *"Estamos añadiendo acceso remoto (LAN/WireGuard) a claude-history, ya implementado y probado salvo el botón «Open the port». Acabo de arreglarlo y reiniciar la preview…"*. 147 of them across 56 sessions, always in the tree (147/147 carry a `parentUuid`), never `isMeta`.
+
+- **Claude Code calls it a recap, not an away summary.** The setting is `awaySummaryEnabled` and the line says `away_summary`, but its config offers to "disable recaps" and its own log tags the job `ccr_recap_generate` — so `recap` is the word the app shows (`web/src/lib/systemLines.ts`), and the identifier stays where identifiers belong.
+- **There is NOT one per turn, and a gap means nothing.** Verified against the 2.1.234 bundle, which enumerates why it skips: at or near a rate limit, a draft in the input box, background work pending, a loop wakeup pending, a `StructuredOutput` recap already present, no cached params or params gone stale — and `ccr recap dropped: new turn already running`, i.e. it is generated after a turn ends and abandoned if the next one starts first. Never read the absence of a recap as "nothing happened".
+- **No server-side search reaches it.** `system` lines are neither indexed (the enricher pushes blocks for prompts, answers, plans and intents only) nor read by the deep scan (which walks `message.content`, and a system line has none). Only the viewer's own find bar sees them, cut at `SYSTEM_CHARS`. That is a gap, not a decision.
+
 **Sidecar lines** mostly have NO timestamp: `last-prompt`, `mode`, `permission-mode`, `bridge-session`, `queue-operation`, `file-history-snapshot` (line ~2; its `snapshot.timestamp` ≈ session start), `file-history-delta`, `pr-link` (`prNumber` / `prUrl` / `prRepository`), plus the title lines below. Every type is re-appended per turn — always dedupe (`pr-link` by `prUrl`).
 
 **There are no `type:"summary"` lines** (that was the pre-2.1 format). Titles are sidecars appended repeatedly over a session's life — `custom-title`, `ai-title`, `agent-name` — so always take the **last** occurrence. Precedence: `customTitle` → `aiTitle` → `agentName` → last `last-prompt`.`lastPrompt` (pre-truncated ~200 chars) → first non-`isMeta` user message with string content → session UUID.

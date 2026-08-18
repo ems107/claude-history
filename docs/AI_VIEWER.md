@@ -248,6 +248,13 @@ link marking a notice's origin chip and clock.
 - **A `system` line is cut at 400 characters**, where `SystemItem` cuts it: it
   has no fold to open, so counting past there would offer matches nothing can
   show. `SYSTEM_CHARS` lives in `findInSession.ts` and the component reads it.
+  Its chip is a NAME, not the raw subtype (`lib/systemLines.ts`, shared with the
+  markdown export so the two cannot call one line two things) — an `away_summary`
+  reads `RECAP`, which is Claude Code's own word for it, with the tooltip saying
+  why there is not one per turn. Only three subtypes ever get here; the map
+  leaves everything else as the identifier it is, and
+  [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#system-lines-by-subtype) says which and
+  why. The chip is outside `data-bubble-body`, so renaming it moves no count.
 - **Three things are outside the corpus and are said with a number**: outputs
   offloaded to disk, whatever exceeds `MAX_RESULT_CHARS` of a result, and
   subagent transcripts. 0.3% of calls here, and *Search ▸ deep* is what reads
