@@ -442,7 +442,20 @@ export class SessionIndex {
     prices?: PriceTable;
     settings?: Partial<AppSettings>;
     auth?: AuthConfig;
-  } | null): void {
+  } | null,
+  /**
+   * A restore, rather than a start-up. What separates them is that a restore
+   * must not change WHO CAN REACH the app: `remoteAccessEnabled` and the
+   * credentials are one thing, and the whole point of a restore is to get a
+   * starred message or a rename back — not to lock a remote device out of a
+   * machine nobody is standing at. Every other key is replaced wholesale, which
+   * is what a restore is for.
+   *
+   * At start-up the stored value has to win, obviously, or remote access would
+   * switch itself off on every restart.
+   */
+  opts?: { keepAccess?: boolean },
+  ): void {
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
     // Keyed on two fields, so a record without them would answer for the key
@@ -459,11 +472,18 @@ export class SessionIndex {
     // would be a password nobody can use and, worse, a `configured: true` that
     // hides the "set a username and password" panel behind a login nobody can
     // pass. Treated as absent, which the UI already knows how to fix.
+    //
+    // And absent means KEPT, not cleared — the one key here that is not user
+    // data but access control. Every stored copy older than this feature has no
+    // credentials in it, and restoring one to get a starred message back would
+    // otherwise revoke every remote device silently, from a panel that is
+    // itself reachable remotely: you would lock yourself out of the machine you
+    // are not at. A restored file that DOES carry credentials still wins, which
+    // is what restoring that state means.
     const auth = userdata?.auth;
-    this.auth =
-      auth && typeof auth.username === 'string' && typeof auth.passwordHash === 'string' && typeof auth.secret === 'string'
-        ? auth
-        : null;
+    const usable =
+      auth && typeof auth.username === 'string' && typeof auth.passwordHash === 'string' && typeof auth.secret === 'string';
+    this.auth = usable ? auth : this.auth;
     // Only keys we still have: a setting that is retired would otherwise live
     // on in userdata.json forever, be served by /api/settings and read as
     // current — which is exactly what happened to chatModel/chatEffort.
@@ -471,7 +491,10 @@ export class SessionIndex {
     const known = Object.fromEntries(Object.keys(DEFAULT_SETTINGS).filter((k) => k in saved).map((k) => [k, saved[k]]));
     // A dev instance starts from its own defaults (DEV_SETTING_OVERRIDES), and
     // only where nothing was saved: anything switched on there stays on.
-    this.settings = { ...defaultSettings(this.config.devInstance), ...(known as Partial<AppSettings>) };
+    const settings = { ...defaultSettings(this.config.devInstance), ...(known as Partial<AppSettings>) };
+    this.settings = opts?.keepAccess
+      ? { ...settings, remoteAccessEnabled: this.settings.remoteAccessEnabled }
+      : settings;
   }
 
   /**
@@ -488,7 +511,7 @@ export class SessionIndex {
     const data = (await this.backups.read(name)) as Parameters<typeof this.applyUserdata>[0];
     const backedUpTo = await this.backups.create('pre-restore');
     const touched = new Set([...Object.keys(this.titleOverrides), ...this.pins]);
-    this.applyUserdata(data);
+    this.applyUserdata(data, { keepAccess: true });
     for (const id of [...Object.keys(this.titleOverrides), ...this.pins]) touched.add(id);
     await this.saveUserdata();
     log.info(`restored userdata.json from ${name}`, { ...this.userdataCounts(), backedUpTo });
