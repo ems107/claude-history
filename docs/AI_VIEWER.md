@@ -245,12 +245,15 @@ link marking a notice's origin chip and clock.
   wrong. Thinking is always in the corpus whatever the toggle says — hiding it
   can only remove a bubble, never reorder what is left — and the toggle stays a
   filter over the hits, with the count of what it is holding back on the bar.
-- **A `system` line is cut at 400 characters**, where `SystemItem` cuts it: it
-  has no fold to open, so counting past there would offer matches nothing can
-  show. `SYSTEM_CHARS` now lives in `shared/src/searchText.ts`, re-exported from
+- **A `system` line is cut at 400 characters — except a recap, which is drawn
+  whole.** It has no fold to open, so counting past what is drawn would offer
+  matches nothing can show. `systemChars(subtype)` is the one function that
+  decides, in `shared/src/searchText.ts` and re-exported from
   `findInSession.ts` where this component and the bar were written to read it:
-  a recap is INDEXED ([AI_SEARCH.md](AI_SEARCH.md)), so the server has to cut it
-  at the same place this draws it, and one number cannot be in two files.
+  a recap is INDEXED ([AI_SEARCH.md](AI_SEARCH.md)), so what is drawn, what the
+  bar folds and what the server indexes have to be the same call. The cap is
+  there for `local_command`, whose longest line here is 2,456 characters of
+  `<command-name>` markup; it was costing a recap a truncated last sentence.
   Its chip is a NAME, not the raw subtype (`lib/systemLines.ts`, shared with the
   markdown export so the two cannot call one line two things) — an `away_summary`
   reads `RECAP`, which is Claude Code's own word for it, with the tooltip saying

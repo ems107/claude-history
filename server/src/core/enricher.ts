@@ -13,7 +13,7 @@ import type {
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { planFeedback, planTitle, toMessageUsage, toolIntent } from './parser.ts';
-import { INTENT_ROLE, PLAN_ROLE, RECAP_ROLE, SYSTEM_CHARS } from './searchText.ts';
+import { INTENT_ROLE, PLAN_ROLE, RECAP_ROLE, RECAP_SUBTYPE, systemChars } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
 
 // It moved to `shared` when the viewer grew a search of its own over a corpus
@@ -387,14 +387,18 @@ export async function enrichSession(
       // The context after a boundary is new and smaller, not the old one written
       // twice — charging it as a re-cache would bill the user for a saving.
       compactedSinceLastRequest = true;
-    } else if (type === 'system' && str(o.subtype) === 'away_summary') {
+    } else if (type === 'system' && str(o.subtype) === RECAP_SUBTYPE) {
       // The one `system` line worth searching: Claude Code's recap of where the
-      // work had got to. Cut where `SystemItem` cuts it — the viewer offers no
-      // fold for the rest, so indexing past there would count a match that
-      // could never be shown.
+      // work had got to. Indexed as far as the viewer draws it and not one
+      // character further — which for a recap is the whole of it, and for
+      // everything else would be `SYSTEM_CHARS`.
       const text = str(o.content)?.trim();
       if (text) {
-        searchBlocks.push({ uuid: str(o.uuid), role: RECAP_ROLE, text: text.slice(0, SYSTEM_CHARS) });
+        searchBlocks.push({
+          uuid: str(o.uuid),
+          role: RECAP_ROLE,
+          text: text.slice(0, systemChars(RECAP_SUBTYPE)),
+        });
       }
     }
   }

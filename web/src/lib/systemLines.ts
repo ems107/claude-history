@@ -10,6 +10,8 @@
 // keeps its report in `hookInfos`, `api_error` in `error`), so `parser.ts` drops
 // them before this is ever asked. See docs/AI_TRANSCRIPTS.md.
 
+import { RECAP_SUBTYPE } from '@claude-history/shared';
+
 /**
  * What to call each `system` subtype on screen. Anything absent keeps its raw
  * subtype: an honest identifier beats a label invented for a line nobody here
@@ -19,8 +21,9 @@ const SYSTEM_LABEL: Record<string, string> = {
   // Claude Code's own word for it — its config offers to "disable recaps", and
   // its logs call the job `ccr_recap_generate`. Never "away summary": the
   // setting behind it is `awaySummaryEnabled`, but nothing the user reads says
-  // that.
-  away_summary: 'Recap',
+  // that. The identifier comes from `shared`, which is also where the rule that
+  // a recap is drawn whole lives (`systemChars`).
+  [RECAP_SUBTYPE]: 'Recap',
   local_command: 'Command',
   informational: 'Notice',
 };
@@ -31,7 +34,7 @@ const SYSTEM_LABEL: Record<string, string> = {
  * walked away, and Claude Code skips it whenever it is busy or short of budget.
  */
 const SYSTEM_TITLE: Record<string, string> = {
-  away_summary:
+  [RECAP_SUBTYPE]:
     "Claude Code's own recap of where the work had got to, written at the end of a turn for whoever comes back to it. Not one per turn: it is skipped near a rate limit, while background work or a queued prompt is pending, and whenever the next turn has already started.",
 };
 

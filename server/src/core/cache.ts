@@ -16,9 +16,10 @@ import { createLogger } from './logger.ts';
  * ids joined the search index, and a nested agent's report stopped being dropped.
  * 12: an `ExitPlanMode` plan joined it too. 13: and what the model said it was
  * doing when it made a call (`toolIntent`). 14: and the recap of a session
- * (`away_summary`), the first `system` line any search could reach.
+ * (`away_summary`), the first `system` line any search could reach. 15: a recap
+ * stopped being cut at `SYSTEM_CHARS` — it is drawn whole, so it is indexed whole.
  */
-export const CACHE_VERSION = 14;
+export const CACHE_VERSION = 15;
 
 const cacheLog = createLogger('cache');
 

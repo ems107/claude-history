@@ -18,17 +18,40 @@ import { occurrences } from './match.ts';
 export const SNIPPET_BEFORE = 60;
 export const SNIPPET_AFTER = 90;
 
+/** The `system` subtype of a recap. The identifier — the label is `systemLines.ts`. */
+export const RECAP_SUBTYPE = 'away_summary';
+
 /**
  * How much of a `system` line is DRAWN — and therefore how much of one may be
  * searched. `SystemItem` cuts it here and offers no fold to open, so a match
  * past this point is one nothing can ever show.
  *
- * It is shared for the reason the fold is: the viewer's find bar stops here and
- * so must the server's index, or the two would disagree about a recap. One of
- * the 148 recaps in this corpus is 465 characters long, which is the whole
- * reason this is a number and not an assumption.
+ * It is shared for the reason the fold is: the viewer's find bar stops here, so
+ * must the server's index, and `SystemItem` has to draw exactly as much as both.
+ * Three readers, one number.
  */
 export const SYSTEM_CHARS = 400;
+
+/**
+ * Subtypes drawn WHOLE, however long they are.
+ *
+ * The cut above exists for plumbing, and it earns its keep: a `local_command`
+ * line is `<command-name>` markup and the longest here is 2,456 characters. A
+ * recap is the opposite — prose Claude Code wrote to be read by whoever comes
+ * back — and the cap cost it exactly 65 characters across the whole corpus, in
+ * the middle of a sentence, in the one recap of 148 that runs past 400. Its own
+ * ceiling is the two or three sentences Claude Code writes.
+ */
+const UNCUT = new Set<string>([RECAP_SUBTYPE]);
+
+/**
+ * How much of THIS system line may be drawn, folded and indexed. `Infinity` on
+ * purpose: every caller then slices unconditionally, and none has to grow a
+ * branch that could be written differently in three places.
+ */
+export function systemChars(subtype: string | null | undefined): number {
+  return subtype && UNCUT.has(subtype) ? Number.POSITIVE_INFINITY : SYSTEM_CHARS;
+}
 
 /**
  * One searchable piece of a session, whatever produced it: the enricher's index,

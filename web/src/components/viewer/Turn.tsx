@@ -2,7 +2,7 @@ import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@c
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
-import { SYSTEM_CHARS } from '../../lib/findInSession.ts';
+import { systemChars } from '../../lib/findInSession.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { foldedCounts } from '../../lib/folding.ts';
 import { parsePlan } from '../../lib/plans.ts';
@@ -411,6 +411,7 @@ function SystemItem({ item }: { item: MessageItem }) {
     return <InjectedNotice item={item} notice={first} />;
   }
   const text = first?.kind === 'text' ? first.text : '';
+  const cap = systemChars(item.systemSubtype);
   return (
     <div id={item.uuid} className="px-2 py-0.5 text-xs text-[var(--text-dim)]/70">
       <Anchors item={item} />
@@ -423,10 +424,13 @@ function SystemItem({ item }: { item: MessageItem }) {
         {systemLabel(item.systemSubtype)}
       </span>
       {/* The searchable half — the subtype chip beside it is not. The cut is
-          hard: there is no fold to open, so the find bar stops counting here
-          too, or it would offer matches nothing can show. */}
+          hard: there is no fold to open, so the find bar and the index stop
+          counting exactly here too, or they would offer matches nothing can
+          show. A recap is exempt (`systemChars`) and drawn whole: the cap is
+          there to keep 2 KB of `<command-name>` markup out of the thread, and
+          it was cutting the one line here written to be read. */}
       <span data-bubble-body className="whitespace-pre-wrap">
-        {text.length > SYSTEM_CHARS ? `${text.slice(0, SYSTEM_CHARS)}…` : text}
+        {text.length > cap ? `${text.slice(0, cap)}…` : text}
       </span>
     </div>
   );

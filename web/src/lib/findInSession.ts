@@ -26,7 +26,7 @@ import {
   type SearchSnippet,
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
-  SYSTEM_CHARS,
+  systemChars,
   type Turn,
 } from '@claude-history/shared';
 import type { MatchHighlight } from './highlight.ts';
@@ -61,14 +61,14 @@ export const ROLE_LABEL: Record<FindRole, string> = {
 };
 
 /**
- * A `system` line is drawn cut at this length and has no fold to open, so the
- * corpus stops here too — counting a match nothing can show is the one thing
- * this whole feature exists to stop. It moved to `shared` when the SERVER grew
- * a reason to know it (a recap is indexed, and the index must not claim more of
- * one than `SystemItem` will draw); re-exported because this module is where
- * `SystemItem` and the bar were written to read it from.
+ * How much of a `system` line is drawn, and therefore how much of it this
+ * corpus holds — counting a match nothing can show is the one thing this whole
+ * feature exists to stop. It moved to `shared` when the SERVER grew a reason to
+ * know it (a recap is indexed, and the index must not claim more of one than
+ * `SystemItem` will draw); re-exported because this module is where `SystemItem`
+ * and the bar were written to read it from.
  */
-export { SYSTEM_CHARS };
+export { systemChars };
 /**
  * A one-character phrase matches a hundred thousand times in a big session, and
  * `parseTerms` applies no minimum length in phrase mode. The scan stops here and
@@ -259,9 +259,10 @@ function noticeUnit(item: MessageItem, notice: Extract<ContentBlock, { kind: 'no
 function systemUnit(item: MessageItem): FindUnit | null {
   const first = item.blocks[0];
   if (!first || first.kind !== 'text') return null;
-  // Cut where `SystemItem` cuts it: it draws the first 400 characters and has no
-  // fold to open, so a hit past them could be counted and never shown.
-  return unitOf(item, null, [{ text: first.text.slice(0, SYSTEM_CHARS), role: 'system' }], null);
+  // Cut where `SystemItem` cuts it — which for a recap is nowhere, and for
+  // everything else is 400 characters with no fold to open, so a hit past them
+  // could be counted and never shown.
+  return unitOf(item, null, [{ text: first.text.slice(0, systemChars(item.systemSubtype)), role: 'system' }], null);
 }
 
 /**

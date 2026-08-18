@@ -17,9 +17,10 @@ export {
   oneLine,
   parseTerms,
   type SearchBlock,
+  RECAP_SUBTYPE,
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
-  SYSTEM_CHARS,
+  systemChars,
 } from '@claude-history/shared';
 
 export interface SearchOptions {
@@ -68,9 +69,10 @@ export const INTENT_ROLE = 'intent';
  * FOR. It carries no `toolUseId`, only the line's own uuid, which is what
  * `SystemItem` puts on its `id` and `locate` already holds.
  *
- * **Indexed cut at `SYSTEM_CHARS`**, because that is where `SystemItem` cuts it
- * and there is no fold to open the rest — one of the 148 runs to 465
- * characters, and the tail of that one is text no hit could ever be shown in.
+ * **Indexed as far as `systemChars` allows, which for a recap is all of it.**
+ * The cut still governs every other subtype, and the rule behind it is the one
+ * that matters: never index past where the viewer will DRAW it. A recap escapes
+ * by being drawn whole, not by being searched further than it is shown.
  */
 export const RECAP_ROLE = 'recap';
 
