@@ -56,10 +56,23 @@ function psLiteral(value: string): string {
  * parentheses and anything else without meeting either Windows' argv escaping
  * or PowerShell's own parser on the way in. Worth it here because the scripts
  * below nest one command inside another.
+ *
+ * **No `-ExecutionPolicy Bypass`, deliberately.** It is what everything else in
+ * this repo passes, and everything else in this repo runs a `.ps1` FILE, where
+ * the policy genuinely decides. Execution policy has never governed `-Command`
+ * or `-EncodedCommand`, so here it bought nothing — while
+ * `-ExecutionPolicy Bypass -EncodedCommand` together are the command line
+ * Defender's ML scores as an attack, and it blocks the launch outright rather
+ * than reading the base64 (see AI_REMOTE_ACCESS.md). Verified before removing it,
+ * because "redundant" is a claim and module auto-loading was the way it could
+ * have been wrong: forced to `-ExecutionPolicy Restricted` and again to
+ * `AllSigned`, this same encoded payload still reached the COM API,
+ * `Get-NetConnectionProfile`, `Get-NetFirewallRule` and `New-NetFirewallRule`.
+ * Nothing here loads a script file, so nothing here needs the flag.
  */
 export function powershell(script: string, timeout: number): Promise<{ stdout: string }> {
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
-  return run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+  return run('powershell.exe', ['-NoProfile', '-EncodedCommand', encoded], {
     timeout,
     windowsHide: true,
     encoding: 'utf8',
@@ -179,6 +192,12 @@ const COM_HELPERS = [
  * are local-only: over the network it would pop a dialog nobody is there to
  * accept.
  *
+ * The inner argument list carries no `-ExecutionPolicy Bypass` — see
+ * `powershell` above for why it never did anything here, and for the antivirus
+ * that treats it as half a signature. This is the launch that gets blocked when
+ * it fires, and the throw it produces is `Access is denied.`, which reads
+ * exactly like a cancelled UAC prompt.
+ *
  * Two things this got wrong the first time, both worth keeping written down:
  *
  * - **One statement per line, and no backticks.** A backtick continues a
@@ -197,7 +216,7 @@ export async function elevate(innerScript: string): Promise<void> {
   const outer = [
     "$ErrorActionPreference = 'Stop'",
     'try {',
-    `  $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${inner}')`,
+    `  $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile','-EncodedCommand','${inner}')`,
     "  if ($p.ExitCode -eq 0) { 'ok' } else { 'failed: the elevated command exited with ' + $p.ExitCode }",
     '} catch {',
     "  'failed: ' + $_.Exception.Message",
