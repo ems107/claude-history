@@ -4,7 +4,7 @@
 
 ## Invariants
 
-- **Tool calls and tool output are NEVER indexed** — with exactly one exception, a plan.
+- **Tool calls and tool output are NEVER indexed** — with exactly two exceptions, a plan and a call's stated intent.
 - **The deep scan re-matches the indexed text too**, so it is a superset of the plain search by construction.
 - **One predicate decides what is searchable** (`skipBlock`), shared by the index, the deep scan and both paged match lists.
 - **A find bar counts occurrences; a match page counts places.**
@@ -22,6 +22,10 @@ Measured on this machine: the indexed text (titles, typed prompts, assistant pro
 **The plan of an `ExitPlanMode` call IS indexed**, under a role of its own (`PLAN_ROLE`, `fillPlanText`). The rule above is about SIZE — plans are 17 documents and a quarter of a megabyte against the 34% of the corpus that justifies it — and they are the highest-value prose a session holds. A restriction to titles, prompts or responses leaves them out with no rule of its own, since `in=user` names the roles it wants and a plan is not something the user wrote.
 
 - **That makes de-duplication the deep scan's problem, and there were TWO copies.** The call's input is the obvious one (`toolCallText` emits the bare tool name for `ExitPlanMode`). The other is the approval's own tool_result, which echoes the whole plan back after a fixed preamble — with the SAME `toolUseId` anchor as the indexed row, so a deep search showed one plan twice and sent both links to the same place. The echo is cut at `## Approved Plan:` and the preamble kept, because it names the file the plan was saved to. (Checked: `b343d4ac` went 7 → 6 deep matches, both page sets still closing.)
+
+**What the model said it was DOING is indexed too** (`INTENT_ROLE`, `toolIntent`), and it is the cheapest prose in the corpus: the `description` Claude Code makes the model write for every Bash and PowerShell call — **4,907 calls here, 100% of both tools, 40% of all 12,612 calls** — plus the `activeForm` of a task. One short line each, against the 34% of the bytes that tool OUTPUT is, so the size rule is untouched. It is skipped when `summarizeInput` already returns it (`Task`/`Agent` are named by their description), which is what keeps the indexed text equal to the text the collapsed header draws. Same treatment as a plan otherwise: anchored on the CALL, and out of `in=user`.
+
+- **De-duplication, once more, and this time it was the input itself.** `description` and `activeForm` are stripped from the JSON `toolCallText` stringifies, or the sentence would come back twice under the same `toolUseId` — once as the indexed row and once inside the call. **Only when the transcript was indexed at all**: inside a subagent's own file nothing was, so there the input keeps them and is the only copy there is. (Checked: `Commit the firewall UX fix` → one `intent` place in `bfbdf4c2`, deep and plain, 1/1 paging; a description living only in `19ebb1d5`'s agents still comes back, as an `agent` row.)
 
 **The deep scan re-matches the indexed text**, rather than merging two result sets: only that way can "all words anywhere in the session" pair a word from a prompt with one that exists solely in a tool result. It is a superset of the plain search by construction, snippet budget included (6 a session against 3, so pressing the button never shows less than not pressing it).
 

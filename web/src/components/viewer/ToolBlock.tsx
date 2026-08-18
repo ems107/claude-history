@@ -109,7 +109,19 @@ export function ToolBlock({
           <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
           <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
-          <span className="truncate font-mono text-[var(--text-dim)]">{block.inputSummary}</span>
+          {/* One truncating box, two voices: what the model said it was doing
+              (`intent`) and what it literally ran. One ellipsis, at the end, and
+              the prose gets the room — a Bash command is usually a path and a
+              flag, and the sentence beside it is the only thing that says why.
+              The order is the contract `findInSession` folds against; the
+              separation is margin, never a character, so the two corpora cannot
+              disagree about what is in this box. */}
+          <span className="min-w-0 flex-1 truncate">
+            {block.intent && <span className="text-[var(--text)]">{block.intent}</span>}
+            <span className={`font-mono text-[var(--text-dim)] ${block.intent ? 'ml-2' : ''}`}>
+              {block.inputSummary}
+            </span>
+          </span>
         </FoldHeader>
         {/* Gated on the tool NAME, not on the shape of the string: for these
             five the summary IS the `file_path` (parser.ts summarizeInput), so

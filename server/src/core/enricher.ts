@@ -12,8 +12,8 @@ import type {
 } from '@claude-history/shared';
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
-import { planFeedback, planTitle, toMessageUsage } from './parser.ts';
-import { PLAN_ROLE } from './searchText.ts';
+import { planFeedback, planTitle, toMessageUsage, toolIntent } from './parser.ts';
+import { INTENT_ROLE, PLAN_ROLE } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
 
 // It moved to `shared` when the viewer grew a search of its own over a corpus
@@ -346,6 +346,19 @@ export async function enrichSession(
             searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.text });
           } else if (block.type === 'tool_use') {
             toolUseCount++;
+            // The second exception to "tool calls are never indexed", and the
+            // cheap one: one short line of the model's own prose per call. The
+            // anchor is the CALL, like a plan's — one assistant message holds
+            // several, and `?tool=` is what opens the right one.
+            const intent = toolIntent(str(block.name) ?? 'tool', block.input);
+            if (intent) {
+              searchBlocks.push({
+                uuid: str(o.uuid),
+                role: INTENT_ROLE,
+                text: intent,
+                toolUseId: str(block.id),
+              });
+            }
             if (block.name === 'ExitPlanMode') {
               const toolUseId = str(block.id);
               if (toolUseId && !plans.has(toolUseId)) {

@@ -197,10 +197,15 @@ type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
  * The input is folded as it is RENDERED — pretty-printed, the way `ToolBlock`
  * prints it — and not in the compact form the server's deep scan reads. A hit
  * the bar cannot paint is worse than one it never claims.
+ *
+ * The header is the same rule applied to its two halves: `intent` BEFORE
+ * `inputSummary`, because that is the order they are drawn in, and an ordinal
+ * counted in the other order would paint the wrong occurrence.
  */
 function toolUnit(block: ToolBlock, owner: MessageItem): FindUnit | null {
   const role: FindRole = block.toolName === 'ExitPlanMode' ? 'plan' : 'tool';
-  const pieces: Piece[] = [{ text: `${block.toolName} ${block.inputSummary}`, role }];
+  const header = [block.toolName, block.intent, block.inputSummary].filter(Boolean).join(' ');
+  const pieces: Piece[] = [{ text: header, role }];
   if (block.input !== null && block.input !== undefined) {
     try {
       pieces.push({ text: JSON.stringify(block.input, null, 2), role });

@@ -168,7 +168,11 @@ function contentLines(
         }
         if (!opts.includeTools) break;
         writeHeader();
-        const summary = `🔧 <b>${block.toolName}</b>${block.inputSummary ? ` — <code>${block.inputSummary.slice(0, 120).replace(/</g, '&lt;')}</code>` : ''}`;
+        // Same two voices as the collapsed header in the app, same order: the
+        // sentence that says why, then the command that says what.
+        const intent = block.intent ? ` — ${block.intent.replace(/</g, '&lt;')}` : '';
+        const ran = block.inputSummary ? ` — <code>${block.inputSummary.slice(0, 120).replace(/</g, '&lt;')}</code>` : '';
+        const summary = `🔧 <b>${block.toolName}</b>${intent}${ran}`;
         out.push('<details>', `<summary>${summary}</summary>`, '');
         if (block.input !== null && block.input !== undefined) {
           out.push('**Input**', '', fence(JSON.stringify(block.input, null, 2), 'json'), '');

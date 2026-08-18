@@ -71,7 +71,12 @@ function toolResultText(content: unknown): string {
 /** Where an `ExitPlanMode` approval stops explaining itself and repeats the plan. */
 const APPROVED_PLAN_MARKER = '## Approved Plan:';
 
-function toolCallText(block: Record<string, unknown>): string {
+/**
+ * @param indexed Whether this call's own transcript went through the enricher —
+ *   true in a session, FALSE in a subagent's, which nothing indexes. It decides
+ *   whether the intent below is already a row of its own.
+ */
+function toolCallText(block: Record<string, unknown>, indexed: boolean): string {
   const name = str(block.name) ?? 'tool';
   // A plan is INDEXED (see `fillPlanText`), and this scan re-matches the indexed
   // text as well as reading the tool traffic — so carrying the input here would
@@ -79,9 +84,19 @@ function toolCallText(block: Record<string, unknown>): string {
   // name is kept, because "which session called ExitPlanMode" is still a
   // question this scan should answer.
   if (name === 'ExitPlanMode') return name;
+  const input = block.input ?? {};
+  // The same trap, and the same answer, for the OTHER indexed piece of tool
+  // traffic (`toolIntent`): the description of a Bash call is an indexed row
+  // carrying this very `toolUseId`, so stringifying it here too would show one
+  // sentence twice and send both copies to the same place. Only inside a
+  // subagent is this the only copy there is, and there it stays.
+  if (indexed && isRec(input) && (input.description !== undefined || input.activeForm !== undefined)) {
+    const { description: _d, activeForm: _a, ...rest } = input;
+    return `${name} ${JSON.stringify(rest)}`;
+  }
   // Everything else, as written: a command, a path, a pattern. Searching it
   // answers "which session ran that" as well as any prose would.
-  return `${name} ${JSON.stringify(block.input ?? {})}`;
+  return `${name} ${JSON.stringify(input)}`;
 }
 
 /**
@@ -374,7 +389,7 @@ export class DeepSearchService {
             if (block.type === 'tool_use') {
               const callId = str(block.id);
               if (callId && str(block.name) === 'ExitPlanMode') planCalls.add(callId);
-              yield { uuid, role: 'call', text: toolCallText(block), toolUseId: callId };
+              yield { uuid, role: 'call', text: toolCallText(block, true), toolUseId: callId };
             } else if (block.type === 'tool_result') {
               const callId = str(block.tool_use_id);
               resultOf ??= callId;
@@ -431,7 +446,7 @@ export class DeepSearchService {
               if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
                 yield { uuid: null, role: 'agent', text: block.text };
               } else if (block.type === 'tool_use') {
-                yield { uuid: null, role: 'agent', text: toolCallText(block) };
+                yield { uuid: null, role: 'agent', text: toolCallText(block, false) };
               } else if (block.type === 'tool_result') {
                 const text = toolResultText(block.content);
                 if (text.trim()) yield { uuid: null, role: 'agent', text };

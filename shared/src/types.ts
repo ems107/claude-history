@@ -552,6 +552,15 @@ export type ContentBlock =
       toolName: string;
       toolUseId: string;
       inputSummary: string;
+      /**
+       * What the model said it was doing, in its own words: the `description`
+       * Claude Code makes it write for every Bash and PowerShell call, and the
+       * `activeForm` of a task. Null when the call carries neither, or when the
+       * summary above already IS it (an Agent call is named by its description).
+       * See `toolIntent` — and note it is drawn BEFORE `inputSummary`, which is
+       * the order `findInSession` has to fold it in.
+       */
+      intent: string | null;
       input: unknown;
       result: ToolResultInfo | null;
       /** Set when this tool_use spawned a subagent (Task tool). */

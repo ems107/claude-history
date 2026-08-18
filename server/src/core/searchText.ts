@@ -33,8 +33,8 @@ export interface SearchOptions {
 export const ID_ROLE = 'id';
 
 /**
- * The role of a plan submitted with `ExitPlanMode` — the one piece of tool
- * traffic that IS indexed, see `fillPlanText`.
+ * The role of a plan submitted with `ExitPlanMode` — one of the two pieces of
+ * tool traffic that ARE indexed, see `fillPlanText`.
  *
  * It needs no rule of its own here: a request restricting the search to titles,
  * prompts or responses names those roles explicitly, so `skipBlock` already
@@ -42,6 +42,19 @@ export const ID_ROLE = 'id';
  * something the user wrote.
  */
 export const PLAN_ROLE = 'plan';
+
+/**
+ * The other one: what the model said it was doing when it made a call
+ * (`toolIntent`) — the `description` of every Bash and PowerShell call and the
+ * `activeForm` of a task.
+ *
+ * Same argument as the plan, and the same escape from the size rule that keeps
+ * tool traffic out: this is ~5,000 short lines of prose across the corpus, not
+ * the 34% of the bytes that tool OUTPUT is. It carries the call's `toolUseId`,
+ * so a hit opens the call it describes and not merely the session; and like a
+ * plan it stays out of `in=user`, being nothing the user wrote.
+ */
+export const INTENT_ROLE = 'intent';
 
 /**
  * Whether this query may look at session ids at all. The app writes ids as

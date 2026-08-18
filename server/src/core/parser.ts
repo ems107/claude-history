@@ -349,6 +349,39 @@ function summarizeInput(toolName: string, input: unknown): string {
   }
 }
 
+/**
+ * What the model said it was DOING when it made this call, as opposed to what
+ * the call literally is.
+ *
+ * Claude Code makes the model write a `description` for every Bash and
+ * PowerShell call — 4,907 of them here, 100% of both tools — and an `activeForm`
+ * for a task ("Implementing filters, cache and search"). It is the only prose in
+ * the whole of a tool call, it is the line the CLI shows next to its spinner
+ * while the call runs, and until this existed the app threw it away: the
+ * collapsed header showed `cd "C:/…" && sed -n '…' | head -45` and nothing said
+ * why.
+ *
+ * Skipped when the summary already IS it: `Task`/`Agent` are named by their
+ * description (`summarizeInput`), and printing it twice on one line says less
+ * than printing it once. That test is why this cannot live in the caller — the
+ * enricher indexes exactly the text the header draws, and the two agreeing is
+ * what keeps a search hit and the row it opens saying the same thing.
+ */
+export function toolIntent(toolName: string, input: unknown): string | null {
+  if (!isRec(input)) return null;
+  const said: string[] = [];
+  for (const key of ['description', 'activeForm']) {
+    const v = str(input[key])?.trim();
+    if (v && !said.includes(v)) said.push(v);
+  }
+  // Only now: `summarizeInput` re-titles a 25 KB plan, and a call with nothing
+  // to say must not pay for that.
+  if (said.length === 0) return null;
+  const summary = summarizeInput(toolName, input);
+  const parts = said.filter((v) => v !== summary);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 export interface ParsedTranscript {
   turns: Turn[];
   prLinks: PrLink[];
@@ -939,6 +972,7 @@ export async function parseTranscript(
               toolName,
               toolUseId,
               inputSummary: summarizeInput(toolName, c.input),
+              intent: toolIntent(toolName, c.input),
               input: c.input ?? null,
               result: null,
               agentId: agentIdByToolUse.get(toolUseId) ?? null,

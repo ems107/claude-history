@@ -35,6 +35,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 
 **Nothing that folds may be a `<button>`.** No browser lets a button's text be selected, and a fold header is where the viewer writes the figures worth copying: the tool name with its arguments, file paths, the dates and cost of a compacted stretch, token counts. They all go through `FoldHeader` — a div with `role="button"`, `tabIndex`, Enter/Space and `select-text` — and everything that folds on a click (an injected notice, the log rows) first asks `hasSelection()`, or a drag ending inside it collapses what the user was about to copy.
 
+- **A tool header has two voices, and the prose comes first.** `intent` — what the model said it was doing — then `inputSummary`, the command itself, dimmer and monospaced ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#line-types) for where it comes from and how often). Both sit in ONE truncating box so there is a single ellipsis and the sentence gets the room, and they are separated by a MARGIN rather than by a character: `findInSession` folds the same header from the same two fields in the same order, and a `·` drawn in only one of the two corpora is a character the ordinals could disagree about.
 - **A message bubble is not one of them.** A prompt used to fold its own turn in prompts-only mode, and an accidental click there hid the answer being read, so `Bubble` takes no `onClick` at all: a turn folds only from its fold strip.
 - Two consequences: **nothing interactive may be nested inside a `FoldHeader`** (copy buttons, cost pills and the subagent link are siblings in the header row), and a shrink-wrapped header needs `w-fit`, which the `<button>` gave for free.
 - Real buttons stay real: the header's mode toggles are controls with nothing to copy.
@@ -236,7 +237,8 @@ link marking a notice's origin chip and clock.
   separately but share a `[data-tool-id]`, and a hit's ordinal only lines up
   with the DOM if they are counted as the one run of text the reader sees. Its
   input is folded as it is RENDERED — pretty-printed — and not in the compact
-  form the deep scan reads.
+  form the deep scan reads, and its header is folded in the order it is DRAWN:
+  name, `intent`, `inputSummary`.
 - **The order is `turns` order**, which means imitating `TurnView`'s tool
   accumulator: a message's trailing calls are drawn AFTER its bubble and its
   leading calls inside it, so a flat walk that ignored that would sort them

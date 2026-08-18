@@ -14,8 +14,10 @@ import { createLogger } from './logger.ts';
  * was working (the `attachment` envelope) started being counted and indexed.
  * 10: what the session's subagents spent became part of the enrichment. 11: their
  * ids joined the search index, and a nested agent's report stopped being dropped.
+ * 12: an `ExitPlanMode` plan joined it too. 13: and what the model said it was
+ * doing when it made a call (`toolIntent`).
  */
-export const CACHE_VERSION = 12;
+export const CACHE_VERSION = 13;
 
 const cacheLog = createLogger('cache');
 
