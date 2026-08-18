@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  AuthStatusResponse,
   AutoReloadRun,
   AutoReloadStatus,
   ChatPermissionMode,
@@ -9,6 +10,7 @@ import type {
   FileOpenRequest,
   FileOpenResponse,
   FileReadResponse,
+  FirewallStatusResponse,
   LineageResponse,
   LiveResponse,
   LogDayResponse,
@@ -51,14 +53,70 @@ export interface SettingsResponse {
   version: string;
 }
 
+/**
+ * A session that is no longer valid, announced once so the whole app can react.
+ *
+ * Every query would otherwise fail on its own and each would render its own
+ * error box, when the truth is a single fact about the page: it is signed out.
+ * `App` listens for this and re-reads `/api/auth/status`, which swaps the app
+ * for the login screen without a reload.
+ */
+export const UNAUTHORIZED_EVENT = 'ch:unauthorized';
+
+function noteAuthFailure(status: number): void {
+  if (status === 401 || status === 403) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+}
+
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { signal });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} — ${url}`);
+  if (!res.ok) {
+    noteAuthFailure(res.status);
+    throw new Error(`${res.status} ${res.statusText} — ${url}`);
+  }
   return res.json() as Promise<T>;
 }
 
 export const api = {
   meta: () => getJson<MetaResponse>('/api/meta'),
+  /** The one endpoint that answers before signing in. Four booleans, nothing else. */
+  authStatus: () => getJson<AuthStatusResponse>('/api/auth/status'),
+  login: async (username: string, password: string) => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; retryAfterSeconds?: number };
+    // No `noteAuthFailure` here: a wrong password IS a 401, and announcing it
+    // as a lost session would reload the screen the user is typing into.
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return { ok: true };
+  },
+  logout: async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  },
+  /** Rotates the signing key: every signed-in device, here included, is signed out. */
+  logoutEverywhere: async () => {
+    const res = await fetch('/api/auth/logout-all', { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  },
+  setCredentials: async (username: string, password: string) => {
+    const res = await fetch('/api/auth/credentials', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  },
+  firewall: () => getJson<FirewallStatusResponse>('/api/firewall'),
+  setFirewallRule: async (allow: boolean) => {
+    const res = await fetch('/api/firewall', { method: allow ? 'POST' : 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),

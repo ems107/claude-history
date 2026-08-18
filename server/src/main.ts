@@ -1,5 +1,5 @@
 import { buildApp } from './app.ts';
-import { loadConfig } from './config.ts';
+import { isLoopbackHost, loadConfig } from './config.ts';
 import { AutoReloadService } from './core/autoReload.ts';
 import { SessionIndex } from './core/index.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
@@ -72,7 +72,14 @@ async function main(): Promise<void> {
 
   try {
     await app.listen({ host: config.host, port: config.port });
-    log.info(`listening on http://${config.host}:${config.port} (data root: ${config.dataRoot})`);
+    // `http://0.0.0.0:7433` is not an address anyone can open, so the URL is
+    // always the local one and the bind is reported beside it — the two are
+    // different facts now, and which interfaces are open is the one worth
+    // finding in a log.
+    const scope = isLoopbackHost(config.host) ? 'this machine only' : `bound to ${config.host}`;
+    log.info(
+      `listening on http://127.0.0.1:${config.port} (${scope}, data root: ${config.dataRoot})`,
+    );
   } catch (err) {
     log.error('could not listen — exiting', err);
     process.exit(1);

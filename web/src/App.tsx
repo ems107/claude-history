@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
 import { GearIcon } from './components/icons.tsx';
-import { api } from './api/client.ts';
+import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
+import { LoginPage } from './pages/LoginPage.tsx';
+import { RemoteDisabledPage } from './pages/RemoteDisabledPage.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
@@ -28,6 +30,43 @@ function NavItem({ to, label }: { to: string; label: string }) {
     >
       {label}
     </NavLink>
+  );
+}
+
+/**
+ * Which of the three screens this browser gets, before anything else runs.
+ *
+ * Everything below this gate — the SSE connection, the usage widget, the update
+ * poller — talks to endpoints that answer 401 to a stranger, so mounting them
+ * first would mean a burst of failing requests behind a login form. Hence a
+ * component of its own: `App` itself only exists once the answer is "in".
+ */
+export function AppGate() {
+  const queryClient = useQueryClient();
+  const { data: auth, isPending } = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
+
+  // A session that dies while the app is open (the key was rotated, the cookie
+  // expired) is announced once by the API client; re-reading the status is what
+  // swaps this back to the login form without a reload.
+  useEffect(() => {
+    const onUnauthorized = () => void queryClient.invalidateQueries({ queryKey: ['auth'] });
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+  }, [queryClient]);
+
+  // Nothing at all while it is being asked: this resolves in a millisecond on
+  // loopback, and a spinner would be a flash of layout for no information.
+  if (isPending || !auth) return null;
+  if (auth.authenticated) return <App />;
+  if (!auth.remoteAccessEnabled || !auth.configured) return <RemoteDisabledPage />;
+  return (
+    <LoginPage
+      onSignedIn={() => {
+        // Everything is stale by definition: this page has been answering 401
+        // to every query it made until a moment ago.
+        void queryClient.invalidateQueries();
+      }}
+    />
   );
 }
 

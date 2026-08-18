@@ -13,7 +13,9 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
+import { useLocalOnly } from '../api/useLocal.ts';
 import { BackupsPanel } from '../components/BackupsPanel.tsx';
+import { RemoteAccessPanel } from '../components/RemoteAccessPanel.tsx';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
 
@@ -373,6 +375,11 @@ export function SettingsPage() {
   const [uninstalling, setUninstalling] = useState(false);
   const [wipeData, setWipeData] = useState(false);
   const [uninstalled, setUninstalled] = useState(false);
+  // Four of the buttons on this page act on the machine the server runs on.
+  const dataFolder = useLocalOnly('openDataFolder');
+  const installFolder = useLocalOnly('openInstallFolder');
+  const stopServer = useLocalOnly('stopServer');
+  const uninstall = useLocalOnly('uninstall');
 
   // Arriving from the "change" link at the foot of the session list: this page
   // is long, so land on the block that was asked for and mark it for a moment —
@@ -737,6 +744,10 @@ export function SettingsPage() {
           </div>
         </Section>
 
+        <Section title="Remote access" id="remote-access" highlight={flashed === 'remote-access'}>
+          <RemoteAccessPanel settings={s} save={save} dev={dev} />
+        </Section>
+
         <Section title="Your data, and how to get it back" id="backups" highlight={flashed === 'backups'}>
           <BackupsPanel />
         </Section>
@@ -821,14 +832,20 @@ export function SettingsPage() {
             )}
           </div>
           <div className="flex flex-wrap gap-1.5 pt-1">
-            <button type="button" className={btn} onClick={() => void api.openDataFolder()}>
+            <button
+              type="button"
+              className={btn}
+              disabled={dataFolder.disabled}
+              title={dataFolder.reason ?? undefined}
+              onClick={() => void api.openDataFolder()}
+            >
               Open data folder
             </button>
             <button
               type="button"
               className={btn}
-              disabled={!data.paths.installRoot}
-              title={data.paths.installRoot ?? 'Not a managed install'}
+              disabled={!data.paths.installRoot || installFolder.disabled}
+              title={installFolder.reason ?? data.paths.installRoot ?? 'Not a managed install'}
               onClick={() => void api.openInstallFolder()}
             >
               Open install folder
@@ -852,7 +869,8 @@ export function SettingsPage() {
             <button
               type="button"
               className={`${btn} border-red-500/40 text-red-300 hover:border-red-400`}
-              disabled={stopped}
+              disabled={stopped || stopServer.disabled}
+              title={stopServer.reason ?? undefined}
               onClick={() => {
                 // Whichever instance this page belongs to is the one that
                 // exits — the request goes to the port it was served from —
@@ -876,8 +894,8 @@ export function SettingsPage() {
             <button
               type="button"
               className={`${btn} border-red-500/40 text-red-300 hover:border-red-400`}
-              disabled={!data.paths.installRoot || stopped}
-              title={data.paths.installRoot ?? 'Not a managed install — nothing to uninstall'}
+              disabled={!data.paths.installRoot || stopped || uninstall.disabled}
+              title={uninstall.reason ?? data.paths.installRoot ?? 'Not a managed install — nothing to uninstall'}
               onClick={() => setUninstalling(true)}
             >
               Uninstall

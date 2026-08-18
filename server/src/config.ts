@@ -19,6 +19,20 @@ export interface AppConfig {
   userdataFile: string;
   /** Daily JSONL log files. Same place for every way of running the server. */
   logsDir: string;
+  /**
+   * The address to bind. `0.0.0.0` for a release, `127.0.0.1` for a dev
+   * instance, `--host` over both.
+   *
+   * A release listens on every interface ALWAYS, whatever `remoteAccessEnabled`
+   * says, and that is deliberate: a request that is refused can be answered and
+   * explained ("remote access is off, here is how to turn it on"), while one
+   * that never reaches a socket is a browser error page nobody can act on. It
+   * also means the setting can be flipped without re-listening.
+   *
+   * What pays for it is `routes/auth.ts` plus the hook in `app.ts`: anything
+   * arriving from a non-loopback address gets NOTHING until it authenticates.
+   * These two are one feature — never widen the bind without it.
+   */
   host: string;
   port: number;
   /** Absolute path to built web assets, or null in dev (Vite serves the UI). */
@@ -55,6 +69,16 @@ export interface AppConfig {
 /** The installed release's port. A dev instance must never bind it. */
 export const RELEASE_PORT = 7433;
 export const DEV_PORT = 7434;
+
+/** Every interface — what a release binds so remote access is possible at all. */
+export const ANY_HOST = '0.0.0.0';
+/** This machine only — a dev instance, and anything asked for explicitly. */
+export const LOOPBACK_HOST = '127.0.0.1';
+
+/** Does this bind address reach nothing but this machine? */
+export function isLoopbackHost(host: string): boolean {
+  return host === LOOPBACK_HOST || host === '::1' || host === 'localhost';
+}
 
 function parseArgs(argv: string[]): Map<string, string> {
   const args = new Map<string, string>();
@@ -115,6 +139,17 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     );
   }
 
+  // A dev instance stays on loopback: remote access belongs to the release, and
+  // a checkout that opens a port on the LAN every time it is started is not
+  // something anyone asked for. `--host` overrides both, for the one case this
+  // cannot guess (a machine with several interfaces and a reason to pick one).
+  const host = args.get('host') || (devInstance ? LOOPBACK_HOST : ANY_HOST);
+  if (devInstance && !isLoopbackHost(host)) {
+    warnings.push(
+      `--dev-instance was asked to bind ${host}. A dev instance has no remote access and no authentication: anything reaching it is treated as local.`,
+    );
+  }
+
   const cacheDir = path.resolve(cacheBase);
   return {
     dataRoot,
@@ -125,7 +160,7 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     cacheDir,
     userdataFile: path.resolve(cacheDir, '..', 'userdata.json'),
     logsDir: args.get('logs-dir') ? path.resolve(args.get('logs-dir') as string) : path.resolve(cacheDir, '..', 'logs'),
-    host: '127.0.0.1',
+    host,
     port,
     staticDir,
     exitWithParent: args.has('exit-with-parent'),

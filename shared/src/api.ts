@@ -23,6 +23,62 @@ export interface MetaResponse {
   version: string;
   /** Started with `--dev-instance`: own port, own data folder, beside the release. */
   devInstance: boolean;
+  /**
+   * This request did NOT come from the machine the server runs on.
+   *
+   * The single source of truth for it, because only the server can know: it is
+   * read from the socket, and a page cannot ask its own browser which address
+   * it connected from. Never re-derive it from `window.location.hostname` —
+   * that answers a different question and would be wrong the first time anyone
+   * reaches the app by a name instead of an address.
+   *
+   * What it drives in the UI is the set of actions that can only happen where
+   * the server is (see `localOnly.ts`).
+   */
+  remote: boolean;
+}
+
+// ---- Remote access ----
+
+/**
+ * What an unauthenticated caller is allowed to know. Deliberately four
+ * booleans: the username, the version, the paths and the session list are all
+ * things a page must log in to see.
+ */
+export interface AuthStatusResponse {
+  /** The request came from another machine. */
+  remote: boolean;
+  /** `remoteAccessEnabled`, so a remote page can tell "off" from "log in". */
+  remoteAccessEnabled: boolean;
+  /** Credentials have been set. */
+  configured: boolean;
+  /** This request carries a valid session, or is local (which needs none). */
+  authenticated: boolean;
+}
+
+/**
+ * Floor on the remote-access password. Shared so the field that refuses to
+ * submit and the endpoint that refuses to save agree — a form that lets you
+ * type something the server will reject is a form that wasted your time.
+ */
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** Everything about "can another machine actually reach this one", in one read. */
+export interface FirewallStatusResponse {
+  /** An inbound rule for this port exists. Null when it could not be read. */
+  ruleExists: boolean | null;
+  /** The rule this app manages, by name. */
+  ruleName: string;
+  port: number;
+  /**
+   * Network profiles the machine's active connections are on right now. The
+   * rule is created for `Private`, so a home network Windows decided to call
+   * `Public` stays shut and looks like a broken rule — worth showing.
+   */
+  activeProfiles: string[];
+  /** This machine's own IPv4 addresses, so the URL to type does not have to be hunted for. */
+  addresses: string[];
+  error: string | null;
 }
 
 export type SessionsResponse = SessionSummary[];
@@ -424,6 +480,16 @@ export interface AppSettings {
    * slot and a `claude` process, and a forgotten tab should not own either.
    */
   chatIdleTimeoutMinutes: number;
+  /**
+   * Let browsers on OTHER machines use this app, after logging in.
+   *
+   * Off by default, and the only thing standing between the LAN and a composer
+   * that runs Claude with auto-approved tools — which is why turning it on
+   * requires credentials in the same gesture. The server listens on every
+   * interface regardless (see `config.ts`); this decides whether a request from
+   * one of them is offered a login or an explanation.
+   */
+  remoteAccessEnabled: boolean;
   /** Lowest level actually written to the log files. */
   logLevel: LogLevel;
   /** Daily log files older than this are deleted (minimum 1). */
@@ -449,6 +515,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadHideSessions: false,
   chatEnabled: false,
   chatIdleTimeoutMinutes: 10,
+  remoteAccessEnabled: false,
   logLevel: 'info',
   logRetentionDays: 14,
 };

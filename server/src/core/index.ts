@@ -24,7 +24,8 @@ import {
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFileOrQuarantine, writeJsonAtomic, type CacheKey } from './cache.ts';
-import { UserdataBackups } from './userdataBackups.ts';
+import { UserdataBackups, type UserdataCounts } from './userdataBackups.ts';
+import type { AuthConfig } from './auth.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
 import { appendedText, safeParse, str } from './jsonl.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
@@ -131,6 +132,12 @@ export class SessionIndex {
   private prices: PriceTable | null = null;
   /** User settings — stored in userdata.json alongside renames and pins. */
   private settings: AppSettings = { ...DEFAULT_SETTINGS };
+  /**
+   * Remote-access credentials — stored in userdata.json, under its own key and
+   * NOT in `settings`, which is served whole to every authenticated browser.
+   * Null means none have been set, which is what keeps remote access off.
+   */
+  private auth: AuthConfig | null = null;
   state: IndexState = 'scanning';
   cacheHits = 0;
   private enriching = false;
@@ -158,6 +165,7 @@ export class SessionIndex {
       stars?: StarredMessage[];
       prices?: PriceTable;
       settings?: Partial<AppSettings>;
+      auth?: AuthConfig;
     }>(this.config.userdataFile);
     if (stored.moveError) {
       log.error(
@@ -409,11 +417,15 @@ export class SessionIndex {
   }
 
   /** What the file holds right now, as the backup guard counts it. */
-  private userdataCounts(): { titleOverrides: number; pins: number; stars: number } {
+  private userdataCounts(): UserdataCounts {
     return {
       titleOverrides: Object.keys(this.titleOverrides).length,
       pins: this.pins.size,
       stars: this.stars.size,
+      // Counted like the rest so a write that drops the credentials leaves a
+      // copy behind. Losing them locks every remote device out until someone
+      // walks to the machine — recoverable, but only from a backup.
+      auth: this.auth ? 1 : 0,
     };
   }
 
@@ -429,6 +441,7 @@ export class SessionIndex {
     stars?: StarredMessage[];
     prices?: PriceTable;
     settings?: Partial<AppSettings>;
+    auth?: AuthConfig;
   } | null): void {
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
@@ -442,6 +455,15 @@ export class SessionIndex {
         .map((s) => [starKey(s.sessionId, s.uuid), s]),
     );
     this.prices = userdata?.prices ?? null;
+    // Every field or it is not credentials at all: a half-written record here
+    // would be a password nobody can use and, worse, a `configured: true` that
+    // hides the "set a username and password" panel behind a login nobody can
+    // pass. Treated as absent, which the UI already knows how to fix.
+    const auth = userdata?.auth;
+    this.auth =
+      auth && typeof auth.username === 'string' && typeof auth.passwordHash === 'string' && typeof auth.secret === 'string'
+        ? auth
+        : null;
     // Only keys we still have: a setting that is retired would otherwise live
     // on in userdata.json forever, be served by /api/settings and read as
     // current — which is exactly what happened to chatModel/chatEffort.
@@ -495,6 +517,7 @@ export class SessionIndex {
       stars: [...this.stars.values()],
       settings: this.settings,
       ...(this.prices ? { prices: this.prices } : {}),
+      ...(this.auth ? { auth: this.auth } : {}),
     });
   }
 
@@ -559,10 +582,47 @@ export class SessionIndex {
         MIN_LOG_RETENTION_DAYS,
         Math.round(patch.logRetentionDays ?? this.settings.logRetentionDays),
       ),
+      // Remote access without credentials is an open door, so the switch cannot
+      // be on without them — clamped here rather than trusted to the UI, which
+      // sets both in one gesture but is not the only thing that can PUT here.
+      remoteAccessEnabled: (patch.remoteAccessEnabled ?? this.settings.remoteAccessEnabled) && this.auth !== null,
     };
+    if (patch.remoteAccessEnabled && !this.settings.remoteAccessEnabled) {
+      log.warn('remote access cannot be enabled before a username and password are set — the switch stays off');
+    }
     await this.saveUserdata();
     this.events.emit('settings-changed', this.settings);
     return this.settings;
+  }
+
+  /** The stored credentials, or null when none have been set. */
+  getAuth(): AuthConfig | null {
+    return this.auth;
+  }
+
+  /**
+   * Set or replace the credentials. Only ever reached from a local request
+   * ([localOnly.ts](../../../shared/src/localOnly.ts)), which is what makes
+   * "no old password needed" safe: being at the machine already grants
+   * everything this password protects.
+   */
+  async setAuth(auth: AuthConfig): Promise<void> {
+    this.auth = auth;
+    await this.saveUserdata();
+    // No event: nothing in any browser renders from this, and an event carrying
+    // "the credentials changed" to every open window is a nudge to look.
+  }
+
+  /**
+   * Replace the signing key, which invalidates every session cookie in
+   * existence — the "sign out on all devices" button, and the one action that
+   * has to work from a device you no longer hold.
+   */
+  async rotateAuthSecret(secret: string): Promise<void> {
+    if (!this.auth) return;
+    this.auth = { ...this.auth, secret, updatedAt: new Date().toISOString() };
+    await this.saveUserdata();
+    log.info('the remote-access signing key was rotated — every signed-in device is now signed out');
   }
 
   async setPriceTable(prices: PriceTable | null): Promise<void> {

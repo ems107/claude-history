@@ -1,12 +1,17 @@
 import fastifyStatic from '@fastify/static';
+import { LOCAL_ONLY_ACTIONS } from '@claude-history/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
 import { createLogger } from './core/logger.ts';
 import { isSameOrigin } from './util/sameOrigin.ts';
+import { localOnlyAction } from './util/localOnlyRoutes.ts';
+import { isLocalRequest } from './util/remote.ts';
+import { isAuthenticated, registerAuthRoutes } from './routes/auth.ts';
 import { registerAutoReloadRoutes } from './routes/autoReload.ts';
 import { registerChatRoutes } from './routes/chat.ts';
 import { registerEventRoutes } from './routes/events.ts';
 import { registerFileRoutes } from './routes/files.ts';
+import { registerFirewallRoutes } from './routes/firewall.ts';
 import { registerLogRoutes } from './routes/logs.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
@@ -67,10 +72,62 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const { config } = ctx;
   const app = Fastify({ logger: { level: 'warn', stream: fastifyLogStream() } });
 
+  /**
+   * Authentication, and it comes first because everything after it assumes the
+   * caller is allowed to be here at all.
+   *
+   * A release listens on every interface (see `config.ts`), so this is what
+   * separates "the user, at the machine" from "anything else on the network".
+   * Local requests pass untouched — no cookie, no password, exactly as before
+   * this feature existed. Everything else needs the switch on and a valid
+   * session, and gets NOTHING until it has one: not the session list, not the
+   * version, not the paths in `/api/settings`.
+   *
+   * What is served before signing in is the static bundle and `/api/auth/*`,
+   * and only so the three screens (login, "remote access is off", the app) can
+   * be drawn by the same SPA. The bundle holds no user data.
+   */
+  app.addHook('onRequest', async (request, reply) => {
+    if (isAuthenticated(ctx, request)) return;
+    const isApi = request.url.startsWith('/api/');
+    if (isApi && request.url.split('?')[0].startsWith('/api/auth/')) return;
+    if (!isApi) {
+      // A navigation or an asset: let it through so the SPA loads and can say
+      // which of the two states this is. Answering 401 here would leave a bare
+      // browser error page and no way to learn how to turn remote access on.
+      return;
+    }
+    const enabled = ctx.index.getSettings().remoteAccessEnabled;
+    createLogger('auth').warn(`refused ${request.method} ${request.url} from ${request.socket.remoteAddress ?? 'unknown'}`);
+    return reply.code(enabled ? 401 : 403).send({
+      error: enabled
+        ? 'Sign in to use claude-history from another machine.'
+        : 'Remote access is turned off on this server.',
+    });
+  });
+
+  /**
+   * Things that can only happen where the server is — opening Explorer, a
+   * terminal, VS Code; stopping the server; uninstalling.
+   *
+   * The UI greys these out over the network, but that is only the explanation:
+   * this is the guarantee. Without it a remote click would answer `{ ok: true }`
+   * and open a window on a desktop nobody is sitting at, and silent success is
+   * the worst answer available.
+   */
+  app.addHook('onRequest', async (request, reply) => {
+    if (isLocalRequest(request)) return;
+    const action = localOnlyAction(request);
+    if (!action) return;
+    createLogger('http').warn(`refused a remote ${request.method} ${request.url} (${action})`);
+    return reply.code(409).send({ error: LOCAL_ONLY_ACTIONS[action], localOnly: action });
+  });
+
   // Anything that changes state or runs something must come from our own pages.
-  // Binding to 127.0.0.1 keeps other machines out but says nothing about the
-  // browser on this one, and these endpoints open terminals, stop the server
-  // and run Claude — the side effect is the whole attack, no reply needed.
+  // Being reachable only from this machine (or, now, only after signing in)
+  // says nothing about the browser already on it, and these endpoints open
+  // terminals, stop the server and run Claude — the side effect is the whole
+  // attack, no reply needed.
   // Reads are left alone: there is nothing to trigger and no reply to steal.
   app.addHook('onRequest', async (request, reply) => {
     if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return;
@@ -83,6 +140,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   app.get('/api/health', async () => ({ ok: true }));
+  registerAuthRoutes(app, ctx);
   registerMetaRoutes(app, ctx);
   registerProjectRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
@@ -99,6 +157,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerChatRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
+  registerFirewallRoutes(app, ctx);
   registerUserdataRoutes(app, ctx);
   registerRetentionRoutes(app, ctx);
   registerAutoReloadRoutes(app, ctx);

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import hljs from 'highlight.js/lib/common';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
+import { useLocalOnly } from '../../api/useLocal.ts';
 import { type FileRef, isImagePath, languageForPath, refBasename } from '../../lib/fileRefs.ts';
 import { formatBytes, formatDateTime } from '../../lib/format.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
@@ -108,14 +109,20 @@ export function FileViewerPanel({
     el.scrollTop = Math.max(0, (target - 1) * LINE_H - el.clientHeight / 2 + LINE_H / 2);
   }, [target, html, data?.text]);
 
-  const canOpen = !!data?.exists && !data.error;
-  const openWhy = !data
-    ? 'still reading the file'
-    : !data.exists
-      ? 'the file does not exist'
-      : data.error
-        ? data.error
-        : '';
+  // Handing a file to the shell only means something where the shell is. The
+  // panel itself works from anywhere — the server reads the bytes and sends
+  // them — so this greys out three buttons and leaves the reading half alone.
+  const handOff = useLocalOnly('openFile');
+  const canOpen = !!data?.exists && !data.error && !handOff.disabled;
+  const openWhy =
+    handOff.reason ??
+    (!data
+      ? 'still reading the file'
+      : !data.exists
+        ? 'the file does not exist'
+        : data.error
+          ? data.error
+          : '');
 
   const open = (target_: 'file' | 'folder' | 'vscode') => {
     setOpening(target_);
@@ -187,8 +194,8 @@ export function FileViewerPanel({
             type="button"
             onClick={() => open('folder')}
             className={btn}
-            disabled={opening !== null}
-            title={`Open ${data.path} in Explorer`}
+            disabled={opening !== null || handOff.disabled}
+            title={handOff.reason ?? `Open ${data.path} in Explorer`}
           >
             📁 Open folder
           </button>

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api/client.ts';
+import { useIsRemote } from '../api/useLocal.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
 import { UpgradeIcon } from './icons.tsx';
 import { Markdown } from './viewer/Markdown.tsx';
@@ -65,6 +66,7 @@ export function UpdateButton() {
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const remote = useIsRemote();
   const [target, setTarget] = useState<string | null>(null);
   /** The version being installed, frozen for the duration of the attempt. */
   const [applyingTo, setApplyingTo] = useState<string | null>(null);
@@ -165,6 +167,18 @@ export function UpdateButton() {
 
   const apply = () => {
     if (!selected) return;
+    // Allowed from another machine — it is the one restart that puts itself
+    // back — but not silently: the page goes dead for a few seconds while the
+    // server it is talking to is replaced, and that reads like a crash unless
+    // it was expected.
+    if (
+      remote &&
+      !confirm(
+        'Installing an update restarts the server. This page will stop responding for a few seconds and then come back. Continue?',
+      )
+    ) {
+      return;
+    }
     setApplyError(null);
     startedAtRef.current = Date.now();
     handoverAtRef.current = 0;

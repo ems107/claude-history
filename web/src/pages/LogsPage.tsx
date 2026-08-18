@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { copyPlain } from '../lib/clipboard.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
 import { hasSelection } from '../lib/selection.ts';
 
@@ -65,7 +66,7 @@ function Chip({
 function useCopy(): [boolean, (text: string) => void] {
   const [copied, setCopied] = useState(false);
   const copy = (text: string) => {
-    void navigator.clipboard.writeText(text).then(() => {
+    void copyPlain(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1_200);
     });

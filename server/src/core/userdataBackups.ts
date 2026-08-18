@@ -7,6 +7,20 @@ import { createLogger } from './logger.ts';
 
 const log = createLogger('backups');
 
+/**
+ * How much of each kind of user data `userdata.json` holds, as the `pre-loss`
+ * guard counts it. Every key is something whose disappearance is a loss worth a
+ * copy — so a new kind of user data belongs here as well as in
+ * `SessionIndex.saveUserdata()`.
+ */
+export interface UserdataCounts {
+  titleOverrides: number;
+  pins: number;
+  stars: number;
+  /** 0 or 1: the remote-access credentials are one record or none. */
+  auth: number;
+}
+
 /** Days of daily copies kept. Older ones are pruned as they are made. */
 const KEEP_DAYS = 14;
 /** How many of each event-driven copy survive a prune, newest first. */
@@ -117,7 +131,7 @@ export class UserdataBackups {
    * updated on every write, because `saveUserdata()` is called AFTER the index
    * has already mutated itself — by then the only record of "before" is here.
    */
-  private lastCounts = { titleOverrides: 0, pins: 0, stars: 0 };
+  private lastCounts: UserdataCounts = { titleOverrides: 0, pins: 0, stars: 0, auth: 0 };
   /** Day of the newest copy, so the common path costs no disk at all. */
   private newestDay: string | null = null;
   /** Summaries by `<name>:<size>`; a stored copy never changes once written. */
@@ -147,7 +161,7 @@ export class UserdataBackups {
    * putting it in `userdata.json` would mean adding a key to the user's own data
    * to serve our bookkeeping.
    */
-  async start(counts: { titleOverrides: number; pins: number; stars: number }): Promise<void> {
+  async start(counts: UserdataCounts): Promise<void> {
     this.lastCounts = counts;
     try {
       const previous = await this.readState();
@@ -172,9 +186,9 @@ export class UserdataBackups {
    * file still holds — which is the point: the copy has to be of the state the
    * write is about to replace.
    */
-  async beforeWrite(next: { titleOverrides: number; pins: number; stars: number }): Promise<void> {
+  async beforeWrite(next: UserdataCounts): Promise<void> {
     try {
-      const emptied = (['titleOverrides', 'pins', 'stars'] as const).filter(
+      const emptied = (Object.keys(this.lastCounts) as (keyof UserdataCounts)[]).filter(
         (k) => this.lastCounts[k] > 0 && next[k] === 0,
       );
       if (emptied.length > 0) {
