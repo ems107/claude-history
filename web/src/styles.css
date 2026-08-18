@@ -168,45 +168,20 @@ body {
   }
 }
 
-/* Reduced motion REDUCES it, it does not switch it off: the whole job of this
-   bubble is to say that something is still happening, and a frozen indicator
-   says the opposite — which is exactly how the first version read even to a
-   user whose system never asked for it. What goes is the travel: no rise, no
-   scale, no light crossing the text, just a slow breath of opacity, which
-   carries no vestibular risk. */
-@media (prefers-reduced-motion: reduce) {
-  .working-dot {
-    animation: working-dot-soft 2s ease-in-out infinite;
-  }
-  .working-label {
-    background: none;
-    -webkit-text-fill-color: currentColor;
-    animation: none;
-  }
-}
-
-@keyframes working-dot-soft {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.9;
-  }
-}
-
-/* The turn spinner on the follow pill, which says a turn is in flight when the
-   indicator bubble itself is scrolled out of sight. The ring and its rotation are
-   Tailwind's `animate-spin` — the same shape the update button already spins, and
-   using the utility is also what guarantees the `spin` keyframes are emitted.
-   This class exists for the reduced-motion half only, and it answers it the way
-   the dots above do: the rotation goes, the breath stays, because a frozen
-   spinner says the turn has ended. */
-@media (prefers-reduced-motion: reduce) {
-  .turn-spinner {
-    animation: working-dot-soft 2s ease-in-out infinite;
-  }
-}
+/* None of this answers `prefers-reduced-motion`, and that is the decision, not
+   an oversight: here the movement IS the information. A ring that does not turn
+   and three dots that do not travel say "this has finished" — the exact opposite
+   of what they exist to say — so honouring the preference would cost the state
+   its only channel, and the user who set it would be the one left unable to tell
+   a live turn from a dead one. The preference guards against decoration and
+   against vestibular risk from large travel; a 5 px rise and a 12 px ring are
+   neither. It WAS answered once, with the travel stripped and a breath of opacity
+   left in its place, and on a machine that really asks for it that read as
+   "stopped" — the same failure, to the very person it was meant to serve. So the
+   app now holds no rule on the matter at all: nothing anywhere reads that media
+   query, and every spinner in the UI turns the same way, which is the other half
+   of why this is right — the update button and the Remote access ring never
+   answered it either, so the one that did was simply the odd one out. */
 
 /* The words themselves, marked through the CSS Custom Highlight API — the
    ranges are handed to the browser, so nothing in React's DOM is rewritten.

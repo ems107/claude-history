@@ -517,8 +517,9 @@ update button already spins, in place of the pill's own arrow, in the same 12 px
 box so nothing changes width when a turn starts or ends. It is driven by
 `isWorking(liveInfo)` and NOT by whether the footer is being rendered: the footer
 is held back while a prompt of ours is still an echo, and the turn is in flight all
-the same. Reduced motion is answered as the dots below answer it — the rotation
-goes, a breath of opacity stays, because a frozen spinner says the turn has ended.
+the same. It ignores `prefers-reduced-motion`, as every other animation in the app
+already did — here the movement IS the state, and `styles.css` carries the why next
+to the keyframes.
 
 
 **It takes its status from the `['live']` query, NOT from `detail.summary.live`**, though both carry the same field. `['session', id]` is invalidated by `sessions-changed` — the transcript grew — while the busy/idle flip is a write under `~/.claude/sessions` and fires only `live-changed`. Read off the detail, the indicator would hang on "working" after the turn's last line was written, and the alternative (re-parsing a multi-MB transcript on every status flip) is absurd next to a query that reads two small files.

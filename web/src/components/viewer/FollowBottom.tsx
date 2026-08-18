@@ -271,7 +271,10 @@ export function FollowBottomButton({
     >
       {/* Both live in the same 12 px box, so the pill does not change width when
           a turn starts or ends — and the spinner takes the arrow's place rather
-          than sitting beside it, because that is where the eye already is. */}
+          than sitting beside it, because that is where the eye already is.
+          `animate-spin` is the whole animation: `turn-spinner` carries no CSS
+          any more and is kept as the handle the checks grab, since the same ring
+          also spins on the update button and twice in Remote access. */}
       <span aria-hidden="true" className="flex size-3 items-center justify-center">
         {working ? (
           <span className="turn-spinner size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
