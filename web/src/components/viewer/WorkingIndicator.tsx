@@ -80,12 +80,21 @@ export function WorkingIndicator({
    * The width of the conversation's column, as a CSS length — the same string
    * the composer takes, for the same corner. The clocks sit at the far right of
    * the bubble, and the follow pill floats in the scroller's bottom-right: where
-   * the column reaches the window's edge (`Full` width) the two share that band,
-   * and with no composer between them the pill covers `last tool` outright
-   * (measured: the figure at x 1380-1447 under the pill's 1375-1470). So the row
-   * gives up exactly the difference, as one `max()` over the column — the same
-   * arithmetic that moves `Send` aside, with the floor at 0 because the flush
-   * edge is what right alignment is for. Absent, nothing is given up.
+   * the column reaches the window's edge (`Full` width) the two share that band
+   * and the pill covers `last tool` outright (measured: the figure at x 1380-1447
+   * under the pill's 1375-1470). So the row gives up exactly the difference, as
+   * one `max()` over the column — the same arithmetic that moves `Send` aside,
+   * with the floor at 0 because the flush edge is what right alignment is for.
+   *
+   * **Passed only when nothing stands between this row and the pill**, which
+   * means a foot with no composer — and the caller decides, because only the
+   * caller knows what the foot holds. The pill's band is the bottom 16-46 px of
+   * the scroller (`bottom-4` plus its own 30 px) and the sticky composer is stuck
+   * across it, never shorter than ~70 px of box plus its 24 px gap (measured:
+   * 119 px). So with a composer the pill floats over THAT and these clocks are
+   * clear of it by construction; giving up the corner anyway was 120 px of gutter
+   * at `Full` width, dragging the figures off the very edge this row is anchored
+   * to. Absent, nothing is given up.
    */
   columnWidth?: string;
 }) {

@@ -442,6 +442,18 @@ export function SessionViewPage() {
    * — so it is written once here rather than twice at the two call sites.
    */
   const columnWidth = view.width === WIDTH_FULL ? '100vw' : `min(${view.width}px, 100vw)`;
+  /**
+   * And what the CLOCKS get, which is the same length or nothing at all. The pill
+   * floats over the bottom 16-46 px of the scroller; the composer is stuck across
+   * exactly that band and is never remotely that short, so where there is one the
+   * pill covers IT and the clocks clear it without paying anything. Paying anyway
+   * is what put them 120 px inside their own right edge at `Full` width in every
+   * session with the chat on — a gutter for a pill that could not reach them. Only
+   * a foot with no composer leaves this row in the pill's band.
+   *
+   * The composer's own `max()` is untouched: `Send` really is in that corner.
+   */
+  const clockColumnWidth = chatEnabled ? undefined : columnWidth;
 
   /**
    * Hung off the last turn's rail rather than after the list: an answer being
@@ -452,9 +464,9 @@ export function SessionViewPage() {
   const workingFooter = useMemo(
     () =>
       pending.length === 0 && isWorking(liveInfo) ? (
-        <WorkingIndicator live={liveInfo} activity={activity} columnWidth={columnWidth} />
+        <WorkingIndicator live={liveInfo} activity={activity} columnWidth={clockColumnWidth} />
       ) : undefined,
-    [pending.length, liveInfo, activity, columnWidth],
+    [pending.length, liveInfo, activity, clockColumnWidth],
   );
   /**
    * The follow-the-end pill. Keyed on the session id, so opening another one
@@ -479,11 +491,11 @@ export function SessionViewPage() {
               messages are all older than this turn's start and are filtered out
               by exactly the test that keeps the figures inside their own turn. */}
           {i === pending.length - 1 && isWorking(liveInfo) ? (
-            <WorkingIndicator live={liveInfo} activity={activity} columnWidth={columnWidth} />
+            <WorkingIndicator live={liveInfo} activity={activity} columnWidth={clockColumnWidth} />
           ) : null}
         </PendingTurn>
       )),
-    [pending, liveInfo, activity, columnWidth],
+    [pending, liveInfo, activity, clockColumnWidth],
   );
 
   if (detail.isLoading) {

@@ -595,6 +595,22 @@ and could only be the turn.
   is the point of aligning right. Checked at both widths, with the composer
   hidden: 48 px of clearance at `Full`, and at the default width the figures end
   1 px inside the bubble's own padding — no gutter where the pill cannot reach.
+- **"With no composer" is the condition, not just the state it was measured in.**
+  For a while it was only the latter: `columnWidth` went to the indicator whatever
+  the foot held, and since the `max()` compares the column with the WINDOW and
+  nothing else, at `Full` width the clocks always shed the full 120 px — in every
+  session with the chat on, where the pill cannot reach them, dragging the figures
+  off the very edge the row is anchored to. The pill's band is the bottom 16-46 px
+  of the scroller (`bottom-4` plus its own 30 px); the sticky composer is stuck
+  across that band and is never shorter than ~70 px of box plus its 24 px gap
+  (measured: 119 px). So with a composer the pill floats over THAT, the clocks are
+  clear of it by construction, and `SessionViewPage` hands them no width at all
+  (`clockColumnWidth`, one `chatEnabled` away from `columnWidth`). Measured with
+  the chat on at `Full`, 1500 px window: padding 0, the figures ending 13 px inside
+  the bubble's right edge — its own padding — and the pill 126 px BELOW the row,
+  over a composer 155 px tall. Still no measuring and no render on resize: the
+  arithmetic is the same, it just has the switch it was always described with. The
+  composer's own `max()` is untouched: `Send` really is in that corner.
 
 ## Verify
 
