@@ -60,9 +60,19 @@ Two consequences worth knowing: **rotating the secret is "sign out everywhere"**
 
 A local-only button is greyed out with a tooltip, and the endpoint behind it answers 409 with the **same sentence** — both read `LOCAL_ONLY_ACTIONS` from `shared/`. The button is the explanation; the 409 is the guarantee. Neither is optional: a handler that forgets the check answers `{ok: true}` and opens a window nobody is looking at.
 
-## HTTP, and the one thing it breaks
+## HTTP, and the two things it breaks
 
 There is no HTTPS: this is a personal tool on a home LAN or inside a WireGuard tunnel, and certificates for an IP address cost more than they buy here. The password does cross the LAN in clear, which is the accepted trade and the reason this is not for any other kind of network.
+
+### `Sec-Fetch-*` does not exist here either
+
+Same rule, different victim: **fetch-metadata headers are only sent to potentially trustworthy origins**, which again means HTTPS or localhost. Served from `http://192.168.x.x`, a same-origin GET made by our own page carries **no `Sec-Fetch-Site` and no `Origin`** — browsers omit `Origin` on same-origin GETs, and the other header never comes.
+
+That broke `/api/files/read` the first time the file panel was opened from another machine: `isSameOrigin` read "neither header" as "not a browser" and answered 403 to our own page. So the question is now only asked where the answer means something — **`Origin` rides on every state-changing request**, so its absence on a POST is still meaningful and still refused from off-machine; on a GET it is not.
+
+What that costs, honestly: on a plain-HTTP origin the two file GETs are guarded by the `Origin` check alone. A cross-origin `fetch` still carries it and is still refused, but **an `<img>` sends no `Origin`**, so a foreign page open in a browser that holds a session here could point one at `/api/files/image` and learn from `onload` whether a path exists. It cannot read the pixels — a cross-origin image taints the canvas. It is a narrow leak, it predates remote access (any page could already do this against `127.0.0.1`), and **the fix for it is HTTPS**, not more header checks.
+
+### The clipboard
 
 **`navigator.clipboard` is `[SecureContext]`, and a secure context is HTTPS or localhost — nothing else.** Served from `http://192.168.x.x` the object is `undefined`, not merely restricted, so every copy button throws a `TypeError`. `web/src/lib/clipboard.ts` falls back to the `copy` event plus `execCommand`, which is deprecated but not gated, and **keeps the HTML+text pair** so copying with formatting still pastes into Word and Jira. Nothing in this app reads the clipboard; that half of the API is what got the whole namespace put behind secure contexts.
 

@@ -13,7 +13,9 @@
  *
  * The text is the same in both places it appears — the disabled button's
  * tooltip and the body of the 409 — because they are the same fact, and two
- * copies of it would disagree the first time one was reworded.
+ * copies of it would disagree the first time one was reworded. It answers
+ * "why is this grey", and nothing else: the reasoning above is for whoever
+ * maintains the list, not for the person hovering the button.
  */
 export type LocalOnlyAction =
   | 'openFolder'
@@ -28,20 +30,27 @@ export type LocalOnlyAction =
   | 'credentials'
   | 'firewall';
 
+/**
+ * What almost all of them say, and the shape the rest follow: the REASON this
+ * one is dead, which is the remote connection — never a description of what the
+ * button does. Someone hovering a greyed-out button already knows what it does;
+ * what they cannot see is why it is grey, and "it would do nothing here" tells
+ * them the outcome instead of the cause.
+ */
+const NOT_REMOTELY = 'Not available over remote access — only on the machine claude-history runs on.';
+
 export const LOCAL_ONLY_ACTIONS: Record<LocalOnlyAction, string> = {
-  openFolder: 'Opens Explorer on the machine running claude-history — nothing would happen on this screen.',
-  openVsCode: 'Opens VS Code on the machine running claude-history — nothing would happen on this screen.',
-  resumeTerminal:
-    'Opens a terminal on the machine running claude-history — nothing would happen on this screen. Copy the command instead.',
-  openFile: 'Opens the file on the machine running claude-history — nothing would happen on this screen.',
-  openClaudeFolder: 'Opens Explorer on the machine running claude-history — nothing would happen on this screen.',
-  openDataFolder: 'Opens Explorer on the machine running claude-history — nothing would happen on this screen.',
-  openInstallFolder: 'Opens Explorer on the machine running claude-history — nothing would happen on this screen.',
-  stopServer:
-    'Stopping the server from here would end this connection with no way to start it again remotely. Do it on the machine itself.',
-  uninstall: 'Uninstalling is only possible on the machine running claude-history.',
-  credentials:
-    'The username and password can only be changed on the machine running claude-history — that is what makes it possible to get back in after forgetting them.',
-  firewall:
-    'Windows asks for administrator approval on the machine itself, so this can only be done there.',
+  openFolder: NOT_REMOTELY,
+  openVsCode: NOT_REMOTELY,
+  resumeTerminal: NOT_REMOTELY,
+  openFile: NOT_REMOTELY,
+  openClaudeFolder: NOT_REMOTELY,
+  openDataFolder: NOT_REMOTELY,
+  openInstallFolder: NOT_REMOTELY,
+  uninstall: NOT_REMOTELY,
+  // The three that are refused for a reason of their own rather than for being
+  // somewhere else, and it is worth one clause each.
+  stopServer: 'Not available over remote access — it would end this connection with no way back in.',
+  credentials: 'Not available over remote access — the username and password can only be changed on the machine itself.',
+  firewall: 'Not available over remote access — Windows asks for administrator approval on the machine itself.',
 };

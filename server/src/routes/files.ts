@@ -184,6 +184,14 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
    * `Sec-Fetch-Site: same-origin`, and a foreign page embedding the same URL
    * sends `cross-site` and gets 403.
    *
+   * **On a page served over plain HTTP that last sentence stops being true** —
+   * `Sec-Fetch-*` only reaches trustworthy origins, and an `<img>` sends no
+   * `Origin`, so neither embed can be told from the other. What is left is that
+   * a foreign page cannot read the pixels (a cross-origin image taints the
+   * canvas), only learn that a path exists. Named in
+   * [AI_REMOTE_ACCESS.md](../../../docs/AI_REMOTE_ACCESS.md) rather than fixed:
+   * the fix is HTTPS.
+   *
    * Unlike the read route this answers 404 for a missing file rather than a 200
    * saying so. The consumer is an `<img>`: it has no state to draw, only
    * `onError`. The scratchpad these files live in is swept, so that is an
