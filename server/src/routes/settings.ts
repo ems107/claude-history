@@ -171,4 +171,72 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       process.exit(0);
     }, 300).unref();
   });
+
+  /**
+   * Restart: stop and come back, which is the only way to change the bind.
+   *
+   * A socket's address cannot be changed under it, so turning remote access on
+   * (or off) does nothing until the process listens again — and it is this
+   * endpoint rather than "stop, then start it yourself" because the server lives
+   * inside a scheduled task whose only trigger is at-logon: once it ends, there
+   * is nothing left to start it. The same detour the updater takes gets around
+   * that (`update-helper.ps1 -RestartOnly`): Task Scheduler kills the whole
+   * process tree of the task that ends, so a helper spawned from here would die
+   * with us. Registering a one-shot task puts it outside our tree.
+   *
+   * Local-only. It comes back on its own, like applying an update, but unlike an
+   * update it may deliberately come back listening on loopback alone — which
+   * from another machine is a door closing with the key on the inside.
+   */
+  app.post('/api/server/restart', async (_request, reply) => {
+    const install = ctx.updates.install;
+    if (!install) {
+      return reply.code(400).send({
+        error: 'This instance is not a managed install (source or portable) — start it again yourself.',
+      });
+    }
+    if (ctx.updates.isApplying()) {
+      log.warn('restart refused: an update is being installed');
+      return reply.code(409).send({
+        error: 'An update is being installed right now — it restarts the server itself. Wait for it to finish.',
+      });
+    }
+    // The rule that cost a session once: this kills the `claude` process the
+    // composer is talking through, mid-answer.
+    if (ctx.chat.busy) {
+      log.warn('restart refused: a prompt is being answered');
+      return reply.code(409).send({
+        error: 'Claude is answering a prompt sent from the app — restarting the server would cut it off. Wait for it to finish.',
+      });
+    }
+    const script = path.join(install.versionDir, 'update-helper.ps1');
+    if (!fs.existsSync(script)) {
+      return reply.code(500).send({ error: `update-helper.ps1 not found in ${install.versionDir}` });
+    }
+    // From %TEMP%, like the updater: never run a script out of a folder that
+    // the thing it is restarting might be replacing.
+    const tmp = path.join(os.tmpdir(), 'claude-history-restart.ps1');
+    try {
+      await fs.promises.copyFile(script, tmp);
+      const args = [
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', tmp,
+        '-Register', '-RestartOnly', '-Root', install.root, '-ServerPid', String(process.pid),
+        '-Port', String(ctx.config.port),
+      ];
+      const reg = spawnSync('powershell.exe', args, { windowsHide: true, timeout: 60_000, encoding: 'utf8' });
+      const out = [reg.stdout, reg.stderr].map((s) => (s ?? '').trim()).filter(Boolean).join(' | ');
+      if (reg.error) throw new Error(reg.error.message);
+      if (reg.status !== 0) throw new Error(`powershell exited ${reg.status ?? 'on a signal'}: ${out || '(no output)'}`);
+    } catch (err) {
+      log.error('could not schedule the restart', err);
+      return reply.code(500).send({
+        error: `Could not schedule the restart: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+    void reply.send({ ok: true });
+    setTimeout(() => {
+      log.info('restart requested from the UI — exiting; the helper brings the task back up');
+      process.exit(0);
+    }, 400).unref();
+  });
 }

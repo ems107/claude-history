@@ -8,6 +8,14 @@
 #               `current` junction at the new version, restarts the app task,
 #               health-checks it and rolls back if it does not come up.
 #
+# -RestartOnly does the same dance without the version change: wait for the old
+# server, start the task, health-check what comes back. It exists because the
+# bind address is decided at startup and cannot change while the server runs
+# (server/src/core/bind.ts), so switching remote access on or off needs the
+# process to listen again - and the server cannot restart itself for the reason
+# in the next paragraph. Its own task name, so a restart from Settings cannot
+# collide with an update in flight.
+#
 # Why the detour: the server runs inside the `claude-history` scheduled task,
 # and Task Scheduler terminates that task's whole process tree when the task
 # ends. A helper spawned by the server (even detached) dies with it. Having
@@ -21,13 +29,15 @@
 
 param(
   [Parameter(Mandatory = $true)] [string]$Root,
-  [Parameter(Mandatory = $true)] [string]$NewVersion,
+  [string]$NewVersion,
   [Parameter(Mandatory = $true)] [int]$ServerPid,
   [int]$Port = 7433,
-  [switch]$Register
+  [switch]$Register,
+  [switch]$RestartOnly
 )
 
-$updateTaskName = 'claude-history-update'
+if ($RestartOnly) { $updateTaskName = 'claude-history-restart' } else { $updateTaskName = 'claude-history-update' }
+if (-not $RestartOnly -and -not $NewVersion) { throw '-NewVersion is required unless -RestartOnly is given.' }
 
 $ErrorActionPreference = 'Stop'
 $logFile = Join-Path $Root 'update.log'
@@ -97,21 +107,23 @@ if ($Register) {
   # Hand this same script to the Task Scheduler service so it runs outside
   # the app task's process tree, then return control to the dying server.
   try {
-    $psArgs = @(
+    $parts = @(
       '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
       '-File', ('"{0}"' -f $PSCommandPath),
       '-Root', ('"{0}"' -f $Root),
-      '-NewVersion', $NewVersion,
       '-ServerPid', $ServerPid,
       '-Port', $Port
-    ) -join ' '
+    )
+    if ($RestartOnly) { $parts += '-RestartOnly' } else { $parts += @('-NewVersion', $NewVersion) }
+    $psArgs = $parts -join ' '
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $psArgs
     $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::FromMinutes(10)) `
       -MultipleInstances IgnoreNew -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     Register-ScheduledTask -TaskName $updateTaskName -Action $action -Settings $settings -Principal $principal -Force | Out-Null
     Start-ScheduledTask -TaskName $updateTaskName
-    Log "task '$updateTaskName' registered and started for $NewVersion (from $PSCommandPath)"
+    if ($RestartOnly) { $what = 'a restart' } else { $what = $NewVersion }
+    Log "task '$updateTaskName' registered and started for $what (from $PSCommandPath)"
     exit 0
   } catch {
     Log "FATAL registering task '$updateTaskName': $($_.Exception.Message)" 'error'
@@ -176,7 +188,8 @@ function Start-AppTask([string]$name) {
 
 $sw = [Diagnostics.Stopwatch]::StartNew()
 try {
-  Log "=== update to $NewVersion starting (helper pid $PID, old server pid $ServerPid, port $Port) ==="
+  if ($RestartOnly) { $job = 'restart' } else { $job = "update to $NewVersion" }
+  Log "=== $job starting (helper pid $PID, old server pid $ServerPid, port $Port) ==="
   Log "environment: PowerShell $($PSVersionTable.PSVersion), user $env:USERNAME, root $Root, script $PSCommandPath"
 
   $taskName = 'claude-history'
@@ -198,6 +211,27 @@ try {
     Start-Sleep -Seconds 1
   } else {
     Log "old server (pid $ServerPid) is gone after $([int]$sw.Elapsed.TotalSeconds)s"
+  }
+
+  # A restart stops here: no version changes, so there is nothing to swap and
+  # nothing to prune. The same build comes back up, and the only thing that is
+  # different about it is the bind it decides on the way (remote access on or
+  # off), which is the reason this mode exists at all.
+  if ($RestartOnly) {
+    $currentLink = Join-Path $Root 'current'
+    $target = (Get-Item $currentLink).Target
+    if ($target -is [array]) { $target = $target[0] }
+    $expected = (Split-Path $target -Leaf).TrimStart('v')
+    Log "restarting $expected from $target"
+    Start-AppTask $taskName
+    if (Wait-ForVersion $expected 45) {
+      Log "=== restart finished OK in $([int]$sw.Elapsed.TotalSeconds)s ==="
+      Remove-UpdateTask
+      exit 0
+    }
+    Log "=== restart FAILED - nothing is serving $expected on port $Port. Start it from the Start Menu shortcut or Task Scheduler ('$taskName' -> Run) ===" 'error'
+    Remove-UpdateTask
+    exit 1
   }
 
   # 2. Swap the junction (remember the old target for rollback).

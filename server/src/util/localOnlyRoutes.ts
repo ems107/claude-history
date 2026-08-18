@@ -28,10 +28,12 @@ const RULES: Rule[] = [
   { method: 'POST', test: (p) => p === '/api/open-data-folder', action: 'openDataFolder' },
   { method: 'POST', test: (p) => p === '/api/open-install-folder', action: 'openInstallFolder' },
   { method: 'POST', test: (p) => p === '/api/server/stop', action: 'stopServer' },
+  { method: 'POST', test: (p) => p === '/api/server/restart', action: 'restartServer' },
   { method: 'POST', test: (p) => p === '/api/uninstall', action: 'uninstall' },
   { method: 'PUT', test: (p) => p === '/api/auth/credentials', action: 'credentials' },
   { method: 'POST', test: (p) => p === '/api/firewall', action: 'firewall' },
   { method: 'DELETE', test: (p) => p === '/api/firewall', action: 'firewall' },
+  { method: 'DELETE', test: (p) => p === '/api/firewall/blocks', action: 'firewall' },
 ];
 
 /**
