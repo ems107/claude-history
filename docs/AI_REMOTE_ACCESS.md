@@ -9,7 +9,7 @@
 - **A local request never authenticates.** No password, no cookie, exactly as before this existed.
 - **A remote request gets nothing until it signs in** — not the session list, not the version, not the paths. Only `/api/auth/*` and the static bundle answer first.
 - **Credentials can only be SET locally**, and setting them never asks for the old one.
-- **A `userdata.json` restore must not change who can reach the app** — it keeps the credentials and the switch, and replaces everything else.
+- **A `userdata.json` restore replaces the credentials and the switch like everything else** — no exceptions, including the ones that would be convenient.
 - **The switch cannot be on without credentials** (clamped in `setSettings`, not just hidden in the UI).
 - **Anything that opens a window on the server's desktop answers 409 when remote.** Silent success is the failure mode this prevents.
 
@@ -57,11 +57,13 @@ Deliberately, and the reason is `update/apply`: it restarts the process, and it 
 
 Two consequences worth knowing: **rotating the secret is "sign out everywhere"** (one line, and reachable remotely on purpose — the moment you need it is the moment a device you no longer hold is still signed in), and **renaming the user invalidates every cookie**, because the payload carries the username and it is compared on every request.
 
-### A restore may not lock you out
+### A restore can lock you out, and is allowed to
 
-`userdata.json` holds the credentials (`auth`) beside the renames, pins, stars and settings, and a restore replaces the file wholesale — which would mean **restoring a copy to get a starred message back silently revokes every remote device.** Every backup older than this feature has no `auth` at all, and the panel that restores them is itself reachable remotely: you would lock yourself out of the machine you are not standing at, from a button whose job is to recover data.
+`userdata.json` holds the credentials (`auth`) and `remoteAccessEnabled` beside the renames, pins, stars and prices, and a restore replaces the file wholesale. So **restoring a copy older than this feature revokes every signed-in device and switches remote access off** — every copy taken before it exists carries no `auth` at all — and the panel that restores them is reachable remotely, so it can be done from a machine you are then locked out of.
 
-So `applyUserdata` treats two keys as access control rather than as user data: **the credentials, and `remoteAccessEnabled`.** A restore keeps both and replaces the rest. A restored file that carries its own credentials still wins — that is what restoring *that* state means — and at start-up the stored values always win, or remote access would switch itself off on every restart (hence `keepAccess`, passed only by `restoreBackup`).
+That is the behaviour, not an oversight. Exempting the two keys was tried and reverted: the confirmation in `BackupsPanel` promises that *everything* in the file is replaced by the copy, and an exception makes the file after a restore not be the copy — which is a worse and more permanent surprise than the lockout. The rule would also have been asymmetric (a copy WITH credentials replaces them, one without does not, so the same copy restores differently from different states) and would have made `remoteAccessEnabled` impossible to switch off through a restore at all.
+
+What pays for it: the `pre-restore` copy taken automatically before every restore, and the fact that credentials are set at the machine anyway — which is where you have to be to undo it.
 
 ### The reason text has one home
 

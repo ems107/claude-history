@@ -442,20 +442,7 @@ export class SessionIndex {
     prices?: PriceTable;
     settings?: Partial<AppSettings>;
     auth?: AuthConfig;
-  } | null,
-  /**
-   * A restore, rather than a start-up. What separates them is that a restore
-   * must not change WHO CAN REACH the app: `remoteAccessEnabled` and the
-   * credentials are one thing, and the whole point of a restore is to get a
-   * starred message or a rename back — not to lock a remote device out of a
-   * machine nobody is standing at. Every other key is replaced wholesale, which
-   * is what a restore is for.
-   *
-   * At start-up the stored value has to win, obviously, or remote access would
-   * switch itself off on every restart.
-   */
-  opts?: { keepAccess?: boolean },
-  ): void {
+  } | null): void {
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
     // Keyed on two fields, so a record without them would answer for the key
@@ -473,17 +460,19 @@ export class SessionIndex {
     // hides the "set a username and password" panel behind a login nobody can
     // pass. Treated as absent, which the UI already knows how to fix.
     //
-    // And absent means KEPT, not cleared — the one key here that is not user
-    // data but access control. Every stored copy older than this feature has no
-    // credentials in it, and restoring one to get a starred message back would
-    // otherwise revoke every remote device silently, from a panel that is
-    // itself reachable remotely: you would lock yourself out of the machine you
-    // are not at. A restored file that DOES carry credentials still wins, which
-    // is what restoring that state means.
+    // Absent means GONE, including on a restore, and that is deliberate: a
+    // stored copy is the file, and "restore this copy" has to mean the file
+    // afterwards IS that copy — the confirmation in the panel promises exactly
+    // that. Every copy older than remote access carries no credentials, so
+    // restoring one does revoke every signed-in device and switch the feature
+    // off. That is recoverable (a `pre-restore` copy is taken first, and
+    // credentials are set at the machine anyway), whereas a restore that
+    // quietly kept two keys back would make the promise false for good.
     const auth = userdata?.auth;
-    const usable =
-      auth && typeof auth.username === 'string' && typeof auth.passwordHash === 'string' && typeof auth.secret === 'string';
-    this.auth = usable ? auth : this.auth;
+    this.auth =
+      auth && typeof auth.username === 'string' && typeof auth.passwordHash === 'string' && typeof auth.secret === 'string'
+        ? auth
+        : null;
     // Only keys we still have: a setting that is retired would otherwise live
     // on in userdata.json forever, be served by /api/settings and read as
     // current — which is exactly what happened to chatModel/chatEffort.
@@ -491,10 +480,7 @@ export class SessionIndex {
     const known = Object.fromEntries(Object.keys(DEFAULT_SETTINGS).filter((k) => k in saved).map((k) => [k, saved[k]]));
     // A dev instance starts from its own defaults (DEV_SETTING_OVERRIDES), and
     // only where nothing was saved: anything switched on there stays on.
-    const settings = { ...defaultSettings(this.config.devInstance), ...(known as Partial<AppSettings>) };
-    this.settings = opts?.keepAccess
-      ? { ...settings, remoteAccessEnabled: this.settings.remoteAccessEnabled }
-      : settings;
+    this.settings = { ...defaultSettings(this.config.devInstance), ...(known as Partial<AppSettings>) };
   }
 
   /**
@@ -511,7 +497,7 @@ export class SessionIndex {
     const data = (await this.backups.read(name)) as Parameters<typeof this.applyUserdata>[0];
     const backedUpTo = await this.backups.create('pre-restore');
     const touched = new Set([...Object.keys(this.titleOverrides), ...this.pins]);
-    this.applyUserdata(data, { keepAccess: true });
+    this.applyUserdata(data);
     for (const id of [...Object.keys(this.titleOverrides), ...this.pins]) touched.add(id);
     await this.saveUserdata();
     log.info(`restored userdata.json from ${name}`, { ...this.userdataCounts(), backedUpTo });

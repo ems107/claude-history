@@ -379,7 +379,7 @@ Then Chrome over CDP, with check 9's harness:
 
 **34. Credentials, restores and the clipboard.** Change the username and password from localhost without knowing the old one; check `userdata.json` grows an `auth` key with a `scrypt$…` hash and that `GET /api/settings` never carries it. Renaming the user must spend every cookie in existence, and "sign out everywhere" must too. Delete that key by hand while the server runs, save a setting, and a `pre-loss` copy must appear in `backups\`.
 
-Then the one that would lock you out: drop a hand-written copy into `backups\` with **no `auth` key and an empty `settings`** — which is what every copy older than this feature looks like — and restore it. The renames in it must land, and **the credentials and `remoteAccessEnabled` must both survive**, with the remote session still working. Restoring is reachable remotely, so getting this wrong means recovering a starred message costs you the machine.
+Then the one that locks you out, on purpose: drop a hand-written copy into `backups\` with **no `auth` key and an empty `settings`** — which is what every copy older than this feature looks like — and restore it. The renames in it must land, **the credentials must be gone and `remoteAccessEnabled` back to false**, and the remote session must stop working. A restore replaces the file, exceptions included; what makes that safe is the `pre-restore` copy taken first, which must be in `backups\` afterwards.
 
 Finally, from the remote browser (plain HTTP, so no secure context): "Copy message with formatting" must paste **as HTML** into Word or Jira, and the plain-text copies in the log viewer and the resume buttons must work — this is `execCommand`, not `navigator.clipboard`, which does not exist there.
 
