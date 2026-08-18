@@ -36,6 +36,28 @@ export interface BindDecision {
 }
 
 /**
+ * The half of the decision that needs no firewall, or null for "ask Windows".
+ *
+ * Shared with `/api/firewall` on purpose. The route has to answer a question
+ * this one already knows how to settle — *what stands between this server and
+ * the network right now* — and the answer must be the same one the next restart
+ * will act on. Two copies of this order would drift, and the first symptom
+ * would be a panel confidently naming an obstacle that is no longer there.
+ */
+export function localReason(
+  config: AppConfig,
+  settings: { remoteAccessEnabled: boolean },
+  hasCredentials: boolean,
+): BindReason | null {
+  if (config.hostOverride !== null) return 'explicit-host';
+  if (config.devInstance) return 'dev-instance';
+  if (!settings.remoteAccessEnabled) return 'switch-off';
+  if (!hasCredentials) return 'no-credentials';
+  if (process.platform !== 'win32') return 'not-windows';
+  return null;
+}
+
+/**
  * The `node.exe` path the firewall would record for us.
  *
  * The scheduled task launches through the stable `current` junction, but the
@@ -80,16 +102,13 @@ export async function decideBind(
   const base = { port: config.port, wantsNetwork, probe: null, verdict: null, exePath };
   const local = (reason: BindReason): BindDecision => ({ ...base, host: LOOPBACK_HOST, network: false, reason });
 
-  if (config.hostOverride !== null) {
-    const network = !isLoopbackHost(config.hostOverride);
-    return { ...base, host: config.hostOverride, network, reason: 'explicit-host' };
+  const early = localReason(config, settings, hasCredentials);
+  if (early === 'explicit-host') {
+    const host = config.hostOverride ?? LOOPBACK_HOST;
+    return { ...base, host, network: !isLoopbackHost(host), reason: 'explicit-host' };
   }
-  if (config.devInstance) return local('dev-instance');
-  if (!settings.remoteAccessEnabled) return local('switch-off');
-  if (!hasCredentials) return local('no-credentials');
-  if (process.platform !== 'win32') {
-    return { ...base, host: ANY_HOST, network: true, reason: 'not-windows' };
-  }
+  if (early === 'not-windows') return { ...base, host: ANY_HOST, network: true, reason: 'not-windows' };
+  if (early !== null) return local(early);
 
   const probe = await probeFirewall(config.port, true);
   const verdict = evaluateFirewall(probe, config.port, exePath);

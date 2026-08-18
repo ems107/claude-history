@@ -1,6 +1,7 @@
 import type { FirewallStatusResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { localReason } from '../core/bind.ts';
 import { createLogger } from '../core/logger.ts';
 import {
   blockingRules,
@@ -31,7 +32,9 @@ export function registerFirewallRoutes(app: FastifyInstance, ctx: AppContext): v
    * the other.
    */
   app.get('/api/firewall', async (): Promise<FirewallStatusResponse> => {
-    const wantsNetwork = ctx.index.getSettings().remoteAccessEnabled && ctx.index.getAuth() !== null;
+    const settings = ctx.index.getSettings();
+    const hasCredentials = ctx.index.getAuth() !== null;
+    const wantsNetwork = settings.remoteAccessEnabled && hasCredentials;
     const listening = ctx.bind.network ? 'network' : 'local';
     // Two PowerShell calls, and neither needs the other's answer — so they run
     // together. Loading the NetSecurity module is most of the cost of each
@@ -62,12 +65,19 @@ export function registerFirewallRoutes(app: FastifyInstance, ctx: AppContext): v
       blockingRules: blocks.map(({ displayName, program, protocol }) => ({ displayName, program, protocol })),
       listening,
       bindReason: ctx.bind.reason,
+      // The same order the next restart will follow, from `core/bind.ts`, so the
+      // panel can never name an obstacle that has since been cleared.
+      currentReason: localReason(ctx.config, settings, hasCredentials) ?? verdict.reason,
       wantsNetwork,
       // Only true when a restart would actually change something: wanting the
       // network with the door now open, or no longer wanting it while the socket
       // is still wide. Wanting it with the port still shut is not a restart
-      // problem, and offering one would waste a restart.
-      restartNeeded: wantsNetwork ? listening === 'local' && verdict.permitted : listening === 'network',
+      // problem, and offering one would waste a restart. `--host` is excluded
+      // outright: it settles the bind before any of this, so a restart under it
+      // changes nothing.
+      restartNeeded:
+        ctx.config.hostOverride === null &&
+        (wantsNetwork ? listening === 'local' && verdict.permitted : listening === 'network'),
       error: probe.error,
     };
   });

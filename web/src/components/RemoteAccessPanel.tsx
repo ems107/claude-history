@@ -329,8 +329,15 @@ export function RemoteAccessPanel({
                 rule.wantsNetwork
                   ? 'Listening on every interface: other machines can reach this one.'
                   : 'Still listening on every interface until the next restart, and refusing every request that arrives from the network.'
+              ) : rule.restartNeeded ? (
+                // Nothing is missing any more, so do not name what was missing
+                // when this server started: the port was opened after it bound,
+                // and repeating the startup reason here read as "there is no
+                // rule" seconds after one was created.
+                'Nothing is missing now — but where a server listens is settled when it starts, so this one stays on this machine only until it restarts.'
               ) : (
-                `Listening on this machine only, because ${BIND_REASONS[rule.bindReason]}`
+                // The live obstacle, never the startup one.
+                `Listening on this machine only, because ${BIND_REASONS[rule.currentReason]}`
               )}
             </span>
             {rule?.restartNeeded && busy !== 'restart' && (

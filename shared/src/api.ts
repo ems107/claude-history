@@ -166,7 +166,20 @@ export interface FirewallStatusResponse {
   error: string | null;
   /** Where this process is actually listening — the bind it was granted at startup. */
   listening: 'local' | 'network';
+  /**
+   * Why it bound that way **when it started**. History, and it stays true as
+   * history: it is what the log line says and what a restart is measured
+   * against. It is NOT what to tell the user is wrong now — open the port after
+   * the server started and this still reads `no-rule`, which was a sentence in
+   * the panel claiming there was no rule seconds after one was created.
+   */
   bindReason: BindReason;
+  /**
+   * What stands between this server and the network **right now**, from the
+   * live switch and a fresh look at the firewall. `allowed` here beside
+   * `listening: 'local'` means nothing is missing but the restart.
+   */
+  currentReason: BindReason;
   /** The switch is on and credentials exist: a network bind is what the user wants. */
   wantsNetwork: boolean;
   /** Wanted and actual disagree, and only a restart can settle it. */
