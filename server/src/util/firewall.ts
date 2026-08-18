@@ -127,7 +127,11 @@ export interface FirewallRuleInfo {
   protocols: string[];
   /** `Any`, single ports, or `from-to` ranges. */
   localPorts: string[];
-  /** Empty means "every program", which is what a port rule looks like. Lower-cased. */
+  /**
+   * Empty means "every program", which is what a port rule looks like.
+   * Lower-cased, and Windows' own word for it (`Any`) is dropped on the way in
+   * so that emptiness is the only spelling of it here.
+   */
   programs: string[];
 }
 
@@ -259,9 +263,14 @@ export async function probeFirewall(port: number, waitForNetwork: boolean): Prom
           profiles: splitProfiles(r.profile),
           protocols: asArray(r.protocols).map((p) => String(p)),
           localPorts: asArray(r.localPorts).map((p) => String(p)),
+          // `Get-NetFirewallApplicationFilter` says `Any` for a rule that names
+          // no program — it does not say nothing. Reading that as a program was
+          // enough to make our own port rule look like somebody else's node.exe
+          // and refuse the bind it had just been granted.
           programs: asArray(r.programs)
             .filter(Boolean)
-            .map((p) => p.toLowerCase()),
+            .map((p) => p.toLowerCase())
+            .filter((p) => p !== 'any'),
         }),
       );
     return {
