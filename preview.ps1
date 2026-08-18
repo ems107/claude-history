@@ -9,10 +9,14 @@
 #                              (renames, pins, stars, prices) so it opens warm.
 #                              Settings are NEVER copied - see below.
 #
-# WHY THIS EXISTS, next to dev.ps1: the dev instance binds 127.0.0.1, so remote
-# access cannot be tried on it at all. This one runs WITHOUT --dev-instance, so
-# it binds every interface exactly like a release does - which is the only way
-# to use the feature, or to run checks 30-34, without publishing one.
+# WHY THIS EXISTS, next to dev.ps1: the dev instance binds 127.0.0.1 always, so
+# remote access cannot be tried on it at all. This one runs WITHOUT
+# --dev-instance, so it decides its bind exactly as a release does - loopback
+# until the firewall allows its port, then every interface. That is the only way
+# to use the feature, or to run checks 30-36, without publishing a release.
+# To reach it over the network before that rule exists, pass --host 0.0.0.0 by
+# hand: the one escape hatch, and the one thing that can still make Windows ask
+# for permission.
 #
 # Three things it must never do, and does not:
 #

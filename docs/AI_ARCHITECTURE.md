@@ -120,7 +120,7 @@ The triggers are not a schedule, they are one per way of losing the file, and ea
 - **The bind is wide and the door is the session check**, not the socket: a release listens on `0.0.0.0` so a remote request can be answered and explained, and everything from a non-loopback address is refused until it signs in. Local requests never authenticate — being at the machine already grants everything a password would protect. The whole model, and the eleven endpoints that stay local-only whatever happens, are in [AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md).
 - `POST /api/sessions/:id/resume` validates the id (UUID regex + membership in the index) and takes `cwd` **only from the index**, never from the request.
 - The tool-results endpoint accepts a bare filename and must verify the resolved path stays inside that session's `tool-results/` dir.
-- **A turn in flight refuses `POST /api/server/stop`, `POST /api/uninstall` and `POST /api/update/apply` with 409**, the same way an update in flight already refused the first two.
+- **A turn in flight refuses `POST /api/server/stop`, `POST /api/server/restart`, `POST /api/uninstall` and `POST /api/update/apply` with 409**, the same way an update in flight already refused the others.
 - **Network policy**: exactly two automatic calls exist — see the summary in [CLAUDE.md](../CLAUDE.md#hard-rules), the update check in [AI_DISTRIBUTION.md](AI_DISTRIBUTION.md) and the usage read in [AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md). Never add a third.
 
 ## Session renames are LOCAL overrides only

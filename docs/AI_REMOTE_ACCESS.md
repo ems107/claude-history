@@ -4,7 +4,10 @@
 
 ## Invariants
 
-- **A release binds `0.0.0.0`; a dev instance binds `127.0.0.1`.** The wide bind and the session check are ONE feature — never widen one without the other.
+- **Nothing this app does on its own may make Windows ask for permission.** The only Windows dialog in its whole life is the UAC of the firewall button in Settings, pressed on purpose. Everything else waits.
+- **The wide bind is earned, not assumed.** A release listens on the network only when the switch is on, credentials exist, and the firewall ALREADY permits the port — decided in `core/bind.ts` before `listen()`, re-decided on every start, never from a remembered verdict. A dev instance is always loopback. `--host` skips the lot, and is the only thing that may still raise the dialog.
+- **The bind cannot change while the process runs**, so switching remote access on or off is a wish until a restart grants it. `POST /api/server/restart` is that restart, and it is local-only.
+- **The wide bind and the session check are ONE feature** — never widen one without the other.
 - **Local means the socket, never a header.** `isLocalRequest` reads `request.socket.remoteAddress`; `X-Forwarded-For` and `Host` are written by the caller and are ignored on purpose. **This app must not be put behind a reverse proxy** — every request would arrive from loopback and the authentication would vanish silently.
 - **A local request never authenticates.** No password, no cookie, exactly as before this existed.
 - **A remote request gets nothing until it signs in** — not the session list, not the version, not the paths. Only `/api/auth/*` and the static bundle answer first.
@@ -29,19 +32,63 @@ Applying an update is the one restart allowed from another machine: it puts itse
 
 **What a signed-in session can do is everything.** The composer runs Claude in the project's directory with tools auto-approved, and `routes/files.ts` reads any path a transcript names ([Architecture](AI_ARCHITECTURE.md#security-and-containment)). That is the intended design — the whole point is full access — but it is why the password is the only thing between the LAN and this machine, and why the switch is off by default.
 
-## Why the bind is always wide
+## The Windows dialog, and why the bind is gated on it
 
-A release listens on every interface even with `remoteAccessEnabled` off. That looks backwards and is not:
+This is the mechanism the whole bind decision exists for, verified on a real machine, and it is worth knowing exactly:
 
-- A refused **connection** is a browser error page. A refused **request** is a page that can say "remote access is off, and here is where to turn it on" — which is the only useful thing to tell someone who just typed the address on their laptop.
-- The switch then costs nothing to flip: no re-listen, no restart, no socket to rebuild while requests are in flight.
+> **Windows Defender Firewall raises "Do you want to allow public and private networks to access this app?" when a program opens a listening socket on anything but loopback and no rule decides the matter.**
+
+Three inputs, all readable without elevation, all of them true on a stock Windows:
+
+| Input | Read from | Default |
+| --- | --- | --- |
+| Unsolicited inbound traffic is blocked | `Get-NetFirewallProfile` → `DefaultInboundAction` | `NotConfigured`, which means *block* |
+| A block becomes a dialog instead of silence | `Get-NetFirewallProfile` → `NotifyOnListen` | `True` |
+| Nothing decides about this port | `Get-NetFirewallRule` + `Get-NetFirewallPortFilter` | no rule |
+
+Four consequences, each of which shaped a decision here:
+
+- **It fires at `listen()`, not on the first connection.** So it appears while the app starts, with nobody having gone near a browser.
+- **It asks about a PROGRAM, identified by its image path** — and the firewall records that path with junctions already resolved. Our `node.exe` lives at `versions\vX.Y.Z\node\node.exe`, so **every update is a new program and a new dialog**. Answering it does not help: "Allow" writes program-scoped rules nailed to that same path, and the next version is a stranger again.
+- **"Cancel" is not a no.** It writes Block rules, also per path, which pile up one pair per version — and an explicit Block beats an Allow, so they quietly defeat the port rule this feature creates. Finding and removing them is `blockingRules` / `removeBlockingRules`.
+- **Loopback never asks.** Loopback traffic is not filtered as unsolicited inbound at all, which is why none of this existed before remote access.
+
+Hence the gate in [`core/bind.ts`](../server/src/core/bind.ts):
+
+```
+network ⇔ --host given
+        ∨ ( not a dev instance ∧ remoteAccessEnabled ∧ credentials
+            ∧ ( an enabled inbound Allow rule covers TCP <port> on the active profile
+              ∨ DefaultInboundAction is Allow there ) )
+```
+
+Read it as **"is the traffic already permitted?"**, which is stronger than "would the dialog appear?" and simpler to be sure of: a Block rule also stops the dialog, and binding wide behind one would mean listening for nothing. What that costs, and why it is the right trade:
+
+- **A rule must be a PORT rule to survive updates.** Ours is (`-LocalPort`, no `-Program`), which is why one UAC approval covers every future version. A rule carrying a program only counts if it names the `node.exe` we are actually running — `reason: 'rule-other-program'` says so, and warns that it dies at the next update.
+- **The profile has to match the network we are on now.** A Private rule on a Public network would raise the dialog, so it is not enough for the rule to exist.
+- **Windows classifies a network some seconds after logon**, and the scheduled task starts at logon. So the probe waits (`NETWORK_WAIT_SECONDS`) rather than reading "no networks" and locking the server to loopback every morning. `index.build()` running first buys most of that grace anyway.
+- **Unreadable means loopback.** A PowerShell that times out decides nothing, and the safe nothing is this machine only.
+- **The reasons have one home**: `BIND_REASONS` in `shared/src/api.ts` is both the sentence in the panel and the middle of the line the server logs at startup.
+
+What is lost, deliberately: with the switch off, nothing listens, so a browser on the LAN gets a refused connection instead of the page that used to explain where to turn remote access on. That page was the whole argument for the permanent wide bind. It still appears in the window between switching remote access off and restarting, which is the one moment it says something true.
 
 The port answering "off" to the whole network leaks nothing: `GET /api/auth/status` is four booleans, and every other route is refused before it runs.
+
+## Restarting, because a socket cannot be re-addressed
+
+`listen()` happens once, so the switch and the bind can only agree at startup. `POST /api/server/restart` closes that gap, and it is the same detour the updater takes: the server runs inside the `claude-history` scheduled task, Task Scheduler kills that task's whole process tree when it ends, and the task's only trigger is at-logon — so a helper spawned from here would die with us and nothing would be left to start anything. `update-helper.ps1 -RestartOnly` is registered as a one-shot task, waits for our pid to go, starts the app task and health-checks what comes back. It logs to the same `update.log`, so `updateLogImport` folds it into our own log with everything else.
+
+Refused (409) mid-update and mid-composer-answer, for the reasons `/api/server/stop` is. Local-only, and this is the one place where "it comes back on its own" is not enough: it can come back listening on loopback alone — exactly what a restart after switching the feature OFF is for — which from another machine is a door closing with the key on the inside. `/api/update/apply` stays remote-allowed because it always comes back reachable.
+
+The panel only offers the button when a restart would change something: the network is wanted and now permitted, or no longer wanted while the socket is still wide (`restartNeeded`). Wanting it with the port still shut is not a restart problem, and offering one there would waste a restart.
 
 ## The pieces
 
 | File | What it owns |
 | --- | --- |
+| `server/src/core/bind.ts` | the gate: `decideBind`, and the line it logs |
+| `server/src/util/firewall.ts` | talking to the firewall — the probe, the pure `evaluateFirewall`, the elevated writes |
+| `shared/src/api.ts` | `BindReason` / `BIND_REASONS`: every way the answer can come out, in words |
 | `server/src/util/remote.ts` | `isLocalRequest` — the socket, IPv4-mapped IPv6 included |
 | `server/src/core/auth.ts` | scrypt hashing, the signed cookie, the login backoff |
 | `server/src/routes/auth.ts` | `/api/auth/*` and `isAuthenticated` |
@@ -95,9 +142,16 @@ The rule is `-Profile Private` and **not** `-RemoteAddress LocalSubnet`. WireGua
 
 Reading the rule needs no elevation, so the panel can show its state; it also shows the machine's own addresses, so the URL to type on the other computer does not have to be hunted down.
 
+Two things the rule gained when the bind started depending on it:
+
+- **Its name carries the port** unless it is 7433 (`ruleNameFor`). The release keeps the bare `claude-history` it always had, so an older rule keeps working; a `preview.ps1` run on 7435 gets `claude-history (port 7435)`. Sharing one name was harmless while the rule was cosmetic — with the bind gated on it, two instances would read each other's answer and open the wrong port. The evaluation checks the port filter as well, so a rule that does not cover this port is not this rule.
+- **It can be overridden by a Block**, and the panel now says so instead of leaving the user with an open port and nothing coming through. `DELETE /api/firewall/blocks` re-reads the list server-side and deletes by the rule's instance `Name` — never by `DisplayName`, which Windows sets to the program ("Node.js JavaScript Runtime") and would take out every rule any other Node app on the machine ever earned.
+
 ## Trying it without publishing a release
 
-`.\preview.ps1` — a third instance, port 7435, `%LOCALAPPDATA%\claude-history-preview`, run **without** `--dev-instance` so it binds every interface exactly as a release does. It exists because `dev.ps1` structurally cannot test this: a dev instance is loopback-only, so there is no remote request to make.
+`.\preview.ps1` — a third instance, port 7435, `%LOCALAPPDATA%\claude-history-preview`, run **without** `--dev-instance` so it is subject to exactly the gate a release is. It exists because `dev.ps1` structurally cannot test this: a dev instance is loopback-only, so there is no remote request to make.
+
+Being subject to the gate means preview binds loopback too until its own rule exists, which is the point when the gate itself is what is being tested. To exercise the remote path without a rule, pass `--host 0.0.0.0` by hand — the one escape hatch, and the one thing that can still make Windows ask.
 
 It writes its own `userdata.json` on first run with the update poll, the usage reads and the auto-reload switched off — a safety measure rather than a preference, since without `--dev-instance` the plain defaults apply and a usage 429 is earned per **account**, not per instance. `-Seed` copies the release's cache and data so it opens warm.
 
@@ -105,4 +159,8 @@ It is not a managed install, so Update, Uninstall and *Open install folder* stay
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 30 to 34. They can be run without a second machine: connecting to this machine's own LAN address is a remote socket, so the whole path is real.
+[AI_TESTING.md](AI_TESTING.md) — checks 30 to 36. They can be run without a second machine: connecting to this machine's own LAN address is a remote socket, so the whole path is real. 35 is the one that proves the point of all this — the dialog never appearing — and 36 is the restart.
+
+## What is not proven
+
+If the network profile changes while the server is running (home → coffee shop), the socket is already open and no `listen()` happens, so no new dialog is expected — but that has not been provoked and is not claimed as certain. On a Public network with a Private rule the port simply goes silent, which is the wanted behaviour anyway. Were it ever to turn out otherwise, the answer is to CLOSE the wide socket, and closing never asks anything.

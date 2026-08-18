@@ -37,7 +37,7 @@ Package manager **pnpm**, workspace `shared` + `server` + `web`.
 | --- | --- |
 | `pnpm install` | install all workspace deps |
 | `.\dev.ps1` | **start the dev instance** on `http://127.0.0.1:7434` (builds if needed, detached, opens the browser). `-Build` `-Restart` `-Stop` `-Foreground` `-Seed` |
-| `.\preview.ps1` | **start a release-shaped instance** on `7435`, own data folder, binding every interface — the only way to try [remote access](docs/AI_REMOTE_ACCESS.md) without publishing a release. Same flags |
+| `.\preview.ps1` | **start a release-shaped instance** on `7435`, own data folder, subject to the same bind gate a release is — the only way to try [remote access](docs/AI_REMOTE_ACCESS.md) without publishing a release. Same flags |
 | `pnpm dev` | Fastify API on `http://127.0.0.1:7434` (tsx watch) + Vite UI on `http://localhost:5173` (proxies `/api`) |
 | `pnpm build` | build the web app to `web/dist` |
 | `pnpm start` | the Fastify server serves `web/dist` and the API on `http://127.0.0.1:7434` |
@@ -71,9 +71,9 @@ server/src/
   config.ts     data root / cache dir / logs dir / port resolution, dev-instance split
   core/         scanner → summarizer → cache → enricher → watcher, parser, index,
                 search · deepSearch · searchText, usage · autoReload · sessionChat,
-                updates · updateLogImport, logger · logReader, retention
+                updates · updateLogImport, logger · logReader, retention, bind
   routes/       the REST surface (shapes in shared/src/api.ts)
-  util/         launcher (executable resolution), sameOrigin, fetchError
+  util/         launcher (executable resolution), sameOrigin, fetchError, firewall
 web/src/        React 19 + Vite + Tailwind v4, TanStack Query, SSE
                 components/viewer/ is where the conversation is drawn
 installer/      what ships inside the release zip (pure ASCII, PowerShell 5.1)
@@ -85,7 +85,7 @@ scripts/        package.mjs · release.mjs
 - **The app only READS `~/.claude`.** Never write, create or lock anything inside it — `.credentials.json` included. Our writes go to the cache dir, `userdata.json`, its `backups\` and `logs\`, and nowhere else. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **Exactly two automatic network calls exist**, both switchable off in Settings: the update-availability check (a conditional GET to `api.github.com`, downloads nothing) and the subscription-usage read. Everything else is user-triggered: fetching prices (`POST /api/prices/fetch` scrapes `platform.claude.com/docs/en/about-claude/pricing.md` — there is no pricing API; preview only, nothing persists until saved, and the parser fails loudly so the UI can fall back to manual editing), applying an update (confirmed, SHA-256 verified) and the auto-reload's "Send it now". **Never add a third.**
 - **Subscription usage is read-only**: never refresh the token, never write `.credentials.json`. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
-- **A release binds `0.0.0.0`, a dev instance `127.0.0.1`** — and the wide bind is only safe because **a request from another machine gets nothing until it signs in**. The two are one feature; never widen the bind without the session check. → [Remote access](docs/AI_REMOTE_ACCESS.md)
+- **The wide bind is earned, never assumed** — a release listens on the network only with the switch on, credentials set and the Windows Firewall already allowing the port, because a listen with no rule is what makes Windows raise its "allow this app?" dialog. **Nothing this app does on its own may make Windows ask for permission**; the only dialog allowed is the UAC of the firewall button. A dev instance is always loopback, and `--host` is the one thing that skips the gate. The wide bind is still only safe because **a request from another machine gets nothing until it signs in** — those two remain one feature. → [Remote access](docs/AI_REMOTE_ACCESS.md)
 - **Every state-changing request must come from our own pages** (403 otherwise). A path or a cwd never comes from the request — it comes from the index. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **Being at the machine is the root of trust**: a local request needs no password, the credentials can only be set locally, and anything that opens a window on that desktop answers 409 to anyone else. → [Remote access](docs/AI_REMOTE_ACCESS.md)
 - **Session renames are local overrides**; the UI always surfaces `originalTitle` beside them. → [Architecture](docs/AI_ARCHITECTURE.md)
@@ -98,4 +98,4 @@ scripts/        package.mjs · release.mjs
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 34 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 36 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

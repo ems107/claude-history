@@ -59,18 +59,20 @@ Removes the scheduled task and the Start Menu shortcut. Your local data (renames
 
 ## Use it from another machine
 
-Off by default, and turning it on takes two deliberate steps in **Settings → Remote access**: set a username and password — only possible while you are at this machine — and then tick *Let other machines on this network use claude-history*. The switch cannot be turned on before the credentials exist.
+Off by default, and turning it on is deliberate in **Settings → Remote access**: set a username and password — only possible while you are at this machine — and then tick *Let other machines on this network use claude-history*. The switch cannot be turned on before the credentials exist.
 
-An installed release always listens on every interface, even with the switch off, so a browser that reaches it is told that remote access is off instead of showing a connection error nobody can act on. What guards the port is not the bind but the session check: **a request from anywhere other than this machine gets nothing until it signs in** — not the session list, not the version, not the paths in Settings. A request from this machine never asks for a password, exactly as before.
+Turning the switch on does not open anything by itself, and that is on purpose. Windows asks "do you want to allow this app to access your networks?" the moment a program listens on the network without a firewall rule permitting it — every update, because the rule Windows writes is tied to a path that changes with each version. So **the server listens on the network only once Windows already allows it**, and never asks you anything on its own: installing, updating and starting at logon are silent, always.
 
-Windows blocks the port inbound and the install holds no administrator rights, so the panel offers an **Open the port** button that elevates through UAC. The rule it adds covers the `Private` profile — a LAN address and a WireGuard/VPN tunnel alike, while `Public` stays shut — and the panel lists this machine's own addresses, so you know what to type on the other computer: `http://<address>:7433`.
+That makes remote access three steps in the panel instead of one. The credentials, then **Open the port** — the one moment Windows asks for administrator approval, once, on this machine — and then **Restart the server**, because where a server listens is settled when it starts. The rule covers the `Private` profile, so a LAN address and a WireGuard/VPN tunnel alike while `Public` stays shut, and it is a *port* rule with no program in it, which is what makes one approval enough for every future version. The panel says which of the three steps is missing, lists this machine's own addresses once it is actually listening — `http://<address>:7433` — and offers to clean up the blocking rules Windows leaves behind if that dialog was ever answered with Cancel, since those override the rule and would otherwise leave an open port with nothing coming through.
+
+What guards the port is not the bind but the session check: **a request from anywhere other than this machine gets nothing until it signs in** — not the session list, not the version, not the paths in Settings. A request from this machine never asks for a password, exactly as before.
 
 A few things are refused over the network rather than half-done. The greyed-out button and the 409 behind it give the same reason, because they read it from the same place:
 
 | Refused when remote | Why |
 | --- | --- |
-| Explorer, VS Code, a terminal, the firewall button | they would open a window on a screen nobody is looking at |
-| Stopping the server, uninstalling | they cut the very connection they arrived through |
+| Explorer, VS Code, a terminal, the firewall buttons | they would open a window on a screen nobody is looking at |
+| Stopping the server, restarting it, uninstalling | they cut the very connection they arrived through — and a restart can come back listening on that machine alone |
 | Setting the username and password | standing at the machine *is* the recovery path for forgetting them |
 
 Applying an update is deliberately **allowed** from another machine: it restarts and comes back on its own.
@@ -103,7 +105,7 @@ pnpm build && pnpm start    # everything on http://127.0.0.1:7434 (Ctrl+C stops 
 
 The dev instance starts with the automatic update check and the interval usage read **off**: neither belongs to a second instance running beside the release (updates cannot be applied from source, and usage reads rate-limit per account). Both are ordinary settings you can switch on.
 
-Remote access cannot be tried from a dev instance — it binds `127.0.0.1`, so there is no remote request to make against it. `.\preview.ps1` is a third instance for exactly that: port `7435`, its own data folder `%LOCALAPPDATA%\claude-history-preview`, and no `--dev-instance`, so it binds every interface just as a release does. Same flags as `dev.ps1`, and it refuses to go near 7433 or 7434. Its first run writes a `userdata.json` with the update poll, the usage read and the auto-reload off — a safety measure rather than a preference, since a usage 429 is earned per *account* and would blank the real release's widget.
+Remote access cannot be tried from a dev instance — it binds `127.0.0.1`, so there is no remote request to make against it. `.\preview.ps1` is a third instance for exactly that: port `7435`, its own data folder `%LOCALAPPDATA%\claude-history-preview`, and no `--dev-instance`, so it decides its bind exactly as a release does — loopback until its own firewall rule exists. Same flags as `dev.ps1`, and it refuses to go near 7433 or 7434. Its first run writes a `userdata.json` with the update poll, the usage read and the auto-reload off — a safety measure rather than a preference, since a usage 429 is earned per *account* and would blank the real release's widget.
 
 Cut a release (build + tag + push + publish, all from this machine — there is no CI):
 
