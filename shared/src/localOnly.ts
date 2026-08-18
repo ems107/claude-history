@@ -8,8 +8,12 @@
  *    and open something in an empty room. Silent success is the worst failure
  *    mode there is, which is why these are refused rather than left to try.
  *  - Ones that would CUT THE CONNECTION they arrived through, leaving no way
- *    back in. Stopping the server and uninstalling are the whole list; applying
- *    an update is deliberately NOT here, because it comes back on its own.
+ *    back in. Stopping the server, restarting it and uninstalling are the whole
+ *    list; applying an update is deliberately NOT here, because it comes back
+ *    on its own AND comes back reachable. A restart only manages the first
+ *    half: the bind is decided at startup from the switch and the firewall, so
+ *    a restart asked for from another machine can perfectly well come back
+ *    listening on loopback alone — which is a locked door from the outside.
  *
  * The text is the same in both places it appears — the disabled button's
  * tooltip and the body of the 409 — because they are the same fact, and two
@@ -26,6 +30,7 @@ export type LocalOnlyAction =
   | 'openDataFolder'
   | 'openInstallFolder'
   | 'stopServer'
+  | 'restartServer'
   | 'uninstall'
   | 'credentials'
   | 'firewall';
@@ -51,6 +56,8 @@ export const LOCAL_ONLY_ACTIONS: Record<LocalOnlyAction, string> = {
   // The three that are refused for a reason of their own rather than for being
   // somewhere else, and it is worth one clause each.
   stopServer: 'Not available over remote access — it would end this connection with no way back in.',
+  restartServer:
+    'Not available over remote access — a restart can come back listening on that machine only, with no way back in.',
   credentials: 'Not available over remote access — the username and password can only be changed on the machine itself.',
   firewall: 'Not available over remote access — Windows asks for administrator approval on the machine itself.',
 };

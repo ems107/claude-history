@@ -63,6 +63,91 @@ export interface AuthStatusResponse {
  */
 export const MIN_PASSWORD_LENGTH = 8;
 
+/**
+ * Why this process is, or is not, listening on the network.
+ *
+ * A release only binds every interface once it has been earned: Windows raises
+ * its "allow this app?" dialog the moment a program listens on anything but
+ * loopback with no firewall rule to decide the matter, and that dialog must
+ * never appear on its own. So the reason is a fact worth naming — it is the
+ * difference between "you turned it off" and "Windows would have asked".
+ *
+ * Ordered by where the decision was made: what bypasses the gate, then the
+ * switch, then what the firewall said.
+ */
+export type BindReason =
+  /** A checkout: loopback always. Remote access belongs to the release. */
+  | 'dev-instance'
+  /** `--host` was given by hand, and it wins over all of this — dialog included. */
+  | 'explicit-host'
+  | 'switch-off'
+  /** The switch cannot be on without credentials, but the bind checks anyway. */
+  | 'no-credentials'
+  /** Nothing in the firewall decides about this port: listening would ask. */
+  | 'no-rule'
+  /**
+   * No rule, and no network for one to apply to. Windows classifies a
+   * connection some seconds after logon, so the probe waits before saying this
+   * — a machine that answers it is genuinely offline.
+   */
+  | 'no-network'
+  | 'rule-disabled'
+  | 'rule-wrong-port'
+  /** The rule exists, but not for the network this machine is on right now. */
+  | 'rule-other-profile'
+  /** A program-scoped rule (what clicking "Allow" leaves) naming another node.exe. */
+  | 'rule-other-program'
+  /** The firewall could not be read, so the safe answer is loopback. */
+  | 'firewall-unreadable'
+  /** Our rule covers it: listening on the network. */
+  | 'allowed'
+  /** This machine permits unsolicited inbound traffic by policy — no rule needed. */
+  | 'default-allow'
+  /** No Windows firewall to ask; the switch alone decides. */
+  | 'not-windows';
+
+/**
+ * Why the bind came out the way it did, in the words a person reads.
+ *
+ * One home, used twice: the Settings panel puts it after "listening on this
+ * machine only", and the server puts it in the line it logs at startup. A log
+ * that explains the bind differently from the screen would be worse than either
+ * on its own — that is the same reason `localOnly.ts` keeps its sentences here.
+ * Each one completes "…, because" and only says the cause; what to do about it
+ * is the button beside it.
+ */
+export const BIND_REASONS: Record<BindReason, string> = {
+  'explicit-host': '--host was given on the command line, so the firewall was never consulted.',
+  'dev-instance': 'this is a dev instance, and remote access belongs to the installed release.',
+  'switch-off': 'remote access is switched off.',
+  'no-credentials': 'remote access has no username and password yet.',
+  'no-rule':
+    'no firewall rule allows this port, and listening on the network without one is what makes Windows ask for permission.',
+  'no-network': 'Windows has classified no network yet, and there is no firewall rule to fall back on.',
+  'rule-disabled': 'the firewall rule exists but is disabled.',
+  'rule-wrong-port': 'the firewall rule does not cover this port.',
+  'rule-other-profile': 'the firewall rule does not apply to the network this machine is on.',
+  'rule-other-program':
+    'the only rule found names a different node.exe — which is what answering the Windows dialog leaves behind, and it stops applying at the next update.',
+  'firewall-unreadable': 'the firewall could not be read, and listening on this machine only is the safe answer.',
+  'default-allow': 'this machine allows unsolicited inbound traffic by policy, so no rule is needed.',
+  'not-windows': 'there is no Windows Firewall to ask.',
+  allowed: 'remote access is on and the firewall already allows this port.',
+};
+
+/**
+ * A rule that stops our own traffic even with the port open, because an
+ * explicit Block beats an Allow. These are what clicking "Cancel" on the
+ * dialog leaves behind, one pair per version, each nailed to the `node.exe`
+ * path of the release that asked.
+ */
+export interface BlockingRule {
+  displayName: string;
+  /** The node.exe this rule names, as the firewall stored it. */
+  program: string;
+  protocol: string;
+}
+
 /** Everything about "can another machine actually reach this one", in one read. */
 export interface FirewallStatusResponse {
   /** An inbound rule for this port exists. Null when it could not be read. */
@@ -79,6 +164,23 @@ export interface FirewallStatusResponse {
   /** This machine's own IPv4 addresses, so the URL to type does not have to be hunted for. */
   addresses: string[];
   error: string | null;
+  /** Where this process is actually listening — the bind it was granted at startup. */
+  listening: 'local' | 'network';
+  bindReason: BindReason;
+  /** The switch is on and credentials exist: a network bind is what the user wants. */
+  wantsNetwork: boolean;
+  /** Wanted and actual disagree, and only a restart can settle it. */
+  restartNeeded: boolean;
+  /** The rule that was found covers this port (one for another port is not this one). */
+  ruleCoversPort: boolean;
+  /** Profiles the rule applies to, so "Private" beside a Public network explains itself. */
+  ruleProfiles: string[];
+  /** Windows would raise its dialog rather than block in silence. */
+  notifyOnListen: boolean;
+  /** `DefaultInboundAction` is Allow here: a rule is not needed at all. */
+  defaultInboundAllow: boolean;
+  /** Leftovers from clicking Cancel on the dialog. They override the rule above. */
+  blockingRules: BlockingRule[];
 }
 
 export type SessionsResponse = SessionSummary[];
