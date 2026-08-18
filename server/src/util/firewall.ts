@@ -136,6 +136,25 @@ const COM_HELPERS = [
   // cmdlets produced and what the mapping compares. Swapping either shape makes
   // `.toLowerCase()` throw inside the parse try/catch, i.e. a perfectly readable
   // firewall reported as unreadable.
+  //
+  // `programs` is `@(if ...)` and NOT `$(if ... else { @() })`, which is worth a
+  // paragraph because the difference is invisible until it costs a release.
+  // `powershell.exe` is Windows PowerShell 5.1, and there a `$(...)` whose branch
+  // emits nothing does not yield `$null` — it yields
+  // `[AutomationNull]::Value`, a singleton that compares equal to `$null`,
+  // prints as nothing, and which `ConvertTo-Json` renders as `{}`. An empty
+  // JSON OBJECT, where every reader here expects an absence. `asArray` then
+  // wraps it, `String()` stringifies it, and the rule that names NO program —
+  // which is precisely the port rule this app creates — arrives carrying one
+  // program called `[object object]`. `evaluateFirewall` answers
+  // `rule-other-program`, the bind goes to loopback, and the panel reports our
+  // own rule as somebody else's. Under `pwsh` 7 the same expression serializes
+  // as `null` and everything works, which is exactly how this survived a review.
+  //
+  // The array subexpression has no such edge: it is a real `object[]` of zero or
+  // one strings, it serializes as `[]` or `["C:\\...\\node.exe"]`, and it never
+  // unrolls to a bare string the way `$(...)` did for a single match. Same shape
+  // in both shells, and the same shape as `protocols` and `localPorts` above.
   'function Convert-FwRule($r) {',
   '  return @{',
   '    displayName = [string]$r.Name',
@@ -145,7 +164,7 @@ const COM_HELPERS = [
   '    profile = (Convert-FwProfiles ([int]$r.Profiles))',
   '    protocols = @(Convert-FwProtocol ([int]$r.Protocol))',
   '    localPorts = @(Convert-FwLocalPorts $r.LocalPorts)',
-  '    programs = $(if ($r.ApplicationName) { @([string]$r.ApplicationName) } else { @() })',
+  '    programs = @(if ($r.ApplicationName) { [string]$r.ApplicationName })',
   '  }',
   '}',
 ];
@@ -289,7 +308,15 @@ interface RawRule {
   profile?: string;
   protocols?: (string | number)[] | string | number;
   localPorts?: (string | number)[] | string | number;
-  programs?: string[] | string;
+  /**
+   * `unknown` on purpose. Every other field here is narrowed optimistically and
+   * coerced with `String()` on the way out, which is harmless because a wrong
+   * shape then reads as a wrong VALUE. This one is different: an object that
+   * stringifies to something path-shaped reads as a program that is not ours,
+   * and that is a verdict, not a value. Typing it honestly is what makes the
+   * guard below real code rather than a comment.
+   */
+  programs?: unknown;
 }
 
 interface RawConnection {
@@ -465,9 +492,17 @@ export async function probeFirewall(port: number, waitForNetwork: boolean): Prom
           // was once enough to make our own port rule look like somebody else's
           // node.exe and refuse the bind it had just been granted. Both spellings
           // are still dropped here, because emptiness must have one meaning.
+          //
+          // `typeof === 'string'` and not `filter(Boolean)`, for a third spelling
+          // of the same absence: `{}` is truthy, and `String({})` is the perfectly
+          // plausible-looking program path `[object Object]`. That is what Windows
+          // PowerShell 5.1 made of an empty branch until `Convert-FwRule` was
+          // taught to emit a real array — see the paragraph there. A program name
+          // that did not arrive as a string is not a program name, and the only
+          // safe reading of it is the one the port rule wants anyway: none.
           programs: asArray(r.programs)
-            .filter(Boolean)
-            .map((p) => String(p).toLowerCase())
+            .filter((p): p is string => typeof p === 'string' && p.length > 0)
+            .map((p) => p.toLowerCase())
             .filter((p) => p !== 'any'),
         }),
       );
