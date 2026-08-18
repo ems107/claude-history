@@ -43,7 +43,18 @@ function NavItem({ to, label }: { to: string; label: string }) {
  */
 export function AppGate() {
   const queryClient = useQueryClient();
-  const { data: auth, isPending } = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
+  const { data: auth, isPending } = useQuery({
+    queryKey: ['auth'],
+    queryFn: api.authStatus,
+    // Keep asking while it cannot be reached, and come back on its own when it
+    // can. This gate is above everything, so a failure here is a blank page —
+    // and the moment it happens is a server that is restarting, which is
+    // exactly what applying an update from another machine does. Without this,
+    // a tab loaded a second too early would stay blank until someone reloaded
+    // it by hand, on the one screen that cannot be reached by hand.
+    refetchInterval: (query) => (query.state.error ? 2_000 : false),
+    retry: 3,
+  });
 
   // A session that dies while the app is open (the key was rotated, the cookie
   // expired) is announced once by the API client; re-reading the status is what
@@ -56,7 +67,16 @@ export function AppGate() {
 
   // Nothing at all while it is being asked: this resolves in a millisecond on
   // loopback, and a spinner would be a flash of layout for no information.
-  if (isPending || !auth) return null;
+  if (isPending) return null;
+  // Asked and could not be answered — the server is down or restarting. Say so
+  // rather than show an empty page; the poll above brings it back by itself.
+  if (!auth) {
+    return (
+      <div className="flex h-full items-center justify-center p-6 text-sm text-[var(--text-dim)]">
+        Cannot reach the claude-history server. Retrying…
+      </div>
+    );
+  }
   if (auth.authenticated) return <App />;
   if (!auth.remoteAccessEnabled || !auth.configured) return <RemoteDisabledPage />;
   return (
