@@ -13,6 +13,7 @@ The detail lives in `docs/`, one document per area. **Load the ones that match w
 | [Search](docs/AI_SEARCH.md) | the index, the deep scan, folding/matching, the paged match list |
 | [Architecture](docs/AI_ARCHITECTURE.md) | the scan → summarize → cache → enrich pipeline, a new endpoint, where state lives, containment rules |
 | [Running Claude](docs/AI_RUNNING_CLAUDE.md) | subscription usage, the auto-reload, the composer — anything that talks to Anthropic or spawns `claude` |
+| [Remote access](docs/AI_REMOTE_ACCESS.md) | the bind address, signing in, the local/remote split, anything that acts on the server's own desktop |
 | [Logging](docs/AI_LOGGING.md) | adding logging, or working out what an installed instance did |
 | [Distribution](docs/AI_DISTRIBUTION.md) | packaging, the installer, self-update, cutting a release |
 | [Windows](docs/AI_WINDOWS.md) | resolving an executable, spawning a process, opening a terminal or Explorer |
@@ -83,7 +84,9 @@ scripts/        package.mjs · release.mjs
 - **The app only READS `~/.claude`.** Never write, create or lock anything inside it — `.credentials.json` included. Our writes go to the cache dir, `userdata.json`, its `backups\` and `logs\`, and nowhere else. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **Exactly two automatic network calls exist**, both switchable off in Settings: the update-availability check (a conditional GET to `api.github.com`, downloads nothing) and the subscription-usage read. Everything else is user-triggered: fetching prices (`POST /api/prices/fetch` scrapes `platform.claude.com/docs/en/about-claude/pricing.md` — there is no pricing API; preview only, nothing persists until saved, and the parser fails loudly so the UI can fall back to manual editing), applying an update (confirmed, SHA-256 verified) and the auto-reload's "Send it now". **Never add a third.**
 - **Subscription usage is read-only**: never refresh the token, never write `.credentials.json`. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
-- **The server binds `127.0.0.1` only**, and every state-changing request must come from our own pages (403 otherwise). A path or a cwd never comes from the request — it comes from the index. → [Architecture](docs/AI_ARCHITECTURE.md)
+- **A release binds `0.0.0.0`, a dev instance `127.0.0.1`** — and the wide bind is only safe because **a request from another machine gets nothing until it signs in**. The two are one feature; never widen the bind without the session check. → [Remote access](docs/AI_REMOTE_ACCESS.md)
+- **Every state-changing request must come from our own pages** (403 otherwise). A path or a cwd never comes from the request — it comes from the index. → [Architecture](docs/AI_ARCHITECTURE.md)
+- **Being at the machine is the root of trust**: a local request needs no password, the credentials can only be set locally, and anything that opens a window on that desktop answers 409 to anyone else. → [Remote access](docs/AI_REMOTE_ACCESS.md)
 - **Session renames are local overrides**; the UI always surfaces `originalTitle` beside them. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **A starred message keeps its own copy of the text**, keyed on the message's canonical uuid, and starring never invalidates `['session', id]`. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **The reading half is ours; the Agent SDK is only used to run Claude.** → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
@@ -94,4 +97,4 @@ scripts/        package.mjs · release.mjs
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 29 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 34 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

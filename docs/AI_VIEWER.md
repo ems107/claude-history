@@ -18,6 +18,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A fold that can be a jump's destination opens and then LETS GO** — never `open={targeted || open}`.
 - **What the find bar counts is what unfolding can put inside a marking box** (`[data-bubble-body]`, `[data-tool-id]`).
 - **A find is a gesture, not a location**: the bar never writes to the URL.
+- **A button that acts on the server's own desktop is disabled when the page is remote**, with the reason from `shared/src/localOnly.ts` as its tooltip — `useLocalOnly()`, never a hostname check ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
 - **Typing never moves the page** — a step unfolds things that do not fold back.
 - **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
 - **The ring survives F5**: remembered per conversation in `sessionStorage`, never in the URL, and restored by travelling the deep link's road back to it.

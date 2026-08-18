@@ -6,7 +6,7 @@
 
 - **`~/.claude` is read-only to this app** — never write, create or lock anything inside it.
 - **Our writes go to exactly four places**: the cache dir, `userdata.json`, its `backups\` and `logs\`.
-- **The server binds `127.0.0.1` only.** Never `0.0.0.0`.
+- **A release binds `0.0.0.0`, a dev instance `127.0.0.1`** — and a request from another machine gets nothing until it signs in ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
 - **Every state-changing request must come from our own pages** (`isSameOrigin`, 403 otherwise).
 - **A path or a cwd never comes from the request** — it comes from the index.
 - **The API shape lives in `shared/src/api.ts`** and the domain in `shared/src/types.ts`; documentation points at them instead of restating them.
@@ -75,6 +75,7 @@ The scripts shipped inside the release zip, and the packaging/release tooling �
 | --- | --- | --- |
 | List summaries, enrichment, search text | `%LOCALAPPDATA%\claude-history\cache\` | yes — deleting it is always safe |
 | Renames, pins, starred messages, price table, settings | `userdata.json`, **beside** the cache dir | **no** |
+| Remote-access username, password hash and cookie-signing key | `userdata.json`, under `auth` — **never** inside `settings`, which is served whole to any signed-in browser | **no** |
 | Dated copies of that file | `backups\`, beside it | yes — but they are the only way back to a lost `userdata.json` |
 | Logs | `logs\`, beside the cache dir | yes (pruned by `logRetentionDays`) |
 | Filters, scroll position, view toggles | browser `localStorage` / `sessionStorage`, and the URL | yes |
@@ -101,7 +102,7 @@ The triggers are not a schedule, they are one per way of losing the file, and ea
 | `initial` / `daily` | first write of a day, and at start-up | a change made days ago and noticed now (kept for 14 days) |
 | `version-X` | start-up under a version that did not write last (`backups\state.json`) | a regression arriving with a new build, including one installed by hand |
 | `pre-update-X` | the moment an update is accepted, by the version still running | the same, for our own updater — taken by code known to work |
-| `pre-loss` | a write about to zero renames, pins or stars that had content | **a valid but incomplete file**, which nothing else can catch |
+| `pre-loss` | a write about to zero renames, pins, stars or the remote-access credentials that had content | **a valid but incomplete file**, which nothing else can catch |
 | `pre-restore` | restoring a copy | picking the wrong line in a list of dates |
 | `manual` | `POST /api/userdata/backups` | about to edit prices, about to try something |
 
@@ -115,8 +116,8 @@ The triggers are not a schedule, they are one per way of losing the file, and ea
 - **The app only reads from `~/.claude`** — never write, create or lock anything inside it, `.credentials.json` included. Two features indirectly add files there (the auto-reload and the composer) and only because **Claude Code itself** writes its own transcript when we spawn it; we still never touch that data and never delete what it leaves behind.
 - **`~/.claude` is the only place it reads on its own initiative.** The file viewer (`routes/files.ts`) reads a path a transcript names, anywhere on disk and with no containment rule — a session links to another repo, to `~/.claude/settings.json`, to a file since moved — but only when the user clicks the link, and it still **never writes**. Two things pay for that, and both must survive any change to the endpoint: the reference is resolved against the session's project path taken from the **index**, never from the request (the `/resume` model), and the GET carries **its own `isSameOrigin` check**, because the hook in `app.ts` guards only the methods that change state while this one can read anything the user can.
 - **A served file's `Content-Type` comes from our own extension allowlist, never from the transcript.** `attachments[].media_type` is written by another process into a file we only read, and echoing it back as a header would serve arbitrary content **from our own origin**. `svg` is off the list on purpose: it is a document that can carry script, and `image/svg+xml` from `127.0.0.1:7433` is same-origin execution reached from a transcript. Plus `nosniff`, a size cap answering **413 and never a truncated image** (half a PNG draws as a broken one and reads as a deleted file), and 415 for anything not on the list — not 404, because the file may be right there and "we do not serve this" is a different fact.
-- **Every state-changing request must come from our own pages** (`util/sameOrigin.ts`, an `onRequest` hook in `app.ts`, 403 otherwise). Binding to `127.0.0.1` keeps other machines out and says nothing about the browser already running on this one: any page the user has open can POST to `127.0.0.1:7433`, and these endpoints open terminals, stop the server and run Claude with auto-approved tools. It cannot read the reply and does not need to — **the side effect is the attack**. `Sec-Fetch-Site` answers it (the browser sets it and a page cannot forge it), `Origin` covers the rest, and neither present means it is not a browser at all (curl, the installer's health check) and is allowed through.
-- **The server binds `127.0.0.1` only. Never `0.0.0.0`.**
+- **Every state-changing request must come from our own pages** (`util/sameOrigin.ts`, an `onRequest` hook in `app.ts`, 403 otherwise). Reaching the server says nothing about the browser already running on this machine: any page the user has open can POST to `127.0.0.1:7433`, and these endpoints open terminals, stop the server and run Claude with auto-approved tools. It cannot read the reply and does not need to — **the side effect is the attack**. `Sec-Fetch-Site` answers it (the browser sets it and a page cannot forge it), `Origin` covers the rest, and neither present means it is not a browser at all (curl, the installer's health check) — allowed **from this machine**, refused from any other, where "a session cookie but no browser" is not a shape our own UI takes.
+- **The bind is wide and the door is the session check**, not the socket: a release listens on `0.0.0.0` so a remote request can be answered and explained, and everything from a non-loopback address is refused until it signs in. Local requests never authenticate — being at the machine already grants everything a password would protect. The whole model, and the eleven endpoints that stay local-only whatever happens, are in [AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md).
 - `POST /api/sessions/:id/resume` validates the id (UUID regex + membership in the index) and takes `cwd` **only from the index**, never from the request.
 - The tool-results endpoint accepts a bare filename and must verify the resolved path stays inside that session's `tool-results/` dir.
 - **A turn in flight refuses `POST /api/server/stop`, `POST /api/uninstall` and `POST /api/update/apply` with 409**, the same way an update in flight already refused the first two.
