@@ -122,15 +122,20 @@ export function CopyActions({
     // instead of shoving those pills sideways exactly when the pointer is
     // heading for them.
     //
-    // `-my-0.5` cancels the buttons' own vertical padding from the row's
-    // height: the assistant's pills are bare text (the `inline` HoverCard
-    // variant), so without it the header grew by 4 px on hover and nudged the
-    // answer down. The buttons still paint their full padding, 2 px over the
-    // row on each side.
+    // `h-[1lh]` is what stops the thread trembling under the pointer. The row
+    // is a hover toolbar inside a line of 10 px text, and its tallest item —
+    // the star, at `text-xs`, whose 16 px line box beats the header's 15 px —
+    // used to grow the header by a pixel the moment the pointer arrived. One
+    // pixel is enough: every bubble below jumped as the mouse swept down them,
+    // and at a bubble's edge the growth moved the boundary out from under the
+    // pointer and back, which flickers. Pinning the row to exactly ONE line of
+    // whatever the header is set in makes its content unable to say anything
+    // about the header's height. The buttons keep painting their full padding,
+    // 2 px over the row on each side, as they did under `-my-0.5`.
     //
     // The click never belongs to whatever is underneath: a folded bubble
     // unfolds its turn.
-    <span className="-my-0.5 flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+    <span className="flex h-[1lh] items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         className={cls}

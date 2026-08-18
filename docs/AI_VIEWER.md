@@ -15,6 +15,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **Marks are `Range`s in the CSS Custom Highlight API**, never `<mark>` nodes in React's markdown.
 - **A message bubble takes no `onClick`.**
 - **A starred message says so without being hovered, and nothing is drawn on the bubble.**
+- **What appears on hover may not resize what it appears in** — a hover toolbar is pinned to one line (`h-[1lh]`), never measured from its own buttons.
 - **A fold that can be a jump's destination opens and then LETS GO** — never `open={targeted || open}`.
 - **What the find bar counts is what unfolding can put inside a marking box** (`[data-bubble-body]`, `[data-tool-id]`).
 - **A find is a gesture, not a location**: the bar never writes to the URL.
@@ -56,6 +57,13 @@ already animates that border for 2.5 s, so a deep link arriving would fight it.
   the header; a set star has to stay visible while you scroll past it, so it opts
   out and the copy buttons keep the hover rule. (`opacity-0`, which the session
   header's pin uses, would bring the gap back.)
+- **The row is `h-[1lh]` tall, and its buttons overflow it.** A hover toolbar that
+  measures itself makes the header taller the instant the pointer arrives — here
+  by one pixel, the star's `text-xs` line box against the header's 10 px one —
+  and one pixel is plenty: the whole thread below shuffles as the mouse sweeps
+  down it, and on a bubble's edge the growth carries the boundary out from under
+  the pointer and back again, which flickers. One line of the header's own text,
+  whatever it is set in, is the height; the padding paints outside it.
 - **No `StarContext` means no star button**, the same contract `SubagentContext`
   states — and that is what keeps it out of the subagent drawer, which renders
   the same `TurnList` over a transcript whose uuids this session does not
