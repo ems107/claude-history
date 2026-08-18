@@ -33,12 +33,19 @@ export function registerFirewallRoutes(app: FastifyInstance, ctx: AppContext): v
   app.get('/api/firewall', async (): Promise<FirewallStatusResponse> => {
     const wantsNetwork = ctx.index.getSettings().remoteAccessEnabled && ctx.index.getAuth() !== null;
     const listening = ctx.bind.network ? 'network' : 'local';
-    // No waiting for a network here: by the time anyone opens Settings the
-    // answer is whatever it is, and a panel that stalls ten seconds to say "no
-    // networks" is not an improvement on saying it at once.
-    const probe = await probeFirewall(port, false);
+    // Two PowerShell calls, and neither needs the other's answer — so they run
+    // together. Loading the NetSecurity module is most of the cost of each
+    // (~2 s for the probe, ~1.5 s for the enumeration the block scan needs), and
+    // in sequence that was four seconds of "reading…" in the panel.
+    //
+    // No waiting for a network in the probe: by the time anyone opens Settings
+    // the answer is whatever it is, and a panel that stalls ten seconds to say
+    // "no networks" is not an improvement on saying it at once.
+    const [probe, blocks] = await Promise.all([
+      probeFirewall(port, false),
+      blockingRules(ctx.bind.exePath, ctx.updates.install?.root ?? null),
+    ]);
     const verdict = evaluateFirewall(probe, port, ctx.bind.exePath);
-    const blocks = await blockingRules(ctx.bind.exePath, ctx.updates.install?.root ?? null);
     return {
       ruleName,
       port,
