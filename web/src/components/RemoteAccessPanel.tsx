@@ -158,8 +158,11 @@ export function RemoteAccessPanel({
                   disabled={busy !== null || !username.trim() || password.length < MIN_PASSWORD_LENGTH}
                   onClick={submitCredentials}
                 >
-                  {busy === 'credentials' ? 'Saving…' : 'Save'}
+                  Save
                 </button>
+                {busy === 'credentials' && (
+                  <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent text-[var(--text-dim)]" />
+                )}
                 {settingUp && configured && (
                   <button type="button" className={btn} onClick={() => setSettingUp(false)}>
                     Cancel
@@ -198,14 +201,29 @@ export function RemoteAccessPanel({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[var(--text-dim)]">
             Windows Firewall:{' '}
-            {rule === undefined
-              ? 'reading…'
-              : rule.ruleExists === null
-                ? 'could not be read'
-                : rule.ruleExists
-                  ? `port ${String(rule.port)} is open on private networks`
-                  : `port ${String(rule.port)} is closed — no machine can reach this one`}
+            {/* The state, and while one is being changed the WAIT — never the
+                old answer with the click already gone, which reads as nothing
+                having happened. It holds until the rule has been re-read, not
+                until the elevated command returns. */}
+            {busy === 'firewall' ? (
+              <span className="inline-flex items-center gap-1.5 text-[var(--text)]">
+                <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                Waiting for Windows…
+              </span>
+            ) : rule === undefined ? (
+              'reading…'
+            ) : rule.ruleExists === null ? (
+              'could not be read'
+            ) : rule.ruleExists ? (
+              `port ${String(rule.port)} is open on private networks`
+            ) : (
+              `port ${String(rule.port)} is closed — no machine can reach this one`
+            )}
           </span>
+          {/* The label says what the click DOES, never what is happening: a
+              button is a verb, and one that renames itself to a status is both
+              a worse verb and a worse status. Disabled is the honest way to say
+              "not now" — visibly unusable, and it claims nothing. */}
           <button
             type="button"
             className={btn}
@@ -215,17 +233,23 @@ export function RemoteAccessPanel({
               const allow = !rule?.ruleExists;
               setBusy('firewall');
               setError(null);
-              api
-                .setFirewallRule(allow)
-                .then(() => setNote(allow ? 'The port is open on private networks.' : 'The rule was removed.'))
-                .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-                .finally(() => {
+              void (async () => {
+                try {
+                  await api.setFirewallRule(allow);
+                } catch (e: unknown) {
+                  setError(e instanceof Error ? e.message : String(e));
+                } finally {
+                  // Awaited on purpose: this re-reads the rule through
+                  // PowerShell and takes a moment, and clearing `busy` first
+                  // put the STALE answer back on screen — "closed" beside a
+                  // live button, seconds after the port was opened.
+                  await queryClient.invalidateQueries({ queryKey: ['firewall'] });
                   setBusy(null);
-                  void queryClient.invalidateQueries({ queryKey: ['firewall'] });
-                });
+                }
+              })();
             }}
           >
-            {busy === 'firewall' ? 'Waiting for Windows…' : rule?.ruleExists ? 'Close the port' : 'Open the port'}
+            {rule?.ruleExists ? 'Close the port' : 'Open the port'}
           </button>
           {publicProfile && (
             <span className="text-amber-400">

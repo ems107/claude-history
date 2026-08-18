@@ -40,16 +40,35 @@ function powershell(script: string, timeout: number): Promise<{ stdout: string }
  * work is handed to an elevated child, and the UAC dialog that authorises it
  * appears on the machine's own desktop — which is exactly why this endpoint is
  * local-only: over the network it would pop a dialog nobody is there to accept.
+ *
+ * Two things this got wrong the first time, both worth keeping written down:
+ *
+ * - **One statement per line, and no backticks.** A backtick continues a
+ *   STATEMENT; putting one after `$ErrorActionPreference = 'Stop'` glued the
+ *   next statement onto it and PowerShell answered `Unexpected token '$p'`
+ *   before ever reaching the UAC prompt.
+ * - **The outcome is reported on stdout, not through the exit code.** A failing
+ *   `powershell.exe` makes `execFile` reject with an Error whose `message` is
+ *   the entire command line — a 500-character base64 blob — and whose `stderr`
+ *   is PowerShell's CLIXML. Both went straight into the panel. Catching inside
+ *   the script means what reaches the user is "The operation was canceled by
+ *   the user", which is what actually happened.
  */
 async function elevate(innerScript: string): Promise<void> {
   const inner = Buffer.from(innerScript, 'utf16le').toString('base64');
   const outer = [
     "$ErrorActionPreference = 'Stop'",
-    '$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden',
-    `  -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${inner}')`,
-    'exit $p.ExitCode',
-  ].join(' `\n');
-  await powershell(outer, ELEVATED_TIMEOUT_MS);
+    'try {',
+    `  $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand','${inner}')`,
+    "  if ($p.ExitCode -eq 0) { 'ok' } else { 'failed: the elevated command exited with ' + $p.ExitCode }",
+    '} catch {',
+    "  'failed: ' + $_.Exception.Message",
+    '}',
+  ].join('\n');
+  const { stdout } = await powershell(outer, ELEVATED_TIMEOUT_MS);
+  const answer = stdout.trim();
+  if (answer === 'ok') return;
+  throw new Error(answer.replace(/^failed:\s*/, '') || 'PowerShell said nothing at all.');
 }
 
 /**
@@ -110,7 +129,7 @@ export function registerFirewallRoutes(app: FastifyInstance, ctx: AppContext): v
       // to get here — so it is a 409 with an explanation, not a 500.
       log.warn('could not create the firewall rule', err);
       return reply.code(409).send({
-        error: `The rule was not created. Windows asks for administrator approval on the machine itself — accepting that prompt is what this needs. (${err instanceof Error ? err.message : String(err)})`,
+        error: `The rule was not created — Windows has to approve it on this machine. ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   });
@@ -123,7 +142,7 @@ export function registerFirewallRoutes(app: FastifyInstance, ctx: AppContext): v
     } catch (err) {
       log.warn('could not remove the firewall rule', err);
       return reply.code(409).send({
-        error: `The rule was not removed. (${err instanceof Error ? err.message : String(err)})`,
+        error: `The rule was not removed — Windows has to approve it on this machine. ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   });
