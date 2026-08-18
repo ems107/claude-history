@@ -17,7 +17,8 @@ Fixtures are sessions in `~/.claude/projects`, and Claude Code sweeps them on `c
 | Compaction boundary | `f3384d17` (2), `432b1d41` (1), `980751cb` (1) | `0f5b1c8b` (8), `cae7f9f5` (41) |
 | `/context` snapshots | `f3384d17`, the only one | — |
 | Task notifications | `980751cb` (16), `15a86025` (7), `19ebb1d5` (6), `b343d4ac` (5) | `1decb824` (80) |
-| Queued human prompt | `e36007b6` (3), `b343d4ac` (2), `15a86025` (1), `9ef9f798` (1) | — |
+| Queued human prompt | `e36007b6` (3), `b343d4ac` (2), `15a86025` (1), `9ef9f798` (1), `bfbdf4c2` (1); **with an image pasted in** (array payload): `c98565c7`, `d2a4e86b` | — |
+| Image pasted into a prompt | `9ef9f798` (1.8 MB, the heaviest), `c98565c7` (queued), `6f42e08b` (**an image with no text at all**) | — |
 | Subagents | `15a86025` (11, nested), `19ebb1d5` (6, failures), `980751cb` (5), `b343d4ac` (5) | — |
 | Rewound branches | by branching parent: `f3384d17`, `1aa6d6db`, `b3e8ad92`, `0dd71f3d` | `c0f70eda`, `e663c8d5` |
 | Questions with drawings / notes | `e95a1a42`, `825f06f6`, `e36007b6`, `a46fc22a`, `edacebe6`, `797db462` | — |
@@ -124,6 +125,7 @@ Checks 8, 19 and 23 spawn real `claude` processes against the user's subscriptio
 - `15a86025` is the readable fixture: "No te dejes nada" as a user bubble with a `queued` chip, timestamped **13:44:06, before the answer above it**, and found by the search (0 hits before the fix, in a session whose prompt the Prompts page was already listing from `history.jsonl`).
 - `9ef9f798` proves the tree still decides: its queued prompt sits in a rewound-away branch, so it must come back `discardedBranch: f337bae4` like the six answers below it, and fold with them.
 - `980751cb` is the control — 32 notifications between it and `b343d4ac`, and **not one may become a prompt**: 16 notices, 5 reports, 0 queued items, 0 chips.
+- **The one with an image pasted into it is a second shape, not a second case** ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#queued-lines-attachment--queued_command)): `c98565c7` must show "No sé que has hecho, pero acaba de aparecer este popup [Image #7]" as a queued bubble **with the screenshot under the text**, and the same phrase must be findable — it was in `history.jsonl` and on the Prompts page while the session, its counters and the index had nothing. `d2a4e86b` is the second ("Está saltando el Windows Defender…"). Both come through the same `origin.kind === 'human'` test as the text, so the 55 notifications are still the control for it.
 
 ## Subagents, plans and questions
 

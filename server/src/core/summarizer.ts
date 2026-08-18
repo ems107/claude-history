@@ -42,31 +42,72 @@ export function injectedOrigin(o: RawLine): string | null {
 }
 
 /**
+ * The text of a `queued_command` payload, whichever shape it arrives in.
+ *
+ * `prompt` is a plain string in 63 of the 65 such lines in this corpus, and was
+ * in all 39 of them when this envelope was first read — which is why only that
+ * shape was handled. **Paste an image into a prompt while Claude is working and
+ * it stops being a string**: the payload becomes the content-block array the API
+ * takes, `[{type:'text'},{type:'image'}]`, `str()` answers null for it, and the
+ * whole message was dropped — absent from its session, absent from the index,
+ * uncounted — while `history.jsonl` kept it and the Prompts page listed it. The
+ * same silent asymmetry as the bug above, one shape later.
+ *
+ * Text only: the image is not text and is not here. The parser reads it from the
+ * same array so the bubble shows what was pasted, and the `[Image #N]` marker
+ * Claude Code writes into the text block comes along for free. Null for a payload
+ * carrying no text at all — an image on its own is still a message, so the parser
+ * tests the two separately rather than letting this decide.
+ */
+export function queuedText(prompt: unknown): string | null {
+  if (typeof prompt === 'string') return prompt;
+  if (!Array.isArray(prompt)) return null;
+  const text = prompt
+    .map((b) => (isRec(b) && b.type === 'text' ? str(b.text) : null))
+    .filter((t): t is string => t !== null)
+    .join('\n')
+    .trim();
+  return text ? text : null;
+}
+
+/**
  * The prompt a human typed while Claude was working, or null for every other
  * `attachment` line. Queued while the turn was in flight (`queue-operation`,
  * `enqueue` then `remove`) and appended when it ended, in the SAME envelope a
  * `<task-notification>` uses: `attachment.type === 'queued_command'`.
  *
  * **This is the only copy of that prompt.** It is written nowhere else in the
- * transcript — no `user` line repeats it (checked on all 4 in this corpus) — so
+ * transcript — no `user` line repeats it (checked on all 10 in this corpus) — so
  * reading only `user` lines lost it outright: "No te dejes nada" in `15a86025`
  * was in `history.jsonl`, so the Prompts page showed it, while the session it
  * belongs to did not. The line is a real node of the tree, too: the answer to it
  * hangs off its uuid.
  *
+ * The payload comes from `queuedByHuman`, which owns the test that says a human
+ * typed it; everything read off one of these lines has to go through it.
+ */
+export function queuedPrompt(o: RawLine): string | null {
+  return queuedText(queuedByHuman(o));
+}
+
+/**
+ * The raw payload of a queued line a HUMAN typed — string or content-block array,
+ * `queuedText` and the parser each take what they need from it — and null for
+ * everything else that comes down this envelope.
+ *
  * **The test is affirmative and must stay that way.** A notification carries no
- * `origin` at all (`{type, prompt, commandMode, timestamp}`, 32 of 32 here), so
+ * `origin` at all (`{type, prompt, commandMode, timestamp}`, 55 of 55 here), so
  * `injectedOrigin`'s rule — no `origin` means the human typed it, true of the
  * older `user` lines — is exactly inverted here and would turn every
  * notification into a prompt. Only `origin.kind === 'human'` says a human typed
- * it (4 of 4 here, all `commandMode: "prompt"`); anything else is not ours to
+ * it (10 of 10 here, all `commandMode: "prompt"`); anything else is not ours to
  * guess.
  */
-export function queuedPrompt(o: RawLine): string | null {
+export function queuedByHuman(o: RawLine): unknown {
   const attachment = isRec(o.attachment) ? o.attachment : null;
   if (!attachment || attachment.type !== 'queued_command') return null;
   const kind = isRec(attachment.origin) ? str(attachment.origin.kind) : null;
-  return kind === 'human' ? str(attachment.prompt) : null;
+  return kind === 'human' ? attachment.prompt : null;
 }
 
 /** The line a `<task-notification>` is worth showing: its own summary of itself. */

@@ -18,8 +18,10 @@ import { createLogger } from './logger.ts';
  * doing when it made a call (`toolIntent`). 14: and the recap of a session
  * (`away_summary`), the first `system` line any search could reach. 15: a recap
  * stopped being cut at `SYSTEM_CHARS` — it is drawn whole, so it is indexed whole.
+ * 16: version 9 again, for the shape it missed — a queued prompt with an image
+ * pasted into it, whose payload is an array and not a string.
  */
-export const CACHE_VERSION = 15;
+export const CACHE_VERSION = 16;
 
 const cacheLog = createLogger('cache');
 

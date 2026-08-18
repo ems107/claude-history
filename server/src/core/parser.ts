@@ -18,7 +18,7 @@ import type {
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
-import { extractPrompt, injectedOrigin, parseNotification, queuedPrompt } from './summarizer.ts';
+import { extractPrompt, injectedOrigin, parseNotification, queuedByHuman, queuedPrompt, queuedText } from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
 
@@ -33,6 +33,33 @@ const NOTIFICATION_ORIGIN = 'task-notification';
 const GEN_UUID_PREFIX = 'gen-';
 
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
+
+/** An `image` content block, from either envelope a pasted image arrives in. */
+function imageBlock(c: Record<string, unknown>): ContentBlock {
+  const source = isRec(c.source) ? c.source : null;
+  return {
+    kind: 'image',
+    mediaType: source ? str(source.media_type) : null,
+    // Only a base64 source carries the bytes; anything else is a reference we
+    // have no way to resolve from a transcript line.
+    data: source && source.type === 'base64' ? str(source.data) : null,
+  };
+}
+
+/** A typed prompt as the block it is drawn as: `❯ /foo` for a slash command, prose otherwise. */
+function textOrCommand(prompt: { text: string; isSlashCommand: boolean }): ContentBlock {
+  return prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text };
+}
+
+/**
+ * The images pasted into a prompt that was typed while Claude was working. They
+ * ride in the same `prompt` array as its text (`queuedText`) and are written
+ * nowhere else, so the bubble is empty of them if they are not read here.
+ */
+function queuedImages(prompt: unknown): ContentBlock[] {
+  if (!Array.isArray(prompt)) return [];
+  return prompt.filter(isRec).filter((c) => c.type === 'image').map(imageBlock);
+}
 
 export async function loadSubagents(sessionDir: string | null): Promise<SubagentMeta[]> {
   if (!sessionDir) return [];
@@ -769,7 +796,7 @@ export async function parseTranscript(
           discardedBranch: null,
           usage: null,
           effort: null,
-          blocks: [prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text }],
+          blocks: [textOrCommand(prompt)],
         });
       } else if (Array.isArray(content)) {
         const persistedOutputPath = isRec(o.toolUseResult) ? str(o.toolUseResult.persistedOutputPath) : null;
@@ -807,14 +834,7 @@ export async function parseTranscript(
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             userBlocks.push({ kind: 'text', text: c.text });
           } else if (c.type === 'image') {
-            const source = isRec(c.source) ? c.source : null;
-            userBlocks.push({
-              kind: 'image',
-              mediaType: source ? str(source.media_type) : null,
-              // Only a base64 source carries the bytes; anything else is a
-              // reference we have no way to resolve from a transcript line.
-              data: source && source.type === 'base64' ? str(source.data) : null,
-            });
+            userBlocks.push(imageBlock(c));
           }
         }
         if (userBlocks.length > 0) {
@@ -876,7 +896,7 @@ export async function parseTranscript(
         continue;
       }
 
-      const queued = attachment?.type === 'queued_command' ? str(attachment.prompt) : null;
+      const queued = attachment?.type === 'queued_command' ? queuedText(attachment.prompt) : null;
       if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
         pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId);
         continue;
@@ -886,7 +906,12 @@ export async function parseTranscript(
       // `injectedOrigin` is written there.
       const typed = queuedPrompt(o);
       const prompt = typed ? extractPrompt(typed) : null;
-      if (!prompt) continue;
+      // The images pasted into it, which is what made the payload an array in
+      // the first place. Read through the same affirmative test as the text, and
+      // tested separately from it so a prompt that is nothing but a pasted image
+      // still gets a bubble.
+      const images = queuedImages(queuedByHuman(o));
+      if (!prompt && images.length === 0) continue;
       // It joins the turn already open (`ensureTurn`) instead of starting one,
       // because that is what Claude Code does with it: the `last-prompt` sidecar
       // written straight after delivery still names the PREVIOUS prompt, in both
@@ -915,7 +940,8 @@ export async function parseTranscript(
         discardedBranch: null,
         usage: null,
         effort: null,
-        blocks: [prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text }],
+        // Text first, then what was pasted, the order the payload itself uses.
+        blocks: [...(prompt ? [textOrCommand(prompt)] : []), ...images],
       });
     } else if (type === 'assistant') {
       if (!isRec(o.message)) continue;
