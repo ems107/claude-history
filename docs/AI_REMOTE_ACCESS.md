@@ -76,6 +76,14 @@ The rule is `-Profile Private` and **not** `-RemoteAddress LocalSubnet`. WireGua
 
 Reading the rule needs no elevation, so the panel can show its state; it also shows the machine's own addresses, so the URL to type on the other computer does not have to be hunted down.
 
+## Trying it without publishing a release
+
+`.\preview.ps1` — a third instance, port 7435, `%LOCALAPPDATA%\claude-history-preview`, run **without** `--dev-instance` so it binds every interface exactly as a release does. It exists because `dev.ps1` structurally cannot test this: a dev instance is loopback-only, so there is no remote request to make.
+
+It writes its own `userdata.json` on first run with the update poll, the usage reads and the auto-reload switched off — a safety measure rather than a preference, since without `--dev-instance` the plain defaults apply and a usage 429 is earned per **account**, not per instance. `-Seed` copies the release's cache and data so it opens warm.
+
+It is not a managed install, so Update, Uninstall and *Open install folder* stay disabled there — those still need a real release.
+
 ## Verify
 
 [AI_TESTING.md](AI_TESTING.md) — checks 30 to 34. They can be run without a second machine: connecting to this machine's own LAN address is a remote socket, so the whole path is real.

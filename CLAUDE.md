@@ -37,6 +37,7 @@ Package manager **pnpm**, workspace `shared` + `server` + `web`.
 | --- | --- |
 | `pnpm install` | install all workspace deps |
 | `.\dev.ps1` | **start the dev instance** on `http://127.0.0.1:7434` (builds if needed, detached, opens the browser). `-Build` `-Restart` `-Stop` `-Foreground` `-Seed` |
+| `.\preview.ps1` | **start a release-shaped instance** on `7435`, own data folder, binding every interface — the only way to try [remote access](docs/AI_REMOTE_ACCESS.md) without publishing a release. Same flags |
 | `pnpm dev` | Fastify API on `http://127.0.0.1:7434` (tsx watch) + Vite UI on `http://localhost:5173` (proxies `/api`) |
 | `pnpm build` | build the web app to `web/dist` |
 | `pnpm start` | the Fastify server serves `web/dist` and the API on `http://127.0.0.1:7434` |
