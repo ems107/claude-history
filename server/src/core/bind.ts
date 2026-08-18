@@ -91,6 +91,15 @@ export function resolvedExePath(): string {
  * Re-decided on every start against the live firewall, never from a remembered
  * verdict — a rule deleted while the server was down must mean loopback on the
  * next start, and that is what makes "no dialog, ever" true rather than likely.
+ *
+ * The failure to keep out of here, because it cost weeks and will come back if
+ * anyone relaxes it: **a read that was DENIED must never arrive as an empty rule
+ * list.** `-ErrorAction SilentlyContinue` over `Get-NetFirewallRule` turned
+ * "Access is denied" into "there is no rule", and this function then pinned the
+ * server to loopback on every single start — on a machine whose rule existed six
+ * times over, while the panel went on offering to create it. An unreadable
+ * firewall must say so (`firewall-unreadable`, and `probe.error` carries the
+ * sentence); only then is loopback an answer rather than a guess.
  */
 export async function decideBind(
   config: AppConfig,

@@ -389,7 +389,17 @@ Then the one that locks you out, on purpose: drop a hand-written copy into `back
 
 Finally, from the remote browser (plain HTTP, so no secure context): "Copy message with formatting" must paste **as HTML** into Word or Jira, and the plain-text copies in the log viewer and the resume buttons must work — this is `execCommand`, not `navigator.clipboard`, which does not exist there.
 
-**35. The dialog that must never appear.** The whole point of the bind gate, and the one check whose assertion is about the SCREEN rather than a response body: **no Windows Security dialog may appear at any moment of this**. Start clean — no rule for the port, and no Block rules naming our `node.exe` (`Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*node.exe' }` must come back without ours; if it does not, the panel's *Remove them* button is what clears it, and that is its own first test).
+**35. The dialog that must never appear.** The whole point of the bind gate, and the one check whose assertion is about the SCREEN rather than a response body: **no Windows Security dialog may appear at any moment of this**. Start clean — no rule for the port, and no Block rules naming our `node.exe`.
+
+**Do not check that with `Get-NetFirewallApplicationFilter`**, which is what this said until it was caught: unelevated that cmdlet answers `Access is denied.`, so it comes back empty whatever the truth is, and the check passed on a machine that had a Block pair sitting in the firewall. Use COM, which needs no elevation and is not localised ([why](AI_REMOTE_ACCESS.md#why-the-rules-are-read-through-com)):
+
+```powershell
+$fw = New-Object -ComObject HNetCfg.FwPolicy2
+@($fw.Rules) | Where-Object { $_.ApplicationName -like '*node.exe' } |
+  ForEach-Object { '{0} dir={1} act={2} {3}' -f $_.Name, $_.Direction, $_.Action, $_.ApplicationName }
+```
+
+`act=0` is Block, `dir=1` is inbound. If ours is there, the panel's *Remove them* button is what clears it, and that is its own first test.
 
 Then walk the matrix with `.\preview.ps1`, reading `GET /api/firewall` at each step (`listening`, `bindReason`, `restartNeeded`) and confirming the LAN address behaves accordingly:
 
@@ -403,8 +413,14 @@ Then walk the matrix with `.\preview.ps1`, reading `GET /api/firewall` at each s
 | switch off again | `network` / `allowed`, `restartNeeded: true`, everything 403 | refused after restarting |
 | rule deleted by hand, then restart | `local` / `no-rule` | refused |
 | set the Wi-Fi to Public with the rule in place, restart | `local` / `rule-other-profile` | refused |
+| *Open the port* twice over | still **one** rule — `ruleCount: 1`; the creation is idempotent | unchanged |
+| a firewall that cannot be read (point `Get-FwPolicy` at a bad ProgID) | `local` / `firewall-unreadable`, `ruleExists: null`, the reason **on screen**, both buttons disabled | refused |
 
-Then the two that only a real firewall can show: a hand-made Block rule for preview's `node.exe` must appear in the panel with its program path and be gone after *Remove them*; and a **program-scoped** Allow rule (what clicking "Allow" leaves) for some other path must read `rule-other-program` rather than counting.
+That Public row only holds when Public is the machine's **only** active profile. With extra adapters connected it is on several at once and the Private rule still matches one of them, so the verdict stays `allowed` — see [what is not proven](AI_REMOTE_ACCESS.md#what-is-not-proven).
+
+The unreadable row is the regression this whole path exists for, and it is worth stating as its own assertion: **a denied read must never read as `no-rule`.** With the port rule in place and the rule read broken, the panel used to say the port was closed and the bind went to loopback on every start.
+
+Then the two that only a real firewall can show: a hand-made Block rule for preview's `node.exe` must appear in the panel with its program path **and the profiles it names** — a Block on `Public` alone stops nothing we want, and the panel must not claim otherwise — and be gone after *Remove them*, with every other Node install's rules still standing (`node.exe` is a DisplayName several of them share). And a **program-scoped** Allow rule (what clicking "Allow" leaves) for some other path must read `rule-other-program` rather than counting.
 
 Last, the reason all this exists: `pnpm package`, install over the current release **with the feature off** — no dialog. Turn it on, open the port, restart, then install again: still no dialog, because the rule is a port rule and carries no `node.exe` path. That is the regression to guard, and the only way to see it is to update twice.
 

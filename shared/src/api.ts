@@ -146,21 +146,56 @@ export interface BlockingRule {
   /** The node.exe this rule names, as the firewall stored it. */
   program: string;
   protocol: string;
+  /**
+   * Profiles the block applies to. A Block on `Public` alone stops nothing we
+   * want, so the panel must not claim that every block found means nothing gets
+   * through — one of the real ones on the development machine is exactly that.
+   */
+  profiles: string[];
+}
+
+/**
+ * One network this machine is connected to right now, as Windows sees it.
+ *
+ * The category alone was not enough to say anything true: a machine with a
+ * Hyper-V switch and a VPN adapter is on `Public, Private, Public` at once, and
+ * "this machine is on a network Windows calls Public" then reads as a verdict on
+ * the LAN it is not about. Naming the connection is what makes the sentence
+ * honest.
+ */
+export interface ActiveConnection {
+  /** What Windows calls the network, e.g. the SSID. */
+  name: string;
+  /** The adapter, e.g. `vEthernet (Puente3)`. Matches Node's interface names. */
+  interfaceAlias: string;
+  /** `Public`, `Private` or `DomainAuthenticated`. */
+  category: string;
 }
 
 /** Everything about "can another machine actually reach this one", in one read. */
 export interface FirewallStatusResponse {
   /** An inbound rule for this port exists. Null when it could not be read. */
   ruleExists: boolean | null;
+  /**
+   * How many rules carry our name. More than one is harmless to the verdict but
+   * worth offering to tidy: while the read was broken the panel reported the port
+   * shut and the button kept creating another, six times over. Without a count
+   * the only route back to one rule is closing the port and opening it again —
+   * two prompts, and a moment with no rule at all.
+   */
+  ruleCount: number;
   /** The rule this app manages, by name. */
   ruleName: string;
   port: number;
   /**
-   * Network profiles the machine's active connections are on right now. The
-   * rule is created for `Private`, so a home network Windows decided to call
-   * `Public` stays shut and looks like a broken rule — worth showing.
+   * Network profiles the machine's active connections are on right now,
+   * deduplicated. The rule is created for `Private`, so a home network Windows
+   * decided to call `Public` stays shut and looks like a broken rule — worth
+   * showing. Which connection is which is in `activeConnections`.
    */
   activeProfiles: string[];
+  /** Every connected network by name, so a warning can say which one it means. */
+  activeConnections: ActiveConnection[];
   /** This machine's own IPv4 addresses, so the URL to type does not have to be hunted for. */
   addresses: string[];
   error: string | null;
@@ -194,6 +229,16 @@ export interface FirewallStatusResponse {
   defaultInboundAllow: boolean;
   /** Leftovers from clicking Cancel on the dialog. They override the rule above. */
   blockingRules: BlockingRule[];
+  /**
+   * Why the look for blocking rules failed, or null when it succeeded.
+   *
+   * `blockingRules: []` beside this being non-null means **"could not look"**, not
+   * "there are none" — the distinction this panel used to get wrong in the
+   * direction that reassures: it reported a clean firewall for months while two
+   * Block rules for our own `node.exe` sat in it, because a denied read returned
+   * an empty list.
+   */
+  blockingRulesError: string | null;
 }
 
 export type SessionsResponse = SessionSummary[];

@@ -6,6 +6,7 @@
 
 - **Nothing this app does on its own may make Windows ask for permission.** The only Windows dialog in its whole life is the UAC of the firewall button in Settings, pressed on purpose. Everything else waits.
 - **The wide bind is earned, not assumed.** A release listens on the network only when the switch is on, credentials exist, and the firewall ALREADY permits the port — decided in `core/bind.ts` before `listen()`, re-decided on every start, never from a remembered verdict. A dev instance is always loopback. `--host` skips the lot, and is the only thing that may still raise the dialog.
+- **A firewall read that FAILED must never be reported as a firewall that permits nothing.** A denial and an absence are different facts and lead to different buttons; conflating them is what pinned this server to loopback for weeks beside a rule that existed six times over. `probe.error` → `firewall-unreadable` → `ruleExists: null`, and the same rule holds for the blocking-rule scan.
 - **The bind cannot change while the process runs**, so switching remote access on or off is a wish until a restart grants it. `POST /api/server/restart` is that restart, and it is local-only.
 - **The wide bind and the session check are ONE feature** — never widen one without the other.
 - **Local means the socket, never a header.** `isLocalRequest` reads `request.socket.remoteAddress`; `X-Forwarded-For` and `Host` are written by the caller and are ignored on purpose. **This app must not be put behind a reverse proxy** — every request would arrive from loopback and the authentication would vanish silently.
@@ -38,13 +39,13 @@ This is the mechanism the whole bind decision exists for, verified on a real mac
 
 > **Windows Defender Firewall raises "Do you want to allow public and private networks to access this app?" when a program opens a listening socket on anything but loopback and no rule decides the matter.**
 
-Three inputs, all readable without elevation, all of them true on a stock Windows:
+Three inputs, all of them true on a stock Windows, and all read through the firewall's COM API — see [below](#why-the-rules-are-read-through-com) for why the obvious cmdlets are not used:
 
 | Input | Read from | Default |
 | --- | --- | --- |
-| Unsolicited inbound traffic is blocked | `Get-NetFirewallProfile` → `DefaultInboundAction` | `NotConfigured`, which means *block* |
-| A block becomes a dialog instead of silence | `Get-NetFirewallProfile` → `NotifyOnListen` | `True` |
-| Nothing decides about this port | `Get-NetFirewallRule` + `Get-NetFirewallPortFilter` | no rule |
+| Unsolicited inbound traffic is blocked | `HNetCfg.FwPolicy2` → `DefaultInboundAction(profile)` | `0`, i.e. *block* (what the cmdlets spell `NotConfigured`) |
+| A block becomes a dialog instead of silence | `HNetCfg.FwPolicy2` → `NotificationsDisabled(profile)` | `False`, i.e. it asks |
+| Nothing decides about this port | `HNetCfg.FwPolicy2` → `Rules` | no rule |
 
 Four consequences, each of which shaped a decision here:
 
@@ -67,13 +68,39 @@ Read it as **"is the traffic already permitted?"**, which is stronger than "woul
 - **A rule must be a PORT rule to survive updates.** Ours is (`-LocalPort`, no `-Program`), which is why one UAC approval covers every future version. A rule carrying a program only counts if it names the `node.exe` we are actually running — `reason: 'rule-other-program'` says so, and warns that it dies at the next update.
 - **The profile has to match the network we are on now.** A Private rule on a Public network would raise the dialog, so it is not enough for the rule to exist.
 - **Windows classifies a network some seconds after logon**, and the scheduled task starts at logon. So the probe waits (`NETWORK_WAIT_SECONDS`) rather than reading "no networks" and locking the server to loopback every morning. `index.build()` running first buys most of that grace anyway.
-- **Unreadable means loopback.** A PowerShell that times out decides nothing, and the safe nothing is this machine only.
+- **Unreadable means loopback — and must SAY it is unreadable.** A PowerShell that times out decides nothing, and the safe nothing is this machine only. The half that is easy to forget is the reporting: `firewall-unreadable` and `ruleExists: null` exist so that "we could not look" never wears the clothes of "there is no rule", which is a sentence the user would act on by creating a rule they already have.
 - **The reasons have one home**: `BIND_REASONS` in `shared/src/api.ts` is both the sentence in the panel and the middle of the line the server logs at startup.
 - **There are TWO reasons, and mixing them up is a lie the panel tells.** `bindReason` is why this process bound the way it did *when it started*, and it never changes; `currentReason` is what stands in the way *now*, from the live switch and a fresh probe. Shown once as one thing, the panel said "no firewall rule allows this port" seconds after the user had created one — the port had been opened after the socket was bound. So: the startup reason belongs to the log and to "what a restart would change", the current one to anything a person reads, and when only the restart is left the panel says that instead of naming an obstacle at all. Both come from `localReason` in `core/bind.ts`, which is shared with the route precisely so the two can never disagree about the order they are checked in.
 
 What is lost, deliberately: with the switch off, nothing listens, so a browser on the LAN gets a refused connection instead of the page that used to explain where to turn remote access on. That page was the whole argument for the permanent wide bind. It still appears in the window between switching remote access off and restarting, which is the one moment it says something true.
 
 The port answering "off" to the whole network leaks nothing: `GET /api/auth/status` is four booleans, and every other route is refused before it runs.
+
+### Why the rules are read through COM
+
+**The NetSecurity cmdlets cannot read firewall rules without elevation, and this app never runs elevated.** Verified on a stock workgroup machine (Windows 10 19045, admin user with the ordinary filtered token, no group policy, Defender only), under both `powershell.exe` 5.1 — the host `util/firewall.ts` spawns — and `pwsh` 7:
+
+| Unelevated | Answer |
+| --- | --- |
+| `Get-NetFirewallRule`, `Get-NetFirewallApplicationFilter` | **`CimException: Access is denied.`** |
+| `Get-NetFirewallProfile`, `Get-NetConnectionProfile` | work |
+| `HKLM\…\FirewallPolicy\FirewallRules` (the hive behind the cmdlets) | reads fine, 2473 values |
+| `netsh advfirewall firewall show rule` | works, but the field names are **localised** |
+| `HNetCfg.FwPolicy2` → `Rules` | **works**, same 2473 rules, ~0.1 s |
+
+Elevated writes through that same module have always worked, so it is an elevation requirement on the `root/StandardCimv2` rule classes alone — not a broken firewall, and not something this app can ask the user to change.
+
+What that cost is the part worth keeping: the denial was swallowed by `-ErrorAction SilentlyContinue`, which made it **indistinguishable from "there is no rule"**. `evaluateFirewall` answered `no-rule`, `decideBind` chose loopback on every single start, and the panel invited the user to open a port that was already open — six times, leaving six identical rules and a feature that could not work on that machine at all. Hence the invariant above, and the general lesson: **a read that cannot fail loudly will fail quietly, as an empty answer that looks like an answer.**
+
+So `COM_HELPERS` in `util/firewall.ts` reads the rules through `INetFwPolicy2` and **emits the strings the cmdlets used to emit**, deliberately: the mapping and the pure `evaluateFirewall` never learn that the source changed, so the shapes they were built against stay the contract. Three things to know before touching it:
+
+- **`LocalPorts` is one string, and not always a number.** Real values on a stock machine: `7433`, `80,443`, `5000-5020`, the service keywords `RPC,` and `RPC-EPMap,` (trailing comma included), the wildcard `*` on 769 rules, and `$null` on every rule that is neither TCP nor UDP. **`*` and `$null` must become `Any`** — `portCovered` does not know the wildcard, so an every-port rule would otherwise read as `rule-wrong-port`. The keywords survive as words, match no number, and so cover nothing, which is the conservative answer and the same one the cmdlets gave.
+- **`Profiles` is a bitmask** (1 Domain, 2 Private, 4 Public, `0x7FFFFFFF` all) and an unknown mask is emitted as a number on purpose, because a mask we do not understand must never be the thing that opens the door. `ApplicationName` is **null** for a port rule where the cmdlet said the word `Any`; both spellings are still dropped, because emptiness must have one meaning. `Enabled` is emitted as a **string** and `notify` as a **boolean**: swap either and `.toLowerCase()` throws inside the parse, turning a perfectly readable firewall into `firewall-unreadable`.
+- **Late-bound COM has no `get_X()` accessors.** `$fw.get_DefaultInboundAction(2)` throws "does not contain a method named"; the parameterised property is called as `$fw.DefaultInboundAction(2)`.
+
+One known limit, stated rather than papered over: **COM sees the local store only**, so a rule deployed by group policy would be invisible to it. Ours is always created locally, so that does not bite — but it is why this is not a claim of equivalence with the cmdlets.
+
+`Get-NetConnectionProfile` deliberately stays a cmdlet. It needs no elevation, it is the input to the `NETWORK_WAIT_SECONDS` loop, and it names each network, which the panel needs in order to say anything true about a machine that is on Private and Public at the same time. `CurrentProfileTypes` looks like a substitute and is not: it cannot express "Windows has not classified anything yet", so the wait loop would exit at once and the verdict would be `rule-other-profile` every morning.
 
 ## Restarting, because a socket cannot be re-addressed
 
@@ -141,12 +168,18 @@ Windows blocks the port inbound by default, the install is per user with **no el
 
 The rule is `-Profile Private` and **not** `-RemoteAddress LocalSubnet`. WireGuard clients routed in by the router arrive with a source address from the tunnel's subnet, not the LAN's, so scoping by local subnet would lock out precisely the case this was built for. The profile covers both and still leaves `Public` shut, which is the coffee-shop case.
 
-Reading the rule needs no elevation, so the panel can show its state; it also shows the machine's own addresses, so the URL to type on the other computer does not have to be hunted down.
+One caveat on that "covers both", found on the development machine: it holds for a tunnel the *router* routes in, because the traffic then arrives on the LAN adapter. A VPN with **its own adapter** gets its own connection profile, and Windows may well classify that one `Public` — ZeroTier does — in which case a `Private` rule does not cover the tunnel at all. Nothing here tries to fix that: widening the rule to `Public` is the coffee-shop hole this deliberately leaves shut, and which networks are Private is the user's call, not ours.
+
+Reading the rule needs no elevation **through the COM API** — through the cmdlets it does, and silently, which is [its own story](#why-the-rules-are-read-through-com) — so the panel can show its state. It also shows the machine's own addresses, so the URL to type on the other computer does not have to be hunted down. Those are ordered rather than dumped: link-local addresses are dropped and the adapters Windows calls Private come first, because on a machine with two Hyper-V switches and a VPN adapter the raw list began with a `169.254.x` address and that is precisely what the panel used to offer.
+
+**Creating the rule is idempotent** (`ensureRule`): the elevated script removes any rule already carrying our name and then creates one, in a single prompt. It used to only create, which was fine until the read broke — the panel then reported the port shut after every success, so the button went on offering to open it and six identical rules accumulated. Re-creating also repairs a rule whose port or profile is wrong, which "create only if missing" could not. Deleting by `DisplayName` is safe there and nowhere else in that file, because that name is one we chose.
 
 Two things the rule gained when the bind started depending on it:
 
 - **Its name carries the port** unless it is 7433 (`ruleNameFor`). The release keeps the bare `claude-history` it always had, so an older rule keeps working; a `preview.ps1` run on 7435 gets `claude-history (port 7435)`. Sharing one name was harmless while the rule was cosmetic — with the bind gated on it, two instances would read each other's answer and open the wrong port. The evaluation checks the port filter as well, so a rule that does not cover this port is not this rule.
-- **It can be overridden by a Block**, and the panel now says so instead of leaving the user with an open port and nothing coming through. `DELETE /api/firewall/blocks` re-reads the list server-side and deletes by the rule's instance `Name` — never by `DisplayName`, which Windows sets to the program ("Node.js JavaScript Runtime") and would take out every rule any other Node app on the machine ever earned.
+- **It can be overridden by a Block**, and the panel now says so instead of leaving the user with an open port and nothing coming through. `DELETE /api/firewall/blocks` deletes by the rule's instance `Name` — never by `DisplayName`, which Windows sets to the program ("Node.js JavaScript Runtime", or plain "node.exe") and would take out every rule any other Node app on the machine ever earned. On the development machine that is not hypothetical: `node.exe` is also the DisplayName of three other Node installs' rules, Allow rules among them.
+
+  **`INetFwRule` exposes no instance id at all**, so the unelevated COM scan cannot produce one — which turned out to be an improvement. The ids are now found *inside* the elevated script, where `Get-NetFirewallApplicationFilter` answers, and what crosses into it is a **scope** (our own exe, our own install root, both derived from `process.execPath`), never the identity of a rule. Nothing a page said — and nothing even our own read decided — can widen what gets deleted. The count in the response comes from looking again afterwards rather than from trusting a list we handed to nobody, and a scan that *failed* answers 409 instead of `removed: 0`: "could not look" is not "nothing to remove". `$fw.Rules.Remove($name)` is the obvious COM alternative and the forbidden one, because there `Name` **is** the DisplayName.
 
 ## Trying it without publishing a release
 
@@ -165,3 +198,9 @@ It is not a managed install, so Update, Uninstall and *Open install folder* stay
 ## What is not proven
 
 If the network profile changes while the server is running (home → coffee shop), the socket is already open and no `listen()` happens, so no new dialog is expected — but that has not been provoked and is not claimed as certain. On a Public network with a Private rule the port simply goes silent, which is the wanted behaviour anyway. Were it ever to turn out otherwise, the answer is to CLOSE the wide socket, and closing never asks anything.
+
+**Several profiles active at once, with a rule for only one of them.** The gate asks whether the rule covers *some* active profile (`onThisNetwork` uses `.some`), which is right for the machine it was written on. A machine with extra adapters is on more than one profile simultaneously — the development machine reports `Private` for the Wi-Fi and `Public` for a Hyper-V internal switch and a VPN adapter, all three connected — so the gate permits the wide bind while `Public` has no rule for the port. Whether Windows raises its dialog in that state is **not known**: it might evaluate the profiles collectively and ask, or notice the Allow that exists and stay quiet.
+
+Two things are known, and they are why this is written down rather than guessed at. That machine carries a Block pair for `versions\v1.12.0\node\node.exe`, which is what a cancelled dialog leaves — so the dialog has appeared there before, in an older version. And `preview.ps1` **cannot** answer the question: it runs on the fnm `node.exe`, which already carries an Allow rule for `Private` from some earlier prompt, so no dialog can appear for it whatever the profiles say. Only a release's own `node.exe`, on a machine in that state, will settle it.
+
+If it ever does appear: answer **Allow, private networks only** — never Cancel. Allow leaves program-scoped rules that expire at the next update and harm nothing, since the port rule is what actually carries the feature; Cancel leaves the Block pair that defeats it, one pair per version, and someone then has to find the *Remove them* button.
