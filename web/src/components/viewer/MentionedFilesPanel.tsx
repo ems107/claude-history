@@ -1,6 +1,7 @@
 import { isImagePath, parseFileRef } from '../../lib/fileRefs.ts';
 import { folderTail, formatBytes, formatDateTime } from '../../lib/format.ts';
-import { mentionFindTerm, mentionTerms, type MentionedFiles, type MentionRow } from '../../lib/mentionedFiles.ts';
+import { useState } from 'react';
+import { mentionTerms, type MentionedFiles, type MentionRow } from '../../lib/mentionedFiles.ts';
 import { Chip } from './Chip.tsx';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
@@ -36,17 +37,30 @@ function MentionRowView({
   onGoToMessage,
 }: {
   row: MentionRow;
-  /** The anchor, the words to underline there, and what to leave in the find bar. */
-  onGoToMessage: (uuid: string, marks: string[], find: string) => void;
+  /** An anchor, and the words to underline once it is reached. */
+  onGoToMessage: (uuid: string, marks: string[]) => void;
 }) {
   const ctx = useFileRefs();
+  /**
+   * Which naming the next press goes to.
+   *
+   * The panel is the only thing that knows where they all are — the collector
+   * keeps every message that named the file — so it is the only thing that can
+   * walk them exactly. Handing the path to the find bar instead was tried and the
+   * arithmetic sank it: the bar counts every occurrence in the transcript, so a
+   * file named in four answers opened on 168 matches, 143 of them inside tool
+   * calls. Four namings are four presses here.
+   *
+   * Local to the row, so closing the panel starts again at the first — which is
+   * the same thing the row's own timestamp says, and less surprising than a cursor
+   * that remembers a walk from ten minutes ago.
+   */
+  const [next, setNext] = useState(0);
   // Resolved, and with the line the sentence pointed at: the panel opens where
   // the answer was looking, which a bare path would lose.
   const ref = ctx ? parseFileRef(row.line === null ? row.resolved : `${row.resolved}:${String(row.line)}`) : null;
-  // Where the jump goes: the first message that named it. The others are reached
-  // through the badge, which hands the whole conversation to the find bar.
-  const anchor = row.messages[0] ?? null;
   const places = row.messages.length;
+  const anchor = row.messages[next % Math.max(places, 1)] ?? null;
   /**
    * The ref earns a column only when it is the READABLE half of the row.
    *
@@ -149,7 +163,16 @@ function MentionRowView({
       <button
         type="button"
         disabled={!anchor}
-        onClick={anchor ? () => onGoToMessage(anchor, mentionTerms(row), mentionFindTerm(row)) : undefined}
+        onClick={
+          anchor
+            ? () => {
+                onGoToMessage(anchor, mentionTerms(row));
+                // Wraps, so the fourth press of four goes back to the first
+                // rather than greying out: this is a ring, not a queue.
+                setNext((n) => (n + 1) % places);
+              }
+            : undefined
+        }
         className={`shrink-0 text-[10px] ${
           anchor
             ? 'cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 hover:border-[var(--text-dim)] hover:text-[var(--text)]'
@@ -157,13 +180,16 @@ function MentionRowView({
         }`}
         title={
           anchor
-            ? `Go to where it was first named${
-                places > 1 ? ` (the first of ${String(places)} messages)` : ''
-              } — underlined there, and left in the find bar on “All” so Enter steps through every naming`
+            ? places > 1
+              ? `Go to naming ${String(next + 1)} of ${String(places)}, underlined in the message — press again for the next`
+              : 'Go to where it was named, underlined in the message'
             : 'Nothing in this transcript anchors it'
         }
       >
-        ↑ the mention
+        {/* The label is a promise about the press, so it names the DESTINATION —
+            `↑ 2/4` takes you to the second. The count matches the `×N` beside the
+            filename by construction: both are `messages.length`. */}
+        {places > 1 ? `↑ ${String(next + 1)}/${String(places)}` : '↑ the mention'}
       </button>
     </div>
   );
@@ -198,7 +224,7 @@ export function MentionedFilesPanel({
   data: MentionedFiles | null;
   pending: boolean;
   error: string | null;
-  onGoToMessage: (uuid: string, marks: string[], find: string) => void;
+  onGoToMessage: (uuid: string, marks: string[]) => void;
 }) {
   return (
     <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">

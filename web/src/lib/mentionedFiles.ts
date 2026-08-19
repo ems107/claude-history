@@ -178,20 +178,6 @@ export function mentionTerms(row: MentionCandidate): string[] {
   return row.ref === row.name ? [row.ref] : [row.ref, row.name];
 }
 
-/**
- * What to type into the find bar to reach every OTHER naming of the same file.
- *
- * The filename alone, and it is not the same answer as `mentionTerms`. The bar
- * searches in `'phrase'` mode always — "what you typed is what you meant" — so a
- * query is ONE string and handing it two terms with a space between them searches
- * for that literal sentence, which appears nowhere. It has to be one, and the
- * filename is the one that finds them all: every spelling of the path ends with
- * it, so `sessionFiles.ts` reaches both `web/src/lib/sessionFiles.ts` and the
- * bare mention, where the full path would only ever find its own spelling.
- */
-export function mentionFindTerm(row: MentionCandidate): string {
-  return row.name;
-}
 
 /**
  * The mentions worth a row, and an honest account of the rest.

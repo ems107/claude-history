@@ -701,21 +701,17 @@ export function SessionViewPage() {
               pending={mentionStats.isPending && mentionRefs.length > 0}
               error={mentionStats.isError ? String(mentionStats.error) : null}
               /**
-               * One press, the whole arrival: the message, the path underlined in
-               * it, and the find bar left open on the way to the other namings.
+               * The anchor and the words to underline there, and nothing else.
                *
-               * `openBar(true)` is Ctrl+Shift+F — the `All` scope, so a naming
-               * inside a folded stretch counts too — and it focuses the input with
-               * its text selected, so typing replaces the query. The query is set
-               * FIRST, or `openBar` seeds the deep link's own terms over it, and it
-               * is ONE string because the bar searches in phrase mode: two terms
-               * with a space between them is a sentence that appears nowhere.
+               * It opened the find bar for a while, to reach the OTHER namings of
+               * the same file, and the numbers were what killed it: the bar counts
+               * every occurrence in the transcript, so `AI_VIEWER.md` opened on 168
+               * matches — 143 of them inside tool calls — against the four messages
+               * whose prose actually names it. Walking four namings through 168
+               * stops is not a way in. The panel knows exactly which four they are,
+               * so the row steps through them itself.
                */
-              onGoToMessage={(uuid, marks, find) => {
-                jumpTo('msg', uuid, marks);
-                finder.bar.setQuery(find);
-                finder.openBar(true);
-              }}
+              onGoToMessage={(uuid, marks) => jumpTo('msg', uuid, marks)}
             />
           )}
           {agentsOpen && <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} />}
