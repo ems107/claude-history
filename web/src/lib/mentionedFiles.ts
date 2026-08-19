@@ -7,9 +7,8 @@ import { normalisePath, parseFileRef, refBasename } from './fileRefs.ts';
  * `ref` is what was written and `path` what it means — and the difference is the
  * whole reason a mention is a weaker thing than a delivery. A path in prose is
  * written for a human: `core/git.ts` for `server/src/core/git.ts`, `<pid>.json`
- * for a naming scheme, `~/.claude` for a folder. Only 14 of 64 mentions across
- * five sessions of this corpus resolved to a file that is really there, so the
- * panel shows the survivors and says how many did not.
+ * for a naming scheme, `~/.claude` for a folder, `vX.Y.Z` for nothing at all. So
+ * the panel shows the ones that resolve to a real file and says how many did not.
  */
 export interface MentionCandidate {
   /** Exactly as the message wrote it. Sent to the server; shown beside the name. */
@@ -26,16 +25,16 @@ export interface MentionCandidate {
   /** The message that named it first — `?msg=`, all a mention can be anchored on. */
   messageUuid: string | null;
   timestamp: string | null;
-  /** Named in a subagent's report rather than in the conversation's own words. */
-  fromReport: boolean;
 }
 
-/** One mention that survived: it resolved, and it is a file, and it is nowhere else. */
+/** One mention that survived: it resolved, and it is a file. */
 export interface MentionRow extends MentionCandidate {
   /** The absolute path the server resolved it to. */
   resolved: string;
   sizeBytes: number;
   modifiedAt: string | null;
+  /** Also in another panel. Said on the row, never used to hide it. */
+  alsoIn: 'changed' | 'sent' | null;
 }
 
 export interface MentionedFiles {
@@ -46,8 +45,6 @@ export interface MentionedFiles {
     missing: number;
     /** It resolved to a folder. */
     folder: number;
-    /** A real file, but Changed Files or Sent Files already lists it. */
-    listed: number;
   };
   /** Candidates past the batch cap, never asked about at all. */
   unchecked: number;
@@ -92,57 +89,51 @@ function candidates(text: string): { ref: string; strict: boolean }[] {
 }
 
 /**
- * Every file path the conversation NAMED, deduplicated, in the order it was
- * first named.
+ * Every file path the conversation itself NAMED, deduplicated, in the order it
+ * was first named.
  *
- * Only where a path is a link today, which is what keeps the panel and the page
- * agreeing about what a mention is: an assistant `text` block, and a subagent's
- * report inside a notice. **A prompt is deliberately not read** — it renders as
- * `whitespace-pre-wrap`, so a path typed into one is not a link anywhere in this
- * app, and a panel is no place to start pretending it is.
+ * **The assistant's own answers, and nothing else.** Two other places name paths
+ * and both are deliberately out:
+ *
+ * - **A subagent's report.** It renders through `Markdown` like an answer, so its
+ *   paths are links too, and the first version of this panel read them — with the
+ *   result that 23 of 23 rows of one session came from reports, drowning the four
+ *   the conversation itself had pointed at. Worse, the row could not keep its
+ *   promise: a report is folded inside a notice, so `↑ the mention` landed on the
+ *   agent's box with the path nowhere on screen. A row here must go somewhere the
+ *   named path can actually be READ, and only an answer can offer that.
+ * - **A prompt**, which renders `whitespace-pre-wrap` — a path typed into one is
+ *   not a link anywhere in this app, and a panel is no place to start pretending.
  */
 export function collectMentionedFiles(turns: Turn[]): MentionCandidate[] {
   const found = new Map<string, MentionCandidate>();
-  const take = (raw: { ref: string; strict: boolean }, item: { uuid: string; timestamp: string | null }, fromReport: boolean) => {
-    const ref = parseFileRef(raw.ref, { strict: raw.strict });
-    if (!ref) return;
-    const key = normalisePath(ref.path);
-    const existing = found.get(key);
-    if (existing) {
-      existing.hits += 1;
-      // The first anchor and the first spelling stay: the row reads as "this
-      // file, first named here". A mention in the conversation's own words
-      // outranks one in a report, because that is the one worth jumping to.
-      if (existing.fromReport && !fromReport) {
-        existing.fromReport = false;
-        existing.messageUuid = item.uuid;
-        existing.timestamp = item.timestamp;
-      }
-      return;
-    }
-    found.set(key, {
-      ref: raw.ref,
-      path: ref.path,
-      name: refBasename(ref.path),
-      key,
-      line: ref.line ?? null,
-      hits: 1,
-      messageUuid: item.uuid,
-      timestamp: item.timestamp,
-      fromReport,
-    });
-  };
-
   for (const turn of turns) {
     for (const item of turn.items) {
+      if (item.role !== 'assistant') continue;
       for (const block of item.blocks) {
-        if (block.kind === 'text' && item.role === 'assistant') {
-          for (const c of candidates(block.text)) take(c, item, false);
-        } else if (block.kind === 'notice' && block.result) {
-          // A report wears the `user` role in the transcript and nobody typed
-          // it; it renders through `Markdown` like an answer, so its paths are
-          // links like an answer's.
-          for (const c of candidates(block.result)) take(c, item, true);
+        if (block.kind !== 'text') continue;
+        for (const raw of candidates(block.text)) {
+          const ref = parseFileRef(raw.ref, { strict: raw.strict });
+          if (!ref) continue;
+          const key = normalisePath(ref.path);
+          const existing = found.get(key);
+          if (existing) {
+            // The first anchor and the first spelling stay: the row reads as
+            // "this file, first named here", and the count says the rest.
+            existing.hits += 1;
+            existing.line ??= ref.line ?? null;
+            continue;
+          }
+          found.set(key, {
+            ref: raw.ref,
+            path: ref.path,
+            name: refBasename(ref.path),
+            key,
+            line: ref.line ?? null,
+            hits: 1,
+            messageUuid: item.uuid,
+            timestamp: item.timestamp,
+          });
         }
       }
     }
@@ -153,17 +144,19 @@ export function collectMentionedFiles(turns: Turn[]): MentionCandidate[] {
 /**
  * The mentions worth a row, and an honest account of the rest.
  *
- * Three filters, and every one of them exists because of something measured
- * rather than imagined:
+ * Two filters, and both exist because of something measured rather than imagined:
  *
- * - **It has to resolve to something that is there.** Four of five did not, and
- *   a row that cannot be opened is a promise the panel cannot keep.
+ * - **It has to resolve to something that is there.** Most did not — a partial
+ *   path, a placeholder, a version number — and a row that cannot be opened is a
+ *   promise the panel cannot keep.
  * - **It has to be a file.** `~/.claude` was the single most-named "path" of one
  *   session (14 times), and it is a directory.
- * - **It must not already be listed.** Two thirds of the survivors of one session
- *   were files it also EDITED, and this panel exists for what the other two do
- *   not hold. `alreadyListed` is normalised absolute paths from `fileChanges` and
- *   from the sent/published index.
+ *
+ * Being in another panel is NOT a filter, and that was a mistake worth recording:
+ * the first version dropped those rows on the grounds that the information was
+ * already elsewhere, and it took the most obvious mentions of a session with it —
+ * a file the answers keep pointing at is usually one the session also edited. It
+ * is a chip on the row now, which is what the reader wanted from it anyway.
  *
  * Pure, so the counts can be checked without a browser, and the panel is left
  * with nothing to decide.
@@ -171,20 +164,20 @@ export function collectMentionedFiles(turns: Turn[]): MentionCandidate[] {
 export function filterMentions(
   found: MentionCandidate[],
   stats: FileStatEntry[],
-  alreadyListed: Set<string>,
+  changed: Set<string>,
+  sent: Set<string>,
   unchecked: number,
 ): MentionedFiles {
   // Joined on the ref the server echoed back, normalised the one way the app
   // normalises a path — the same join the sent panel makes, and never positional.
   const byRef = new Map(stats.map((s) => [normalisePath(s.ref), s]));
   // Keyed on the RESOLVED path, which is the only thing that identifies a file
-  // here. Deduplicating on what was written cannot do it: one report named
-  // `server/src/core/parser.ts` and another the same file absolutely, and the
-  // panel drew two rows for one file — four times over in one session. The
-  // resolution is the server's answer, so this is the earliest point where the
-  // question can even be asked.
+  // here: one answer can name `server/src/core/parser.ts` and another the same
+  // file absolutely, and the panel drew two rows for one file until the key moved
+  // here. The resolution is the server's answer, so this is the earliest point
+  // where the question can even be asked.
   const rows = new Map<string, MentionRow>();
-  const dropped = { missing: 0, folder: 0, listed: 0 };
+  const dropped = { missing: 0, folder: 0 };
   for (const c of found) {
     const stat = byRef.get(normalisePath(c.ref));
     if (!stat || !stat.exists) {
@@ -196,26 +189,19 @@ export function filterMentions(
       continue;
     }
     const resolved = normalisePath(stat.path);
-    if (alreadyListed.has(resolved)) {
-      dropped.listed += 1;
-      continue;
-    }
     const existing = rows.get(resolved);
     if (existing) {
-      // Named twice in two spellings is named twice. The first spelling stays,
-      // and a naming in the conversation's own words takes the anchor from a
-      // naming in a report, wherever in the list it turns up.
       existing.hits += c.hits;
-      if (existing.fromReport && !c.fromReport) {
-        existing.fromReport = false;
-        existing.ref = c.ref;
-        existing.messageUuid = c.messageUuid;
-        existing.timestamp = c.timestamp;
-      }
       existing.line ??= c.line;
       continue;
     }
-    rows.set(resolved, { ...c, resolved: stat.path, sizeBytes: stat.sizeBytes, modifiedAt: stat.modifiedAt });
+    rows.set(resolved, {
+      ...c,
+      resolved: stat.path,
+      sizeBytes: stat.sizeBytes,
+      modifiedAt: stat.modifiedAt,
+      alsoIn: changed.has(resolved) ? 'changed' : sent.has(resolved) ? 'sent' : null,
+    });
   }
   return { rows: [...rows.values()], dropped, unchecked };
 }

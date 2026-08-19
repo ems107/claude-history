@@ -425,24 +425,33 @@ export function SessionViewPage() {
     enabled: showMentions && mentionRefs.length > 0,
     staleTime: 30_000,
   });
-  /** What the other two panels already hold — absolute, normalised, one lookup. */
-  const listedPaths = useMemo(() => {
-    const set = new Set<string>();
-    for (const fc of detail.data?.fileChanges ?? []) set.add(normalisePath(fc.path));
-    for (const row of [...sessionFiles.sent, ...sessionFiles.artifacts, ...sessionFiles.plans]) set.add(row.key);
-    return set;
-  }, [detail.data, sessionFiles]);
+  /**
+   * What the other two panels hold — absolute and normalised, one lookup each.
+   *
+   * For a CHIP on the row and not to hide it. Dropping a mention because another
+   * panel knew the file took the most obvious mentions of a session with it: the
+   * files an answer keeps pointing at are usually the ones it also worked on.
+   */
+  const changedPaths = useMemo(
+    () => new Set((detail.data?.fileChanges ?? []).map((fc) => normalisePath(fc.path))),
+    [detail.data],
+  );
+  const sentPaths = useMemo(
+    () => new Set([...sessionFiles.sent, ...sessionFiles.artifacts, ...sessionFiles.plans].map((r) => r.key)),
+    [sessionFiles],
+  );
   const mentioned = useMemo(
     () =>
       mentionStats.data
         ? filterMentions(
             mentionCandidates.slice(0, MAX_STAT_PATHS),
             mentionStats.data.files,
-            listedPaths,
+            changedPaths,
+            sentPaths,
             mentionCandidates.length - mentionRefs.length,
           )
         : null,
-    [mentionStats.data, mentionCandidates, mentionRefs.length, listedPaths],
+    [mentionStats.data, mentionCandidates, mentionRefs.length, changedPaths, sentPaths],
   );
 
   const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {

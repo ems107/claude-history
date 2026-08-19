@@ -14,11 +14,11 @@ import { FileLink } from './FileRefLink.tsx';
  * broken. Saying which fraction, and why, is what makes the short list credible.
  */
 function Dropped({ data }: { data: MentionedFiles }) {
-  const { missing, folder, listed } = data.dropped;
+  const { missing, folder } = data.dropped;
   const parts = [
     missing > 0 ? `${String(missing)} that nothing is at` : null,
     folder > 0 ? `${String(folder)} that name a folder` : null,
-    listed > 0 ? `${String(listed)} already in Changed or Sent Files` : null,
+
     data.unchecked > 0 ? `${String(data.unchecked)} past the batch limit, never checked` : null,
   ].filter((p): p is string => !!p);
   if (parts.length === 0) return null;
@@ -26,21 +26,13 @@ function Dropped({ data }: { data: MentionedFiles }) {
     <div className="mt-1.5 px-2 text-[11px] text-[var(--text-dim)]/80">
       <span className="opacity-70">not listed:</span> {parts.join(' · ')}
       <span className="ml-2 opacity-60">
-        — a path in prose is written for a person (`core/git.ts` for the real thing), so most of them open nothing
+        — a path in prose is written for a person, so a partial one or a placeholder opens nothing
       </span>
     </div>
   );
 }
 
-function MentionRowView({
-  row,
-  showOrigin,
-  onGoToMessage,
-}: {
-  row: MentionRow;
-  showOrigin: boolean;
-  onGoToMessage: (uuid: string) => void;
-}) {
+function MentionRowView({ row, onGoToMessage }: { row: MentionRow; onGoToMessage: (uuid: string) => void }) {
   const ctx = useFileRefs();
   // Resolved, and with the line the sentence pointed at: the panel opens where
   // the answer was looking, which a bare path would lose.
@@ -87,12 +79,19 @@ function MentionRowView({
           {asWritten}
         </span>
       )}
-      {/* Only where the list is MIXED. In this corpus a session's mentions are
-          usually all from reports — 23 of 23 in one — and a chip on every row is
-          a chip that says nothing; the panel states it once instead. */}
-      {showOrigin && row.fromReport && (
-        <Chip tone="quiet" title="Named in a subagent's report rather than in the conversation's own words.">
-          in a report
+      {/* Context, never a reason to hide the row: a file the answers keep pointing
+          at is usually one the session also worked on, and dropping those took the
+          most obvious mentions of a session with them. */}
+      {row.alsoIn && (
+        <Chip
+          tone="quiet"
+          title={
+            row.alsoIn === 'changed'
+              ? 'This session also edited it — it is in Changed Files too.'
+              : 'This session also handed it over — it is in Sent Files too.'
+          }
+        >
+          {row.alsoIn === 'changed' ? 'also changed' : 'also sent'}
         </Chip>
       )}
       <span className="min-w-0 flex-1" />
@@ -153,29 +152,24 @@ export function MentionedFilesPanel({
   error: string | null;
   onGoToMessage: (uuid: string) => void;
 }) {
-  const rows = data?.rows ?? [];
-  // Whether WHERE a mention came from tells one row from another. When every row
-  // has the same answer it belongs in the heading, said once.
-  const mixedOrigins = rows.some((r) => r.fromReport) && rows.some((r) => !r.fromReport);
-  const allFromReports = rows.length > 0 && rows.every((r) => r.fromReport);
   return (
     <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
       <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
         Files this session only mentioned{data ? ` — ${String(data.rows.length)}` : ''}
         <span className="ml-2 font-normal normal-case opacity-70">
-          (paths its answers named as a link or in backticks, that are on disk and in neither other panel
-          {allFromReports ? ' — every one of them named in a subagent’s report' : ''})
+          (paths its own answers named as a link or in backticks, and that are on disk — a click opens the file, ↑ goes
+          to the sentence)
         </span>
         {error && <span className="ml-2 font-normal normal-case text-red-400">could not read the disk: {error}</span>}
       </div>
       {pending && <div className="px-2 py-1 text-xs text-[var(--text-dim)]">Asking the disk…</div>}
       {data?.rows.map((row) => (
-        <MentionRowView key={row.resolved} row={row} showOrigin={mixedOrigins} onGoToMessage={onGoToMessage} />
+        <MentionRowView key={row.resolved} row={row} onGoToMessage={onGoToMessage} />
       ))}
       {data && data.rows.length === 0 && (
         <div className="px-2 py-1 text-xs text-[var(--text-dim)]">
-          Nothing left to show: every path this session named is either not on disk or already in one of the other two
-          panels.
+          Nothing to show: every path this session named in an answer is a partial one, a placeholder, or a file that
+          is not there.
         </div>
       )}
       {data && <Dropped data={data} />}
