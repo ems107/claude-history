@@ -24,6 +24,16 @@ const btn =
   'shrink-0 cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-50';
 
 /**
+ * The same button, drawn over the code. `btn` is transparent, and transparent
+ * over a line of syntax-highlighted text is unreadable — so it brings a fill and
+ * a shadow of its own.
+ */
+const overlayBtn = `${btn} bg-[var(--bg-raised)] shadow-lg`;
+
+/** Which of the three copy buttons is flashing. */
+type CopyKind = 'path' | 'text' | 'range';
+
+/**
  * The file a link in the conversation points at.
  *
  * It reads the file over the API rather than from anything in the transcript:
@@ -56,7 +66,7 @@ export function FileViewerPanel({
   const data = query.data;
 
   const scroller = useRef<HTMLDivElement | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<{ which: CopyKind; ok: boolean } | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [openError, setOpenError] = useState('');
   /**
@@ -140,12 +150,31 @@ export function FileViewerPanel({
       .finally(() => setOpening(null));
   };
 
-  const copyPath = () => {
-    void copyPlain(data?.path ?? fileRef.path).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), FLASH_MS);
-    });
+  /**
+   * One state and one helper for all three copy buttons. Sharing a boolean made
+   * every one of them read `Copied ✓` at once, and dropping the rejection —
+   * which is what a browser refusing the clipboard looks like — had them claim a
+   * success that never happened. The label says which way it went instead.
+   *
+   * The sequence number is what stops the first copy’s timer clearing the
+   * second copy’s confirmation a moment after it appeared.
+   */
+  const flashSeq = useRef(0);
+  const flashCopy = (which: CopyKind, text: string) => {
+    const settle = (ok: boolean) => {
+      const seq = ++flashSeq.current;
+      setCopied({ which, ok });
+      setTimeout(() => {
+        if (flashSeq.current === seq) setCopied(null);
+      }, FLASH_MS);
+    };
+    void copyPlain(text).then(
+      () => settle(true),
+      () => settle(false),
+    );
   };
+  const copyLabel = (which: CopyKind, idle: string) =>
+    copied?.which === which ? (copied.ok ? 'Copied ✓' : 'Copy failed') : idle;
 
   return (
     // Above the subagent drawer (z-20): a path is often clicked from inside a
@@ -230,8 +259,13 @@ export function FileViewerPanel({
             </button>
           </>
         )}
-        <button type="button" onClick={copyPath} className={btn} title={data?.path ?? fileRef.path}>
-          {copied ? 'Copied ✓' : '📋 Copy path'}
+        <button
+          type="button"
+          onClick={() => flashCopy('path', data?.path ?? fileRef.path)}
+          className={btn}
+          title={data?.path ?? fileRef.path}
+        >
+          {copyLabel('path', '📋 Copy path')}
         </button>
         {openError && <span className="text-xs text-red-400">{openError}</span>}
       </div>
@@ -311,62 +345,119 @@ export function FileViewerPanel({
           first 8 KB, come back as `text`, and be drawn as mojibake under the
           picture that failed to load. */}
       {data?.text && data.text.length > 0 && !isPicture && (
-        <div ref={scroller} className="relative min-h-0 flex-1 overflow-auto bg-black/40 font-mono text-xs">
-          {/* min-w-max so the row grows to the longest line: otherwise the stripe
-              would stop at the viewport edge instead of running the whole line. */}
-          <div className="flex min-w-max">
-            <div
-              aria-hidden
-              className="sticky left-0 z-10 shrink-0 border-r border-[var(--border)] bg-[var(--bg-raised)] px-2 text-right text-[var(--text-dim)] select-none"
-            >
-              {lines.map((_, i) => (
-                <div
-                  // The line number IS the identity here, and the list only
-                  // changes when the whole file does.
-                  key={i}
-                  style={{ height: LINE_H, lineHeight: `${LINE_H}px` }}
-                  className={target !== null && i + 1 >= target && i + 1 <= (targetEnd ?? target) ? 'text-amber-300' : undefined}
-                >
-                  {i + 1}
-                </div>
-              ))}
-            </div>
-            {/* `min-w-max` and not `flex-1` alone: with a zero basis the box
-                collapses to nothing while the <pre> paints past it, and the
-                stripe — which spans this box — became a sliver at the gutter. */}
-            <div className="relative min-w-max flex-1">
-              {target !== null && (
-                <div
-                  className="pointer-events-none absolute inset-x-0 bg-amber-400/10 ring-1 ring-amber-400/30 ring-inset"
-                  style={{ top: (target - 1) * LINE_H, height: LINE_H * ((targetEnd ?? target) - target + 1) }}
-                />
-              )}
-              {/* whitespace-pre, never pre-wrap: one wrapped line puts the gutter
-                  and the stripe out of step with every line below it. */}
-              <pre className="relative m-0 bg-transparent p-0 pl-3 whitespace-pre" style={{ lineHeight: `${LINE_H}px` }}>
-                {html ? (
-                  // Markup produced by hljs from text we read, not from
-                  // anything a transcript wrote — hljs escapes its input.
-                  //
-                  // These are STYLES and not classes because `github-dark.css`
-                  // loads after Tailwind and `.hljs` wins every tie. Its
-                  // background covered the target stripe; its `padding: 1em`
-                  // then pushed the text 12 px below its own line number and
-                  // the stripe, so the highlight sat two thirds of a line off —
-                  // and only in files that got highlighted at all, which is
-                  // what made it look intermittent. Its `overflow-x: auto`
-                  // would make this a second scroll container inside the one
-                  // that already scrolls.
-                  <code
-                    className="hljs"
-                    style={{ background: 'transparent', padding: 0, overflow: 'visible' }}
-                    dangerouslySetInnerHTML={{ __html: html }}
+        <div className="group relative min-h-0 flex-1">
+          <div
+            ref={scroller}
+            data-code-scroller
+            className="absolute inset-0 overflow-auto bg-black/40 font-mono text-xs"
+          >
+            {/* min-w-max so the row grows to the longest line: otherwise the stripe
+                would stop at the viewport edge instead of running the whole line. */}
+            <div className="flex min-w-max">
+              <div
+                aria-hidden
+                className="sticky left-0 z-10 shrink-0 border-r border-[var(--border)] bg-[var(--bg-raised)] px-2 text-right text-[var(--text-dim)] select-none"
+              >
+                {lines.map((_, i) => (
+                  <div
+                    // The line number IS the identity here, and the list only
+                    // changes when the whole file does.
+                    key={i}
+                    style={{ height: LINE_H, lineHeight: `${LINE_H}px` }}
+                    className={target !== null && i + 1 >= target && i + 1 <= (targetEnd ?? target) ? 'text-amber-300' : undefined}
+                  >
+                    {i + 1}
+                  </div>
+                ))}
+              </div>
+              {/* `min-w-max` and not `flex-1` alone: with a zero basis the box
+                  collapses to nothing while the <pre> paints past it, and the
+                  stripe — which spans this box — became a sliver at the gutter. */}
+              <div className="relative min-w-max flex-1">
+                {target !== null && (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 bg-amber-400/10 ring-1 ring-amber-400/30 ring-inset"
+                    style={{ top: (target - 1) * LINE_H, height: LINE_H * ((targetEnd ?? target) - target + 1) }}
                   />
-                ) : (
-                  <code className="bg-transparent p-0">{data.text}</code>
                 )}
-              </pre>
+                {/* whitespace-pre, never pre-wrap: one wrapped line puts the gutter
+                    and the stripe out of step with every line below it. */}
+                <pre className="relative m-0 bg-transparent p-0 pl-3 whitespace-pre" style={{ lineHeight: `${LINE_H}px` }}>
+                  {html ? (
+                    // Markup produced by hljs from text we read, not from
+                    // anything a transcript wrote — hljs escapes its input.
+                    //
+                    // These are STYLES and not classes because `github-dark.css`
+                    // loads after Tailwind and `.hljs` wins every tie. Its
+                    // background covered the target stripe; its `padding: 1em`
+                    // then pushed the text 12 px below its own line number and
+                    // the stripe, so the highlight sat two thirds of a line off —
+                    // and only in files that got highlighted at all, which is
+                    // what made it look intermittent. Its `overflow-x: auto`
+                    // would make this a second scroll container inside the one
+                    // that already scrolls.
+                    <code
+                      className="hljs"
+                      style={{ background: 'transparent', padding: 0, overflow: 'visible' }}
+                      dangerouslySetInnerHTML={{ __html: html }}
+                    />
+                  ) : (
+                    <code className="bg-transparent p-0">{data.text}</code>
+                  )}
+                </pre>
+              </div>
             </div>
+          </div>
+          {/* The pair that copies the text lives OUTSIDE the scroller. Inside it,
+              `absolute` scrolls away with the code and sticky is no help either —
+              the row it would sit in is `min-w-max`, as wide as the longest line.
+              Out here it takes no space at all, so appearing on hover resizes
+              nothing; `right-4` clears the vertical scrollbar it now floats over,
+              and `z-20` puts it above the gutter's sticky `z-10`. */}
+          <div
+            data-copy-overlay
+            className={`absolute top-2 right-4 z-20 flex gap-1.5 transition-opacity focus-within:opacity-100 ${
+              // Visible while the flash lasts, whatever the pointer is doing:
+              // moving away right after the click would otherwise take the
+              // confirmation with it.
+              copied ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            }`}
+          >
+            <button
+              type="button"
+              // `data.text` verbatim: no line numbers, and not the hljs markup
+              // drawn from it.
+              onClick={() => flashCopy('text', data.text ?? '')}
+              className={overlayBtn}
+              title={
+                data.truncated
+                  ? `The file was cut on the way here — this copies only the ${lines.length.toLocaleString()} lines shown, of ${formatBytes(data.sizeBytes)}`
+                  : `Copy all ${lines.length.toLocaleString()} lines to the clipboard`
+              }
+            >
+              {/* A truncated read is half a file, and a button saying "contents"
+                  over one is the panel's own `truncated — N total` notice being
+                  contradicted three rows below itself. */}
+              {copyLabel('text', data.truncated ? '📋 Copy what was read' : '📋 Copy contents')}
+            </button>
+            {/* Only where there is a band to copy: the same `target`/`targetEnd`
+                the stripe is drawn from, so the two cannot disagree about which
+                lines the link meant. */}
+            {target !== null && (
+              <button
+                type="button"
+                onClick={() => flashCopy('range', lines.slice(target - 1, targetEnd ?? target).join('\n'))}
+                className={overlayBtn}
+                title="Copy just the lines this link pointed at — the ones under the amber band"
+              >
+                {copyLabel(
+                  'range',
+                  (targetEnd ?? target) > target
+                    ? `📋 Copy lines ${target}-${targetEnd}`
+                    : `📋 Copy line ${target}`,
+                )}
+              </button>
+            )}
           </div>
         </div>
       )}
