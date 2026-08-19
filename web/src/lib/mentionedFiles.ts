@@ -27,11 +27,21 @@ export interface MentionCandidate {
   timestamp: string | null;
 }
 
-/** One mention that survived: it resolved, and it is a file. */
+/** One mention with what the disk had to say about it. */
 export interface MentionRow extends MentionCandidate {
-  /** The absolute path the server resolved it to. */
+  /** The absolute path the server resolved it to — what was actually looked for. */
   resolved: string;
-  sizeBytes: number;
+  /**
+   * Whether anything is there.
+   *
+   * A row either way, and that is the point: an answer naming a file that is not
+   * there is worth knowing about — the path may be partial, or a placeholder, or
+   * the file may have moved since — and the row says which by saying nothing is
+   * at it. What it must never do is stay silent and look like the others.
+   */
+  exists: boolean;
+  /** Null when nothing is there to measure. */
+  sizeBytes: number | null;
   modifiedAt: string | null;
   /** Also in another panel. Said on the row, never used to hide it. */
   alsoIn: 'changed' | 'sent' | null;
@@ -39,11 +49,11 @@ export interface MentionRow extends MentionCandidate {
 
 export interface MentionedFiles {
   rows: MentionRow[];
-  /** Why the others are not here. Reported, never silently swallowed. */
+  /** How many of the rows point at nothing — the panel's own summary of itself. */
+  missing: number;
+  /** Why the others are not here at all. Reported, never silently swallowed. */
   dropped: {
-    /** Nothing is at that path — a partial path, a placeholder, a file long gone. */
-    missing: number;
-    /** It resolved to a folder. */
+    /** It resolved to a folder, which is not what this panel is a list of. */
     folder: number;
   };
   /** Candidates past the batch cap, never asked about at all. */
@@ -142,21 +152,35 @@ export function collectMentionedFiles(turns: Turn[]): MentionCandidate[] {
 }
 
 /**
+ * What to underline in the message a mention came from.
+ *
+ * The ref as written is the first term, because that is the text on screen — a
+ * `:12` suffix included, since the sentence pointed at the line and the reader is
+ * looking for that. The basename follows when the ref is more than that, and it
+ * covers the case the ref alone cannot: a markdown link puts the path in the HREF
+ * and the filename in the words, so marking only the ref would underline nothing
+ * at all. Marking both also lights up every other naming of the same file in that
+ * message, which is what the search does with a term and is right here too.
+ */
+export function mentionTerms(row: MentionCandidate): string[] {
+  return row.ref === row.name ? [row.ref] : [row.ref, row.name];
+}
+
+/**
  * The mentions worth a row, and an honest account of the rest.
  *
- * Two filters, and both exist because of something measured rather than imagined:
+ * **One filter only, and it is not existence.** A mention that resolves to
+ * nothing is still something the answer said, and hiding it made the panel quietly
+ * disagree with the messages the reader can see; it is a row wearing `not found`
+ * instead. What is dropped is a FOLDER — `~/.claude` was the single most-named
+ * "path" of one session, 14 times over — because this is a list of files and a
+ * folder row would be the same noise in every session that mentions one.
  *
- * - **It has to resolve to something that is there.** Most did not — a partial
- *   path, a placeholder, a version number — and a row that cannot be opened is a
- *   promise the panel cannot keep.
- * - **It has to be a file.** `~/.claude` was the single most-named "path" of one
- *   session (14 times), and it is a directory.
- *
- * Being in another panel is NOT a filter, and that was a mistake worth recording:
- * the first version dropped those rows on the grounds that the information was
- * already elsewhere, and it took the most obvious mentions of a session with it —
- * a file the answers keep pointing at is usually one the session also edited. It
- * is a chip on the row now, which is what the reader wanted from it anyway.
+ * Being in another panel is not a filter either, and that was the same mistake
+ * made once already: the first version dropped those rows on the grounds that the
+ * information was already elsewhere, and it took the most obvious mentions of a
+ * session with it — a file the answers keep pointing at is usually one the session
+ * also edited. It is a chip on the row now.
  *
  * Pure, so the counts can be checked without a browser, and the panel is left
  * with nothing to decide.
@@ -177,18 +201,17 @@ export function filterMentions(
   // here. The resolution is the server's answer, so this is the earliest point
   // where the question can even be asked.
   const rows = new Map<string, MentionRow>();
-  const dropped = { missing: 0, folder: 0 };
+  const dropped = { folder: 0 };
   for (const c of found) {
     const stat = byRef.get(normalisePath(c.ref));
-    if (!stat || !stat.exists) {
-      dropped.missing += 1;
-      continue;
-    }
-    if (stat.isDirectory) {
+    // No answer at all is the same state as "nothing is there", and it happens
+    // only past the cap or on a ref the server refused to resolve.
+    if (stat?.isDirectory) {
       dropped.folder += 1;
       continue;
     }
-    const resolved = normalisePath(stat.path);
+    const resolvedPath = stat?.path ?? c.path;
+    const resolved = normalisePath(resolvedPath);
     const existing = rows.get(resolved);
     if (existing) {
       existing.hits += c.hits;
@@ -197,11 +220,13 @@ export function filterMentions(
     }
     rows.set(resolved, {
       ...c,
-      resolved: stat.path,
-      sizeBytes: stat.sizeBytes,
-      modifiedAt: stat.modifiedAt,
+      resolved: resolvedPath,
+      exists: stat?.exists === true,
+      sizeBytes: stat?.exists ? stat.sizeBytes : null,
+      modifiedAt: stat?.exists ? stat.modifiedAt : null,
       alsoIn: changed.has(resolved) ? 'changed' : sent.has(resolved) ? 'sent' : null,
     });
   }
-  return { rows: [...rows.values()], dropped, unchecked };
+  const all = [...rows.values()];
+  return { rows: all, missing: all.filter((r) => !r.exists).length, dropped, unchecked };
 }

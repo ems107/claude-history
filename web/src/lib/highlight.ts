@@ -1,4 +1,4 @@
-import { foldWithMap, occurrences, type SearchQueryEcho } from '@claude-history/shared';
+import { foldText, foldWithMap, occurrences, type SearchQueryEcho } from '@claude-history/shared';
 
 /**
  * What a search-result link asks the viewer to mark. The terms travel already
@@ -50,6 +50,31 @@ export function highlightSearchParams(query: SearchQueryEcho): URLSearchParams {
   for (const term of query.terms) params.append(TERM_PARAM, term);
   if (query.wholeWord) params.set(WHOLE_WORD_PARAM, '1');
   return params;
+}
+
+/**
+ * The same two parameters, written onto a link that is not a search result.
+ *
+ * A jump from a panel wants what it points at MARKED, not just scrolled to: the
+ * mentions panel says "this file, named in that message", and landing on a
+ * 2,000-character answer with nothing underlined leaves the reader to find the
+ * sentence themselves — which is the job the search link already solved.
+ *
+ * The folding happens here because the invariant is stated here: the terms
+ * travel already folded, so what gets marked is what `matchSpans` will look for.
+ * A caller handing over raw text cannot be expected to know that.
+ *
+ * Always rewrites, so passing nothing CLEARS: terms belong to the jump that asked
+ * for them, and a previous search's words surviving into an unrelated anchor
+ * would mark whatever they happened to hit there.
+ */
+export function setHighlightTerms(params: URLSearchParams, terms: string[]): void {
+  params.delete(TERM_PARAM);
+  params.delete(WHOLE_WORD_PARAM);
+  for (const term of terms) {
+    const folded = foldText(term);
+    if (folded.length > 0) params.append(TERM_PARAM, folded);
+  }
 }
 
 /** Null when the link carries no terms — an ordinary deep link, nothing to mark. */

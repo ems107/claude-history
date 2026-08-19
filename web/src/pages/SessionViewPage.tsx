@@ -13,7 +13,7 @@ import { api } from '../api/client.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
 import { collectMentionedFiles, filterMentions } from '../lib/mentionedFiles.ts';
 import { useFoldState } from '../lib/folding.ts';
-import { anchorOfKey, focusKeyAt, parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
+import { anchorOfKey, focusKeyAt, parseHighlight, setHighlightTerms, TOOL_PARAM } from '../lib/highlight.ts';
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex } from '../lib/subagents.ts';
@@ -184,12 +184,18 @@ export function SessionViewPage() {
    * them there, not to a jump made from the panel.
    */
   const jumpTo = useCallback(
-    (param: string, value: string) => {
+    (param: string, value: string, terms: string[] = []) => {
       setSearchParams(
         (prev) => {
           const sp = new URLSearchParams(prev);
           for (const p of [TOOL_PARAM, 'msg']) sp.delete(p);
           sp.set(param, value);
+          // Always rewritten, which is what makes the comment above true: the
+          // words belong to the jump that asked for them, so a jump with none
+          // clears a previous search's, and a jump WITH them arrives marked. It
+          // is the same `?hl=` a search result carries — one mechanism, so a
+          // panel's jump lands the way the search's does.
+          setHighlightTerms(sp, terms);
           return sp;
         },
         { replace: true },
@@ -694,7 +700,7 @@ export function SessionViewPage() {
               data={mentioned}
               pending={mentionStats.isPending && mentionRefs.length > 0}
               error={mentionStats.isError ? String(mentionStats.error) : null}
-              onGoToMessage={(uuid) => jumpTo('msg', uuid)}
+              onGoToMessage={(uuid, terms) => jumpTo('msg', uuid, terms)}
             />
           )}
           {agentsOpen && <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} />}

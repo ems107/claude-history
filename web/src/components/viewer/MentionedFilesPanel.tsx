@@ -1,38 +1,43 @@
 import { isImagePath, parseFileRef } from '../../lib/fileRefs.ts';
 import { folderTail, formatBytes, formatDateTime } from '../../lib/format.ts';
-import type { MentionedFiles, MentionRow } from '../../lib/mentionedFiles.ts';
+import { mentionTerms, type MentionedFiles, type MentionRow } from '../../lib/mentionedFiles.ts';
 import { Chip } from './Chip.tsx';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
 
 /**
- * What was dropped, in words, on one line.
+ * The panel summarising itself, in one line.
  *
- * It is not an apology and it is not optional. The panel lists a fraction of what
- * the conversation named — measured at 1 of 14 in one session here — and a list
- * that quietly shows 1 where the reader can see 14 links in the messages reads as
- * broken. Saying which fraction, and why, is what makes the short list credible.
+ * It is not an apology and it is not optional. Most of what an answer names is a
+ * partial path or a placeholder, so a reader who can see fourteen links in the
+ * messages and eight rows here needs the sentence that reconciles the two — and
+ * a row that points at nothing has to be counted out loud rather than left to be
+ * noticed one chip at a time.
  */
 function Dropped({ data }: { data: MentionedFiles }) {
-  const { missing, folder } = data.dropped;
   const parts = [
-    missing > 0 ? `${String(missing)} that nothing is at` : null,
-    folder > 0 ? `${String(folder)} that name a folder` : null,
-
+    data.missing > 0 ? `${String(data.missing)} of them point at nothing` : null,
+    data.dropped.folder > 0 ? `${String(data.dropped.folder)} named a folder and are not listed` : null,
     data.unchecked > 0 ? `${String(data.unchecked)} past the batch limit, never checked` : null,
   ].filter((p): p is string => !!p);
   if (parts.length === 0) return null;
   return (
     <div className="mt-1.5 px-2 text-[11px] text-[var(--text-dim)]/80">
-      <span className="opacity-70">not listed:</span> {parts.join(' · ')}
+      {parts.join(' · ')}
       <span className="ml-2 opacity-60">
-        — a path in prose is written for a person, so a partial one or a placeholder opens nothing
+        — a path in prose is written for a person, so a partial one or a placeholder finds nothing
       </span>
     </div>
   );
 }
 
-function MentionRowView({ row, onGoToMessage }: { row: MentionRow; onGoToMessage: (uuid: string) => void }) {
+function MentionRowView({
+  row,
+  onGoToMessage,
+}: {
+  row: MentionRow;
+  onGoToMessage: (uuid: string, terms: string[]) => void;
+}) {
   const ctx = useFileRefs();
   // Resolved, and with the line the sentence pointed at: the panel opens where
   // the answer was looking, which a bare path would lose.
@@ -54,11 +59,20 @@ function MentionRowView({ row, onGoToMessage }: { row: MentionRow; onGoToMessage
         {isImagePath(row.path) ? '🖼' : '📄'}
       </span>
       {ref && ctx ? (
+        // Still a link when the file is gone — the panel behind it says so and
+        // still offers the folder — but drawn in the dim colour, so the list can
+        // be read at a glance without checking every chip.
         <FileLink
           ctx={ctx}
           fileRef={ref}
-          className="shrink-0 cursor-pointer font-medium text-[var(--accent)] underline decoration-dotted underline-offset-2 hover:decoration-solid"
-          title={`Open ${row.resolved}${row.line === null ? '' : `:${String(row.line)}`}`}
+          className={`shrink-0 cursor-pointer font-medium underline decoration-dotted underline-offset-2 hover:decoration-solid ${
+            row.exists ? 'text-[var(--accent)]' : 'text-[var(--text-dim)]'
+          }`}
+          title={
+            row.exists
+              ? `Open ${row.resolved}${row.line === null ? '' : `:${String(row.line)}`}`
+              : `Nothing is at ${row.resolved} — the panel will say so, and still offer its folder`
+          }
         >
           {row.name}
         </FileLink>
@@ -94,26 +108,45 @@ function MentionRowView({ row, onGoToMessage }: { row: MentionRow; onGoToMessage
           {row.alsoIn === 'changed' ? 'also changed' : 'also sent'}
         </Chip>
       )}
+      {!row.exists && (
+        <Chip
+          tone="warn"
+          title={`Nothing is at ${row.resolved}. Either the path is partial or a placeholder — written for a person to read — or the file has moved or gone since the answer named it.`}
+        >
+          not found
+        </Chip>
+      )}
       <span className="min-w-0 flex-1" />
-      <span className="shrink-0 text-[10px] text-[var(--text-dim)]/70" title={`${formatBytes(row.sizeBytes)} on disk`}>
-        {formatBytes(row.sizeBytes)}
-      </span>
-      <span className="shrink-0 text-[10px] text-[var(--text-dim)]/70" title="Last modified — the file itself, not the mention">
-        {formatDateTime(row.modifiedAt)}
-      </span>
+      {/* Measured only where there is something to measure. A row pointing at
+          nothing showed "0 B" and a 1970 date for one draft, which is a lie told
+          twice about a file that simply is not there. */}
+      {row.sizeBytes !== null && (
+        <span className="shrink-0 text-[10px] text-[var(--text-dim)]/70" title={`${formatBytes(row.sizeBytes)} on disk`}>
+          {formatBytes(row.sizeBytes)}
+        </span>
+      )}
+      {row.modifiedAt && (
+        <span className="shrink-0 text-[10px] text-[var(--text-dim)]/70" title="Last modified — the file itself, not the mention">
+          {formatDateTime(row.modifiedAt)}
+        </span>
+      )}
       <span className="w-40 shrink-0 truncate text-right font-mono text-[10px] text-[var(--text-dim)]/70" title={row.resolved}>
         {folderTail(row.resolved, row.name)}
       </span>
       <button
         type="button"
         disabled={!messageUuid}
-        onClick={messageUuid ? () => onGoToMessage(messageUuid) : undefined}
+        onClick={messageUuid ? () => onGoToMessage(messageUuid, mentionTerms(row)) : undefined}
         className={`shrink-0 text-[10px] ${
           messageUuid
             ? 'cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 hover:border-[var(--text-dim)] hover:text-[var(--text)]'
             : 'cursor-default rounded border border-[var(--border)] px-1.5 py-0.5 opacity-40'
         }`}
-        title={messageUuid ? 'Go to where it was first named' : 'Nothing in this transcript anchors it'}
+        title={
+          messageUuid
+            ? 'Go to where it was first named, with the path underlined in the message'
+            : 'Nothing in this transcript anchors it'
+        }
       >
         ↑ the mention
       </button>
@@ -150,15 +183,15 @@ export function MentionedFilesPanel({
   data: MentionedFiles | null;
   pending: boolean;
   error: string | null;
-  onGoToMessage: (uuid: string) => void;
+  onGoToMessage: (uuid: string, terms: string[]) => void;
 }) {
   return (
     <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
       <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
         Files this session only mentioned{data ? ` — ${String(data.rows.length)}` : ''}
         <span className="ml-2 font-normal normal-case opacity-70">
-          (paths its own answers named as a link or in backticks, and that are on disk — a click opens the file, ↑ goes
-          to the sentence)
+          (paths its own answers named as a link or in backticks — a click opens the file, ↑ goes to the sentence with
+          the path underlined in it)
         </span>
         {error && <span className="ml-2 font-normal normal-case text-red-400">could not read the disk: {error}</span>}
       </div>
@@ -168,8 +201,7 @@ export function MentionedFilesPanel({
       ))}
       {data && data.rows.length === 0 && (
         <div className="px-2 py-1 text-xs text-[var(--text-dim)]">
-          Nothing to show: every path this session named in an answer is a partial one, a placeholder, or a file that
-          is not there.
+          Nothing to show: this session’s answers named no file path at all.
         </div>
       )}
       {data && <Dropped data={data} />}
