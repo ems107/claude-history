@@ -322,3 +322,23 @@ mentira. El mensaje de «ya hay uno abierto» dice ahora qué hacer.
 **Verificado desde el navegador con el foco puesto**: el diálogo sale `topmost=True` por encima, aceptar
 deja la ruta en la caja (`C:\Users\Edgar\Documents`), el botón vuelve a su estado y no queda ni un
 proceso pwsh ni un fichero temporal. La ruta con `ñ` sobrevive al viaje por fichero UTF-8.
+
+### Por qué el diálogo seguía saliendo por debajo
+
+`GetWindow(owner, GW_ENABLEDPOPUP)` **no devuelve NULL cuando todavía no hay popup: devuelve la ventana
+por la que preguntas**. Así que en el primer tick, antes de que el diálogo existiera, encontraba el
+propietario de 1×1, subía *ese*, paraba el timer, y el diálogo real nacía después sin nadie que lo
+levantara.
+
+Eso explica exactamente por qué a mí me funcionaba y a ti no: con .NET caliente el diálogo ya estaba
+arriba antes del primer tick (200 ms) y se subía el correcto; en frío, nunca. Es la forma típica de un
+fallo que se etiqueta como «intermitente» y se deja estar.
+
+Arreglado comparando contra el handle del propio propietario y siguiendo a la espera; intervalo a 100 ms
+y `SWP_NOACTIVATE` en los flags, porque activar es justo lo que un proceso en segundo plano no puede
+hacer y aquí solo se pide orden Z.
+
+**Verificado en frío**, primer `Browse` tras reiniciar el servidor: `topmost=True` y **z-index 0, sin nada
+por encima** durante los 7 s que duró la observación; captura del escritorio completo confirmándolo por
+encima del navegador y del terminal; aceptar devuelve `{"path":"C:\Users\Edgar\Documents"}`; y cero
+procesos pwsh y cero ficheros temporales al terminar.

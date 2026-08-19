@@ -304,13 +304,24 @@ $global:chOwner.Activate()
 
 # ShowDialog pumps messages, so this keeps ticking underneath it — which is the
 # only moment the dialog's own window exists to be raised.
+#
+# The '-ne $own' test is the whole correctness of this: GW_ENABLEDPOPUP does NOT
+# answer NULL when there is no popup yet, it answers the window you asked about.
+# Without the test the first tick "found" the 1x1 owner, raised THAT, stopped the
+# timer, and the real dialog was born afterwards with nobody left to lift it —
+# which is why this looked like it worked whenever .NET happened to be warm
+# enough to have the dialog up inside 200 ms, and did nothing otherwise.
+#
+# SWP_NOACTIVATE is in the flags because activation is the one thing a background
+# process may not do; z-order is all that is being asked for here.
 $timer = New-Object System.Windows.Forms.Timer
-$timer.Interval = 200
+$timer.Interval = 100
 $timer.add_Tick({
-  $popup = [ChPick.Win]::GetWindow($global:chOwner.Handle, 6)
-  if ($popup -ne [IntPtr]::Zero) {
+  $own = $global:chOwner.Handle
+  $popup = [ChPick.Win]::GetWindow($own, 6)
+  if ($popup -ne [IntPtr]::Zero -and $popup -ne $own) {
     $this.Stop()
-    [void][ChPick.Win]::SetWindowPos($popup, [IntPtr](-1), 0, 0, 0, 0, 3)
+    [void][ChPick.Win]::SetWindowPos($popup, [IntPtr](-1), 0, 0, 0, 0, 0x0013)
   }
 })
 $timer.Start()
