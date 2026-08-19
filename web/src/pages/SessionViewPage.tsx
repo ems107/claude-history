@@ -39,7 +39,7 @@ import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
 import { ViewButton } from '../components/viewer/ViewButton.tsx';
-import { isWorking, WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
+import { isWorking, WorkingIndicator, workingSince } from '../components/viewer/WorkingIndicator.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 /** Stable identity while the conversation loads, so the fold state is not rebuilt. */
@@ -611,7 +611,7 @@ export function SessionViewPage() {
   const workingFooter = useMemo(
     () =>
       pending.length === 0 && isWorking(liveInfo) ? (
-        <WorkingIndicator live={liveInfo} activity={activity} columnWidth={clockColumnWidth} />
+        <WorkingIndicator since={workingSince(liveInfo)} activity={activity} columnWidth={clockColumnWidth} />
       ) : undefined,
     [pending.length, liveInfo, activity, clockColumnWidth],
   );
@@ -638,7 +638,7 @@ export function SessionViewPage() {
               messages are all older than this turn's start and are filtered out
               by exactly the test that keeps the figures inside their own turn. */}
           {i === pending.length - 1 && isWorking(liveInfo) ? (
-            <WorkingIndicator live={liveInfo} activity={activity} columnWidth={clockColumnWidth} />
+            <WorkingIndicator since={workingSince(liveInfo)} activity={activity} columnWidth={clockColumnWidth} />
           ) : null}
         </PendingTurn>
       )),

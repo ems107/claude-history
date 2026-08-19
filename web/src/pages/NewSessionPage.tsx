@@ -495,18 +495,10 @@ export function NewSessionPage() {
                   <div className="space-y-1.5">
                     {pending.map((p, i) => (
                       <PendingTurn key={`${p.at}:${i}`} text={p.text}>
-                        {i === pending.length - 1 && (
-                          <WorkingIndicator
-                            live={{
-                              pid: 0,
-                              status: 'busy',
-                              name: null,
-                              startedAt: null,
-                              updatedAt: null,
-                              statusUpdatedAt: p.at,
-                            }}
-                          />
-                        )}
+                        {/* A prompt still waiting for its first line IS a turn in
+                            flight, so the row needs nothing but the moment it was
+                            accepted — there is no session on disk to ask yet. */}
+                        {i === pending.length - 1 && <WorkingIndicator since={p.at} />}
                       </PendingTurn>
                     ))}
                   </div>

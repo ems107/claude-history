@@ -24,6 +24,18 @@ export function isWorking(live: LiveInfo | null | undefined): boolean {
 }
 
 /**
+ * The clock a session's `total` figure counts from: when the status last
+ * changed, which for a busy session is when the turn began.
+ *
+ * Beside `isWorking` because it is the other half of the same reading, and
+ * because the indicator itself no longer knows what a `LiveInfo` is — a
+ * subagent has none, and the row is the same row.
+ */
+export function workingSince(live: LiveInfo | null | undefined): number | null {
+  return live?.statusUpdatedAt ?? live?.updatedAt ?? null;
+}
+
+/**
  * One elapsed figure. The clock it counts from is on the hover, because the
  * span alone cannot say WHEN — and the span is the thing worth reading at a
  * glance, so the absolute time may not take a character of the row.
@@ -67,15 +79,25 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
  * through a run) and how long since the last tool was called. Each appears only
  * once it has something of its own to report — a turn that has produced nothing
  * yet shows one figure, which is the truth about it.
+ *
+ * **Whether anything is working at all is the CALLER's to answer**, and so is
+ * the clock: a session reads both off `~/.claude/sessions` (`isWorking` /
+ * `workingSince`), a subagent has no such file and reads its own transcript
+ * instead. Rendered, this row always means "still going" — every call site
+ * already had to know that before drawing the rail it hangs on.
  */
 export function WorkingIndicator({
-  live,
+  since,
   activity = NO_ACTIVITY,
   columnWidth,
+  startHint = 'Turn started',
 }: {
-  live: LiveInfo | null;
+  /** When the thing being waited on began (epoch ms); null draws no clocks. */
+  since: number | null;
   /** What has landed since this turn began — see `turnActivity`. */
   activity?: TurnActivity;
+  /** What the `total` figure's hover says it counts from. */
+  startHint?: string;
   /**
    * The width of the conversation's column, as a CSS length — the same string
    * the composer takes, for the same corner. The clocks sit at the far right of
@@ -98,19 +120,15 @@ export function WorkingIndicator({
    */
   columnWidth?: string;
 }) {
-  const busy = isWorking(live);
-  const since = live?.statusUpdatedAt ?? live?.updatedAt ?? null;
   // The counter is re-rendered, not recomputed from a stored value: `elapsed`
   // reads the clock, so a tick a second is all it takes to keep it truthful.
+  // Unconditional, because this row only exists while something is working.
   const [, tick] = useState(0);
 
   useEffect(() => {
-    if (!busy) return;
     const timer = setInterval(() => tick((n) => n + 1), 1_000);
     return () => clearInterval(timer);
-  }, [busy]);
-
-  if (!busy) return null;
+  }, []);
 
   /**
    * Only what landed AFTER the turn began. With no turn start there is nothing
@@ -168,7 +186,7 @@ export function WorkingIndicator({
               {/* Labelled like the two beside it: bare, it was the only figure
                   and could only be the turn, but next to "last message" a naked
                   number is one of three and says nothing about which. */}
-              <Figure label="total" at={since} hint="Turn started" />
+              <Figure label="total" at={since} hint={startHint} />
               {/* Neither figure can appear without the turn's own (both are gated
                   on a known start), so a separator never opens the row. Inline
                   text with `nowrap` on each figure: the line breaks at a dot and

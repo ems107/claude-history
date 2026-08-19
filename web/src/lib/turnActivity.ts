@@ -14,6 +14,18 @@ import type { Turn } from '@claude-history/shared';
  */
 export interface TurnActivity {
   /**
+   * When that turn began (epoch ms): the FIRST item of it, whatever its role —
+   * normally the prompt that opened it.
+   *
+   * A session does not use this and must not: its turn starts when
+   * `~/.claude/sessions` says so, which is stamped at the instant it happens,
+   * while the transcript's first line of a turn is written later. A SUBAGENT has
+   * no such file — it shares its parent's process — and its first line is its
+   * brief, so this is the only clock it has and it is the right one: an agent
+   * begins when it is sent out.
+   */
+  startedAt: number | null;
+  /**
    * When the model last SAID something in that turn (epoch ms) — the newest
    * assistant message carrying anything that is not a tool call.
    *
@@ -33,7 +45,7 @@ export interface TurnActivity {
   lastToolAt: number | null;
 }
 
-export const NO_ACTIVITY: TurnActivity = { lastMessageAt: null, lastToolAt: null };
+export const NO_ACTIVITY: TurnActivity = { startedAt: null, lastMessageAt: null, lastToolAt: null };
 
 function stamp(when: string | null): number | null {
   if (!when) return null;
@@ -45,6 +57,7 @@ export function turnActivity(turns: Turn[]): TurnActivity {
   const turn = turns[turns.length - 1];
   if (!turn) return NO_ACTIVITY;
 
+  const startedAt = stamp(turn.items[0]?.timestamp ?? null);
   let lastMessageAt: number | null = null;
   let lastToolAt: number | null = null;
 
@@ -73,5 +86,5 @@ export function turnActivity(turns: Turn[]): TurnActivity {
     if (called && ended !== null && (lastToolAt === null || ended > lastToolAt)) lastToolAt = ended;
   }
 
-  return { lastMessageAt, lastToolAt };
+  return { startedAt, lastMessageAt, lastToolAt };
 }
