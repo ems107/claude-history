@@ -12,6 +12,7 @@ Line-level format is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) (task notificatio
 - **A nested agent's call and report live in its PARENT agent's transcript**, and only the search for the call says who that parent is.
 - **Read an `AskUserQuestion` answer from `toolUseResult`, never from the prose** — and never `split(',')` it.
 - **`annotations` is the only copy of a note** written beside a pick.
+- **Picks AND free text in one answer is a multiSelect shape** — a single-choice question has one answer slot.
 - **Read an option's drawing from the tool INPUT** (the echoed `questions` are stripped), render it in a `<pre>`, never through markdown.
 - **A plan's verdict is the TYPE of `toolUseResult`**, not its wording.
 - **The `plans/<slug>.md` file is a working copy that gets overwritten** — the transcript is the archive.
@@ -67,6 +68,8 @@ So: **structured field first, prose only as a fallback**, anchored on the questi
 Consume the answer **from the front, longest label first** (a label can be a prefix of another); what is left over never matched an option and IS the "Other" text — which must be shown BESIDE the picks, not only when nothing matched: 2 answers here are boxes ticked *plus* a typed requirement, and both were dropped from the page.
 
 **`(notes only)` is a sentinel, not an answer.** `splitAnswer` matched no label against it and the card drew `✎ (notes only) — typed instead`, with the real sentence nowhere. Test the string and treat it as answered-with-no-pick.
+
+**One answer slot, unless the question says otherwise.** Picks-plus-typed-text is a real answer *on a multiSelect* — 2 of them here — and nonsense on a single-choice question, where both go into the one slot and are joined by the same `", "`: `cd50fa54` recorded `"Notificaciones dentro de la propia UI (toast/banner), kk"` against a `multiSelect: false` question. Nothing can read that back as one answer, and nothing should: Claude gets a label with a word glued to it, and `splitAnswer` — correctly — reports an option taken AND something typed, so the card drew two picks on a question that had one. The rule belongs to whatever WRITES the answer, and in this app that is `QuestionPanel` ([AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md#why-the-sdk-and-what-it-must-produce)); the reader stays literal, because a transcript written elsewhere may hold anything.
 
 **"Other" and a note are two different affordances**, and the corpus keeps them apart: free text goes into `answers` (7 of them, 2 alongside picks), a note goes into `annotations`, and only the note can leave the answer empty. Anything writing this format — the composer does — has to reproduce both, plus the sentinel.
 
