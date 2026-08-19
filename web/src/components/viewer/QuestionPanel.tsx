@@ -475,7 +475,14 @@ export function QuestionPanel({
             className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 sm:p-8"
             onClick={() => setFull(false)}
           >
-            <div className="flex max-h-full w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+            {/* The card's own background is a 5% tint — enough over the page it
+                normally sits on, and nothing at all over an overlay: the
+                conversation showed straight through the plan. So the ground it
+                needs goes here, under it. */}
+            <div
+              className="flex max-h-full w-full max-w-5xl rounded-lg bg-[var(--bg)] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
               {card}
             </div>
           </div>,

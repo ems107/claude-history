@@ -2,7 +2,7 @@ import type { ContentBlock, MessageItem, SessionDetail } from '@claude-history/s
 import { parseAskUserQuestion } from '../components/viewer/AnsweredQuestion.tsx';
 import { parseSentFiles } from './sentFiles.ts';
 import { formatDateTime, shortModel } from './format.ts';
-import { parsePlan } from './plans.ts';
+import { parsePlan, parsePlanFeedback } from './plans.ts';
 import { systemLabel } from './systemLines.ts';
 
 export interface ExportOptions {
@@ -124,7 +124,18 @@ function contentLines(
             plan.status === 'approved' ? '✔ approved' : plan.status === 'rejected' ? '✖ not approved' : 'awaiting an answer';
           out.push(`> 📝 **Plan — ${verdict}**${plan.filePath ? ` — \`${plan.filePath}\`` : ''}`, '');
           if (plan.text) out.push('<details>', '<summary>📝 The plan</summary>', '', plan.text, '', '</details>', '');
-          if (plan.feedback) out.push(`> **The user said:** ${plan.feedback.replace(/\n/g, ' ')}`, '');
+          if (plan.feedback) {
+            // Same two halves the card draws, for the reason `parsePlan` is pure:
+            // flattened to one line, a plan sent back with comments exported as an
+            // unreadable run of `[Re: "…"]` brackets.
+            const { note, comments } = parsePlanFeedback(plan.feedback);
+            if (note) out.push(`> **The user said:** ${note.replace(/\n/g, ' ')}`, '');
+            for (const c of comments) {
+              const where = c.heading ? ` — under *${c.heading}*` : '';
+              out.push(`> - “${c.quote}”${where}: **${c.text.replace(/\n/g, ' ')}**`);
+            }
+            if (comments.length > 0) out.push('');
+          }
           break;
         }
         // Same reason as the plan above: an answered question is a turn of the

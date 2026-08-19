@@ -13,6 +13,53 @@ export interface ParsedPlan {
   feedback: string | null;
 }
 
+/** One remark the reader filed against a passage of the plan. */
+export interface PlanFeedbackComment {
+  quote: string;
+  heading: string | null;
+  text: string;
+}
+
+/** What the user sent back with a plan, taken apart. */
+export interface PlanFeedback {
+  /** What they typed in their own words, if anything. */
+  note: string | null;
+  comments: PlanFeedbackComment[];
+}
+
+/** The line this app (and Claude Code's IDE panel) writes before the comments. */
+const COMMENTS_MARKER = 'Comments on the plan:';
+
+/**
+ * Read the comments back out of a plan's feedback.
+ *
+ * The feedback is ONE string — that is all the transcript keeps, and all Claude
+ * ever saw ([AI_AGENTS_QUESTIONS_PLANS.md](../../docs/AI_AGENTS_QUESTIONS_PLANS.md)) —
+ * so the note and the remarks arrive glued together in the shape they were sent:
+ * a `Comments on the plan:` line and then `[Re: "<quote>" · under "<heading>"]
+ * <comment>` per remark. Splitting them again is presentation only: the wire
+ * format is what the model reads and is not changed for the sake of the card.
+ *
+ * Entries are cut at a line STARTING a new `[Re: "`, never at every newline: a
+ * comment is a textarea and may hold several lines. Anything that does not parse
+ * leaves the whole feedback as a plain note, which is the truthful fallback for
+ * a plan refused from a terminal or by another client.
+ */
+export function parsePlanFeedback(feedback: string): PlanFeedback {
+  const at = feedback.lastIndexOf(COMMENTS_MARKER);
+  if (at < 0) return { note: feedback.trim() || null, comments: [] };
+  const note = feedback.slice(0, at).trim();
+  const body = feedback.slice(at + COMMENTS_MARKER.length).trim();
+  const comments: PlanFeedbackComment[] = [];
+  for (const entry of body.split(/\n(?=\[Re: ")/)) {
+    const m = /^\[Re: "([\s\S]*?)"(?: · under "([\s\S]*?)")?\]\s*([\s\S]*)$/.exec(entry.trim());
+    if (!m) return { note: feedback.trim() || null, comments: [] };
+    comments.push({ quote: m[1], heading: m[2] ?? null, text: m[3].trim() });
+  }
+  if (comments.length === 0) return { note: feedback.trim() || null, comments: [] };
+  return { note: note || null, comments };
+}
+
 /** The first `# heading` of a plan. Mirrors `planTitle` on the server. */
 export function planTitle(markdown: string): string | null {
   const m = /^#\s+(.+)$/m.exec(markdown);

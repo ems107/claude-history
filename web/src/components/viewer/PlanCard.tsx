@@ -1,7 +1,7 @@
 import type { ContentBlock } from '@claude-history/shared';
 import { useState } from 'react';
 import { formatTokens } from '../../lib/cost.ts';
-import type { ParsedPlan } from '../../lib/plans.ts';
+import { type ParsedPlan, parsePlanFeedback } from '../../lib/plans.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -64,10 +64,57 @@ export function PlanCard({ parsed }: { parsed: ParsedPlan }) {
           <Markdown text={parsed.text} />
         </div>
       )}
-      {parsed.feedback && (
-        <div className="mt-2 border-l-2 border-amber-500/40 pl-2.5">
-          <div className="text-[10px] font-semibold tracking-wider text-amber-400/80 uppercase">the user said</div>
-          <div className="mt-0.5 text-sm whitespace-pre-wrap text-[var(--text)]">{parsed.feedback}</div>
+      {parsed.feedback && <PlanFeedbackPanel feedback={parsed.feedback} />}
+    </div>
+  );
+}
+
+/**
+ * What the user sent back with the plan, drawn as the two things it is.
+ *
+ * The transcript keeps one string — the note and the passage comments glued
+ * together in the shape Claude was given them ([AI_AGENTS_QUESTIONS_PLANS.md]) —
+ * and printed raw it was a wall of `[Re: "…" · under "…"]` brackets, which is a
+ * wire format on a page. `parsePlanFeedback` takes it apart and each remark is
+ * drawn the way the composer's own list draws it: the passage quoted, where it
+ * was, then what was asked for. Nothing is hidden — a feedback that does not
+ * parse (a refusal typed in a terminal, another client's wording) is printed
+ * exactly as before.
+ */
+function PlanFeedbackPanel({ feedback }: { feedback: string }) {
+  const { note, comments } = parsePlanFeedback(feedback);
+  return (
+    <div className="mt-2 border-l-2 border-amber-500/40 pl-2.5">
+      <div className="text-[10px] font-semibold tracking-wider text-amber-400/80 uppercase">
+        the user said
+        {comments.length > 0 && (
+          <span className="ml-1.5 text-[var(--text-dim)] normal-case">
+            · {comments.length} comment{comments.length === 1 ? '' : 's'} on the plan
+          </span>
+        )}
+      </div>
+      {note && <div className="mt-0.5 text-sm whitespace-pre-wrap text-[var(--text)]">{note}</div>}
+      {comments.length > 0 && (
+        <div className="mt-1 space-y-1">
+          {comments.map((c, i) => (
+            <div key={i} className="rounded border border-[var(--border)] px-2 py-1 text-xs">
+              <div className="flex items-baseline gap-1.5">
+                <span aria-hidden className="shrink-0 text-[10px] text-[var(--text-dim)]">
+                  {i + 1}
+                </span>
+                {/* The passage, not a link: this is a plan that has already been
+                    answered, and the copy it quotes may not be the copy on disk
+                    any more (the file is overwritten). */}
+                <span className="min-w-0 truncate text-[11px] text-[var(--text-dim)] italic">“{c.quote}”</span>
+                {c.heading && (
+                  <span className="shrink-0 rounded bg-[var(--bg)] px-1 py-px text-[10px] text-[var(--text-dim)]">
+                    {c.heading}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 whitespace-pre-wrap text-[var(--text)]">{c.text}</div>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -50,6 +50,35 @@ export function commentsFeedback(comments: PlanComment[]): string {
   return `Comments on the plan:\n${lines.join('\n')}`;
 }
 
+/**
+ * The selection grown out to whole words.
+ *
+ * A drag ends where the mouse came up, so a real reader's selection routinely
+ * starts and finishes mid-word — `d porque, según CLAUDE.md d` was a live one.
+ * As a quote that is both ugly to read and a worse anchor: it is the text Claude
+ * is asked to find in its own plan. Only the two ends are touched, and only
+ * while both sides of them are word characters, so a selection that already
+ * lands on a boundary is left exactly where it was.
+ */
+function snapToWords(range: Range): Range {
+  const word = /[\p{L}\p{N}_]/u;
+  const snapped = range.cloneRange();
+  const { startContainer, endContainer } = snapped;
+  if (startContainer.nodeType === Node.TEXT_NODE) {
+    const data = (startContainer as Text).data;
+    let at = snapped.startOffset;
+    while (at > 0 && word.test(data[at - 1] ?? '') && word.test(data[at] ?? '')) at--;
+    snapped.setStart(startContainer, at);
+  }
+  if (endContainer.nodeType === Node.TEXT_NODE) {
+    const data = (endContainer as Text).data;
+    let at = snapped.endOffset;
+    while (at < data.length && word.test(data[at] ?? '') && word.test(data[at - 1] ?? '')) at++;
+    snapped.setEnd(endContainer, at);
+  }
+  return snapped;
+}
+
 /** Every text node under `root`, in document order — the string the offsets index. */
 function textNodesIn(root: HTMLElement): Text[] {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -183,9 +212,17 @@ export function PlanReview({
       setPending(null);
       return;
     }
-    const range = sel.getRangeAt(0);
-    const quote = sel.toString().trim();
-    if (!quote || !root.contains(range.commonAncestorContainer)) {
+    const range = snapToWords(sel.getRangeAt(0));
+    if (!root.contains(range.commonAncestorContainer)) {
+      setPending(null);
+      return;
+    }
+    // Put the grown selection back on screen: what is highlighted has to be
+    // what gets quoted, or the button appears to comment on something else.
+    sel.removeAllRanges();
+    sel.addRange(range);
+    const quote = range.toString().trim();
+    if (!quote) {
       setPending(null);
       return;
     }
