@@ -10,6 +10,7 @@ import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
+import { NewSessionPage } from './pages/NewSessionPage.tsx';
 import { PlansPage } from './pages/PlansPage.tsx';
 import { PromptsPage } from './pages/PromptsPage.tsx';
 import { SessionListPage } from './pages/SessionListPage.tsx';
@@ -99,6 +100,11 @@ export function App() {
   // reader, and the answer never changes for the life of the server.
   const { data: meta } = useQuery({ queryKey: ['meta'], queryFn: api.meta });
   const dev = meta?.devInstance ?? false;
+  // Starting a session is the composer under another name — same process, same
+  // quota — so it appears exactly where the composer does. Free to read here:
+  // the usage widget keeps ['settings'] mounted for the life of the page.
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const chatEnabled = settings?.settings.chatEnabled ?? false;
   // Two tabs that look alike on two ports is the one way to confuse them, and
   // the tab strip is where they are told apart before anything is clicked.
   useEffect(() => {
@@ -143,6 +149,24 @@ export function App() {
           )}
         </span>
         <nav className="ml-4 flex items-center gap-1">
+          {/* Not a NavItem: everything else in this bar goes to a list of things
+              that already exist, and this one makes something. The border says
+              so before the label is read. */}
+          {chatEnabled && (
+            <NavLink
+              to="/new"
+              title="Start a new Claude Code session in any project"
+              className={({ isActive }) =>
+                `mr-2 rounded border px-2 py-0.5 text-sm ${
+                  isActive
+                    ? 'border-[var(--accent)] text-[var(--accent)]'
+                    : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'
+                }`
+              }
+            >
+              + New
+            </NavLink>
+          )}
           <NavItem to="/prompts" label="Prompts" />
           <NavItem to="/starred" label="Starred" />
           <NavItem to="/plans" label="Plans" />
@@ -168,6 +192,7 @@ export function App() {
       <main className="min-h-0 flex-1">
         <Routes>
           <Route path="/" element={<SessionListPage />} />
+          <Route path="/new" element={<NewSessionPage />} />
           <Route path="/session/:id" element={<SessionViewPage />} />
           <Route path="/prompts" element={<PromptsPage />} />
           <Route path="/starred" element={<StarredPage />} />

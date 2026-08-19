@@ -156,8 +156,11 @@ export function Composer({
    * (any width with room around it), the row keeps its own padding and nothing
    * moves. Both cases are one `max()`, which also means resizing the window
    * needs no measuring and no re-render.
+   *
+   * Omitted where there is no pill to dodge — the new-session page, which has no
+   * conversation to follow — and then the row simply keeps its own padding.
    */
-  columnWidth: string;
+  columnWidth?: string;
   /** The prompt was accepted by the server; show it before the transcript has it. */
   onSent?: (text: string) => void;
   /**
@@ -395,7 +398,11 @@ export function Composer({
           />
           <div
             className="flex items-center gap-1 px-2 pt-0.5 pb-2"
-            style={{ paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }}
+            style={
+              columnWidth
+                ? { paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }
+                : undefined
+            }
           >
             {/* No running CLI, no model list — so instead of a stale guess,
                 the offer to go and get the real one. Sending works without it:

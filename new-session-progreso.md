@@ -202,7 +202,7 @@ Orden previsto:
 > Fichero temporal. Se borra a mano antes de cerrar el trabajo.
 
 - [x] 1. Tipos en `shared` + drafts y `create()` en `sessionChat.ts` + rutas
-- [ ] 2. `NewSessionPage`, ruta `/new`, botón de cabecera, `columnWidth` opcional
+- [x] 2. `NewSessionPage`, ruta `/new`, botón de cabecera, `columnWidth` opcional
 - [ ] 3. Documentación (`AI_RUNNING_CLAUDE.md`, `AI_ARCHITECTURE.md`, `CLAUDE.md`, check 37)
 
 ### Medido, no supuesto
@@ -225,3 +225,18 @@ entrecomillada estilo Windows → 200 · `GET /api/sessions/<draft>` 404 mientra
 200 con `draft: true` · primer prompt → transcripción con ese uuid, `draft` pasa a `false` · dos prompts
 seguidos → `queued: 1` y en orden, un solo `.jsonl` con 3 turnos · `chat/stop` no deja huérfanos (pids de
 `claude.exe` idénticos antes y después).
+
+### Verificado en Chrome (CDP)
+
+Botón `+ New` en la cabecera → `/new` → 19 proyectos en el desplegable más `Another folder…` → una ruta
+relativa se rechaza con su frase al lado de la caja y la página no avanza → una carpeta nueva de verdad
+reserva el id y aparece el composer → primer prompt: eco `sending…`, indicador de trabajo encendido →
+salto solo a `/session/<id>` con la respuesta ya dibujada desde la transcripción (2 `[data-bubble]`, el
+composer del visor al pie). Sin huérfanos de `claude.exe`.
+
+### Modo plan en el primer prompt
+
+Sesión creada directamente en `plan`: el estado lo refleja desde el primer instante (`permissionMode:
+plan` con `state: starting`), y llega un `ExitPlanMode` real con el plan leído de
+`~/.claude/plans/<slug>.md` (460 caracteres, markdown). *Keep planning* con nota se acepta. Es el caso
+que solo existe aquí: el picker de modo trabajando sin ningún CLI arrancado.

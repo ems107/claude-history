@@ -3,6 +3,8 @@ import type {
   AuthStatusResponse,
   AutoReloadRun,
   AutoReloadStatus,
+  ChatCreateRequest,
+  ChatCreateResponse,
   ChatPermissionMode,
   ChatPlanDecision,
   ChatSendRequest,
@@ -234,6 +236,19 @@ export const api = {
     const body = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
+  },
+  // Reserves the id a new conversation will have, and says where it will run.
+  // Starts nothing: the CLI comes up with the first prompt, like any other
+  // session — this only exists so the page knows which transcript to wait for.
+  chatCreate: async (body: ChatCreateRequest) => {
+    const res = await fetch('/api/chat/new', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = (await res.json()) as ChatCreateResponse & { error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload;
   },
   chatStatus: (id: string) => getJson<ChatStatusResponse>(`/api/sessions/${id}/chat`),
   // Answers as soon as the prompt has been written to the process, not when
