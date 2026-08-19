@@ -14,6 +14,8 @@ Line-level format is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) (task notificatio
 - **`annotations` is the only copy of a note** written beside a pick.
 - **Picks AND free text in one answer is a multiSelect shape** — a single-choice question has one answer slot.
 - **Read an option's drawing from the tool INPUT** (the echoed `questions` are stripped), render it in a `<pre>`, never through markdown.
+- **An agent's transcript is refreshed by the `agents` list of `sessions-changed`** — its own query key, which nothing else on the page reaches.
+- **`running` is the session being mid-turn plus a silence that MEANS something** — a missing report says "not yet" only where we hold the transcript it would land in.
 - **A plan's verdict is the TYPE of `toolUseResult`**, not its wording.
 - **The `plans/<slug>.md` file is a working copy that gets overwritten** — the transcript is the archive.
 
@@ -45,6 +47,20 @@ Sibling directory: `<sessionUuid>/subagents/agent-<17hex>.jsonl` + `agent-<17hex
 Those reports only exist because a notification inside a subagent transcript is written `isMeta: true`; if they come back empty, that rule regressed ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#task-notifications)).
 
 **The agent id is written on screen** — on the row and in the drawer header — and indexed like a session's ([AI_SEARCH.md](AI_SEARCH.md)). It is what the URL carries and what a notification calls the agent; while it appeared nowhere on the page there was no way back from the string to the thing.
+
+### A running agent
+
+All of the above is written as archaeology, and an agent that is working right now is the same three artifacts arriving one line at a time. The panel and the drawer are windows on that, not photographs of it.
+
+**The watcher already sees those writes; the event is what had to learn to name them.** `subagents/*.jsonl` sits under `projects/`, which is watched recursively, and `ScannedSession.subagentBytes` is compared on every rescan — that is how a session's spend stops being stale ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)). But "some agent under this session wrote" cannot be acted on: with the list open, every agent of the session is a mounted query of 350-500 KB. So the scan keeps the bytes **per agent** (`subagentSizes`), `rescan` diffs that map, and `sessions-changed` carries `agents: {sessionId, agentId}[]` — measured over one live agent: 42 events, 15 naming none, 27 naming exactly the one that was writing and never another.
+
+**What `running` means, and it is not a guess.** An agent has no status on disk: it shares its parent's process, so nothing writes `busy` for it. The only thing that says it has finished is the report it hands back — so `running` is the session mid-turn AND that report absent. `rowStatus(row, busy)` is the rule, and it claims `running` only where the absence is evidence:
+
+- **The call has to be in the transcript we are reading.** A nested agent reports inside the agent that spawned it and a `/branch` fork copies no calls at all; there, silence says nothing and the answer stays `unknown`. The panel does better for a nested row, because the tree it draws was built by reading that parent — so it applies the same rule to `nesting.reportStatus`. The drawer, opened on a nested agent, draws no indicator, and that is the honest answer rather than a smaller lie.
+- **This must not be hung off the enrichment.** The enricher streams every one of these files already and could collect the `<task-id>`s, closing the nested case — but enrichment lands *late by design* (`enrichment: null` while a grown session is re-parsed, ~105 ms per message), so the indicator would blink out on every line written. An indicator that flickers lies twice.
+- **There is a hole at the end and it is the format's.** The report is written into the parent when the parent receives it, so between an agent finishing and its notification landing the drawer still says `working`. That is the same hole the harness has; there is nothing fresher to read.
+
+**The drawer follows the end while it is working**, with the conversation's own pill and hook — an agent's transcript is opened to watch it work — and the row it draws is the conversation's own indicator with the agent's clocks in it ([AI_VIEWER.md](AI_VIEWER.md#the-same-row-inside-a-subagents-drawer)).
 
 ## Offloaded tool outputs
 

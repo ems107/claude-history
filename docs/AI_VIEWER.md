@@ -653,6 +653,8 @@ to the keyframes.
 
 **It takes its status from the `['live']` query, NOT from `detail.summary.live`**, though both carry the same field. `['session', id]` is invalidated by `sessions-changed` — the transcript grew — while the busy/idle flip is a write under `~/.claude/sessions` and fires only `live-changed`. Read off the detail, the indicator would hang on "working" after the turn's last line was written, and the alternative (re-parsing a multi-MB transcript on every status flip) is absurd next to a query that reads two small files.
 
+**Whether anything is working, and since when, are the CALLER's answers.** The row takes a `since` and draws seconds; it knows nothing about a session. A session reads both off `~/.claude/sessions` — `isWorking` and `workingSince`, kept beside each other because they are one reading — and a subagent has no file there at all, sharing its parent's process, so it reads its own transcript instead. The signature used to be a `LiveInfo`, which the new-session page had to forge with six null fields to hand over one timestamp.
+
 **It hangs on the last turn's RAIL, as a `footer`, not after the list.** An answer being written belongs where the answers are: rendered at root level it lined up with the prompt instead of with the replies, reading as a sibling of the question rather than as the response arriving (checked: left 262 px, identical to the assistant bubbles, against the prompt's 236). A turn that has produced nothing yet — the state of every session for the first seconds after a prompt — grows a rail of its own from the same `RAIL` constant.
 
 It is still **NOT an item**: it never enters `turn.items`, so nothing that folds, counts or prices a message can see it. It is passed only while there is something to draw (`isWorking`), or the rail would be a stray green line down the page, and a folded turn shows it anyway — live news must not be hidden by a collapsed turn. `TurnList` picks the turn: the last group of the live segment, and only when that group is `live`, because hanging it off a rewound-away branch would say the abandoned exchange is the one being answered.
@@ -747,6 +749,14 @@ and could only be the turn.
   has no conversation to follow and so no pill, and passing a width there would
   have bought a gutter against nothing — the mistake this bullet is about, one
   component along.
+
+### The same row inside a subagent's drawer
+
+An agent's transcript is a conversation and gets watched like one, so the drawer hangs the same footer off the same `TurnList` ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md#a-running-agent)). Three readings change their source and none changes its meaning:
+
+- **`total` counts from the agent's own first line** (`turnActivity().startedAt`), and its hover says `Sent out` rather than `Turn started`. Nothing else could say when it began: there is no `<pid>.json` for an agent, and its first line IS its brief.
+- **Whether it is working is the page's answer**, not the drawer's — the session mid-turn plus a report that has not come back. Where that silence says nothing the row is not drawn at all; the rule and its one blind spot live with the panel.
+- **The pill's corner is bought with bottom padding** (`pb-14`) instead of the `max()` over `columnWidth`. That arithmetic compares the column with the WINDOW, which only locates the pill for a column centred in it; this one is a 44 rem panel pinned to the right edge. Emptying the band the pill floats in (16 px off the foot plus its own 30) is the same fix with no arithmetic in it — and it is why the drawer's scroller pads the bottom and not the sides.
 
 ## Verify
 

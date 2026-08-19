@@ -53,6 +53,8 @@ The rest, each documented where it belongs: `updates` (self-update lifecycle —
 
 **Cache invalidation has two keys, not one.** (path, size, mtimeMs) cannot see an agent writing another answer, which changes what a session cost without touching a byte of its file — hence `ScannedSession.subagentBytes`, compared by both `rescan()` and `enrichOne()`. Schema changes are handled by bumping `CACHE_VERSION`, after which `/api/meta` must report `cacheHits: 0` and a full re-enrich.
 
+**An event that fires often has to say what moved.** `sessions-changed` is the busiest one — every write of every live session — and it carries two classifications so the browser can refetch narrowly: `assistantIds`, the sessions where Claude actually answered (the only ones worth a subscription read), and `agents`, the subagent transcripts that grew, each with its session. `ScannedSession.subagentSizes` is what answers the second, because the total above can only say *some* agent wrote, and a session with eleven of them is eleven separate conversations of 350-500 KB behind their own query keys ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md#a-running-agent)). Neither field is a payload: they name what to ask for.
+
 ### `server/src/routes/`
 
 REST endpoints; the response shapes are in `shared/src/api.ts` and are not restated here.
