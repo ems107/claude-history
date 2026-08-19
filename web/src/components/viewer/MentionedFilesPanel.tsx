@@ -187,9 +187,11 @@ function MentionRowView({
         }
       >
         {/* The label is a promise about the press, so it names the DESTINATION —
-            `↑ 2/4` takes you to the second. The count matches the `×N` beside the
-            filename by construction: both are `messages.length`. */}
-        {places > 1 ? `↑ ${String(next + 1)}/${String(places)}` : '↑ the mention'}
+            `↑ 2/4 mentions` takes you to the second of four. The count matches the
+            `×N` beside the filename by construction: both are `messages.length`.
+            The noun is there because `↑ 1/2` alone is a fraction of nothing in
+            particular, and the row already carries three other numbers. */}
+        {places > 1 ? `↑ ${String(next + 1)}/${String(places)} mentions` : '↑ 1 mention'}
       </button>
     </div>
   );
