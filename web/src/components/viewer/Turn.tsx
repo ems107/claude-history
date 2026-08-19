@@ -17,6 +17,7 @@ import { CostPill } from './CostPill.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { InjectedNotice } from './InjectedNotice.tsx';
+import { InterruptMarker } from './InterruptMarker.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
 import { PlanCard, PlanModeMarker } from './PlanCard.tsx';
@@ -394,6 +395,14 @@ function SystemItem({ item }: { item: MessageItem }) {
       <div id={item.uuid}>
         <Anchors item={item} />
         <CompactBoundaryPanel boundary={first.boundary} />
+      </div>
+    );
+  }
+  if (first?.kind === 'interrupt') {
+    return (
+      <div id={item.uuid}>
+        <Anchors item={item} />
+        <InterruptMarker block={first} />
       </div>
     );
   }

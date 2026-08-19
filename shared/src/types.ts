@@ -519,6 +519,25 @@ export type ContentBlock =
       result: string | null;
     }
   /**
+   * The user pressing stop: Claude Code closes the turn by writing
+   * `[Request interrupted by user]` as a `user` line, and it wears the same
+   * shape a real message does — an ARRAY holding one `text` block, the marker
+   * and nothing else, no `origin`, `isMeta` false, and the interrupted turn's
+   * own `promptId`. All 9 in this corpus are exactly that, so the text is the
+   * only discriminator there is; a typed prompt cannot be confused with one
+   * because a typed prompt is a string.
+   *
+   * Read as the prompt it looks like, it opened a turn of its own and drew a
+   * bubble saying words the user never typed — and `isPromptItem` counted it, so
+   * every fold header above it said one prompt too many.
+   *
+   * `forToolUse` is the `… for tool use` wording (3 of the 9): the stop landed
+   * on a tool call rather than on prose. Both flavours only ever follow a
+   * `tool_result` or a prompt, never open a turn, and are the last thing in the
+   * one they close.
+   */
+  | { kind: 'interrupt'; forToolUse: boolean }
+  /**
    * The session entering or leaving plan mode. Claude Code records it as an
    * `attachment` line of its own — with a uuid and a timestamp, unlike the
    * `permission-mode` sidecar, which carries neither and can only be read

@@ -47,6 +47,12 @@ function systemLines(item: MessageItem): string[] {
       '',
     ];
   }
+  // Not chrome: without it the reply above just ends mid-sentence for no stated
+  // reason. Which is why the caller exports this one whatever the system option
+  // says.
+  if (first?.kind === 'interrupt') {
+    return [`> ⏹ **Interrupted** — the user stopped Claude ${first.forToolUse ? 'at a tool call' : 'mid-answer'}.`, ''];
+  }
   if (first?.kind === 'plan-mode') {
     const label = {
       enter: 'Entered plan mode',
@@ -247,7 +253,7 @@ export function buildMarkdown(detail: SessionDetail, opts: ExportOptions): strin
     }
     for (const item of turn.items) {
       if (item.role === 'system') {
-        if (opts.includeSystem) out.push(...systemLines(item));
+        if (opts.includeSystem || item.blocks[0]?.kind === 'interrupt') out.push(...systemLines(item));
         continue;
       }
       out.push(...contentLines(item, item.blocks, opts, true));

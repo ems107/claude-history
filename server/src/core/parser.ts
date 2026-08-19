@@ -32,6 +32,25 @@ const NOTIFICATION_ORIGIN = 'task-notification';
 /** Stands in for the uuid of a line that carried none — never part of the message tree. */
 const GEN_UUID_PREFIX = 'gen-';
 
+/**
+ * The two markers Claude Code writes when the user presses stop, and the whole
+ * test: an array-content `user` line whose one text block is exactly one of
+ * these (see the `interrupt` block in `types.ts`). Matched on the text because
+ * nothing else on the line differs from a message somebody wrote.
+ */
+const INTERRUPT_MARKERS: Record<string, { forToolUse: boolean }> = {
+  '[Request interrupted by user]': { forToolUse: false },
+  '[Request interrupted by user for tool use]': { forToolUse: true },
+};
+
+/** The stop marker a `user` line carries, or null for every other line. */
+function interruptOf(content: unknown): { forToolUse: boolean } | null {
+  if (!Array.isArray(content) || content.length !== 1) return null;
+  const only = content[0];
+  if (!isRec(only) || only.type !== 'text' || typeof only.text !== 'string') return null;
+  return INTERRUPT_MARKERS[only.text.trim()] ?? null;
+}
+
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
 /** An `image` content block, from either envelope a pasted image arrives in. */
@@ -749,6 +768,27 @@ export async function parseTranscript(
         continue;
       }
       const content = o.message.content;
+
+      // The user pressing stop. It has to go before the array branch below,
+      // which would read the marker as prose and draw a prompt bubble saying
+      // words nobody typed. It JOINS the open turn rather than starting one:
+      // the line carries that turn's own `promptId` and is the last thing in
+      // it, so a turn of its own left the interrupt claiming a badge and a
+      // count that belong to the prompt above.
+      const interrupt = interruptOf(content);
+      if (interrupt) {
+        // `ensureTurn` would lose the promptId of a stop that arrives with no
+        // turn open at all — the first thing in `803312ad`, whose prompt is in
+        // an earlier run.
+        const turn = current ?? newTurn(str(o.promptId));
+        turn.items.push({
+          ...blankItem(o, carriedOver, runId),
+          role: 'system',
+          systemSubtype: 'interrupted',
+          blocks: [{ kind: 'interrupt', forToolUse: interrupt.forToolUse }],
+        });
+        continue;
+      }
 
       if (typeof content === 'string') {
         // Injected by Claude Code, not typed: a background command reporting

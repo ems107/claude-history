@@ -12,6 +12,7 @@ Related: token and cost fields are in [AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTE
 - **Encoded directory names are lossy — never decode one.** The project path comes from `cwd`.
 - **The FIRST `cwd` of a session is its project**, not the last.
 - **`origin.kind` decides who wrote a `user` line.** Not the content type, not `promptSource`.
+- **`[Request interrupted by user]` is the user pressing stop, not a message** — and the text is the only thing that says so.
 - **A uuid seen twice is a replay of the first** — every full parse must drop it.
 - **The file is a TREE.** Walk `parentUuid` from the last line; bridge compactions with `logicalParentUuid`; resolve an edge to the LAST occurrence of the parent.
 - **Take the LAST occurrence of any sidecar** (they are re-appended per turn) and dedupe.
@@ -133,6 +134,16 @@ Two things arrive in that envelope, and both were being lost. 65 `queued_command
 **Its `timestamp` is when it was TYPED, not when it was sent** (13:44:06 against a turn that ended at 13:44:45 in `15a86025`), so it is legitimately older than the answer above it. `MessageItem.queued` carries that to the viewer.
 
 **It does NOT open a turn — it joins the one already open** (`ensureTurn`). Claude Code agrees: the `last-prompt` written straight after delivery still names the PREVIOUS prompt, in both cases here. A turn of its own cut the conversation where nothing had ended — in `b343d4ac` the line lands between a `tool_result` and three more `tool_use` calls of one piece of work. Drawn inside the thread its clock also stops reading backwards. It cuts the tool run it landed in, and for once that is free: the cut falls BETWEEN items, never inside one, so no assistant message has its calls split across two runs and `costOwner` has nothing to undo (checked: priced entries equal assistant-messages-with-usage, 13/75/609/736, zero double-billed).
+
+### The stop marker (`[Request interrupted by user]`)
+
+**When the user presses stop, Claude Code closes the turn by writing a `user` line that looks exactly like a message**: `message.content` an ARRAY holding one `text` block, the marker and nothing else, no `origin`, `isMeta` false. Two wordings, 9 lines over 7 sessions here — `[Request interrupted by user]` (6) and `[Request interrupted by user for tool use]` (3), the second when the stop landed on a tool call.
+
+**So the text IS the discriminator, and nothing else on the line is**: `origin.kind` says "the human typed it" (there is no origin), the array shape says "tool results" (there are none), and read either way it became a prompt bubble quoting words nobody wrote — plus a prompt in every count above it. A typed prompt can never be confused with one: a typed prompt is a string ([Who wrote a `user` line](#who-wrote-a-user-line)).
+
+**It carries the interrupted turn's own `promptId` and JOINS that turn** (9 of 9). It is always the last thing in it, always follows a `tool_result` or the prompt itself, and a turn of its own left it holding the turn's cost badge — the badge belongs to the prompt above. `803312ad` is the one that arrives with no turn open in this run, so the `promptId` is still worth keeping.
+
+The reply it cut short is billed and stays; what follows is often an assistant line reading `No response requested.` — an artefact of the SDK, not an answer.
 
 ## The tree: rewinds, forks and replays
 
