@@ -326,7 +326,7 @@ export function SessionHeader({
             className={toggleClass(showSentFiles)}
             title="Files this session handed over: delivered to you with SendUserFile, published as an artifact, or written as a plan — with the state of each on disk right now"
           >
-            📎 Sent Files ({sentFileCount})
+            Sent Files ({sentFileCount})
           </button>
         )}
         {detail.subagents.length > 0 && (

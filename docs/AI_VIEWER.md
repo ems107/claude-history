@@ -462,7 +462,7 @@ The `100%` keyframe names no `border-color`: an omitted property takes the eleme
 
 ## The two file panels
 
-The header carries two, and the words are the feature: **`Changed Files`** is what the session EDITED (`detail.fileChanges`, built server-side from `Edit`/`Write`/`NotebookEdit`/`MultiEdit`) and **`📎 Sent Files`** is what it HANDED OVER. While the first was called plain `Files` the second had no name left to take, and neither one is the other's superset — a delivered screenshot was never edited, an edited source was never delivered.
+The header carries two, and the words are the feature: **`Changed Files`** is what the session EDITED (`detail.fileChanges`, built server-side from `Edit`/`Write`/`NotebookEdit`/`MultiEdit`) and **`Sent Files`** is what it HANDED OVER. While the first was called plain `Files` the second had no name left to take, and neither one is the other's superset — a delivered screenshot was never edited, an edited source was never delivered.
 
 **What the second one lists is collected in the browser, and that is the point.** `collectSessionFiles` (`lib/sessionFiles.ts`, pure) reads three things out of `turns`: `parseSentFiles` for a delivery — the SAME parser the card and the markdown export use, so the three cannot drift about what was sent — `Artifact`'s `file_path` for a publish, and `planFilePath` / `PlanOutcome.filePath` for the plan `.md`. Nothing about it needs the server: the calls, their results and the plan-mode lines are all already in the payload, so there is no new field on `SessionDetail`, no parser change and **no `CACHE_VERSION` bump** (checked: `/api/meta` still reads its hits after this shipped).
 
