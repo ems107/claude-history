@@ -1,9 +1,17 @@
-import type { ChatPermissionMode, LiveInfo, MessageItem, SubagentMeta, Turn } from '@claude-history/shared';
+import {
+  MAX_STAT_PATHS,
+  type ChatPermissionMode,
+  type LiveInfo,
+  type MessageItem,
+  type SubagentMeta,
+  type Turn,
+} from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
-import { FILE_PARAM, type FileRef, formatFileRef, parseFileRef } from '../lib/fileRefs.ts';
+import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
+import { collectMentionedFiles, filterMentions } from '../lib/mentionedFiles.ts';
 import { useFoldState } from '../lib/folding.ts';
 import { anchorOfKey, focusKeyAt, parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
@@ -15,6 +23,7 @@ import { Composer } from '../components/viewer/Composer.tsx';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FindBar, useFindBar } from '../components/viewer/FindBar.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
+import { MentionedFilesPanel } from '../components/viewer/MentionedFilesPanel.tsx';
 import { SessionFilesPanel } from '../components/viewer/SessionFilesPanel.tsx';
 import { FileRefContext, type FileRefContextValue } from '../components/viewer/FileRefContext.ts';
 import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
@@ -97,6 +106,7 @@ export function SessionViewPage() {
   const [showLineage, setShowLineage] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [showSentFiles, setShowSentFiles] = useState(false);
+  const [showMentions, setShowMentions] = useState(false);
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
@@ -390,6 +400,51 @@ export function SessionViewPage() {
    */
   const sessionFiles = useMemo(() => collectSessionFiles(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
 
+  /**
+   * And every path the answers merely NAMED. Three steps rather than one, because
+   * this is the panel whose count is not a fact of the transcript:
+   *
+   * 1. the candidates, from the transcript alone — enough to know whether the
+   *    button exists at all;
+   * 2. the disk, asked ONCE and only after the panel is first opened, so a
+   *    session nobody asks about costs nothing;
+   * 3. the filter, which is where most of them go: a path in prose usually
+   *    resolves to nothing, and what the other two panels already list is not
+   *    news here.
+   */
+  const mentionCandidates = useMemo(
+    () => collectMentionedFiles(detail.data?.turns ?? EMPTY_TURNS),
+    [detail.data],
+  );
+  // Capped at what the endpoint accepts, and what is over the cap is REPORTED by
+  // the panel rather than dropped in silence.
+  const mentionRefs = useMemo(() => mentionCandidates.slice(0, MAX_STAT_PATHS).map((c) => c.ref), [mentionCandidates]);
+  const mentionStats = useQuery({
+    queryKey: ['fileStats', id, mentionRefs],
+    queryFn: () => api.fileStats(id, mentionRefs),
+    enabled: showMentions && mentionRefs.length > 0,
+    staleTime: 30_000,
+  });
+  /** What the other two panels already hold — absolute, normalised, one lookup. */
+  const listedPaths = useMemo(() => {
+    const set = new Set<string>();
+    for (const fc of detail.data?.fileChanges ?? []) set.add(normalisePath(fc.path));
+    for (const row of [...sessionFiles.sent, ...sessionFiles.artifacts, ...sessionFiles.plans]) set.add(row.key);
+    return set;
+  }, [detail.data, sessionFiles]);
+  const mentioned = useMemo(
+    () =>
+      mentionStats.data
+        ? filterMentions(
+            mentionCandidates.slice(0, MAX_STAT_PATHS),
+            mentionStats.data.files,
+            listedPaths,
+            mentionCandidates.length - mentionRefs.length,
+          )
+        : null,
+    [mentionStats.data, mentionCandidates, mentionRefs.length, listedPaths],
+  );
+
   const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const items = (detail.data?.turns ?? []).flatMap((t) => t.items);
     const blocks = items.flatMap((i) => i.blocks);
@@ -597,6 +652,10 @@ export function SessionViewPage() {
             showSentFiles={showSentFiles}
             onToggleSentFiles={() => setShowSentFiles((v) => !v)}
             sentFileCount={sessionFiles.total}
+            showMentions={showMentions}
+            onToggleMentions={() => setShowMentions((v) => !v)}
+            mentionCount={mentioned ? mentioned.rows.length : null}
+            mentionCandidates={mentionCandidates.length}
             showAgents={agentsOpen}
             onToggleAgents={toggleAgents}
             findOpen={finder.isOpen}
@@ -618,6 +677,14 @@ export function SessionViewPage() {
               sessionId={id}
               files={sessionFiles}
               onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
+              onGoToMessage={(uuid) => jumpTo('msg', uuid)}
+            />
+          )}
+          {showMentions && (
+            <MentionedFilesPanel
+              data={mentioned}
+              pending={mentionStats.isPending && mentionRefs.length > 0}
+              error={mentionStats.isError ? String(mentionStats.error) : null}
               onGoToMessage={(uuid) => jumpTo('msg', uuid)}
             />
           )}

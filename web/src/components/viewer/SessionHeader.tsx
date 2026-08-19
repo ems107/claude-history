@@ -119,6 +119,10 @@ export function SessionHeader({
   showSentFiles,
   onToggleSentFiles,
   sentFileCount,
+  showMentions,
+  onToggleMentions,
+  mentionCount,
+  mentionCandidates,
   showAgents,
   onToggleAgents,
   findOpen,
@@ -157,6 +161,20 @@ export function SessionHeader({
    * calculation — two collectors would eventually disagree.
    */
   sentFileCount: number;
+  showMentions: boolean;
+  onToggleMentions: () => void;
+  /**
+   * The FILTERED count, or null before it can be known.
+   *
+   * The odd one out in this row, and it has to be. Every other count is a fact of
+   * the transcript; this one is what survives being checked against the disk, and
+   * only the server can say. So the button opens without a number and takes one
+   * the first time it is pressed — an honest silence beats a figure that promises
+   * fourteen rows and draws one.
+   */
+  mentionCount: number | null;
+  /** How many paths were named at all: whether the button exists is a transcript fact. */
+  mentionCandidates: number;
   showAgents: boolean;
   onToggleAgents: () => void;
   findOpen: boolean;
@@ -327,6 +345,16 @@ export function SessionHeader({
             title="Files this session handed over: delivered to you with SendUserFile, published as an artifact, or written as a plan — with the state of each on disk right now"
           >
             Sent Files ({sentFileCount})
+          </button>
+        )}
+        {mentionCandidates > 0 && (
+          <button
+            type="button"
+            onClick={onToggleMentions}
+            className={toggleClass(showMentions)}
+            title="Files this session only talked about: paths its answers named, that are on disk and in neither of the other two panels. Most of what an answer names is a partial path or a placeholder, so the number is what survived being looked for — press to find out."
+          >
+            Mentioned{mentionCount === null ? '' : ` (${mentionCount})`}
           </button>
         )}
         {detail.subagents.length > 0 && (

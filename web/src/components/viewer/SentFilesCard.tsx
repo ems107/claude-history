@@ -1,22 +1,10 @@
 import { parseFileRef } from '../../lib/fileRefs.ts';
 import { folderTail, formatBytes } from '../../lib/format.ts';
 import type { SentFile, SentFiles } from '../../lib/sentFiles.ts';
+import { Chip } from './Chip.tsx';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
 
-/** A chip that only exists when it has something to say. */
-function Chip({ children, tone, title }: { children: string; tone: 'quiet' | 'warn'; title: string }) {
-  return (
-    <span
-      title={title}
-      className={`shrink-0 rounded px-1.5 py-px text-[10px] font-semibold tracking-wide normal-case ${
-        tone === 'warn' ? 'bg-amber-500/15 text-amber-300' : 'bg-[var(--bg)] text-[var(--text-dim)]'
-      }`}
-    >
-      {children}
-    </span>
-  );
-}
 
 /**
  * One file: what it is called, what it was, and a way in.
