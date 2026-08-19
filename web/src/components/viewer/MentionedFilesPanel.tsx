@@ -242,7 +242,12 @@ export function MentionedFilesPanel({
       ))}
       {data && data.rows.length === 0 && (
         <div className="px-2 py-1 text-xs text-[var(--text-dim)]">
-          Nothing to show: this session’s answers named no file path at all.
+          {/* The only way to be here: the button exists because candidates were
+              found, a candidate that resolves to nothing is still a row, and a
+              folder is the one thing dropped — so an empty list means every path
+              the answers named was a directory. Saying that beats "nothing was
+              named", which would be false in the one case that can read it. */}
+          Nothing to show: every path this session’s answers named is a folder.
         </div>
       )}
       {data && <Dropped data={data} />}

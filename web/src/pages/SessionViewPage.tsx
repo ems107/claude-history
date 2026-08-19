@@ -425,10 +425,26 @@ export function SessionViewPage() {
   // Capped at what the endpoint accepts, and what is over the cap is REPORTED by
   // the panel rather than dropped in silence.
   const mentionRefs = useMemo(() => mentionCandidates.slice(0, MAX_STAT_PATHS).map((c) => c.ref), [mentionCandidates]);
+  /**
+   * Asked as soon as the session is read, and not on the first press.
+   *
+   * It was lazy, so that a reader who never looks at the panel paid nothing — and
+   * the price of that was a button reading `Mentioned` with no number until it had
+   * been opened once, which is the one thing in that row that could not say what
+   * it held. The count cannot be computed without this: which candidates are
+   * FOLDERS and which two spellings are one file are both answers only the disk
+   * has.
+   *
+   * What it costs is one local POST per session view, and only where the answers
+   * named a path at all: a `stat` per distinct path, tens of microseconds each,
+   * against a page that already makes half a dozen requests. Nothing waits for it
+   * — a slow path (a UNC share that is not answering) means a late number, never a
+   * late page.
+   */
   const mentionStats = useQuery({
     queryKey: ['fileStats', id, mentionRefs],
     queryFn: () => api.fileStats(id, mentionRefs),
-    enabled: showMentions && mentionRefs.length > 0,
+    enabled: mentionRefs.length > 0,
     staleTime: 30_000,
   });
   /**

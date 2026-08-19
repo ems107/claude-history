@@ -164,13 +164,14 @@ export function SessionHeader({
   showMentions: boolean;
   onToggleMentions: () => void;
   /**
-   * The FILTERED count, or null before it can be known.
+   * The FILTERED count, or null for as long as it cannot be known.
    *
-   * The odd one out in this row, and it has to be. Every other count is a fact of
-   * the transcript; this one is what survives being checked against the disk, and
-   * only the server can say. So the button opens without a number and takes one
-   * the first time it is pressed — an honest silence beats a figure that promises
-   * fourteen rows and draws one.
+   * The odd one out in this row: every other count is a fact of the transcript,
+   * while this one is what survives being checked against the disk — which
+   * candidates are folders, and which two spellings are one file. The page asks
+   * for that as soon as it has the transcript, so in practice the number is there
+   * before the header is read; null is the moment before the answer lands, and a
+   * button with no number is better than one promising rows it cannot draw.
    */
   mentionCount: number | null;
   /** How many paths were named at all: whether the button exists is a transcript fact. */
@@ -352,7 +353,7 @@ export function SessionHeader({
             type="button"
             onClick={onToggleMentions}
             className={toggleClass(showMentions)}
-            title="Files this session only talked about: paths its answers named, that are on disk and in neither of the other two panels. Most of what an answer names is a partial path or a placeholder, so the number is what survived being looked for — press to find out."
+            title="Files this session only talked about: the paths its own answers named. Most of what an answer names is written for a person to read — a partial path, a placeholder — so a row that finds nothing is listed and marked rather than hidden."
           >
             Mentioned{mentionCount === null ? '' : ` (${mentionCount})`}
           </button>
