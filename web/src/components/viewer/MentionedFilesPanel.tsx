@@ -100,10 +100,10 @@ function MentionRowView({
       {row.line !== null && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">:{row.line}</span>}
       {/* PLACES, not namings: `×4` counted occurrences at first, which promised
           four stops for a file that might have been named four times in a single
-          paragraph — while the jump can only ever land on one message. `hits` is
-          on the title. It is a note and not a button, because the jump itself now
-          leaves the find bar open on the way to them: two controls for one idea is
-          how a reader ends up pressing the wrong one. */}
+          paragraph — while a press can only ever land on one message. `hits` is on
+          the title. A note and not a button, because the jump beside it is the
+          control and carries the same N: two controls for one idea is how a reader
+          ends up pressing the wrong one. */}
       {places > 1 && (
         <span
           className="shrink-0 text-[10px] text-[var(--text-dim)]"

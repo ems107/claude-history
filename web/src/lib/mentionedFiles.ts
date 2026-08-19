@@ -178,7 +178,6 @@ export function mentionTerms(row: MentionCandidate): string[] {
   return row.ref === row.name ? [row.ref] : [row.ref, row.name];
 }
 
-
 /**
  * The mentions worth a row, and an honest account of the rest.
  *
@@ -236,6 +235,11 @@ export function filterMentions(
     }
     rows.set(resolved, {
       ...c,
+      // A COPY, because the merge above pushes into it. Spreading the candidate
+      // shares its array, so merging two spellings wrote into the collector's own
+      // memoised list — the panel happened to come out right, and a caller that
+      // read `messages.length` off a candidate would not have.
+      messages: [...c.messages],
       resolved: resolvedPath,
       exists: stat?.exists === true,
       sizeBytes: stat?.exists ? stat.sizeBytes : null,
