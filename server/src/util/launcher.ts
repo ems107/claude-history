@@ -361,7 +361,7 @@ $global:chOwner.Dispose()
  * you.** A dialog opened by a background process cannot take the foreground —
  * that belongs to whatever the user last clicked, which is the browser — so the
  * only thing that puts it where it can be seen is z-order. A topmost owner is
- * not enough: Windows propagates `WS_EX_TOPMOST` to the windows a owner ALREADY
+ * not enough: Windows propagates `WS_EX_TOPMOST` to the windows an owner ALREADY
  * has at the moment it becomes topmost, not to ones created afterwards, and the
  * dialog is always created afterwards. Measured both ways — with an unshown
  * owner and with a shown topmost one, `#32770 "Select Folder"` came up
@@ -375,6 +375,9 @@ $global:chOwner.Dispose()
  * which is the whole point. The owner is still shown and still topmost, 1×1 and
  * fully transparent at the centre of the working area, because the dialog
  * centres itself on its owner and an off-screen owner takes it off screen too.
+ * **Read the `-ne $own` test in the script before touching that timer** — it is
+ * the difference between raising the dialog and raising the invisible owner, and
+ * it only shows up on a cold start.
  *
  * `findShell()` prefers pwsh, which matters here beyond taste: on .NET the
  * dialog is the modern one, while Windows PowerShell 5.1 draws the old
@@ -389,10 +392,13 @@ export async function pickFolder(initial?: string): Promise<string | null> {
   picking = true;
   const out = path.join(os.tmpdir(), `claude-history-pick-${randomUUID()}.txt`);
   const scriptFile = `${out}.ps1`;
-  fs.writeFileSync(scriptFile, PICK_FOLDER_SCRIPT, 'utf8');
 
   let stderr = '';
   try {
+    // Inside the try, so the `finally` below always gets to release `picking`.
+    // Outside it, an unwritable temp dir would lock this for the life of the
+    // process — the same shape of bug as a host outliving its dialog.
+    fs.writeFileSync(scriptFile, PICK_FOLDER_SCRIPT, 'utf8');
     await new Promise<void>((resolve, reject) => {
       // stderr is captured and nothing else is: a script that cannot run writes
       // no file, which is indistinguishable from Cancel, and the whole failure
@@ -419,21 +425,18 @@ export async function pickFolder(initial?: string): Promise<string | null> {
         resolve();
       });
     });
-    // No file means Cancel, which is an answer and not a failure.
-    const chosen = fs.readFileSync(out, 'utf8').trim();
-    return chosen || null;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      // Unless the script said why it could not run — then no file means it
-      // never got as far as a dialog, and "cancelled" would be a lie.
+    // No file means Cancel — unless the script said why it could not run, and
+    // then it never got as far as a dialog, so "cancelled" would be a lie. Asked
+    // of the filesystem rather than caught as ENOENT: that code also comes from
+    // an unwritable temp dir, and answering "cancelled" to THAT is how a broken
+    // button becomes a silent one.
+    if (!fs.existsSync(out)) {
       const said = stderr.trim();
-      if (said) {
-        log.warn(`the folder browser failed: ${said.slice(0, 500)}`);
-        throw new Error(`The folder browser could not be opened: ${said.split('\n')[0].slice(0, 200)}`);
-      }
-      return null;
+      if (!said) return null;
+      log.warn(`the folder browser failed: ${said.slice(0, 500)}`);
+      throw new Error(`The folder browser could not be opened: ${said.split('\n')[0].slice(0, 200)}`);
     }
-    throw err;
+    return fs.readFileSync(out, 'utf8').trim() || null;
   } finally {
     picking = false;
     for (const file of [out, scriptFile]) {
