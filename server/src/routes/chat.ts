@@ -1,5 +1,6 @@
 import type {
   ChatAnswerRequest,
+  ChatCreateRequest,
   ChatPermissionMode,
   ChatPlanDecision,
   ChatSendRequest,
@@ -23,6 +24,30 @@ const asDecision = (v: unknown): ChatPlanDecision | undefined =>
   DECISIONS.has(v as ChatPlanDecision) ? (v as ChatPlanDecision) : undefined;
 
 export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void {
+  /**
+   * A session that does not exist yet is still a session these endpoints must
+   * answer for: the composer is mounted against its id from the moment it is
+   * reserved, well before Claude Code has written a line. So "unknown" means
+   * unknown to BOTH the index and the chat service, and only then is it a 404.
+   */
+  const missing = (id: string): boolean => !ctx.index.get(id) && !ctx.chat.knows(id);
+
+  // Reserve an id for a new conversation, and say where it will run. Spawns
+  // nothing: the CLI starts with the first prompt, down the ordinary road.
+  app.post<{ Body: ChatCreateRequest }>('/api/chat/new', async (request, reply) => {
+    const body = request.body ?? {};
+    const projectKey = typeof body.projectKey === 'string' ? body.projectKey : undefined;
+    const cwd = typeof body.cwd === 'string' ? body.cwd : undefined;
+    try {
+      return ctx.chat.create({ projectKey, cwd });
+    } catch (err) {
+      // 409 like the rest of this file: every refusal here is a state of the
+      // machine — the feature is off, the folder is gone, three are running —
+      // rather than a malformed request.
+      return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // Status of the process for one session. Cheap and read-only: the composer
   // polls it while a turn is in flight, on top of the SSE event.
   app.get<{ Params: { id: string } }>(
@@ -30,21 +55,22 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
     async (request, reply): Promise<ChatStatusResponse | void> => {
       const { id } = request.params;
       if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
-      if (!ctx.index.get(id)) return reply.code(404).send({ error: 'Session not found' });
+      if (missing(id)) return reply.code(404).send({ error: 'Session not found' });
       return ctx.chat.status(id);
     },
   );
 
-  // Send a prompt. Same validation model as resume: the id must be in the
-  // index, and the working directory comes only from there — never from the
-  // request. Everything else the service refuses is one string, and it is the
+  // Send a prompt. Same validation model as resume: the id must be one the
+  // server already knows, and the working directory comes from what it knows —
+  // the index for a session, the reservation for one being born — never from
+  // this request. Everything the service refuses is one string, and it is the
   // same string the composer shows, so a rejection is never silent.
   app.post<{ Params: { id: string }; Body: ChatSendRequest }>(
     '/api/sessions/:id/chat',
     async (request, reply) => {
       const { id } = request.params;
       if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
-      if (!ctx.index.get(id)) return reply.code(404).send({ error: 'Session not found' });
+      if (missing(id)) return reply.code(404).send({ error: 'Session not found' });
       const { text, model, effort, permissionMode } = request.body ?? { text: '' };
       if (typeof text !== 'string') return reply.code(400).send({ error: 'text is required' });
       try {
@@ -94,7 +120,7 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
     async (request, reply) => {
       const { id } = request.params;
       if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
-      if (!ctx.index.get(id)) return reply.code(404).send({ error: 'Session not found' });
+      if (missing(id)) return reply.code(404).send({ error: 'Session not found' });
       try {
         ctx.chat.open(id, request.body?.model, request.body?.effort, asMode(request.body?.permissionMode));
         return { ok: true };

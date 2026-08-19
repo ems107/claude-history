@@ -926,6 +926,13 @@ export interface ChatStatus {
   state: ChatState;
   /** A process exists for this session (it may be idle between turns). */
   running: boolean;
+  /**
+   * This id has been reserved but has no transcript yet — the session is about
+   * to be born, rather than missing. It is what lets the composer answer for an
+   * id `/api/sessions/:id` still 404s on, and it goes false by itself as soon as
+   * Claude Code has written the file and the index has picked it up.
+   */
+  draft: boolean;
   /** Start of the turn in flight — what the working indicator counts from. */
   turnStartedAt: string | null;
   /**
@@ -1019,6 +1026,38 @@ export interface ChatSendRequest {
   effort?: string | null;
   /** Switched live, with no restart — unlike effort. */
   permissionMode?: ChatPermissionMode;
+}
+
+/**
+ * Reserve a session id for a conversation that does not exist yet.
+ *
+ * Claude Code mints the id itself when it starts, which is too late for a
+ * browser that has to show a composer and then land on the transcript: the SDK
+ * takes `sessionId` instead (`Options.sessionId`, "use a specific session ID …
+ * cannot be used with `continue` or `resume`"), so the id is minted here and the
+ * page knows where it is going before the first prompt is typed.
+ *
+ * One of the two fields, and they are not equivalent. `projectKey` is the
+ * ordinary road — the server looks the path up in the index, so nothing about
+ * the filesystem comes from the request. `cwd` is the documented exception to
+ * that rule (see AI_ARCHITECTURE.md): a folder Claude Code has never been run in
+ * is in no index by definition, and refusing to start there would mean the app
+ * can only ever continue what a terminal began. It is validated rather than
+ * trusted — absolute, existing, a directory — and it is still only reachable
+ * from our own pages, and only from a browser that has signed in.
+ */
+export interface ChatCreateRequest {
+  /** A key from `GET /api/projects`; the path is resolved from the index. */
+  projectKey?: string;
+  /** An absolute folder typed by the user. Ignored when `projectKey` is given. */
+  cwd?: string;
+}
+
+export interface ChatCreateResponse {
+  /** The id the session WILL have. There is no transcript behind it yet. */
+  sessionId: string;
+  /** The folder it will run in, as the server resolved it. */
+  cwd: string;
 }
 
 // ---- Claude Code's own history retention (cleanupPeriodDays) ----

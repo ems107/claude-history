@@ -5,12 +5,15 @@ import {
   type PermissionUpdate,
 } from '@anthropic-ai/claude-agent-sdk';
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type {
   AppSettings,
+  ChatCreateRequest,
+  ChatCreateResponse,
   ChatModelInfo,
   ChatPermissionMode,
   ChatPlanDecision,
@@ -44,6 +47,17 @@ const TURN_SILENCE_MS = 10 * 60_000;
  * this is about the machine, not correctness.
  */
 const MAX_CHAT_SESSIONS = 3;
+
+/**
+ * How long a reserved id is kept when nothing is ever sent to it.
+ *
+ * A draft costs a map entry and nothing else — no process, no file — so this is
+ * only housekeeping for a tab closed on the picker. Generous on purpose: the
+ * whole point of reserving the id is that the browser is already pointing at it,
+ * and expiring one while somebody is still typing would answer their first
+ * prompt with "this session is not in the index".
+ */
+const DRAFT_TTL_MS = 60 * 60_000;
 
 /** Only for a caller that sends no model — the composer always sends one. */
 const FALLBACK_MODEL = 'sonnet';
@@ -161,6 +175,46 @@ const PLAN_MODE_AFTER: Record<'approve-auto' | 'approve-manual', PermissionMode>
   'approve-manual': 'default',
 };
 
+/**
+ * A folder the user typed, checked hard enough to spawn a CLI in.
+ *
+ * The one place in this app where a path arrives from the request, so each
+ * failure says which of the three things is wrong rather than a single "invalid
+ * path" — this is a box someone is typing into, and it is the only feedback they
+ * get. The quotes come off first: Windows' "Copy as path" wraps the path in
+ * them, and `autoReloadCwd` learned the same lesson.
+ */
+function validateCwd(raw: string | undefined): string {
+  const cwd = (raw ?? '').trim().replace(/^"(.*)"$/, '$1');
+  if (!cwd) throw new Error('Choose a project, or type the folder to start in.');
+  if (!path.isAbsolute(cwd)) throw new Error(`The folder must be an absolute path: ${cwd}`);
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(cwd);
+  } catch {
+    throw new Error(`That folder does not exist: ${cwd}`);
+  }
+  if (!stat.isDirectory()) throw new Error(`That is a file, not a folder: ${cwd}`);
+  return cwd;
+}
+
+/**
+ * A session id reserved before there is anything behind it.
+ *
+ * It exists because the two halves of "start a new conversation" want the id at
+ * different moments: Claude Code would mint it when the CLI starts, while the
+ * browser needs it to mount a composer and to know which transcript to open
+ * afterwards. `Options.sessionId` lets us mint it here instead, and this is
+ * where it waits until the CLI has written the file.
+ *
+ * It carries no "has it started" flag on purpose: whether there is a transcript
+ * to resume is a question for the disk, and `transcriptExists` asks it.
+ */
+interface Draft {
+  cwd: string;
+  createdAt: number;
+}
+
 interface ChatProcess {
   sessionId: string;
   /** The SDK's handle: an async iterator plus interrupt/setModel/close. */
@@ -247,6 +301,8 @@ function messageChannel() {
 export class SessionChatService {
   readonly events = new EventEmitter();
   private readonly procs = new Map<string, ChatProcess>();
+  /** Ids reserved for sessions that do not exist yet — see `Draft`. */
+  private readonly drafts = new Map<string, Draft>();
   /** Last failure per session, kept after the process is gone. */
   private readonly errors = new Map<string, string>();
   private timer: NodeJS.Timeout | null = null;
@@ -273,11 +329,14 @@ export class SessionChatService {
   sendBlockedReason(sessionId: string): string | null {
     const s = this.settings();
     if (!s.chatEnabled) return 'Sending from the app is turned off in Settings.';
-    const summary = this.index.get(sessionId);
-    if (!summary) return 'This session is not in the index.';
+    // The index first and a reserved id second: a session being born has no
+    // summary to read a folder off, and this is the only thing that knows where
+    // it is going to live.
+    const cwd = this.cwdFor(sessionId);
+    if (!cwd) return 'This session is not in the index.';
     if (!findClaudeCli()) return 'The Claude Code CLI could not be found.';
-    if (!fs.existsSync(summary.projectPath)) {
-      return `The project folder no longer exists: ${summary.projectPath}`;
+    if (!fs.existsSync(cwd)) {
+      return `The project folder no longer exists: ${cwd}`;
     }
     // Claude Code appends to the transcript from whatever process holds the
     // session, and two writers is exactly what produces the duplicated uuids
@@ -312,6 +371,10 @@ export class SessionChatService {
       sessionId,
       state,
       running: p !== undefined,
+      // Decided by the index and not by the draft map: the reservation outlives
+      // the birth by a rescan or two, and "no transcript yet" is the fact the
+      // browser is waiting on.
+      draft: this.drafts.has(sessionId) && this.index.get(sessionId) === undefined,
       turnStartedAt: p?.turnStartedAt ? new Date(p.turnStartedAt).toISOString() : null,
       idleClosesAt: idleCloses ? new Date(idleCloses).toISOString() : null,
       queued: p?.queued.length ?? 0,
@@ -326,6 +389,47 @@ export class SessionChatService {
       availableModels: p?.models ?? [],
       availableCommands: p?.commands ?? [],
     };
+  }
+
+  /**
+   * Reserve an id for a conversation that does not exist yet, and say where it
+   * will run. Nothing is spawned and nothing is written: this is a map entry,
+   * and the CLI only starts when the first prompt arrives.
+   *
+   * The folder is the one thing worth reading closely. `projectKey` is looked up
+   * in the index, so nothing about the filesystem is taken from the request — the
+   * rule the rest of this app keeps. A typed `cwd` is the documented exception to
+   * it, and the reason is that the rule has no answer for the case: a folder
+   * Claude Code has never run in appears in no index, so a session could only
+   * ever be started where one had already been started from a terminal. It is
+   * validated rather than trusted, and the same-origin hook still stands in front
+   * of it like every other state-changing request.
+   */
+  create(input: ChatCreateRequest): ChatCreateResponse {
+    const s = this.settings();
+    if (!s.chatEnabled) throw new Error('Sending from the app is turned off in Settings.');
+    if (!findClaudeCli()) throw new Error('The Claude Code CLI could not be found.');
+    if (this.procs.size >= MAX_CHAT_SESSIONS) {
+      throw new Error(`Too many sessions are already running (${MAX_CHAT_SESSIONS}).`);
+    }
+    const cwd = input.projectKey ? this.projectPath(input.projectKey) : validateCwd(input.cwd);
+    // Astronomically unlikely, and free to rule out. A collision would resume
+    // somebody else's conversation instead of starting one, which is the one
+    // outcome this whole path exists to avoid.
+    let sessionId = randomUUID();
+    while (this.index.get(sessionId) || this.drafts.has(sessionId)) sessionId = randomUUID();
+    this.drafts.set(sessionId, { cwd, createdAt: Date.now() });
+    log.info(`reserved ${sessionId} for a new session in ${cwd}`);
+    return { sessionId, cwd };
+  }
+
+  /**
+   * This id means something to us even if the index has never heard of it. The
+   * routes ask before answering 404, which is what lets the composer talk to a
+   * session between the click that reserved it and the file that realises it.
+   */
+  knows(sessionId: string): boolean {
+    return this.procs.has(sessionId) || this.drafts.has(sessionId);
   }
 
   /**
@@ -542,6 +646,45 @@ export class SessionChatService {
 
   // ---- internals ----
 
+  /**
+   * Where a session runs. The index is the authority the moment it has one, and
+   * the reservation answers for the gap before that — the same folder either
+   * way, since the reservation is what decided it.
+   */
+  private cwdFor(sessionId: string): string | null {
+    return this.index.get(sessionId)?.projectPath ?? this.drafts.get(sessionId)?.cwd ?? null;
+  }
+
+  /**
+   * Is there a transcript for this id on disk yet?
+   *
+   * Asked of the filesystem rather than remembered in a flag, because it is
+   * exactly the question `resume` needs answered and nothing else answers it in
+   * time: the index is a rescan behind, and whether Claude Code writes the file
+   * when the process starts or when the first turn does is an implementation
+   * detail of a program we do not control. One readdir plus one `existsSync` per
+   * project folder, and only ever for an id the index has never seen.
+   */
+  private transcriptExists(sessionId: string): boolean {
+    try {
+      return fs
+        .readdirSync(this.config.projectsDir)
+        .some((dir) => fs.existsSync(path.join(this.config.projectsDir, dir, `${sessionId}.jsonl`)));
+    } catch {
+      return false; // no ~/.claude/projects at all
+    }
+  }
+
+  /** The real path behind a project key, straight from the index. */
+  private projectPath(key: string): string {
+    const project = this.index.projects().find((p) => p.key === key);
+    if (!project) throw new Error('That project is not in the index.');
+    if (!fs.existsSync(project.path)) {
+      throw new Error(`The project folder no longer exists: ${project.path}`);
+    }
+    return project.path;
+  }
+
   private spawnFor(
     sessionId: string,
     model: string,
@@ -549,9 +692,12 @@ export class SessionChatService {
     permissionMode: ChatPermissionMode,
   ): ChatProcess {
     const cli = findClaudeCli();
-    const summary = this.index.get(sessionId);
-    if (!cli || !summary) throw new Error('The Claude Code CLI could not be found.');
-    const cwd = summary.projectPath;
+    const cwd = this.cwdFor(sessionId);
+    if (!cli || !cwd) throw new Error('The Claude Code CLI could not be found.');
+    // Nothing to resume means this is a session being born, and the id goes to
+    // the CLI instead of coming back from it — which is what puts the transcript
+    // on the uuid the browser is already pointing at.
+    const fresh = this.index.get(sessionId) === undefined && !this.transcriptExists(sessionId);
 
     const channel = messageChannel();
     const p: ChatProcess = {
@@ -578,7 +724,9 @@ export class SessionChatService {
     p.session = query({
       prompt: channel.stream(),
       options: {
-        resume: sessionId,
+        // The two are mutually exclusive in the SDK, and which one applies is
+        // decided by the disk above, never by a flag we keep.
+        ...(fresh ? { sessionId } : { resume: sessionId }),
         cwd,
         model,
         // Omitted entirely for a model that takes none — haiku is one, and
@@ -629,7 +777,7 @@ export class SessionChatService {
 
     this.procs.set(sessionId, p);
     log.info(
-      `started a session for ${sessionId} (${model}${effort ? `, effort ${effort}` : ', no effort — this model takes none'}) in ${cwd}`,
+      `${fresh ? 'created' : 'started'} a session for ${sessionId} (${model}${effort ? `, effort ${effort}` : ', no effort — this model takes none'}) in ${cwd}`,
       { cli },
     );
     void this.pump(p);
@@ -646,6 +794,16 @@ export class SessionChatService {
       for await (const message of p.session) {
         p.lastActivityAt = Date.now();
         p.starting = false;
+        // The CLI names the session on every message it sends, and for a session
+        // we created that is the one claim worth checking: if `sessionId` were
+        // ever ignored, the transcript would be written somewhere the browser is
+        // not looking and the page would wait for a file that is never coming.
+        // Reported rather than recovered from — there is nothing sane to do with
+        // a conversation that has moved — and it has never fired.
+        if (message.session_id && message.session_id !== p.sessionId) {
+          p.lastError = `Claude Code is writing to ${message.session_id}, not to ${p.sessionId}.`;
+          log.error(`${p.sessionId} was answered under a different session id: ${message.session_id}`);
+        }
         // Claude Code changes the mode by itself when a plan is approved, and
         // says so here. Without this the picker would go on showing `plan`
         // after the session had left it.
@@ -813,6 +971,17 @@ export class SessionChatService {
   private sweep(): void {
     const idleMs = Math.max(1, this.settings().chatIdleTimeoutMinutes) * 60_000;
     const now = Date.now();
+    // Reservations that have become sessions, and reservations nobody ever used.
+    // The first is the point — once the transcript exists the index is the
+    // authority on where it lives, and holding a second copy of that is how the
+    // two come to disagree.
+    for (const [id, draft] of [...this.drafts]) {
+      if (this.index.get(id)) this.drafts.delete(id);
+      else if (!this.procs.has(id) && now - draft.createdAt > DRAFT_TTL_MS) {
+        log.debug(`dropping the unused reservation ${id}`);
+        this.drafts.delete(id);
+      }
+    }
     for (const p of [...this.procs.values()]) {
       // A question on screen is not silence: the turn is waiting for a person,
       // and killing it would throw away the answer they are about to give.
