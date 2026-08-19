@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createLogger } from '../core/logger.ts';
+
+const log = createLogger('launcher');
 
 /**
  * Strip Claude Code session markers from the child environment. If this
@@ -258,6 +261,76 @@ const PICK_FOLDER_TIMEOUT_MS = 5 * 60_000;
 let picking = false;
 
 /**
+ * The folder browser, as a script rather than a `-Command` one-liner.
+ *
+ * Written to a temp `.ps1` and run with `-File`, and that is not a style
+ * preference: joined into one line with `;` separators, this same code reached
+ * neither `ShowDialog` nor an error — the process simply sat there with no
+ * window and no output, and the request hung until the timeout. As a file every
+ * statement ran first time. One line of PowerShell is a parser to be argued
+ * with; a file is not.
+ *
+ * Everything variable travels as an environment variable — `CH_PICK_DIR` in,
+ * `CH_PICK_OUT` out — so a folder containing a quote or a `$` can never become
+ * part of the script.
+ */
+const PICK_FOLDER_SCRIPT = `$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+# GetWindow(owner, GW_ENABLEDPOPUP) names the dialog exactly: no title to match,
+# no guess about which process owns it.
+Add-Type -Name Win -Namespace ChPick -MemberDefinition '[DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint c); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f);'
+
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = 'Choose the folder for the new Claude Code session'
+$dialog.ShowNewFolderButton = $true
+if ($env:CH_PICK_DIR) { try { $dialog.SelectedPath = $env:CH_PICK_DIR } catch {} }
+
+# 1x1, fully transparent, off the taskbar, at the centre of the working area —
+# the dialog centres itself on its owner, so an off-screen owner would take it
+# off screen with it.
+$global:chOwner = New-Object System.Windows.Forms.Form
+$global:chOwner.FormBorderStyle = 'None'
+$global:chOwner.StartPosition = 'Manual'
+$global:chOwner.ShowInTaskbar = $false
+$global:chOwner.Opacity = 0
+$global:chOwner.TopMost = $true
+$global:chOwner.Width = 1
+$global:chOwner.Height = 1
+$area = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+$global:chOwner.Left = [int]($area.X + $area.Width / 2)
+$global:chOwner.Top = [int]($area.Y + $area.Height / 2)
+$global:chOwner.Show()
+$global:chOwner.Activate()
+
+# ShowDialog pumps messages, so this keeps ticking underneath it — which is the
+# only moment the dialog's own window exists to be raised.
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 200
+$timer.add_Tick({
+  $popup = [ChPick.Win]::GetWindow($global:chOwner.Handle, 6)
+  if ($popup -ne [IntPtr]::Zero) {
+    $this.Stop()
+    [void][ChPick.Win]::SetWindowPos($popup, [IntPtr](-1), 0, 0, 0, 0, 3)
+  }
+})
+$timer.Start()
+
+$picked = $dialog.ShowDialog($global:chOwner)
+$timer.Stop()
+$timer.Dispose()
+$global:chOwner.Close()
+if ($picked -eq [System.Windows.Forms.DialogResult]::OK) {
+  [System.IO.File]::WriteAllText($env:CH_PICK_OUT, $dialog.SelectedPath, (New-Object System.Text.UTF8Encoding $false))
+}
+$global:chOwner.Dispose()
+# The last statement, and not a formality: this process holding a shown WinForms
+# window has been observed outliving the closed dialog, and while it lives the
+# server's lock stays set and every later click is refused — a button answering
+# "already open" about a window nobody can see.
+[System.Environment]::Exit(0)
+`;
+
+/**
  * The Windows folder browser, on the server's own desktop. Resolves to the
  * chosen path, or null if it was cancelled.
  *
@@ -271,40 +344,55 @@ let picking = false;
  * a quote or a `$` in it must not be able to become part of the script.
  *
  * `-STA` is not optional — WinForms needs a single-threaded apartment and pwsh
- * does not start in one — and the owner form exists purely so the dialog has a
- * topmost parent: with no owner it opens behind whatever has the foreground,
- * which reads exactly like the button doing nothing. Its handle is forced
- * without ever showing it, so nothing flashes on screen.
+ * does not start in one.
+ *
+ * **The dialog has to be raised after it exists, and an owner cannot do it for
+ * you.** A dialog opened by a background process cannot take the foreground —
+ * that belongs to whatever the user last clicked, which is the browser — so the
+ * only thing that puts it where it can be seen is z-order. A topmost owner is
+ * not enough: Windows propagates `WS_EX_TOPMOST` to the windows a owner ALREADY
+ * has at the moment it becomes topmost, not to ones created afterwards, and the
+ * dialog is always created afterwards. Measured both ways — with an unshown
+ * owner and with a shown topmost one, `#32770 "Select Folder"` came up
+ * `visible=True topmost=False`, behind the browser, invisible to the person who
+ * asked for it and hanging the request until it was found by hand.
+ *
+ * So a `Timer` started before `ShowDialog` — which pumps messages, so it keeps
+ * ticking underneath — finds the dialog through `GetWindow(owner,
+ * GW_ENABLEDPOPUP)` (exact: no title to match, no guess about the process) and
+ * calls `SetWindowPos(HWND_TOPMOST)` on it. That needs no foreground rights,
+ * which is the whole point. The owner is still shown and still topmost, 1×1 and
+ * fully transparent at the centre of the working area, because the dialog
+ * centres itself on its owner and an off-screen owner takes it off screen too.
  *
  * `findShell()` prefers pwsh, which matters here beyond taste: on .NET the
  * dialog is the modern one, while Windows PowerShell 5.1 draws the old
  * tree-view. Both work; only one looks like this decade.
  */
 export async function pickFolder(initial?: string): Promise<string | null> {
-  if (picking) throw new Error('A folder browser is already open on that machine.');
+  // Says what to do about it: the dialog is on that desktop and is the only
+  // thing that can release this, so "already open" alone would be a dead end.
+  if (picking) {
+    throw new Error('A folder browser is already open on that machine — finish or close it first.');
+  }
   picking = true;
   const out = path.join(os.tmpdir(), `claude-history-pick-${randomUUID()}.txt`);
-  const script = [
-    'Add-Type -AssemblyName System.Windows.Forms',
-    '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
-    "$d.Description = 'Choose the folder for the new Claude Code session'",
-    '$d.ShowNewFolderButton = $true',
-    'if ($env:CH_PICK_DIR) { try { $d.SelectedPath = $env:CH_PICK_DIR } catch {} }',
-    '$owner = New-Object System.Windows.Forms.Form',
-    '$owner.TopMost = $true',
-    '$null = $owner.Handle',
-    'if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {',
-    '  [System.IO.File]::WriteAllText($env:CH_PICK_OUT, $d.SelectedPath, (New-Object System.Text.UTF8Encoding $false))',
-    '}',
-    '$owner.Dispose()',
-  ].join('; ');
+  const scriptFile = `${out}.ps1`;
+  fs.writeFileSync(scriptFile, PICK_FOLDER_SCRIPT, 'utf8');
 
+  let stderr = '';
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(findShell(), ['-NoProfile', '-STA', '-Command', script], {
-        stdio: 'ignore',
+      // stderr is captured and nothing else is: a script that cannot run writes
+      // no file, which is indistinguishable from Cancel, and the whole failure
+      // would otherwise be a button that quietly does nothing.
+      const child = spawn(findShell(), ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptFile], {
+        stdio: ['ignore', 'ignore', 'pipe'],
         windowsHide: true,
         env: { ...cleanEnv(), CH_PICK_OUT: out, CH_PICK_DIR: initial ?? '' },
+      });
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
       });
       const timer = setTimeout(() => {
         child.kill();
@@ -324,14 +412,25 @@ export async function pickFolder(initial?: string): Promise<string | null> {
     const chosen = fs.readFileSync(out, 'utf8').trim();
     return chosen || null;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      // Unless the script said why it could not run — then no file means it
+      // never got as far as a dialog, and "cancelled" would be a lie.
+      const said = stderr.trim();
+      if (said) {
+        log.warn(`the folder browser failed: ${said.slice(0, 500)}`);
+        throw new Error(`The folder browser could not be opened: ${said.split('\n')[0].slice(0, 200)}`);
+      }
+      return null;
+    }
     throw err;
   } finally {
     picking = false;
-    try {
-      fs.rmSync(out, { force: true });
-    } catch {
-      // nothing to clean up
+    for (const file of [out, scriptFile]) {
+      try {
+        fs.rmSync(file, { force: true });
+      } catch {
+        // nothing to clean up
+      }
     }
   }
 }

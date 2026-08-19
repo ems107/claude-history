@@ -297,3 +297,28 @@ Geometría idéntica entre `/new` y `/session/<id>` · los tres desplegables lle
 completo con carpeta escrita a mano → eco → indicador → salto solo al visor con la respuesta dibujada ·
 sin huérfanos. El diálogo de carpeta: abre (`Select Folder`, ventana de pwsh) y cancelar responde
 `{"path": null}`; la selección real queda para una prueba a mano.
+
+### El botón Browse, arreglado
+
+Lo que fallaba no era una cosa sino tres, y las tres se veían igual desde fuera («no abre nada»):
+
+1. **La ventana salía detrás del navegador.** Windows solo propaga `WS_EX_TOPMOST` a las ventanas que el
+   propietario ya tiene *en el momento* de hacerse topmost, nunca a las que nazcan después — y el diálogo
+   siempre nace después. Medido con propietario sin mostrar y con propietario mostrado y topmost: en los
+   dos casos `#32770 "Select Folder" visible=True topmost=False`, detrás del navegador. Se arregla
+   subiendo la ventana del diálogo: un `Timer` arrancado antes de `ShowDialog` (que bombea mensajes, así
+   que sigue latiendo por debajo) la localiza con `GetWindow(owner, GW_ENABLEDPOPUP)` y le aplica
+   `SetWindowPos(HWND_TOPMOST)`, que no necesita derechos de primer plano.
+2. **El script como línea única no llegaba ni a `ShowDialog`.** Unido con `;`, el mismo código se quedaba
+   sin ventana, sin salida y sin nada en stderr, y la petición colgaba hasta el timeout. Como fichero
+   `.ps1` ejecutado con `-File`, todas las sentencias corren a la primera.
+3. **El proceso sobrevivía al diálogo cerrado**, y mientras vivía el candado seguía puesto: de ahí el
+   «A folder browser is already open». Ahora el script termina en `[System.Environment]::Exit(0)`, así
+   que el candado dura exactamente lo que dura el diálogo.
+
+Además se captura stderr: un script que no arranca tampoco escribe fichero, y sin eso «cancelado» sería
+mentira. El mensaje de «ya hay uno abierto» dice ahora qué hacer.
+
+**Verificado desde el navegador con el foco puesto**: el diálogo sale `topmost=True` por encima, aceptar
+deja la ruta en la caja (`C:\Users\Edgar\Documents`), el botón vuelve a su estado y no queda ni un
+proceso pwsh ni un fichero temporal. La ruta con `ñ` sobrevive al viaje por fichero UTF-8.
