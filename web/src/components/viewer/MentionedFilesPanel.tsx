@@ -1,6 +1,6 @@
 import { isImagePath, parseFileRef } from '../../lib/fileRefs.ts';
 import { folderTail, formatBytes, formatDateTime } from '../../lib/format.ts';
-import { mentionTerms, type MentionedFiles, type MentionRow } from '../../lib/mentionedFiles.ts';
+import { mentionFindTerm, mentionTerms, type MentionedFiles, type MentionRow } from '../../lib/mentionedFiles.ts';
 import { Chip } from './Chip.tsx';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
@@ -34,11 +34,10 @@ function Dropped({ data }: { data: MentionedFiles }) {
 function MentionRowView({
   row,
   onGoToMessage,
-  onFindEverywhere,
 }: {
   row: MentionRow;
-  onGoToMessage: (uuid: string, terms: string[]) => void;
-  onFindEverywhere: (terms: string[]) => void;
+  /** The anchor, the words to underline there, and what to leave in the find bar. */
+  onGoToMessage: (uuid: string, marks: string[], find: string) => void;
 }) {
   const ctx = useFileRefs();
   // Resolved, and with the line the sentence pointed at: the panel opens where
@@ -85,25 +84,19 @@ function MentionRowView({
         <span className="shrink-0 font-medium">{row.name}</span>
       )}
       {row.line !== null && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">:{row.line}</span>}
-      {/* PLACES, not namings — and it is the way to them rather than a note about
-          them. `×4` used to count occurrences while the jump could only take you
-          to one of them and mark the ones in that message, so the badge promised
+      {/* PLACES, not namings: `×4` counted occurrences at first, which promised
           four stops for a file that might have been named four times in a single
-          paragraph. One press now hands the path to the find bar on `All`, which
-          already owns stepping, counting and marking across the conversation:
-          a second "next occurrence" here would be two implementations of one idea,
-          and they would disagree. */}
+          paragraph — while the jump can only ever land on one message. `hits` is
+          on the title. It is a note and not a button, because the jump itself now
+          leaves the find bar open on the way to them: two controls for one idea is
+          how a reader ends up pressing the wrong one. */}
       {places > 1 && (
-        <button
-          type="button"
-          onClick={() => onFindEverywhere(mentionTerms(row))}
-          className="shrink-0 cursor-pointer rounded px-1 text-[10px] text-[var(--text-dim)] underline decoration-dotted underline-offset-2 hover:text-[var(--text)]"
-          title={`Named in ${String(places)} messages${
-            row.hits > places ? `, ${String(row.hits)} times in all` : ''
-          } — find every one of them in the conversation`}
+        <span
+          className="shrink-0 text-[10px] text-[var(--text-dim)]"
+          title={`Named in ${String(places)} messages${row.hits > places ? `, ${String(row.hits)} times in all` : ''}`}
         >
           ×{places}
-        </button>
+        </span>
       )}
       {asWritten && (
         <span
@@ -156,7 +149,7 @@ function MentionRowView({
       <button
         type="button"
         disabled={!anchor}
-        onClick={anchor ? () => onGoToMessage(anchor, mentionTerms(row)) : undefined}
+        onClick={anchor ? () => onGoToMessage(anchor, mentionTerms(row), mentionFindTerm(row)) : undefined}
         className={`shrink-0 text-[10px] ${
           anchor
             ? 'cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 hover:border-[var(--text-dim)] hover:text-[var(--text)]'
@@ -164,7 +157,9 @@ function MentionRowView({
         }`}
         title={
           anchor
-            ? `Go to where it was first named${places > 1 ? ` (of ${String(places)})` : ''}, with the path underlined in the message`
+            ? `Go to where it was first named${
+                places > 1 ? ` (the first of ${String(places)} messages)` : ''
+              } — underlined there, and left in the find bar on “All” so Enter steps through every naming`
             : 'Nothing in this transcript anchors it'
         }
       >
@@ -199,14 +194,11 @@ export function MentionedFilesPanel({
   pending,
   error,
   onGoToMessage,
-  onFindEverywhere,
 }: {
   data: MentionedFiles | null;
   pending: boolean;
   error: string | null;
-  onGoToMessage: (uuid: string, terms: string[]) => void;
-  /** Hands a path to the find bar, on `All`: what "the other three" needs. */
-  onFindEverywhere: (terms: string[]) => void;
+  onGoToMessage: (uuid: string, marks: string[], find: string) => void;
 }) {
   return (
     <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
@@ -220,12 +212,7 @@ export function MentionedFilesPanel({
       </div>
       {pending && <div className="px-2 py-1 text-xs text-[var(--text-dim)]">Asking the disk…</div>}
       {data?.rows.map((row) => (
-        <MentionRowView
-          key={row.resolved}
-          row={row}
-          onGoToMessage={onGoToMessage}
-          onFindEverywhere={onFindEverywhere}
-        />
+        <MentionRowView key={row.resolved} row={row} onGoToMessage={onGoToMessage} />
       ))}
       {data && data.rows.length === 0 && (
         <div className="px-2 py-1 text-xs text-[var(--text-dim)]">

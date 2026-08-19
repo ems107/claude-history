@@ -700,16 +700,20 @@ export function SessionViewPage() {
               data={mentioned}
               pending={mentionStats.isPending && mentionRefs.length > 0}
               error={mentionStats.isError ? String(mentionStats.error) : null}
-              onGoToMessage={(uuid, terms) => jumpTo('msg', uuid, terms)}
               /**
-               * The other namings, handed to the one thing that already does this
-               * properly. `openBar(true)` is Ctrl+Shift+F — the `All` scope, so a
-               * naming inside a folded stretch counts too — and the query is set
-               * first, which is what stops `openBar` seeding the deep link's terms
-               * over it.
+               * One press, the whole arrival: the message, the path underlined in
+               * it, and the find bar left open on the way to the other namings.
+               *
+               * `openBar(true)` is Ctrl+Shift+F — the `All` scope, so a naming
+               * inside a folded stretch counts too — and it focuses the input with
+               * its text selected, so typing replaces the query. The query is set
+               * FIRST, or `openBar` seeds the deep link's own terms over it, and it
+               * is ONE string because the bar searches in phrase mode: two terms
+               * with a space between them is a sentence that appears nowhere.
                */
-              onFindEverywhere={(terms) => {
-                finder.bar.setQuery(terms.join(' '));
+              onGoToMessage={(uuid, marks, find) => {
+                jumpTo('msg', uuid, marks);
+                finder.bar.setQuery(find);
                 finder.openBar(true);
               }}
             />
