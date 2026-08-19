@@ -860,7 +860,9 @@ export function TurnView({
         rendered.push(<ThinkingBlock key={i} text={b.text} owner={item.uuid} />);
         prose.push(b);
       } else if (b.kind === 'text') {
-        rendered.push(<Markdown key={i} text={b.text} />);
+        // The one place the code-block bar is turned on. It reaches the
+        // subagent drawer too, which draws this same list over its transcript.
+        rendered.push(<Markdown key={i} text={b.text} codeBar />);
         prose.push(b);
       }
     }

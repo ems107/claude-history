@@ -9,6 +9,8 @@
 // what got the whole namespace put behind secure contexts in the first place,
 // and we have never needed it.
 
+import { CHROME_ATTR } from './highlight.ts';
+
 /**
  * Put HTML and plain text on the clipboard through the `copy` event.
  *
@@ -55,6 +57,32 @@ function copyViaExecCommand(html: string | null, text: string): boolean {
     if (previous) selection?.addRange(previous);
   }
   return ok;
+}
+
+/**
+ * What a rendered node is worth on the clipboard, with the chrome cut out.
+ *
+ * A code block draws a bar of its own inside the message's body — the language
+ * it is written in and the button that copies it — and neither is anything the
+ * reader asked to paste into Word. `CHROME_ATTR` is what says so, and it says
+ * it for the find bar's walk as well (`lib/highlight.ts`).
+ *
+ * The two flavours are taken two ways because they answer to different things.
+ * `innerText` reads what is RENDERED, so hiding the chrome is what removes it —
+ * and the display is put back in the same task, before anything can be painted
+ * without it. The HTML has no such rule, so it comes off a clone the chrome has
+ * simply been deleted from.
+ */
+export function renderedCopy(node: HTMLElement): { html: string; text: string } {
+  const chrome = Array.from(node.querySelectorAll<HTMLElement>(`[${CHROME_ATTR}]`));
+  const before = chrome.map((el) => el.style.display);
+  for (const el of chrome) el.style.display = 'none';
+  const text = node.innerText;
+  for (const [i, el] of chrome.entries()) el.style.display = before[i];
+
+  const clone = node.cloneNode(true) as HTMLElement;
+  for (const el of clone.querySelectorAll(`[${CHROME_ATTR}]`)) el.remove();
+  return { html: clone.innerHTML, text };
 }
 
 /**

@@ -18,6 +18,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **What appears on hover may not resize what it appears in** — a hover toolbar is pinned to one line (`h-[1lh]`), never measured from its own buttons.
 - **A fold that can be a jump's destination opens and then LETS GO** — never `open={targeted || open}`.
 - **What the find bar counts is what unfolding can put inside a marking box** (`[data-bubble-body]`, `[data-tool-id]`).
+- **What is drawn inside a marking box and is not the message's own words carries `data-chrome`** — the marking walk rejects it and the formatted copy cuts it out.
 - **A find is a gesture, not a location**: the bar never writes to the URL.
 - **A button that acts on the server's own desktop is disabled when the page is remote**, with the reason from `shared/src/localOnly.ts` as its tooltip — `useLocalOnly()`, never a hostname check ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
 - **Typing never moves the page** — a step unfolds things that do not fold back.
@@ -74,6 +75,65 @@ already animates that border for 2.5 s, so a deep link arriving would fight it.
 - The page itself (`/starred`) is the sibling of Prompts and Plans, and its rows
   link with `?msg=` — so everything under "Deep links" below is what makes the
   link land: the segment, the branch and the turn all unfold first.
+
+## The bar on a code block
+
+A fenced block in an answer wears one: the language it is written in on the
+left, `⧉ Copy` on the right. **Fixed, not revealed on hover** — the one thing a
+code block can afford that a bubble's header row cannot, because the bar is its
+own strip and never covers the first line, and because a copy button nobody
+knows to hover for is a copy button nobody has. It is turned on for the
+assistant's own messages alone: `Markdown` takes a `codeBar` prop, `Turn` is the
+only caller that passes it, and the other seven — a plan, a subagent's report, a
+compaction summary, the release notes, the Starred page — render exactly what
+they rendered before. No provider, no button, the contract `StarContext` states.
+
+- **The bar sits OUTSIDE the `<pre>`.** Two things follow from that and neither
+  is cosmetic: the block's `textContent` is the code and nothing else, so what
+  is copied needs no parsing and cannot drift from what is on screen; and the
+  bar does not slide out of view when a long line scrolls the `<pre>`
+  horizontally, which is exactly what an absolutely-positioned button inside one
+  does.
+- **The wrapper is the box now.** It takes the margin and the rounding the
+  `<pre>` had, and clips both children with it, so the bar needs no corners of
+  its own and no number to keep in step with the plugin's. Those rules are in
+  `styles.css` rather than utilities because what has to be beaten is
+  typography's own `pre` rule: it is wrapped in `:where()` and so weighs no more
+  than `.prose`, which `.code-block > pre` outranks and a bare `m-0` would only
+  tie with.
+- **Both labels are always drawn and a class chooses between them.** `TurnList`'s
+  `MutationObserver` watches `childList` and `characterData` and not attributes,
+  so swapping a class costs nothing where swapping the text would repaint every
+  mark in the conversation, twice, on every copy.
+- **`select-none`**, because dragging across a couple of blocks is how a reader
+  takes code by hand, and `typescript ⧉ Copy` has no business in what they get.
+  The click is stopped as `MessageActions`' row stops it, or the scroller's own
+  handler moves the selection ring to whatever the block is inside.
+- The copy goes through `copyPlain`, never `navigator.clipboard` — over plain
+  HTTP that object does not exist ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md#the-clipboard)).
+  The trailing newline the fence closed with is dropped; nobody means to paste it.
+
+### `data-chrome`, and why it had to exist first
+
+The bar lives inside `[data-bubble-body]`, which is a marking box, and **the
+find bar counts in the transcript and paints in the DOM**. Anything of ours in
+there is therefore a match the corpus never saw, and it costs three things at
+once: a search for `copy` lights up every code block; the ordinal counted in the
+corpus and indexed into the DOM's ranges lands one late for every piece of
+chrome above it (`reveal` in `TurnList`); and the per-box counts the `visible`
+scope reads say a folded hit is on screen. On top of that, the message's own
+"Copy with formatting" reads its body back as HTML, so the bar would paste into
+Word.
+
+So `textNodesIn` rejects a `data-chrome` subtree outright — one function, and
+`boxRanges`, `markMatches` and `markConversation` all walk through it — and
+`renderedCopy` (`lib/clipboard.ts`) cuts the same subtrees out of both flavours
+of the formatted copy: hidden for the `innerText` one, which reads what is
+rendered, and deleted from a clone for the HTML. The attachment size line
+(`ZoomableImage`) was the same leak before there was a name for it and now
+carries the attribute too. The clamp in `reveal` still exists for the drift that
+is not ours to fix — a tool block's chrome, markdown's own syntax — and this is
+the rule that stops anyone adding a third.
 
 ## The two cross-session pages order themselves
 

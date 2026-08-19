@@ -1,6 +1,6 @@
 import type { ContentBlock, MessageItem } from '@claude-history/shared';
 import { type ReactNode, type RefObject, useState } from 'react';
-import { copyPlain, copyRich } from '../../lib/clipboard.ts';
+import { copyPlain, copyRich, renderedCopy } from '../../lib/clipboard.ts';
 import { blocksMarkdown, type ExportOptions } from '../../lib/exportMarkdown.ts';
 import { useStars } from './StarContext.ts';
 
@@ -27,7 +27,8 @@ const FLASH_MS = 1500;
  * "Copy" reads the HTML back out of the DOM node that is already on screen,
  * rather than re-rendering the markdown through a second pipeline: what lands
  * in Word is then exactly what the viewer shows, and there is no second
- * renderer to drift from the first.
+ * renderer to drift from the first — minus the chrome drawn inside it, which
+ * is what `renderedCopy` is for.
  */
 export function MessageActions({
   item,
@@ -143,7 +144,11 @@ export function CopyActions({
         onClick={() => {
           const node = body.current;
           if (!node) return;
-          void copyRich(node.innerHTML, node.innerText).then(() => flash('rich'));
+          // Through `renderedCopy` rather than off the node itself: a code block
+          // draws a bar inside this very node, and its language and its button
+          // have no business in a paste into Word.
+          const { html, text } = renderedCopy(node);
+          void copyRich(html, text).then(() => flash('rich'));
         }}
       >
         {done === 'rich' ? 'Copied ✓' : '⧉ Copy'}

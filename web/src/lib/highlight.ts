@@ -35,6 +35,14 @@ const MAX_BOX_MARKS = 1000;
 const NO_CAP = Number.MAX_SAFE_INTEGER;
 /** The two elements marks are allowed inside — see `markMatches` on why. */
 const BOX_SELECTOR = '[data-bubble-body], [data-tool-id]';
+/**
+ * What is drawn inside a marking box and is not the message's own text — the
+ * bar over a code block, the size line under an attachment. Read here and by
+ * the formatted copy (`renderedCopy` in `lib/clipboard.ts`), which is the same
+ * statement made twice for the same reason: it is on screen inside a message,
+ * and it is not part of it.
+ */
+export const CHROME_ATTR = 'data-chrome';
 
 /** The querystring a link into a session carries so the hit can be marked there. */
 export function highlightSearchParams(query: SearchQueryEcho): URLSearchParams {
@@ -210,10 +218,32 @@ export function focusKeyAt(node: EventTarget | null): string | null {
   return boxKeyOf(start);
 }
 
-/** Every non-empty text node under `root`, in document order. */
+/**
+ * Every non-empty text node under `root` that is part of the MESSAGE, in
+ * document order — everything, that is, except what `CHROME_ATTR` marks.
+ *
+ * The corpus the find bar counts is built from the transcript, which has never
+ * heard of a copy button. So a piece of chrome inside a box costs three things
+ * at once: an ordinal counted in the corpus and indexed into these ranges lands
+ * late by one for every match above it (`TurnList`'s `reveal`), a search for
+ * `copy` lights up every code block, and the per-box counts the `visible` scope
+ * reads say a folded hit is on screen. Rejecting the subtree here is the only
+ * place that has to know it: `boxRanges`, `markMatches` and `markConversation`
+ * all walk through this.
+ */
 function textNodesIn(root: HTMLElement): Text[] {
   const nodes: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    // REJECT skips the whole subtree, which is the point. SKIP passes over the
+    // element itself and keeps walking its children — what a SHOW_TEXT-only
+    // walker did to every element it met, and what this must keep doing.
+    acceptNode: (node) =>
+      node.nodeType === Node.TEXT_NODE
+        ? NodeFilter.FILTER_ACCEPT
+        : (node as Element).hasAttribute(CHROME_ATTR)
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_SKIP,
+  });
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if ((node as Text).data.length > 0) nodes.push(node as Text);
   }

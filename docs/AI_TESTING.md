@@ -224,6 +224,14 @@ Then Chrome over CDP, with check 9's harness:
   open the run and the block and leave exactly one `find-current` range reading
   that word, inside a marking box and inside the viewport. (Verified on
   `f3384d17`: "instruction", 7 matches, scrollTop 0 → 564.)
+- **The code-block bars must be invisible to all of it.** Type `copy` in a
+  session full of fenced blocks: no `find-match` range may fall inside a
+  `[data-chrome]` element, and the bar's count must equal the count the pure
+  scan gives for the same query. Then step with Enter through a word that IS in
+  the code (`const`, `function`) and check the `find-current` range holds that
+  word and not its neighbour — the ordinal is counted in the corpus and indexed
+  into the DOM, so a bar leaking one text node would move every hit below it by
+  one. Same assertion for a deep link's `search-match`.
 - `search-match` must be absent throughout, and
   `document.querySelectorAll('mark').length === 0` — a `<mark>` means somebody
   went back to mutating React's markdown. Escape must take `find-match`,
@@ -404,7 +412,7 @@ Then Chrome over CDP, with check 9's harness:
 
 Then the one that locks you out, on purpose: drop a hand-written copy into `backups\` with **no `auth` key and an empty `settings`** — which is what every copy older than this feature looks like — and restore it. The renames in it must land, **the credentials must be gone and `remoteAccessEnabled` back to false**, and the remote session must stop working. A restore replaces the file, exceptions included; what makes that safe is the `pre-restore` copy taken first, which must be in `backups\` afterwards.
 
-Finally, from the remote browser (plain HTTP, so no secure context): "Copy message with formatting" must paste **as HTML** into Word or Jira, and the plain-text copies in the log viewer and the resume buttons must work — this is `execCommand`, not `navigator.clipboard`, which does not exist there.
+Finally, from the remote browser (plain HTTP, so no secure context): "Copy message with formatting" must paste **as HTML** into Word or Jira, and the plain-text copies in the log viewer, the resume buttons and a code block's own `⧉ Copy` must work — this is `execCommand`, not `navigator.clipboard`, which does not exist there. The HTML paste must carry the code blocks and **not** their bars: `renderedCopy` cuts every `[data-chrome]` out of both flavours, so the language and the button appear in neither.
 
 **35. The dialog that must never appear.** The whole point of the bind gate, and the one check whose assertion is about the SCREEN rather than a response body: **no Windows Security dialog may appear at any moment of this**. Start clean — no rule for the port, and no Block rules naming our `node.exe`.
 

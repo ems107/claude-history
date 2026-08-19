@@ -35,6 +35,42 @@ body {
   font-family: ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* A fenced block in an answer wears a bar — the language it is written in, and
+   the button that copies it (`Markdown.tsx`) — and the two are one box. So the
+   wrapper takes over both things that made the <pre> a box of its own: the
+   margin that spaced it, and the rounding that shaped it, which it now clips
+   for the bar and the block at once. The bar itself then needs no corners and
+   no number to keep in step with.
+
+   Written here rather than as utilities because what has to be beaten is the
+   typography plugin's own `pre` rule. That rule is wrapped in `:where()`, so it
+   weighs no more than `.prose` (0,1,0) and `.code-block > pre` (0,1,1) outranks
+   it; a bare `m-0` on the element would tie and be decided by source order.
+
+   Both figures are prose-sm's, restated at the wrapper's own font size: the
+   <pre> had 1.66667em of the 13px `prose-pre:text-[13px]` gives it (21.7px),
+   and the wrapper's em is the 14px of prose-sm itself. */
+.code-block {
+  margin-block: 1.548em;
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.code-block > pre {
+  margin: 0;
+  border-radius: 0;
+}
+
+/* The plugin's own first/last rule, restated for the wrapper that now stands
+   where the <pre> stood. */
+.prose > .code-block:first-child {
+  margin-top: 0;
+}
+
+.prose > .code-block:last-child {
+  margin-bottom: 0;
+}
+
 /* Landing on an anchor (#claude-retention from the session list): say WHICH
    block was meant, then get out of the way. A ring and a tint, both fading in
    one pass — drawn with box-shadow so nothing reflows, and never blinking:

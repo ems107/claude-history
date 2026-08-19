@@ -62,7 +62,15 @@ export function ZoomableImage({
           className={`max-w-full rounded object-contain ${size === 'fill' ? 'max-h-[78vh]' : 'max-h-64'}`}
         />
       </button>
-      {label && <div className="mt-0.5 text-[10px] text-[var(--text-dim)]">{label}</div>}
+      {/* `data-chrome`: an attachment in a bubble puts this line inside a
+          marking box, and "PNG · 120 KB" is something we wrote rather than
+          something anybody said. The find bar's walk and the formatted copy
+          both cut it out. */}
+      {label && (
+        <div data-chrome className="mt-0.5 text-[10px] text-[var(--text-dim)]">
+          {label}
+        </div>
+      )}
 
       {/* Portalled: `inset-0` must mean the viewport, and inside a thread
           carrying a `zoom` it would mean the zoomed coordinate space instead —
