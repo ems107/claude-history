@@ -37,11 +37,12 @@ const HIGHLIGHT_NAME = 'plan-comment';
  * unlabelled things: the first draft drew exactly that, and the chip in
  * particular could have been anything — a tag, a file, a status. So the row
  * reads as one sentence instead, and it says its own name first: **`Comment 1 on
- * “…” · under “…”`**. Two words were tried and dropped on the way. The chip,
- * because a chip cannot say "heading". And "on the passage “…”", because
- * *passage* is a word a reader has to stop and translate — asked about, by the
- * only reader this app has — while the quotation marks already say the words are
- * lifted from somewhere.
+ * “…”, under “…”`**. Three things were tried and dropped on the way. The chip,
+ * because a chip cannot say "heading". The word "passage" (`on the passage “…”`),
+ * because a reader has to stop and translate it — asked about, by the only reader
+ * this app has — while the quotation marks already say the words are lifted from
+ * somewhere. And the `·` before "under", which is how this app separates chips
+ * and reads inside a sentence as two things standing side by side.
  *
  * Same component on both sides of the feature: the composer's list while the
  * comment is being written and the transcript card long after, so a reader who
@@ -64,7 +65,9 @@ export function PlanCommentRef({
       Comment {index} on <span className="text-[var(--text)] italic">“{quote}”</span>
       {heading && (
         <>
-          {' · under '}
+          {/* A comma, not the `·` this app separates chips with: the row is one
+              sentence, and a middle dot in it reads as two things side by side. */}
+          {', under '}
           <span className="italic">“{heading}”</span>
         </>
       )}
