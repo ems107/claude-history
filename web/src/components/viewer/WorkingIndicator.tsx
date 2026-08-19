@@ -91,6 +91,7 @@ export function WorkingIndicator({
   activity = NO_ACTIVITY,
   columnWidth,
   startHint = 'Turn started',
+  label = 'Claude is working…',
 }: {
   /** When the thing being waited on began (epoch ms); null draws no clocks. */
   since: number | null;
@@ -98,6 +99,13 @@ export function WorkingIndicator({
   activity?: TurnActivity;
   /** What the `total` figure's hover says it counts from. */
   startHint?: string;
+  /**
+   * The sentence itself, for a wait that is not Claude's. A turn can END with
+   * agents still running — they are launched asynchronously and the report is
+   * what wakes the session back up — and there "Claude is working" would be
+   * plainly false: Claude is idle, and something it sent out is not.
+   */
+  label?: string;
   /**
    * The width of the conversation's column, as a CSS length — the same string
    * the composer takes, for the same corner. The clocks sit at the far right of
@@ -163,7 +171,7 @@ export function WorkingIndicator({
           {/* Deliberately not "writing a response": `busy` covers the whole turn,
               tool calls included, and most of a turn is not prose being written.
               Claiming otherwise would be wrong for most of the time it shows. */}
-          <span className="working-label">Claude is working…</span>
+          <span className="working-label">{label}</span>
           {since !== null && (
             // Out of the announced text: a screen reader repeating the seconds
             // every second would drown the one thing worth saying.

@@ -138,21 +138,94 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
 export type SubagentStatus = 'completed' | 'failed' | 'running' | 'unknown';
 
 /**
- * `failed` on any of its reports is what the row leads with — a retry files a
- * second one.
+ * How long an agent may say nothing and still be called running.
  *
- * **`running` is a claim about NOW, and it takes two facts.** A subagent has no
- * status on disk of its own: it shares its parent's process, so the only thing
- * that says it has finished is the report it hands back. Absent, with the
- * session mid-turn, it is still working — but the absence only MEANS that where
- * we hold the transcript the report would have landed in. A nested agent reports
- * inside the agent that spawned it and a `/branch` fork copies no calls at all,
- * so there `row.call` is null, nothing can be read off the silence, and the
- * honest answer stays `unknown`. (The panel does better for a nested row, where
- * it has read the parent's transcript to build the tree: see `StatusChip`.)
+ * **The number is there to stop claiming, not to catch a working agent out**, so
+ * it is far above anything one has been measured doing: across the 75 agent
+ * transcripts on this machine, 5,748 gaps between consecutive lines run p50
+ * 0.6 s, p90 5 s, p99 52.5 s and a longest silence of **358 s** — one slow tool
+ * call, and the whole point of the figure. Fifteen minutes is 2.5x that.
+ *
+ * What it bounds is the other direction: an agent whose report never arrives at
+ * all (killed mid-run, or a notification a compaction swallowed) would otherwise
+ * wear the indicator for as long as its session stayed open.
  */
-export function rowStatus(row: SubagentRow, busy = false): SubagentStatus {
-  if (row.reports.some((r) => r.status === 'failed')) return 'failed';
-  if (row.reports.some((r) => r.status === 'completed')) return 'completed';
-  return busy && row.call !== null ? 'running' : 'unknown';
+export const AGENT_SILENCE_MS = 15 * 60_000;
+
+/**
+ * What a row says about itself. `failed` on any of its reports is what it leads
+ * with — a retry files a second one.
+ *
+ * **`running` is a claim about NOW and it takes three facts**, because a
+ * subagent has no status anywhere. It runs inside its parent's process, so
+ * nothing writes `busy` for it and the parent going idle says nothing: an agent
+ * is launched asynchronously and the turn that launched it ENDS while it works,
+ * which is the whole reason the parent has to be woken by the report. So:
+ *
+ * 1. **No report.** The only thing that says an agent has finished is the report
+ *    it hands back — and the absence only means "not yet" where we hold the
+ *    transcript that report would land in (`reportKnowable`). A nested agent
+ *    reports inside the agent that spawned it and a `/branch` fork copies no
+ *    calls at all; there the silence says nothing.
+ * 2. **The process that would be running it is still alive.** Nothing survives
+ *    the CLI it lived in, so a session that is not live has no agent working.
+ *    Alive, not busy: that is the fix this rule exists for.
+ * 3. **It has written something recently** — see `AGENT_SILENCE_MS`.
+ */
+export function subagentStatus(opts: {
+  /** The status on every report we can see from it; empty means none. */
+  reports: (string | null)[];
+  /** Whether the transcript a report would land in is one we hold. */
+  reportKnowable: boolean;
+  /** The session's CLI process still exists (`['live']`, which checks the pid). */
+  sessionAlive: boolean;
+  /** The mtime of its own transcript. */
+  lastWriteMs: number | null;
+  now: number;
+}): SubagentStatus {
+  if (opts.reports.includes('failed')) return 'failed';
+  if (opts.reports.includes('completed')) return 'completed';
+  // It came back, and the notification recorded no status to read.
+  if (opts.reports.length > 0) return 'unknown';
+  if (!opts.reportKnowable) return 'unknown';
+  const fresh = opts.lastWriteMs !== null && opts.now - opts.lastWriteMs < AGENT_SILENCE_MS;
+  return opts.sessionAlive && fresh ? 'running' : 'unknown';
+}
+
+/** A row's status, for the two places that read one straight off the conversation. */
+export function rowStatus(row: SubagentRow, live: { sessionAlive: boolean; now: number }): SubagentStatus {
+  return subagentStatus({
+    reports: row.reports.map((r) => r.status),
+    reportKnowable: row.call !== null,
+    sessionAlive: live.sessionAlive,
+    lastWriteMs: row.meta.lastWriteMs,
+    now: live.now,
+  });
+}
+
+/**
+ * The agents of this session that are still out there.
+ *
+ * Only the ones the CONVERSATION sent out can be counted — a nested agent's
+ * report is in its parent's transcript, which this does not hold — and that is
+ * also the honest count: a nested agent runs inside one of these, so the row it
+ * would add is already represented by the one that spawned it.
+ */
+export interface RunningAgents {
+  count: number;
+  /** Their ids, joined: a dependency that only changes when the SET does, for a
+   *  value recomputed on a clock. */
+  ids: string;
+  /** When the first of them was sent out (epoch ms) — the only clock this row can honestly show. */
+  since: number | null;
+}
+
+export function runningAgents(rows: SubagentRow[], live: { sessionAlive: boolean; now: number }): RunningAgents {
+  const out = rows.filter((r) => rowStatus(r, live) === 'running');
+  let since: number | null = null;
+  for (const r of out) {
+    const at = r.call?.timestamp ? Date.parse(r.call.timestamp) : NaN;
+    if (!Number.isNaN(at) && (since === null || at < since)) since = at;
+  }
+  return { count: out.length, ids: out.map((r) => r.meta.agentId).join(','), since };
 }

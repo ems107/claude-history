@@ -94,12 +94,23 @@ export async function loadSubagents(sessionDir: string | null): Promise<Subagent
     if (!f.startsWith('agent-') || !f.endsWith('.meta.json')) continue;
     try {
       const raw = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf8')) as RawLine;
+      const agentId = f.slice('agent-'.length, -'.meta.json'.length);
+      // The transcript's own clock, beside the meta that never carries one. A
+      // meta with no transcript is still an agent that ran, so a missing file is
+      // null rather than a reason to drop the row.
+      let lastWriteMs: number | null = null;
+      try {
+        lastWriteMs = (await fsp.stat(path.join(dir, `agent-${agentId}.jsonl`))).mtimeMs;
+      } catch {
+        // no transcript beside this meta
+      }
       metas.push({
-        agentId: f.slice('agent-'.length, -'.meta.json'.length),
+        agentId,
         agentType: str(raw.agentType) ?? 'unknown',
         description: str(raw.description) ?? '',
         toolUseId: str(raw.toolUseId) ?? '',
         spawnDepth: num(raw.spawnDepth) ?? 1,
+        lastWriteMs,
       });
     } catch {
       // unreadable meta — skip this subagent

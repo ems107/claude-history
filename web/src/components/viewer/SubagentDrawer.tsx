@@ -42,8 +42,10 @@ export function SubagentDrawer({
   jumpNonce?: number;
   /**
    * This agent is still working. The page's reading, because only the page holds
-   * the session's live status and the report this agent would have filed — see
-   * `rowStatus` for what makes that silence mean something. It draws the row and
+   * the session's live state and the report this agent would have filed — see
+   * `subagentStatus` for the three facts it takes and the two it will not guess.
+   * Deliberately NOT "the session is mid-turn": an agent is launched
+   * asynchronously and outlives the turn that launched it. It draws the row and
    * arms the follow, which is the same statement twice.
    */
   running: boolean;

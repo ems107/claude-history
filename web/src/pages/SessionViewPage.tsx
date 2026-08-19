@@ -16,7 +16,7 @@ import { useFoldState } from '../lib/folding.ts';
 import { anchorOfKey, focusKeyAt, parseHighlight, setHighlightTerms, TOOL_PARAM } from '../lib/highlight.ts';
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { collectSessionFiles } from '../lib/sessionFiles.ts';
-import { buildSubagentIndex, rowStatus } from '../lib/subagents.ts';
+import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
@@ -45,6 +45,8 @@ const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 /** Stable identity while the conversation loads, so the fold state is not rebuilt. */
 const EMPTY_TURNS: Turn[] = [];
 const EMPTY_AGENTS: SubagentMeta[] = [];
+/** How often the running-agent rule re-reads the clock. See `now` below. */
+const RUNNING_TICK_MS = 15_000;
 /** Opens the subagent list. `agent` (singular) opens one transcript — they are not the same thing. */
 const AGENTS_PARAM = 'agents';
 /** Anchors inside the OPEN DRAWER, the drawer's counterpart of `tool` and `msg`. */
@@ -583,16 +585,41 @@ export function SessionViewPage() {
   const activity = useMemo(() => turnActivity(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
 
   /**
-   * Whether the agent open in the drawer is still working, which takes both
-   * halves and only this page holds them: the session's live status, which comes
-   * from `['live']` and nowhere else, and the report the agent would have filed,
-   * which is in this conversation. `rowStatus` is the rule, and it is also where
-   * the one case it cannot answer is written down.
+   * The clock the running-agent rule is read against, and it has to tick: an
+   * agent is called running partly because it wrote recently
+   * (`AGENT_SILENCE_MS`), so the row must be able to go away on its own. Nothing
+   * else would take it away — an agent that stops writing without reporting back
+   * sends no event, and an idle session may never be asked about again.
+   *
+   * Only while there is something to wait on, and coarse: a quarter of a minute
+   * either way on a fifteen-minute grace is nobody's news.
    */
-  const agentRunning = useMemo(() => {
-    const row = agentId ? subagentIndex.rows.find((r) => r.meta.agentId === agentId) : null;
-    return row ? rowStatus(row, isWorking(liveInfo)) === 'running' : false;
-  }, [agentId, subagentIndex, liveInfo]);
+  const [now, setNow] = useState(() => Date.now());
+  const sessionAlive = liveInfo !== null;
+  // Only where an answer could still change: an agent that has already reported
+  // back is settled, and a session with nothing outstanding needs no clock at all.
+  const mayHaveRunning =
+    sessionAlive && subagentIndex.rows.some((r) => r.call !== null && r.reports.length === 0);
+  useEffect(() => {
+    if (!mayHaveRunning) return;
+    const timer = setInterval(() => setNow(Date.now()), RUNNING_TICK_MS);
+    return () => clearInterval(timer);
+  }, [mayHaveRunning]);
+
+  /**
+   * Which agents are still out there, and since when. Decided here because this
+   * is where both halves are: whether the session's process is alive at all
+   * (`['live']`, and nowhere else) and the reports the agents filed into this
+   * conversation. `subagentStatus` is the rule and the limits it will not step
+   * over.
+   */
+  const running = useMemo(
+    () => runningAgents(subagentIndex.rows, { sessionAlive, now }),
+    [subagentIndex, sessionAlive, now],
+  );
+  // Off the same list rather than asked again, so the drawer and the count can
+  // never disagree — and so a tick that changes nothing changes no prop.
+  const agentRunning = agentId !== null && running.ids.split(',').includes(agentId);
 
   /**
    * The column's real width, which is the limit OR the window when the window is
@@ -624,8 +651,28 @@ export function SessionViewPage() {
     () =>
       pending.length === 0 && isWorking(liveInfo) ? (
         <WorkingIndicator since={workingSince(liveInfo)} activity={activity} columnWidth={clockColumnWidth} />
+      ) : /**
+       * The turn is over and something it sent out is not, which is a state the
+       * foot of the conversation said nothing about: an agent is launched
+       * asynchronously, the turn ENDS while it works, and the report is what
+       * wakes the session up again — so the last thing on screen was a finished
+       * answer while three agents were still going.
+       *
+       * A different sentence, not this row with the old one: `Claude is working`
+       * would be false here, and the count is the news. One clock only — since
+       * the first of them was sent out — because what has landed inside their
+       * transcripts is in THEIR drawers, and `activity` describes the parent's
+       * last turn, which is precisely the turn that already ended.
+       */
+      pending.length === 0 && running.count > 0 ? (
+        <WorkingIndicator
+          since={running.since}
+          columnWidth={clockColumnWidth}
+          startHint="Sent out"
+          label={`⑂ ${running.count} subagent${running.count === 1 ? '' : 's'} still working…`}
+        />
       ) : undefined,
-    [pending.length, liveInfo, activity, clockColumnWidth],
+    [pending.length, liveInfo, activity, clockColumnWidth, running.count, running.since],
   );
   /**
    * The follow-the-end pill. Keyed on the session id, so opening another one
@@ -794,7 +841,13 @@ export function SessionViewPage() {
             />
           )}
           {agentsOpen && (
-            <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} busy={isWorking(liveInfo)} />
+            <SubagentsPanel
+              sessionId={id}
+              rows={subagentIndex.rows}
+              openAgentId={agentId}
+              sessionAlive={sessionAlive}
+              now={now}
+            />
           )}
           {/* The scroller reaches the foot of the window, and the composer rides
               INSIDE it, stuck to the bottom. Nothing is cut off half way down any

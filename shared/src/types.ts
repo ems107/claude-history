@@ -679,6 +679,17 @@ export interface SubagentMeta {
   description: string;
   toolUseId: string;
   spawnDepth: number;
+  /**
+   * When its transcript was last written (epoch ms), or null where the meta has
+   * no transcript beside it.
+   *
+   * **Not something `meta.json` says** — that file holds four fields and no
+   * clock. It is the mtime of `agent-<id>.jsonl`, and it is here because an
+   * agent has no status anywhere: it runs inside its parent's process, so the
+   * parent going idle says nothing about it. Whether it is still going is read
+   * from the report it has not filed and from this.
+   */
+  lastWriteMs: number | null;
 }
 
 export interface FileEdit {

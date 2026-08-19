@@ -4,7 +4,7 @@ import { type ReactNode, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { type CostEntry, costEntries, formatTokens, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
 import { durationBetween, formatDateTime, formatDateTimeFull } from '../../lib/format.ts';
-import { promptOf, rowStatus, type SubagentRow } from '../../lib/subagents.ts';
+import { promptOf, rowStatus, subagentStatus, type SubagentRow } from '../../lib/subagents.ts';
 import { CostPill } from './CostPill.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -98,14 +98,30 @@ function asTree(rows: SubagentRow[], nesting: Map<string, Nesting>): { row: Suba
   return out;
 }
 
-function StatusChip({ row, nesting, busy }: { row: SubagentRow; nesting: Nesting | null; busy: boolean }) {
+function StatusChip({
+  row,
+  nesting,
+  live,
+}: {
+  row: SubagentRow;
+  nesting: Nesting | null;
+  live: { sessionAlive: boolean; now: number };
+}) {
   /**
-   * A nested row's silence IS information here, unlike in `rowStatus`: the tree
-   * was built by reading the transcript of the agent that spawned it, which is
-   * where its report would be — so a missing report there really is missing, and
-   * a busy session makes it `running` like any other.
+   * A nested row's silence IS information here, unlike anywhere the tree is not
+   * built: the parent whose transcript would hold its report is one of the
+   * transcripts this panel read to place it. So the same rule applies to it,
+   * with `reportKnowable` true.
    */
-  const status = nesting ? (nesting.reportStatus ?? (busy ? 'running' : 'unknown')) : rowStatus(row, busy);
+  const status = nesting
+    ? subagentStatus({
+        reports: nesting.reportStatus === null ? [] : [nesting.reportStatus],
+        reportKnowable: true,
+        sessionAlive: live.sessionAlive,
+        lastWriteMs: row.meta.lastWriteMs,
+        now: live.now,
+      })
+    : rowStatus(row, live);
   const where = nesting ? ` — it reported to ⑂ ${nesting.parent.agentType}, the agent that spawned it` : '';
   if (status === 'failed') {
     return (
@@ -201,7 +217,7 @@ function AgentRow({
   loading,
   active,
   nesting,
-  busy,
+  live,
 }: {
   row: SubagentRow;
   /** How deep under the session this agent sits: 0 for one it sent out itself. */
@@ -210,8 +226,8 @@ function AgentRow({
   prices: PriceTable;
   loading: boolean;
   active: boolean;
-  /** The session is mid-turn, which is half of what makes a row `running`. */
-  busy: boolean;
+  /** What `running` is read against — see `subagentStatus`. */
+  live: { sessionAlive: boolean; now: number };
   /** Set when another agent spawned this one, which is where both its ends are. */
   nesting: Nesting | null;
 }) {
@@ -272,7 +288,7 @@ function AgentRow({
         >
           {meta.agentId}
         </span>
-        <StatusChip row={row} nesting={nesting} busy={busy} />
+        <StatusChip row={row} nesting={nesting} live={live} />
         {figures && <CostPill entries={figures.entries} prices={prices} variant="badge" />}
       </div>
       {nesting && (
@@ -353,19 +369,22 @@ export function SubagentsPanel({
   sessionId,
   rows,
   openAgentId,
-  busy,
+  sessionAlive,
+  now,
 }: {
   sessionId: string;
   rows: SubagentRow[];
   /** The one whose transcript is open in the drawer, marked so the two agree. */
   openAgentId: string | null;
   /**
-   * The session is mid-turn. Read off `['live']` by the page and passed down,
-   * never off the detail's own `summary.live`: the busy/idle flip is a write
-   * under `~/.claude/sessions` and fires no `sessions-changed`, so a row taking
-   * it from the transcript would still say `running` after the turn ended.
+   * The session's CLI process still exists. Read off `['live']` by the page and
+   * passed down, never off the detail's own `summary.live`: a process appearing
+   * or going fires only `live-changed`, so a row taking it from the transcript
+   * would still be claiming things about a session that had exited.
    */
-  busy: boolean;
+  sessionAlive: boolean;
+  /** The page's ticking clock, so every chip decays on the same one. */
+  now: number;
 }) {
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
   const prices = pricesQ.data?.prices ?? NO_PRICES;
@@ -463,7 +482,7 @@ export function SubagentsPanel({
             loading={details[i]?.isLoading ?? false}
             active={row.meta.agentId === openAgentId}
             nesting={nesting.get(row.meta.agentId) ?? null}
-            busy={busy}
+            live={{ sessionAlive, now }}
           />
         );
       })}
