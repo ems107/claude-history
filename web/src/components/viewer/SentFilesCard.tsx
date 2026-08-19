@@ -1,25 +1,8 @@
 import { parseFileRef } from '../../lib/fileRefs.ts';
-import { formatBytes } from '../../lib/format.ts';
+import { folderTail, formatBytes } from '../../lib/format.ts';
 import type { SentFile, SentFiles } from '../../lib/sentFiles.ts';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
-
-/**
- * The tail of the folder a file was sent from — the last two segments, marked
- * as cut.
- *
- * The whole path is neither useful nor showable here: these are absolute
- * scratchpad paths of ~130 characters whose first ~110 are identical on every
- * row, so a truncated column spent its width on the shared half and ran out
- * before the part that differs. The end is the part that says anything, and the
- * whole path is on the link's title and in its href.
- */
-function folderTail(path: string, name: string): string {
-  const dir = path.slice(0, path.length - name.length).replace(/[\\/]+$/, '');
-  const parts = dir.split(/[\\/]/);
-  const tail = parts.slice(-2).join('\\');
-  return parts.length > 2 ? `…\\${tail}` : dir;
-}
 
 /** A chip that only exists when it has something to say. */
 function Chip({ children, tone, title }: { children: string; tone: 'quiet' | 'warn'; title: string }) {
@@ -46,7 +29,9 @@ function Chip({ children, tone, title }: { children: string; tone: 'quiet' | 'wa
  * The size and the type come from the transcript and are NOT checked against the
  * disk. Saying "48 KB as sent" costs nothing; a `stat` per row would be one
  * request per file for a number nobody asked for, and the panel shows the real
- * `modifiedAt` the moment a row is opened.
+ * `modifiedAt` the moment a row is opened. Where that question IS worth asking
+ * is the session's own index of every delivery (`SessionFilesPanel`), which asks
+ * it for all of them at once.
  */
 function FileRow({ file }: { file: SentFile }) {
   const ctx = useFileRefs();

@@ -116,6 +116,9 @@ export function SessionHeader({
   onToggleLineage,
   showFiles,
   onToggleFiles,
+  showSentFiles,
+  onToggleSentFiles,
+  sentFileCount,
   showAgents,
   onToggleAgents,
   findOpen,
@@ -146,6 +149,14 @@ export function SessionHeader({
   onToggleLineage: () => void;
   showFiles: boolean;
   onToggleFiles: () => void;
+  showSentFiles: boolean;
+  onToggleSentFiles: () => void;
+  /**
+   * Derived from the turns rather than read off `detail`, unlike every other
+   * count here, and passed in so the button and the panel come out of the same
+   * calculation — two collectors would eventually disagree.
+   */
+  sentFileCount: number;
   showAgents: boolean;
   onToggleAgents: () => void;
   findOpen: boolean;
@@ -295,14 +306,27 @@ export function SessionHeader({
             Lineage
           </button>
         )}
+        {/* Two file buttons, and the words are load-bearing: one lists what the
+            session CHANGED, the other what it HANDED OVER, and while the first was
+            called plain "Files" the second had no name left to take. */}
         {detail.fileChanges.length > 0 && (
           <button
             type="button"
             onClick={onToggleFiles}
             className={toggleClass(showFiles)}
-            title="Files this session edited or wrote"
+            title="Files this session edited or wrote — from the Edit/Write calls in this transcript"
           >
-            Files ({detail.fileChanges.length})
+            Changed Files ({detail.fileChanges.length})
+          </button>
+        )}
+        {sentFileCount > 0 && (
+          <button
+            type="button"
+            onClick={onToggleSentFiles}
+            className={toggleClass(showSentFiles)}
+            title="Files this session handed over: delivered to you with SendUserFile, published as an artifact, or written as a plan — with the state of each on disk right now"
+          >
+            📎 Sent Files ({sentFileCount})
           </button>
         )}
         {detail.subagents.length > 0 && (

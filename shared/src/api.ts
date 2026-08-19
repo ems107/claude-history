@@ -381,6 +381,48 @@ export interface FileReadResponse {
   error?: string;
 }
 
+/** Ask about a batch of paths at once (`POST /api/files/stats`). */
+export interface FileStatsRequest {
+  /** Session id: every reference is resolved against ITS project path, from the index. */
+  session: string;
+  /** The references as written in the transcript. */
+  paths: string[];
+}
+
+/**
+ * Most paths a batch asks about are absolute scratchpad paths of 130–400
+ * characters, and a whole delivery history of them would not fit in a query
+ * string, so this one read is a POST. That is also what gets it the global
+ * same-origin hook for free.
+ */
+export const MAX_STAT_PATHS = 200;
+
+/**
+ * What the disk says about one path — no bytes, no reading, only `stat`.
+ *
+ * `ref` is the string the caller sent, echoed back verbatim: the resolution rule
+ * lives on the server, so the client joins on identity instead of guessing at it
+ * a second time. Everything else answers 200 — missing, a folder, unreadable and
+ * unresolvable are all STATES, and a bad path in the batch must not take the
+ * other 20 down with it.
+ */
+export interface FileStatEntry {
+  ref: string;
+  /** The resolved absolute path, or the ref unchanged when it could not resolve. */
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  sizeBytes: number;
+  /** ISO-8601, or null when there is nothing to stat. */
+  modifiedAt: string | null;
+  /** Why this one says nothing: an unresolvable ref, or an EACCES/EBUSY stat. */
+  error?: string;
+}
+
+export interface FileStatsResponse {
+  files: FileStatEntry[];
+}
+
 /**
  * `GET /api/files/image?session=&path=` has no shape to declare: it answers the
  * bytes of one image with the content type from the server's own extension

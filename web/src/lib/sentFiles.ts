@@ -1,5 +1,5 @@
 import type { ContentBlock } from '@claude-history/shared';
-import { isImagePath, refBasename } from './fileRefs.ts';
+import { isImagePath, normalisePath, refBasename } from './fileRefs.ts';
 
 type ToolBlockType = Extract<ContentBlock, { kind: 'tool' }>;
 
@@ -32,11 +32,6 @@ export interface SentFiles {
   pending: boolean;
 }
 
-/** Windows paths, mixed separators, and the same file written two ways in one call. */
-function normalise(path: string): string {
-  return path.replaceAll('\\', '/').toLowerCase();
-}
-
 /**
  * The files a `SendUserFile` call handed to the user, or null for every other
  * tool.
@@ -67,7 +62,7 @@ export function parseSentFiles(block: ToolBlockType): SentFiles | null {
   if (paths.length === 0) return null;
 
   const recorded = block.result?.attachments ?? [];
-  const byPath = new Map(recorded.map((a) => [normalise(a.path), a]));
+  const byPath = new Map(recorded.map((a) => [normalisePath(a.path), a]));
   const files: SentFile[] = paths.map((path, i) => {
     // By path first. Positionally only as a fallback, and only when the two
     // lists are the same length: the harness writes the attachments in the order
@@ -75,7 +70,7 @@ export function parseSentFiles(block: ToolBlockType): SentFiles | null {
     // something. A future version normalising the paths it echoes would land
     // here rather than silently losing every size.
     const match =
-      byPath.get(normalise(path)) ?? (recorded.length === paths.length ? recorded[i] : undefined);
+      byPath.get(normalisePath(path)) ?? (recorded.length === paths.length ? recorded[i] : undefined);
     return {
       path,
       name: refBasename(path),

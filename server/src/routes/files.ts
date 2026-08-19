@@ -1,7 +1,15 @@
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { FileOpenRequest, FileOpenResponse, FileReadResponse } from '@claude-history/shared';
+import {
+  MAX_STAT_PATHS,
+  type FileOpenRequest,
+  type FileOpenResponse,
+  type FileReadResponse,
+  type FileStatEntry,
+  type FileStatsRequest,
+  type FileStatsResponse,
+} from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { createLogger } from '../core/logger.ts';
@@ -244,6 +252,102 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
         log.warn(`could not read image ${file}: ${String(err)}`);
         return reply.code(500).send({ error: `Failed to read: ${String(err)}` });
       }
+    },
+  );
+
+  /**
+   * What the disk says about a batch of paths: `stat` and nothing else.
+   *
+   * It exists for one question the transcript cannot answer. A delivery's files
+   * live in the session's temp scratchpad, which Windows sweeps, so a panel
+   * listing everything a session ever handed over is mostly a list of paths that
+   * may or may not still be there — and a list of dead links that does not say
+   * so is worse than no list. `size` and `media_type` in the transcript are what
+   * was SENT; only this says what is there now.
+   *
+   * One request for the whole panel, deliberately. Per row it would be a fetch
+   * per file every time the panel opened, which is the same trade the delivery
+   * card refuses when it declines to draw thumbnails.
+   *
+   * A POST for a pure read, also deliberately: these are absolute scratchpad
+   * paths of 130–400 characters, and a session's worth of them in a query string
+   * runs at Node's request-line limit, whose failure is an opaque 431. The method
+   * is what earns it the global same-origin hook (`app.ts`) instead of the
+   * private `isSameOrigin` the two GETs above need — on a GET the absence of
+   * `Origin` means nothing, on a POST it means plenty. It opens nothing on the
+   * server's desktop, so it is NOT in `localOnlyRoutes` and works from a signed-in
+   * browser elsewhere, like every other read.
+   */
+  app.post<{ Body: FileStatsRequest }>(
+    '/api/files/stats',
+    async (request, reply): Promise<FileStatsResponse | void> => {
+      const body = request.body ?? ({} as FileStatsRequest);
+      const session = body.session ?? '';
+      const refs = body.paths;
+      if (!Array.isArray(refs)) return reply.code(400).send({ error: 'paths must be an array' });
+      // The cap is what keeps this from being a filesystem scanner. No panel is
+      // anywhere near it — the busiest session in this corpus delivered 5 files.
+      if (refs.length > MAX_STAT_PATHS) {
+        return reply.code(400).send({ error: `At most ${String(MAX_STAT_PATHS)} paths per request.` });
+      }
+      // The session is the only thing worth refusing the whole batch over: it is
+      // what every path is resolved against, so a bad one makes every answer
+      // meaningless rather than one of them wrong.
+      if (!UUID_RE.test(session)) return reply.code(400).send({ error: 'Invalid session id' });
+      if (!ctx.index.get(session)) return reply.code(404).send({ error: 'Session not found' });
+
+      // Statted once per distinct REF, answered once per path asked about: a
+      // panel that lists the same file in two sections must still get two rows
+      // it can join by identity. Keyed on the raw string rather than on a
+      // normalised one, because the key has to be what the answer is stamped
+      // with — two spellings of one path is two stats, and that is cheap.
+      const seen = new Map<string, Promise<Omit<FileStatEntry, 'ref'>>>();
+      const stat = async (ref: string): Promise<Omit<FileStatEntry, 'ref'>> => {
+        const resolved = resolveRef(ctx, session, ref);
+        if (!resolved.ok) {
+          return { path: ref, exists: false, isDirectory: false, sizeBytes: 0, modifiedAt: null, error: resolved.error };
+        }
+        const file = resolved.path;
+        try {
+          const s = await fsp.stat(file);
+          return {
+            path: file,
+            exists: true,
+            isDirectory: s.isDirectory(),
+            sizeBytes: s.size,
+            modifiedAt: new Date(s.mtimeMs).toISOString(),
+          };
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          const gone = code === 'ENOENT' || code === 'ENOTDIR';
+          return {
+            path: file,
+            exists: false,
+            isDirectory: false,
+            sizeBytes: 0,
+            modifiedAt: null,
+            // Missing is the ordinary answer here and says nothing worth
+            // repeating; anything else is a finding and keeps its own words.
+            ...(gone ? {} : { error: err instanceof Error ? err.message : String(err) }),
+          };
+        }
+      };
+
+      const files = await Promise.all(
+        refs.map(async (ref): Promise<FileStatEntry> => {
+          const key = typeof ref === 'string' ? ref : String(ref);
+          let pending = seen.get(key);
+          if (!pending) {
+            pending = stat(key);
+            seen.set(key, pending);
+          }
+          return { ref: key, ...(await pending) };
+        }),
+      );
+      // One line for the batch, not one per file: this runs every time a panel
+      // opens and the interesting number is how much of it is still there.
+      log.debug(`statted ${String(files.length)} path(s), ${String(files.filter((f) => f.exists).length)} present`);
+      return { files };
     },
   );
 

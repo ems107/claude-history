@@ -157,3 +157,23 @@ export function entrypointLabel(entrypoint: string | null): string | null {
       return entrypoint;
   }
 }
+
+/**
+ * The tail of the folder a file is in — the last two segments, marked as cut.
+ *
+ * Here rather than in the component that first needed it, because two now do and
+ * they must cut identically: the delivery card in the conversation and the panel
+ * that indexes every delivery of the session.
+ *
+ * The whole path is neither useful nor showable in a row: these are absolute
+ * scratchpad paths of ~130 characters whose first ~110 are identical on every
+ * one, so a truncated column spends its width on the shared half and runs out
+ * before the part that differs. The end is the part that says anything, and the
+ * whole path belongs on the link's title and in its href.
+ */
+export function folderTail(path: string, name: string): string {
+  const dir = path.slice(0, path.length - name.length).replace(/[\\/]+$/, '');
+  const parts = dir.split(/[\\/]/);
+  const tail = parts.slice(-2).join('\\');
+  return parts.length > 2 ? `…\\${tail}` : dir;
+}

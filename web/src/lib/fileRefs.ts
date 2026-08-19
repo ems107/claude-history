@@ -219,6 +219,23 @@ export function formatFileRef(ref: FileRef): string {
   return ref.column === undefined ? `${ref.path}:${ref.line}` : `${ref.path}:${ref.line}:${ref.column}`;
 }
 
+/**
+ * One path written two ways is one path: `\`→`/` and folded to lower case.
+ *
+ * The one home for that question, because two answers to it have to agree — the
+ * call↔result join of a delivery (`sentFiles.ts`) and the dedupe of the session's
+ * file index (`sessionFiles.ts`). A `SendUserFile` call really does write `C:/…`
+ * while its own result echoes `C:\…`, so comparing the raw strings silently
+ * loses every size; the same two spellings across two deliveries would list one
+ * file twice.
+ *
+ * It is a comparison key and nothing else — never a path to open. Windows is the
+ * only filesystem here, which is what makes folding the case right.
+ */
+export function normalisePath(path: string): string {
+  return path.replaceAll('\\', '/').toLowerCase();
+}
+
 /** Last segment, `/` and `\` alike — these paths mix both. */
 export function refBasename(path: string): string {
   const parts = path.split(/[\\/]/);

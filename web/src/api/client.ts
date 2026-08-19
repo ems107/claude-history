@@ -12,6 +12,8 @@ import type {
   FileOpenRequest,
   FileOpenResponse,
   FileReadResponse,
+  FileStatsRequest,
+  FileStatsResponse,
   FirewallStatusResponse,
   LineageResponse,
   LiveResponse,
@@ -488,6 +490,20 @@ export const api = {
    */
   fileImageUrl: (sessionId: string, ref: string) =>
     `/api/files/image?session=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(ref)}`,
+  /**
+   * What the disk says about a batch of paths, for the session's file index. One
+   * request for the whole panel; see the route for why a read is a POST.
+   */
+  fileStats: async (sessionId: string, paths: string[]) => {
+    const res = await fetch('/api/files/stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session: sessionId, paths } satisfies FileStatsRequest),
+    });
+    const body = (await res.json().catch(() => ({}))) as FileStatsResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
   fileOpen: async (req: FileOpenRequest) => {
     const res = await fetch('/api/files/open', {
       method: 'POST',

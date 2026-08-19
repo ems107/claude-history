@@ -7,6 +7,7 @@ import { FILE_PARAM, type FileRef, formatFileRef, parseFileRef } from '../lib/fi
 import { useFoldState } from '../lib/folding.ts';
 import { anchorOfKey, focusKeyAt, parseHighlight, TOOL_PARAM } from '../lib/highlight.ts';
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
+import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex } from '../lib/subagents.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
@@ -14,6 +15,7 @@ import { Composer } from '../components/viewer/Composer.tsx';
 import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FindBar, useFindBar } from '../components/viewer/FindBar.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
+import { SessionFilesPanel } from '../components/viewer/SessionFilesPanel.tsx';
 import { FileRefContext, type FileRefContextValue } from '../components/viewer/FileRefContext.ts';
 import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
 import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
@@ -94,6 +96,7 @@ export function SessionViewPage() {
   const [showTokens, setShowTokens] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const [showSentFiles, setShowSentFiles] = useState(false);
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
@@ -380,6 +383,13 @@ export function SessionViewPage() {
     [starredUuids, starBusy, id, queryClient],
   );
 
+  /**
+   * Everything the session handed over — deliveries, artifacts, plan files.
+   * One calculation feeding both the header's count and the panel's rows, so the
+   * button can never promise a number the panel does not draw.
+   */
+  const sessionFiles = useMemo(() => collectSessionFiles(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
+
   const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const items = (detail.data?.turns ?? []).flatMap((t) => t.items);
     const blocks = items.flatMap((i) => i.blocks);
@@ -584,6 +594,9 @@ export function SessionViewPage() {
             onToggleLineage={() => setShowLineage((v) => !v)}
             showFiles={showFiles}
             onToggleFiles={() => setShowFiles((v) => !v)}
+            showSentFiles={showSentFiles}
+            onToggleSentFiles={() => setShowSentFiles((v) => !v)}
+            sentFileCount={sessionFiles.total}
             showAgents={agentsOpen}
             onToggleAgents={toggleAgents}
             findOpen={finder.isOpen}
@@ -600,6 +613,14 @@ export function SessionViewPage() {
           {showTokens && <TokenPanel summary={detail.data.summary} turns={detail.data.turns} />}
           {showLineage && <LineagePanel sessionId={id} />}
           {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
+          {showSentFiles && (
+            <SessionFilesPanel
+              sessionId={id}
+              files={sessionFiles}
+              onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
+              onGoToMessage={(uuid) => jumpTo('msg', uuid)}
+            />
+          )}
           {agentsOpen && <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} />}
           {/* The scroller reaches the foot of the window, and the composer rides
               INSIDE it, stuck to the bottom. Nothing is cut off half way down any
