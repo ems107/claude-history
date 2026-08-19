@@ -33,13 +33,19 @@ const HIGHLIGHT_NAME = 'plan-comment';
 /**
  * What a comment is ABOUT, in words rather than in furniture.
  *
- * A quote, a chip and a sentence in a box are three unlabelled things: the first
- * draft drew exactly that, and the chip in particular could have been anything —
- * a tag, a file, a status. So the row reads as one sentence instead, "on the
- * passage “…” · under “…”", which names the passage and names the heading and
- * needs no legend. Same component on both sides of the feature: the composer's
- * list while the comment is being written and the transcript card long after, and
- * a reader who learns it once has learnt it in both places.
+ * A number, a quoted fragment, a chip and a sentence in a box are four
+ * unlabelled things: the first draft drew exactly that, and the chip in
+ * particular could have been anything — a tag, a file, a status. So the row
+ * reads as one sentence instead, and it says its own name first: **`Comment 1 on
+ * “…” · under “…”`**. Two words were tried and dropped on the way. The chip,
+ * because a chip cannot say "heading". And "on the passage “…”", because
+ * *passage* is a word a reader has to stop and translate — asked about, by the
+ * only reader this app has — while the quotation marks already say the words are
+ * lifted from somewhere.
+ *
+ * Same component on both sides of the feature: the composer's list while the
+ * comment is being written and the transcript card long after, so a reader who
+ * learns it once has learnt it in both places.
  */
 export function PlanCommentRef({
   index,
@@ -55,10 +61,7 @@ export function PlanCommentRef({
     // Two lines of quote, not one: a passage cut at 40 characters stops being
     // the thing it is quoting. The cap on what was SENT is `QUOTE_MAX`.
     <div className="line-clamp-2 text-[11px] text-[var(--text-dim)]">
-      <span aria-hidden className="mr-1">
-        {index}
-      </span>
-      on the passage <span className="text-[var(--text)] italic">“{quote}”</span>
+      Comment {index} on <span className="text-[var(--text)] italic">“{quote}”</span>
       {heading && (
         <>
           {' · under '}
