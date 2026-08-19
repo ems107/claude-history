@@ -30,6 +30,45 @@ export interface PlanComment {
 /** Registered under its own name so the find bar's marks cannot delete these. */
 const HIGHLIGHT_NAME = 'plan-comment';
 
+/**
+ * What a comment is ABOUT, in words rather than in furniture.
+ *
+ * A quote, a chip and a sentence in a box are three unlabelled things: the first
+ * draft drew exactly that, and the chip in particular could have been anything —
+ * a tag, a file, a status. So the row reads as one sentence instead, "on the
+ * passage “…” · under “…”", which names the passage and names the heading and
+ * needs no legend. Same component on both sides of the feature: the composer's
+ * list while the comment is being written and the transcript card long after, and
+ * a reader who learns it once has learnt it in both places.
+ */
+export function PlanCommentRef({
+  index,
+  quote,
+  heading,
+}: {
+  index: number;
+  quote: string;
+  /** The nearest heading above the passage, when the plan had one. */
+  heading: string | null;
+}) {
+  return (
+    // Two lines of quote, not one: a passage cut at 40 characters stops being
+    // the thing it is quoting. The cap on what was SENT is `QUOTE_MAX`.
+    <div className="line-clamp-2 text-[11px] text-[var(--text-dim)]">
+      <span aria-hidden className="mr-1">
+        {index}
+      </span>
+      on the passage <span className="text-[var(--text)] italic">“{quote}”</span>
+      {heading && (
+        <>
+          {' · under '}
+          <span className="italic">“{heading}”</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** How much of a quote is repeated back to Claude before it is cut. */
 const QUOTE_MAX = 240;
 
@@ -330,11 +369,8 @@ export function PlanReview({
           <div className="space-y-1">
             {comments.map((c, i) => (
               <div key={c.id} className="flex items-start gap-2 rounded border border-[var(--border)] px-2 py-1 text-xs">
-                <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{i + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[11px] text-[var(--text-dim)] italic">
-                    “{c.quote}”{c.heading && <span className="not-italic"> · under {c.heading}</span>}
-                  </div>
+                  <PlanCommentRef index={i + 1} quote={c.quote} heading={c.heading || null} />
                   <div className="whitespace-pre-wrap text-[var(--text)]">{c.text}</div>
                 </div>
                 <button

@@ -5,6 +5,7 @@ import { type ParsedPlan, parsePlanFeedback } from '../../lib/plans.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
+import { PlanCommentRef } from './PlanReview.tsx';
 
 const STATUS: Record<ParsedPlan['status'], { label: string; tone: string; box: string }> = {
   approved: { label: '✔ approved', tone: 'text-emerald-400', box: 'border-emerald-500/30 bg-emerald-500/5' },
@@ -76,10 +77,11 @@ export function PlanCard({ parsed }: { parsed: ParsedPlan }) {
  * together in the shape Claude was given them ([AI_AGENTS_QUESTIONS_PLANS.md]) —
  * and printed raw it was a wall of `[Re: "…" · under "…"]` brackets, which is a
  * wire format on a page. `parsePlanFeedback` takes it apart and each remark is
- * drawn the way the composer's own list draws it: the passage quoted, where it
- * was, then what was asked for. Nothing is hidden — a feedback that does not
- * parse (a refusal typed in a terminal, another client's wording) is printed
- * exactly as before.
+ * drawn by `PlanCommentRef`, the same row the composer's own list uses — a
+ * sentence naming the passage and the heading, because a quote, a chip and a
+ * line in a box are three things with nothing saying which is which. Nothing is
+ * hidden: a feedback that does not parse (a refusal typed in a terminal, another
+ * client's wording) is printed exactly as before.
  */
 function PlanFeedbackPanel({ feedback }: { feedback: string }) {
   const { note, comments } = parsePlanFeedback(feedback);
@@ -98,20 +100,7 @@ function PlanFeedbackPanel({ feedback }: { feedback: string }) {
         <div className="mt-1 space-y-1">
           {comments.map((c, i) => (
             <div key={i} className="rounded border border-[var(--border)] px-2 py-1 text-xs">
-              <div className="flex items-baseline gap-1.5">
-                <span aria-hidden className="shrink-0 text-[10px] text-[var(--text-dim)]">
-                  {i + 1}
-                </span>
-                {/* The passage, not a link: this is a plan that has already been
-                    answered, and the copy it quotes may not be the copy on disk
-                    any more (the file is overwritten). */}
-                <span className="min-w-0 truncate text-[11px] text-[var(--text-dim)] italic">“{c.quote}”</span>
-                {c.heading && (
-                  <span className="shrink-0 rounded bg-[var(--bg)] px-1 py-px text-[10px] text-[var(--text-dim)]">
-                    {c.heading}
-                  </span>
-                )}
-              </div>
+              <PlanCommentRef index={i + 1} quote={c.quote} heading={c.heading} />
               <div className="mt-0.5 whitespace-pre-wrap text-[var(--text)]">{c.text}</div>
             </div>
           ))}
