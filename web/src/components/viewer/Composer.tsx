@@ -161,8 +161,16 @@ export function Composer({
    * conversation to follow — and then the row simply keeps its own padding.
    */
   columnWidth?: string;
-  /** The prompt was accepted by the server; show it before the transcript has it. */
-  onSent?: (text: string) => void;
+  /**
+   * The prompt was accepted by the server; show it before the transcript has it.
+   *
+   * What it went out ON comes with it, because the composer is the only thing
+   * that knows: the model, effort and mode are resolved here from a running CLI,
+   * the transcript and the fallbacks, and a caller that wanted to remember the
+   * choice would otherwise have to redo that resolution and get it slightly
+   * wrong. Ignored by the viewer, which has a transcript to read it back from.
+   */
+  onSent?: (text: string, sent: { model: string; effort: string | null; permissionMode: ChatPermissionMode }) => void;
   /**
    * How this session was last answered, from the transcript. The starting point
    * for the pickers: there is no configured default, because one would quietly
@@ -238,21 +246,17 @@ export function Composer({
     if (!prompt || sending || blocked) return;
     setSending(true);
     setError(null);
+    // With a model list, the effort is one this model actually takes, or none at
+    // all. Without one, the effort the session was last answered at is the only
+    // evidence available — and it is good evidence: that model took it.
+    const sentEffort = models.length > 0 ? (efforts.length > 0 ? (effort ?? efforts[0]) : null) : effort;
     api
-      // With a model list, the effort is one this model actually takes, or none
-      // at all. Without one, the effort the session was last answered at is the
-      // only evidence available — and it is good evidence: that model took it.
-      .chatSend(sessionId, {
-        text: prompt,
-        model,
-        effort: models.length > 0 ? (efforts.length > 0 ? (effort ?? efforts[0]) : null) : effort,
-        permissionMode: mode,
-      })
+      .chatSend(sessionId, { text: prompt, model, effort: sentEffort, permissionMode: mode })
       .then(() => {
         setText('');
         // Only once the server has taken it: an echo of a prompt that was
         // refused would be a message the conversation never had.
-        onSent?.(prompt);
+        onSent?.(prompt, { model, effort: sentEffort, permissionMode: mode });
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {

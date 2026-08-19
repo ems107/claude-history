@@ -1,5 +1,7 @@
 import { type SpawnOptions, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 /**
@@ -240,6 +242,98 @@ export async function revealInExplorer(file: string): Promise<boolean> {
  */
 export async function openFileInVsCode(file: string, line?: number): Promise<void> {
   await trySpawn('cmd', ['/c', 'code', '-g', line ? `${file}:${line}` : file]);
+}
+
+/**
+ * How long the folder dialog may stay open before it is abandoned.
+ *
+ * Generous, because the thing at the other end is a person browsing a disk, and
+ * a dialog closed under their hand is worse than a request that waited. It is a
+ * backstop against a dialog nobody will ever answer — the page having been
+ * closed, say — not a pace this is meant to keep.
+ */
+const PICK_FOLDER_TIMEOUT_MS = 5 * 60_000;
+
+/** One dialog at a time: a second would open behind the first and be invisible. */
+let picking = false;
+
+/**
+ * The Windows folder browser, on the server's own desktop. Resolves to the
+ * chosen path, or null if it was cancelled.
+ *
+ * **The answer comes back through a FILE, never through stdout.** A console
+ * child writes in the OEM codepage and Node decodes it as UTF-8, which does not
+ * merely misspell a path through a non-ASCII profile — it destroys it (the trap
+ * documented on `whichExe`, which cost a user the whole auto-reload feature).
+ * PowerShell writes UTF-8 bytes to a temp file and we read them here, so the
+ * console encoding never enters into it. The two inputs travel as environment
+ * variables for the same reason quoting is avoided everywhere else: a path with
+ * a quote or a `$` in it must not be able to become part of the script.
+ *
+ * `-STA` is not optional — WinForms needs a single-threaded apartment and pwsh
+ * does not start in one — and the owner form exists purely so the dialog has a
+ * topmost parent: with no owner it opens behind whatever has the foreground,
+ * which reads exactly like the button doing nothing. Its handle is forced
+ * without ever showing it, so nothing flashes on screen.
+ *
+ * `findShell()` prefers pwsh, which matters here beyond taste: on .NET the
+ * dialog is the modern one, while Windows PowerShell 5.1 draws the old
+ * tree-view. Both work; only one looks like this decade.
+ */
+export async function pickFolder(initial?: string): Promise<string | null> {
+  if (picking) throw new Error('A folder browser is already open on that machine.');
+  picking = true;
+  const out = path.join(os.tmpdir(), `claude-history-pick-${randomUUID()}.txt`);
+  const script = [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
+    "$d.Description = 'Choose the folder for the new Claude Code session'",
+    '$d.ShowNewFolderButton = $true',
+    'if ($env:CH_PICK_DIR) { try { $d.SelectedPath = $env:CH_PICK_DIR } catch {} }',
+    '$owner = New-Object System.Windows.Forms.Form',
+    '$owner.TopMost = $true',
+    '$null = $owner.Handle',
+    'if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {',
+    '  [System.IO.File]::WriteAllText($env:CH_PICK_OUT, $d.SelectedPath, (New-Object System.Text.UTF8Encoding $false))',
+    '}',
+    '$owner.Dispose()',
+  ].join('; ');
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(findShell(), ['-NoProfile', '-STA', '-Command', script], {
+        stdio: 'ignore',
+        windowsHide: true,
+        env: { ...cleanEnv(), CH_PICK_OUT: out, CH_PICK_DIR: initial ?? '' },
+      });
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new Error('The folder browser was left open and has been closed.'));
+      }, PICK_FOLDER_TIMEOUT_MS);
+      timer.unref();
+      child.once('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.once('exit', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+    // No file means Cancel, which is an answer and not a failure.
+    const chosen = fs.readFileSync(out, 'utf8').trim();
+    return chosen || null;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  } finally {
+    picking = false;
+    try {
+      fs.rmSync(out, { force: true });
+    } catch {
+      // nothing to clean up
+    }
+  }
 }
 
 export async function launchResume(cwd: string, sessionId: string): Promise<{ method: 'wt' | 'cmd'; command: string }> {

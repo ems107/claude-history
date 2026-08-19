@@ -262,3 +262,38 @@ proyectos llamados igual. `Another folder…` va siempre la última y no la esco
 
 Comprobado en Chrome: nombres, colores calculados y contadores **idénticos y en el mismo orden** en las
 dos listas (20 de 20), cero `<select>` en la página.
+
+### Tres ajustes pedidos
+
+**1. Botón para explorar carpetas.** `POST /api/pick-folder` abre el explorador nativo en el escritorio
+del servidor (`pickFolder` en `launcher.ts`). Local-only, con su frase propia: lo que se niega desde
+otra máquina es la comodidad, nunca la acción — la caja de texto de al lado sigue viva. Cuatro trampas
+de Windows resueltas y documentadas en `AI_WINDOWS.md`: la respuesta vuelve por **fichero** UTF-8 y no
+por stdout (una ruta con `ñ` sobrevive intacta — comprobado), las entradas viajan por variables de
+entorno, `-STA` es obligatorio, y el diálogo necesita un `Form` propietario `TopMost` o sale detrás.
+
+**2. La página `/new` es el visor un segundo antes de su primera línea.** Misma cabecera, mismo
+`useViewPrefs` (ancho y zoom), misma columna, mismo composer pegado al pie del mismo scroller. Medido
+contra el visor real con `getBoundingClientRect`: columna 1200, zoom 1.1, `sticky`, y el composer a la
+misma distancia del borde inferior — idénticos. La cabecera lleva solo lo que una sesión sin
+transcripción puede ofrecer con honestidad: la etiqueta del proyecto, `Change folder` (solo antes del
+primer prompt), `Open folder`, `Open VS Code` y `View`.
+
+**3. Modelo y esfuerzo nunca vacíos.** El servidor guarda lo que reportó el último CLI
+(`lastCapabilities`) y lo sirve a las sesiones que no tienen proceso: es un hecho del *install*, no de
+una sesión. Los tres desplegables salen llenos antes de escribir nada — **1 ms y sin arrancar ningún
+`claude`** en la segunda sesión nueva. El único caso que no puede responder es un servidor que no ha
+arrancado ningún CLI desde que empezó, y solo entonces `/new` abre uno para preguntar. Además se
+recuerda el modelo/esfuerzo de la última sesión nueva (`ch:newSessionModel`), que no contradice la regla
+de «sin modelo por defecto»: esa regla habla de *continuar* una conversación.
+
+`/api/sessions/:id/open` acepta ahora un draft, para que los botones de carpeta funcionen antes de que
+exista transcripción.
+
+### Verificado en Chrome
+
+Geometría idéntica entre `/new` y `/session/<id>` · los tres desplegables llenos (`sonnet`, `low`,
+`auto`) sin CLI · segunda sesión: 1 ms, cero procesos nuevos · cabecera con los cuatro controles · flujo
+completo con carpeta escrita a mano → eco → indicador → salto solo al visor con la respuesta dibujada ·
+sin huérfanos. El diálogo de carpeta: abre (`Select Folder`, ventana de pwsh) y cancelar responde
+`{"path": null}`; la selección real queda para una prueba a mano.

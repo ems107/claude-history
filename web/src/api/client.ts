@@ -250,6 +250,20 @@ export const api = {
     if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
     return payload;
   },
+  // Opens the Windows folder browser on the machine the server runs on, and
+  // answers what was chosen — `path: null` for Cancel, which is an answer and
+  // not an error. Refused with 409 from another machine (`pickFolder`), where
+  // typing the path is still there.
+  pickFolder: async (initial?: string) => {
+    const res = await fetch('/api/pick-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initial }),
+    });
+    const payload = (await res.json()) as { path?: string | null; error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload.path ?? null;
+  },
   chatStatus: (id: string) => getJson<ChatStatusResponse>(`/api/sessions/${id}/chat`),
   // Answers as soon as the prompt has been written to the process, not when
   // Claude has answered: the answer arrives through the transcript like any

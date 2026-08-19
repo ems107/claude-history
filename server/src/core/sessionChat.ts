@@ -303,6 +303,18 @@ export class SessionChatService {
   private readonly procs = new Map<string, ChatProcess>();
   /** Ids reserved for sessions that do not exist yet — see `Draft`. */
   private readonly drafts = new Map<string, Draft>();
+  /**
+   * What the last CLI to run told us it offers.
+   *
+   * Still read from a running session and never written by hand — the rule that
+   * keeps this honest — but kept afterwards, because the answer is a fact about
+   * the INSTALL rather than about one session, and a composer with no process
+   * had no way to ask. That left the model and effort pickers absent exactly
+   * where they matter most: the first prompt of a new conversation, where there
+   * is nothing to continue from and therefore nothing to fall back on either.
+   * The moment any CLI comes up, its own list wins again.
+   */
+  private lastCapabilities: { models: ChatModelInfo[]; commands: string[] } = { models: [], commands: [] };
   /** Last failure per session, kept after the process is gone. */
   private readonly errors = new Map<string, string>();
   private timer: NodeJS.Timeout | null = null;
@@ -332,7 +344,7 @@ export class SessionChatService {
     // The index first and a reserved id second: a session being born has no
     // summary to read a folder off, and this is the only thing that knows where
     // it is going to live.
-    const cwd = this.cwdFor(sessionId);
+    const cwd = this.cwdOf(sessionId);
     if (!cwd) return 'This session is not in the index.';
     if (!findClaudeCli()) return 'The Claude Code CLI could not be found.';
     if (!fs.existsSync(cwd)) {
@@ -386,8 +398,11 @@ export class SessionChatService {
       lastError,
       blockedReason: this.sendBlockedReason(sessionId),
       question: p?.ask?.question ?? null,
-      availableModels: p?.models ?? [],
-      availableCommands: p?.commands ?? [],
+      // A running CLI answers for itself; anything else gets what the last one
+      // said. Per list, because they are read in two calls and either can fail
+      // on its own.
+      availableModels: p?.models.length ? p.models : this.lastCapabilities.models,
+      availableCommands: p?.commands.length ? p.commands : this.lastCapabilities.commands,
     };
   }
 
@@ -651,7 +666,7 @@ export class SessionChatService {
    * the reservation answers for the gap before that — the same folder either
    * way, since the reservation is what decided it.
    */
-  private cwdFor(sessionId: string): string | null {
+  cwdOf(sessionId: string): string | null {
     return this.index.get(sessionId)?.projectPath ?? this.drafts.get(sessionId)?.cwd ?? null;
   }
 
@@ -692,7 +707,7 @@ export class SessionChatService {
     permissionMode: ChatPermissionMode,
   ): ChatProcess {
     const cli = findClaudeCli();
-    const cwd = this.cwdFor(sessionId);
+    const cwd = this.cwdOf(sessionId);
     if (!cli || !cwd) throw new Error('The Claude Code CLI could not be found.');
     // Nothing to resume means this is a session being born, and the id goes to
     // the CLI instead of coming back from it — which is what puts the transcript
@@ -883,6 +898,10 @@ export class SessionChatService {
     } catch (err) {
       log.debug(`could not read the command list for ${p.sessionId}`, err);
     }
+    // Kept for the sessions that have no process to ask. Only what actually
+    // arrived: a failed read must not blank a list that was right a minute ago.
+    if (p.models.length > 0) this.lastCapabilities.models = p.models;
+    if (p.commands.length > 0) this.lastCapabilities.commands = p.commands;
     log.info(`${p.sessionId} offers ${p.models.length} models and ${p.commands.length} commands`);
     this.changed(p.sessionId);
   }

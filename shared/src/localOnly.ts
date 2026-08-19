@@ -26,6 +26,7 @@ export type LocalOnlyAction =
   | 'openVsCode'
   | 'resumeTerminal'
   | 'openFile'
+  | 'pickFolder'
   | 'openClaudeFolder'
   | 'openDataFolder'
   | 'openInstallFolder'
@@ -49,6 +50,11 @@ export const LOCAL_ONLY_ACTIONS: Record<LocalOnlyAction, string> = {
   openVsCode: NOT_REMOTELY,
   resumeTerminal: NOT_REMOTELY,
   openFile: NOT_REMOTELY,
+  // The dialog would open on the server's desktop and the folder it browses is
+  // that machine's disk, so from here there is nothing it could pick that this
+  // browser meant. Typing the path stays available, which is the point: only the
+  // convenience is refused, never the action.
+  pickFolder: 'Not available over remote access — the folder browser opens on the machine claude-history runs on. Type the path instead.',
   openClaudeFolder: NOT_REMOTELY,
   openDataFolder: NOT_REMOTELY,
   openInstallFolder: NOT_REMOTELY,

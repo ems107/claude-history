@@ -24,6 +24,7 @@ const SESSION_RESUME = /^\/api\/sessions\/[^/]+\/resume$/;
 const RULES: Rule[] = [
   { method: 'POST', test: (p) => SESSION_RESUME.test(p), action: 'resumeTerminal' },
   { method: 'POST', test: (p) => p === '/api/files/open', action: 'openFile' },
+  { method: 'POST', test: (p) => p === '/api/pick-folder', action: 'pickFolder' },
   { method: 'POST', test: (p) => p === '/api/retention/open-folder', action: 'openClaudeFolder' },
   { method: 'POST', test: (p) => p === '/api/open-data-folder', action: 'openDataFolder' },
   { method: 'POST', test: (p) => p === '/api/open-install-folder', action: 'openInstallFolder' },

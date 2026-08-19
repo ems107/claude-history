@@ -9,6 +9,7 @@ import type {
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { UUID_RE } from '../core/scanner.ts';
+import { pickFolder } from '../util/launcher.ts';
 
 /**
  * The modes a request may ask for. Narrow on purpose: the SDK accepts six, and
@@ -45,6 +46,19 @@ export function registerChatRoutes(app: FastifyInstance, ctx: AppContext): void 
       // machine — the feature is off, the folder is gone, three are running —
       // rather than a malformed request.
       return reply.code(409).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Browse for a folder on the server's own desktop, for the box beside it.
+  // Local-only (`localOnlyRoutes.ts`) because a dialog opened for a browser on
+  // another machine is a window nobody is looking at — the failure that whole
+  // list exists to prevent. `path: null` is Cancel, which is an answer.
+  app.post<{ Body: { initial?: string } }>('/api/pick-folder', async (request, reply) => {
+    const initial = typeof request.body?.initial === 'string' ? request.body.initial : undefined;
+    try {
+      return { path: await pickFolder(initial) };
+    } catch (err) {
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 

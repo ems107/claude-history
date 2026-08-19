@@ -64,9 +64,12 @@ export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): voi
       if (target !== 'explorer' && target !== 'vscode') {
         return reply.code(400).send({ error: 'target must be explorer or vscode' });
       }
-      const summary = ctx.index.get(id);
-      if (!summary) return reply.code(404).send({ error: 'Session not found' });
-      const cwd = summary.projectPath;
+      // The index first, then a reserved id: a session being started from the
+      // app has a folder before it has a transcript, and that folder is exactly
+      // what someone on the new-session page wants to open. Still never from the
+      // request — the reservation is where it was decided.
+      const cwd = ctx.index.get(id)?.projectPath ?? ctx.chat.cwdOf(id);
+      if (!cwd) return reply.code(404).send({ error: 'Session not found' });
       if (!fs.existsSync(cwd)) {
         return reply.code(409).send({ error: `Project directory no longer exists: ${cwd}` });
       }

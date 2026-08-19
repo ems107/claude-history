@@ -30,6 +30,19 @@
 
 **`explorer /select,<path>` needs `windowsVerbatimArguments`.** Explorer wants the switch OUTSIDE the quotes (`/select,"C:\a b\c.ts"`), and Node quotes any argument containing a space, which produces `"/select,C:\a b\c.ts"` — an argument Explorer does not recognise at all, so it silently opens Documents and the bug reads as ours. `revealInExplorer` writes that command line itself and falls back to opening the plain folder, answering `selected: false` so no button can claim a selection that did not happen (verified through `Shell.Application`: right folder, right file selected, on a path with three spaces in it).
 
+## Asking Windows for a folder
+
+`pickFolder` in `util/launcher.ts` puts the system folder browser on the server's own desktop and answers what was chosen. Four things make it work, and each of them was the difference between a button that works and one that looks broken:
+
+- **The answer comes back through a FILE, never stdout.** Same trap as `where.exe` above, one level worse: the path being chosen is arbitrary and may well be the one with `ñ` in it. PowerShell writes UTF-8 bytes with `[System.IO.File]::WriteAllText`, Node reads them, and the console codepage never enters into it. **No output file means Cancel**, which is an answer rather than a failure.
+- **The two inputs travel as environment variables**, not inside the command string. A folder can contain a quote or a `$`, and nothing the user types may become part of a script.
+- **`-STA` is not optional.** WinForms needs a single-threaded apartment and pwsh does not start in one; without it the dialog never appears and the process exits quietly.
+- **The dialog needs an owner or it opens behind whatever has the foreground**, which reads exactly like the button doing nothing. A `Form` with `TopMost` set, its handle forced by touching `.Handle` and never shown, is that owner — nothing flashes on screen.
+
+`findShell()` prefers pwsh here beyond taste: on .NET the dialog is the modern one (`Select Folder`, with a path box), while Windows PowerShell 5.1 draws the old `Browse For Folder` tree. Both work.
+
+One at a time (`picking`) — a second dialog opens behind the first and cannot be reached — and `PICK_FOLDER_TIMEOUT_MS` is a backstop for a dialog nobody will ever answer, not a pace: the thing at the other end is a person browsing a disk.
+
 ## Odds and ends
 
 - `process.kill(pid, 0)` throws `EPERM` for alive-but-protected processes — treat EPERM as "alive".
@@ -40,4 +53,4 @@ PowerShell encoding rules for the installer scripts are in [AI_DISTRIBUTION.md](
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — check 13 (executable resolution), and the Explorer half of check 21.
+[AI_TESTING.md](AI_TESTING.md) — check 13 (executable resolution), the Explorer half of check 21, and the folder browser in check 37.
