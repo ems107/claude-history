@@ -273,6 +273,14 @@ Then Chrome over CDP, with check 9's harness:
   message must still be the one and only `[data-selected]`.
 - **The ring repaints the tail**: `[data-selected] > [data-bubble-tail]` must
   have the accent border, or the tail's opaque fill punches a notch in the ring.
+- **The flash must not erase the ring, and this is measured rather than watched.**
+  Follow a `?msg=` link and read `getComputedStyle` on the flashed box: during the
+  animation `outlineWidth` must already be `2px` in the selected colour AND
+  `boxShadow` must be set (the flash's own brighter ring over it); after the class
+  comes off, the outline must be **byte-identical** to what it was during, with
+  `boxShadow: none`. Equal before and after is the whole assertion — it is what
+  says nothing pops. With both rings on `box-shadow` the outline was absent
+  throughout and the ring appeared out of nowhere at 2.5 s.
 - **And it survives F5** ([AI_VIEWER.md](AI_VIEWER.md#f5-lands-back-on-it)).
   Click a bubble well down a session, then `Page.reload`: `sessionStorage` must
   hold `ch:selected:<id>` = `msg:<uuid>` before it, and after it the SAME uuid
@@ -362,6 +370,7 @@ Then Chrome over CDP, with check 9's harness:
 - **The `Mentioned` panel is the index of these references, and it is mostly a filter** ([AI_VIEWER.md](AI_VIEWER.md)). Two rules to check before any of its numbers. Its collector is **never looser than the renderer**: every path it lists must also be a link in the messages, and the reverse need not hold. And it reads **the assistant's own answers only** — a prompt is not markdown, and a subagent's report is markdown but is folded inside a notice, so a row taken from one cannot show you the sentence it came from. `1806cedb` is the fixture that says it in one line: its answers name `docs/AI_VIEWER.md`, `docs/AI_ARCHITECTURE.md`, `docs/AI_TESTING.md`, `web/src/lib/sessionFiles.ts` and `server/src/core/parser.ts`, and those five are exactly the rows. **No silent caps**: past `MAX_STAT_PATHS` the panel must say how many were never checked.
 - **The jump is the assertion that matters**, because it is the one that failed in the first version: `↑ the mention` must land on a `[data-bubble]` that **carries `match-flash`, names the file in its own text, and holds it as an `a[data-file-ref]`** — all three, or the row is pointing at something the reader cannot read. Press a second row after the flash has worn off and it must do it again.
 - **And it must MARK the path, not only the message.** The URL must carry `?hl=` beside `?msg=`, `CSS.highlights.get('search-match')` must hold ranges whose `toString()` is the path (the ref AND its basename — two terms, or a markdown-link mention underlines nothing), every range must be inside the flashed bubble, and they must clear themselves within ~8 s like a search's. A jump with no terms must leave no `hl` behind.
+- **`×N` is a button and counts messages**: its title must read `Named in N messages` (not "N times" — that number moved to the same title's tail), and pressing it must open the find bar **seeded with the path and pinned to `All`**. The scope picker lives inside the bar's options panel, so reading the scope means opening it. It must be absent on a row named in one message only.
 - **A mention that finds nothing is LISTED**, wearing `not found`, its name dim, and with **no size and no date** — check for the `0 B` and the 1970 date that a nullable field renders when it is not guarded. `980751cb` is the whole-panel case (its answers name files this checkout does not have, so every row says it); `1806cedb` is the mixed one. A **folder** is still the one thing dropped, and the tally line must say both — `N of them point at nothing · 1 named a folder and are not listed`.
 - **A file in another panel is kept and chipped, never dropped.** `sessionFiles.ts` in `1806cedb` was edited AND named, so it must be present wearing `also changed`; the string `already in Changed` must appear nowhere. Dropping those is what hid the most obvious mentions of a session.
 

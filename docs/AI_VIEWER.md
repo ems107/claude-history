@@ -236,10 +236,17 @@ about it depends on the bar being open.
   would never hold. Measured after: **no task over 50 ms at all**. It also stops
   the conversation redrawing for a panel opening, a star being set or a prompt
   being accepted.
-- The ring is a `box-shadow` and **repaints `[data-bubble-tail]` with it**, for
-  the reason in the flash section below. A plain declaration, so `match-flash`
-  overrides it for its 2.5 s and it comes back — which is exactly what a deep
-  link should look like now: a flash that hands over to a mark that stays.
+- The ring is an **`outline`** and **repaints `[data-bubble-tail]`** with the same
+  colour, for the reason in the flash section below. The property matters: both
+  rings were `box-shadow` at first, so `match-flash` — whose last keyframe fades
+  to transparent — overrode this declaration for its 2.5 s, and the ring
+  therefore **dissolved and then snapped back** the instant the class came off. A
+  link landed, the focus faded to nothing, and a moment later the box abruptly
+  looked selected. Two properties instead of one and the overlap does the work:
+  the flash paints its brighter ring over this one and, fading, reveals it. What
+  is on screen is a bright ring settling into the steady one and nothing at all
+  happening when the animation ends — a flash that hands over to a ring that was
+  there all along.
 
 ### F5 lands back on it
 
@@ -437,7 +444,7 @@ to the session list.
 
 ### The flash animation
 
-Only `box-shadow` and `border-color` are animated. A `transform` / `filter` / `opacity` flash would make the bubble the containing block for the cost and context popovers inside it — the `filter` rule above, from the other direction. The tint is an INSET shadow, not a background: a bubble paints its own, and animating that ends the flash on the wrong colour.
+Only `box-shadow` and `border-color` are animated — and `box-shadow` is deliberately NOT what the selection ring uses, which is what stops the fade from erasing it (see *The selected message* above). A `transform` / `filter` / `opacity` flash would make the bubble the containing block for the cost and context popovers inside it — the `filter` rule above, from the other direction. The tint is an INSET shadow, not a background: a bubble paints its own, and animating that ends the flash on the wrong colour.
 
 **Anything that recolours a bubble's outline must recolour its tail** (`[data-bubble-tail]`, its own keyframes). The tail is a separate element with its own border and its own OPAQUE fill, so it does not merely keep the old colour — its fill paints over the ring, punching a dark notch in the very line it exists to continue.
 
@@ -474,6 +481,7 @@ The third is the weakest of them by nature and says so on every row that needs i
   - **A prompt** renders `whitespace-pre-wrap`, so a path typed into one is not a link anywhere in this app.
   - **A subagent's report** does go through `Markdown`, so its paths ARE links — and reading them made this panel useless twice over. 23 of 23 rows of one session came from reports, drowning the four the conversation itself had pointed at; and the row could not keep its promise, because a report is folded inside a notice, so `↑ the mention` landed on the agent's box with the named path nowhere on screen. **A row here must go somewhere the path can be READ**, and only an answer offers that. Checked, and worth keeping checked: the jump must land on a `[data-bubble]` whose own text names the file and holds it as a link.
 - **Being in another panel is a chip, never a filter.** The first version dropped those rows because the information was "already elsewhere", and that took the most obvious mentions of a session with it — a file the answers keep pointing at is usually one the session also edited. `also changed` / `also sent` says it on the row instead.
+- **`×N` counts PLACES, and it is the way to them.** It counted namings at first, which promised more than the jump could deliver: four occurrences in one paragraph read as four stops, and the marks only ever cover the message jumped to. It counts distinct messages now (`hits` moves to the title, `named in 3 messages, 5 times in all`) and it is a **button**: one press hands the path to the find bar on `All` (`setQuery` then `openBar(true)` — the query first, or `openBar` would seed the deep link's terms over it), which already owns stepping, counting and marking across the conversation, folded stretches included. Building a second "next occurrence" in the panel would be two implementations of one idea, and they would disagree. The badge is absent at one place, which is exactly when there is nothing to step through.
 - **The jump MARKS the path, and through the search's own mechanism.** `↑ the mention` sets `?msg=` and `?hl=` together (`setHighlightTerms`, which folds the terms because that invariant is stated where the params are), so the arrival is the one `TurnList` already implements for a search result: the bubble flashes, every occurrence of the path in it is painted by the Custom Highlight API, the first is revealed, and the marks clear after 8 s. Scrolling to a 2,000-character answer and leaving the reader to find the sentence was the gap. Two terms, not one: the ref as written AND its basename, because a markdown link puts the path in the href and the filename in the words — marking only the ref would underline nothing at all. Passing NO terms clears the parameters, so a previous search's words never survive into an unrelated jump.
 - **Deduplicated on the RESOLVED path, which is the only identity a mention has.** One answer naming `server/src/core/parser.ts` and another naming the same file absolutely are one file, and drew two rows until the dedupe moved there — which can only happen after the stat, because resolution is the server's answer. `×N` absorbs the spellings, and the `as written` column keeps the **relative** one only: an absolute ref is 130 characters of what the folder tail already ends with, and printed in the row it pushed every row past the window.
 - **Its count is the one count in this header that is not a fact of the transcript**, so the button opens reading `Mentioned` with no number, asks nothing of the disk until it is first pressed, and takes the FILTERED count from then on. A figure promising fourteen rows and drawing one is worse than no figure.

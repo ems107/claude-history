@@ -701,6 +701,17 @@ export function SessionViewPage() {
               pending={mentionStats.isPending && mentionRefs.length > 0}
               error={mentionStats.isError ? String(mentionStats.error) : null}
               onGoToMessage={(uuid, terms) => jumpTo('msg', uuid, terms)}
+              /**
+               * The other namings, handed to the one thing that already does this
+               * properly. `openBar(true)` is Ctrl+Shift+F — the `All` scope, so a
+               * naming inside a folded stretch counts too — and the query is set
+               * first, which is what stops `openBar` seeding the deep link's terms
+               * over it.
+               */
+              onFindEverywhere={(terms) => {
+                finder.bar.setQuery(terms.join(' '));
+                finder.openBar(true);
+              }}
             />
           )}
           {agentsOpen && <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} />}

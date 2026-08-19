@@ -247,14 +247,24 @@ body {
 /* The message or tool call the reader has selected — by clicking it, or by
    following a link that landed on it. It is not the find bar's: the bar reads
    it, and the ring is there whether anything is searching or not.
-   A box-shadow, exactly like `match-flash`: a transform, a filter or an opacity
-   animation here would make the box the containing block for the cost and
-   context popovers inside it, which are position: fixed. And a plain
-   declaration, so the flash's own animation overrides it for its 2.5 s and the
-   ring comes back afterwards — which is what a deep link looks like now, a
-   flash that hands over to a mark that stays. */
+
+   An OUTLINE and not a box-shadow, which is the whole of a fix worth explaining.
+   Both rings used to be box-shadows, so the flash's animation overrode this
+   declaration for its 2.5 s — and its last keyframe fades to transparent. The
+   ring therefore faded away to nothing, and then SNAPPED back the moment the
+   class came off: a link landed, the focus dissolved, and a quarter of a second
+   later the box abruptly looked selected. Two properties instead of one and the
+   overlap does the work: the flash's ring is painted over this one and, as it
+   fades, reveals it. What the reader sees is a bright ring settling into the
+   steady one, and nothing at all happening when the animation ends — the ring
+   was there the whole time. Same place, same colour family, no value repeated
+   between the two rules.
+
+   Not a transform, a filter or an opacity animation, here or in the flash: any
+   of them would make the box the containing block for the cost and context
+   popovers inside it, which are position: fixed. */
 [data-selected] {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 65%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
 }
 
 /* And the tail with it. It is a separate element with its own border and its

@@ -20,10 +20,21 @@ export interface MentionCandidate {
   key: string;
   /** From `:12` / `#L12`, kept so the link opens where the sentence pointed. */
   line: number | null;
-  /** How many times it was named. */
+  /** How many times it was named at all — several can sit in one message. */
   hits: number;
-  /** The message that named it first — `?msg=`, all a mention can be anchored on. */
-  messageUuid: string | null;
+  /**
+   * The messages that named it, distinct and in the order they arrived.
+   *
+   * Two numbers rather than one, because they answer different questions and the
+   * badge on the row was answering the wrong one: `hits` is how often the path was
+   * written, and this is how many PLACES there are to go. `×4` counted occurrences
+   * while the jump could only ever take you to one of them and mark the ones in
+   * that message — a badge promising four stops for a file named four times in a
+   * single paragraph. The badge counts these now, and `hits` lives on the tooltip.
+   *
+   * `[0]` is where the jump goes, which is what makes the row's timestamp its own.
+   */
+  messages: string[];
   timestamp: string | null;
 }
 
@@ -129,8 +140,9 @@ export function collectMentionedFiles(turns: Turn[]): MentionCandidate[] {
           const existing = found.get(key);
           if (existing) {
             // The first anchor and the first spelling stay: the row reads as
-            // "this file, first named here", and the count says the rest.
+            // "this file, first named here", and the two counts say the rest.
             existing.hits += 1;
+            if (!existing.messages.includes(item.uuid)) existing.messages.push(item.uuid);
             existing.line ??= ref.line ?? null;
             continue;
           }
@@ -141,7 +153,7 @@ export function collectMentionedFiles(turns: Turn[]): MentionCandidate[] {
             key,
             line: ref.line ?? null,
             hits: 1,
-            messageUuid: item.uuid,
+            messages: [item.uuid],
             timestamp: item.timestamp,
           });
         }
@@ -214,7 +226,10 @@ export function filterMentions(
     const resolved = normalisePath(resolvedPath);
     const existing = rows.get(resolved);
     if (existing) {
+      // Both counts survive the merge, or a file named once as `core/parser.ts`
+      // and once absolutely would report one place and one naming.
       existing.hits += c.hits;
+      for (const uuid of c.messages) if (!existing.messages.includes(uuid)) existing.messages.push(uuid);
       existing.line ??= c.line;
       continue;
     }
