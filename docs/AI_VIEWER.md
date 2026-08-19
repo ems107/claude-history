@@ -611,6 +611,13 @@ and could only be the turn.
   over a composer 155 px tall. Still no measuring and no render on resize: the
   arithmetic is the same, it just has the switch it was always described with. The
   composer's own `max()` is untouched: `Send` really is in that corner.
+- **And the composer takes the width on the same terms**, which is the same rule
+  read from the other end: `columnWidth` is optional there too, and the caller
+  passes it only where a pill exists to be dodged. `SessionViewPage` always does;
+  the new-session page ([AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md#starting-one-that-does-not-exist-yet))
+  has no conversation to follow and so no pill, and passing a width there would
+  have bought a gutter against nothing — the mistake this bullet is about, one
+  component along.
 
 ## Verify
 

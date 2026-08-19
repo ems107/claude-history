@@ -203,7 +203,7 @@ Orden previsto:
 
 - [x] 1. Tipos en `shared` + drafts y `create()` en `sessionChat.ts` + rutas
 - [x] 2. `NewSessionPage`, ruta `/new`, botón de cabecera, `columnWidth` opcional
-- [ ] 3. Documentación (`AI_RUNNING_CLAUDE.md`, `AI_ARCHITECTURE.md`, `CLAUDE.md`, check 37)
+- [x] 3. Documentación (`AI_RUNNING_CLAUDE.md`, `AI_ARCHITECTURE.md`, `CLAUDE.md`, `AI_VIEWER.md`, check 37)
 
 ### Medido, no supuesto
 
@@ -240,3 +240,13 @@ Sesión creada directamente en `plan`: el estado lo refleja desde el primer inst
 plan` con `state: starting`), y llega un `ExitPlanMode` real con el plan leído de
 `~/.claude/plans/<slug>.md` (460 caracteres, markdown). *Keep planning* con nota se acepta. Es el caso
 que solo existe aquí: el picker de modo trabajando sin ningún CLI arrancado.
+
+### Documentación
+
+`AI_RUNNING_CLAUDE.md`: dos apartados nuevos bajo el composer — el draft y por qué `transcriptExists`
+pregunta al disco en vez de guardar una bandera, y la excepción del cwd con su razón (una carpeta nueva
+no está en ningún índice) y su validación. `AI_ARCHITECTURE.md` y `CLAUDE.md`: la invariante del cwd
+ahora nombra su única excepción en lugar de afirmar algo que ya no es cierto. `AI_VIEWER.md`:
+`columnWidth` es opcional también en el composer, por la misma razón por la que ya lo era en los relojes.
+`AI_TESTING.md`: **check 37**, y las dos reglas de los checks que ejecutan `claude` de verdad ahora
+incluyen el 37.

@@ -20,6 +20,8 @@ The app has two halves and they are not the same kind of thing. **Everything tha
 - **No layer of the anti-loop may disable "Send it now"**, and every refusal must say why.
 - **Two writers on one transcript is the thing being prevented** — but never block on a list, always re-check `pidAlive`.
 - **The composer never renders the answer from the SDK stream** — the transcript is the source, as for any other session.
+- **A new session's id is minted here, and which of `sessionId` / `resume` applies is asked of the disk**, never remembered in a flag.
+- **A typed folder is the one path that comes from the request**, and it is validated rather than trusted.
 
 ## Subscription usage (read-only)
 
@@ -122,7 +124,24 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 
 ## The composer: sending a prompt from the app
 
-`core/sessionChat.ts`, off by default behind `chatEnabled`, `GET`/`POST /api/sessions/:id/chat`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>`, `permissionMode` from the composer — `auto` unless plan mode was asked for), kept alive between turns. Where the box sits on screen — inside the conversation's own scroller — is in [AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation).
+`core/sessionChat.ts`, off by default behind `chatEnabled`, `GET`/`POST /api/sessions/:id/chat` plus `POST /api/chat/new`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>` — or `sessionId: <id>` for one that does not exist yet, below — and `permissionMode` from the composer, `auto` unless plan mode was asked for), kept alive between turns. Where the box sits on screen — inside the conversation's own scroller — is in [AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation).
+
+### Starting one that does not exist yet
+
+The two halves want the id at different moments. Claude Code mints it when the CLI starts; the browser needs it *before* that, to mount a composer against it and to know which transcript to open afterwards. `Options.sessionId` settles it — "use a specific session ID for the conversation instead of an auto-generated one", mutually exclusive with `resume` — so the id is minted here and the page is already standing where the file will land.
+
+A **draft** is that reservation and nothing else: an id, a folder, no process, no file. `POST /api/chat/new` creates one and spawns nothing; the CLI comes up with the first prompt, down the same road as every other session. It is dropped once `index.get(id)` answers, and `DRAFT_TTL_MS` (an hour) covers a tab closed on the picker.
+
+- **Which of the two options applies is asked of the disk** (`transcriptExists`: one readdir of `projects/`, one `existsSync` per folder, and only ever for an id the index has never seen). A flag would have been cheaper and wrong: **Claude Code writes no transcript when the process starts, only when the first turn does** — measured, by opening a draft to read the model list and finding zero files — so the effort restart that can follow it must still mint rather than resume. The index cannot answer either; it is a rescan behind at exactly the wrong moment.
+- **Everything downstream is untouched.** The watcher sees the file, `rescan()` indexes it, `sessions-changed` invalidates `['session', id]`, and `/new` — which reads that same key — hands over to `/session/<id>`. The viewer never learns that a session can be unborn, because by the time it is asked, it is not.
+- **The composer needs no new behaviour for the first prompt.** The question panel, plan mode, the slash commands and Stop never depended on a transcript; the routes just had to stop answering 404 for an id only the chat service knows (`knows()`), and `sendBlockedReason` had to take the folder from `cwdFor` instead of a summary. A session started straight into `plan` produces a real `ExitPlanMode` with its plan file — the mode picker earning the one case it was built for, a first prompt with no CLI to ask.
+- **The two-writers guard costs nothing here** and is left in place: a freshly minted uuid cannot be open in a terminal, so the check simply passes.
+
+### The folder, which is the one path that comes from the request
+
+`create()` takes a `projectKey` the index resolves — the ordinary road, and the rule the rest of this app keeps ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)) — or a folder the user typed. That second one is a deliberate exception, and the reason is that the rule has no answer for the case: **a folder Claude Code has never run in is in no index by definition**, so without it the app could only ever continue what a terminal began, which is most of what this feature exists to stop.
+
+It is validated rather than trusted, and each failure says which of the three things is wrong, because the box someone is typing into is the only feedback they get: absolute, existing, a directory. Quotes come off first — Windows' "Copy as path" wraps the path in them, the same lesson `autoReloadCwd` learned. What already stood in front of it stands there still: the same-origin hook, and a remote browser that has signed in — which could already run Claude with auto-approved tools in any indexed project, so the folder is not what was guarding anything.
 
 ### Why the SDK, and what it must produce
 
@@ -171,4 +190,4 @@ That is the thing being prevented — it is what produces the duplicated uuids a
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 8 (auto-reload), 19 (the composer, and the rules for testing it safely), 23 (plan mode round trip), 24 (answers written back).
+[AI_TESTING.md](AI_TESTING.md) — checks 8 (auto-reload), 19 (the composer, and the rules for testing it safely), 23 (plan mode round trip), 24 (answers written back), 37 (starting a session from the app).
