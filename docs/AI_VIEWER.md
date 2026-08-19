@@ -218,6 +218,31 @@ about it depends on the bar being open.
   against — and had simply outlived it, which is why the region holding its
   report had to stop the event. Nothing to stop now, and a click there selects
   the notice like anything else.
+- **A click also RETIRES the URL's anchor, when the anchor is no longer it.**
+  `?msg=` has two lives and only one should outlast a click: followed from the
+  search, from Prompts or from Starred it is a link and belongs in the address
+  bar, while written by a jump inside the page — `↑ 2/4 mentions`, the subagents
+  panel's `↓ the report` — it is a gesture that used to stay there for ever. F5
+  then landed back on that message however long ago it had been left, and
+  `useRestoredSelection` stood down because a link was present, so the remembered
+  ring could not win either: there was no way out but editing the address bar.
+  So a click that lands somewhere ELSE — another message, or the empty gutter,
+  which is what deselecting is — deletes `msg`, `tool` and the `hl` words with it.
+  Clicking the anchored box ITSELF changes nothing: it is still the place, and the
+  marks and the Ctrl+F seed still belong to that arrival.
+  - **The remembered ring is an opening move and is spent by the first click**
+    (`restoreSpent` in the page). Retiring the anchor makes `anchorUuid` fall back
+    to whatever the tab was left on, and without this the fallback fires as a
+    fresh jump — a click on the gutter would send the reader to a message from ten
+    minutes ago.
+  - **The flash has to come off in the effect's cleanup**, by hand. `bag.clear()`
+    has just cancelled the timer that would have removed it, so anything changing
+    the anchor mid-flash — this retirement, or a jump pressed twice — left
+    `match-flash` on that element for the life of the page: invisible, because the
+    animation had already ended, and permanent, so a later link to the same
+    message added a class that was already there and did not animate at all. The
+    trace is the way to see it (`MutationObserver` on `class`, one `has: true` and
+    no `has: false` after it).
 - **`focusKeyAt` walks up and stops at the first message id**, which is wider
   than a marking box on purpose: a bubble's header, a notice's padding and a
   tool block's fold row are all still that thing, and losing the selection for

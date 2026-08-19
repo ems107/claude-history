@@ -375,6 +375,14 @@ export const TurnList = memo(function TurnList({
     return () => {
       bag.clear();
       clearMarks?.();
+      // And the flash, by hand, because `bag.clear()` has just cancelled the
+      // timer that would have taken it off. Anything that changes the anchor
+      // mid-flash lands here — pressing a jump again, or a click retiring the
+      // one in the URL — and the class would otherwise stay on that element for
+      // the life of the page: invisible (the animation has already ended) and
+      // permanent, so a later link to the SAME message would add a class that is
+      // already there and not animate at all.
+      for (const el of document.querySelectorAll('.match-flash')) el.classList.remove('match-flash');
     };
     // Deliberately NOT keyed on `turns`/`locate`: the deep-linked jump belongs
     // to the link, not to the data. Re-running it on every refetch yanked a live

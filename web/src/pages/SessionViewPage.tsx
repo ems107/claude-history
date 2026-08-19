@@ -7,7 +7,7 @@ import {
   type Turn,
 } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
@@ -264,7 +264,57 @@ export function SessionViewPage() {
    * `lib/selectedMessage.ts` — so this handler redraws the find bar and nothing
    * else, and the conversation is left alone.
    */
-  const selectFromClick = useCallback((e: React.MouseEvent) => selectMessage(focusKeyAt(e.target)), []);
+  /**
+   * Which box the URL is asking to stand in, as the key a click produces — so
+   * the two can be compared at all. `anchorOfKey` is the inverse and lives with
+   * the prefixes; this is the only other place that needs to build one.
+   */
+  const anchorKey = tool ? `tool:${tool}` : msg ? `msg:${msg}` : null;
+  /**
+   * Whether the remembered ring has been spent.
+   *
+   * It is an OPENING move: the conversation adopts the ring this tab was left on,
+   * and from the first click onwards the reader has said where they are. Without
+   * this, retiring the URL's anchor below would fall straight back to it and jump
+   * to a message that was being read ten minutes ago.
+   */
+  const restoreSpent = useRef<string | null>(null);
+  /**
+   * A click both moves the ring and RETIRES the anchor that is no longer it.
+   *
+   * `?msg=` has two lives and only one of them should outlast a click. Followed
+   * from a search, from Prompts or from Starred it is a link, and it belongs in
+   * the address bar. Written by a jump inside the page — this panel's `↑ 2/4
+   * mentions`, the subagents panel's `↓ the report` — it is a gesture, and one
+   * that used to stay in the URL for ever: F5 landed back on that message however
+   * long ago it had been left, `useRestoredSelection` stood down because a link
+   * was present, and there was no way out but editing the address bar by hand.
+   *
+   * So the rule is that the anchor may not outlive the selection it made. A click
+   * that lands somewhere else — another message, or the empty gutter, which is
+   * what deselecting is — takes it out, along with the words it asked to mark.
+   * Clicking the anchored box ITSELF changes nothing: it is still the place, and
+   * the marks and the Ctrl+F seed still belong to that arrival.
+   */
+  const selectFromClick = useCallback(
+    (e: React.MouseEvent) => {
+      const key = focusKeyAt(e.target);
+      selectMessage(key);
+      restoreSpent.current = id;
+      if (anchorKey === null || key === anchorKey) return;
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          sp.delete('msg');
+          sp.delete(TOOL_PARAM);
+          setHighlightTerms(sp, []);
+          return sp;
+        },
+        { replace: true },
+      );
+    },
+    [anchorKey, id, setSearchParams],
+  );
   /**
    * The ring this tab was left on, adopted as the conversation opens — and
    * nobody at all for a conversation nothing was clicked in, which is what used
@@ -282,8 +332,9 @@ export function SessionViewPage() {
    * the jump travels the same road (it is the only one that unfolds its way in)
    * and the follow stands down for both.
    */
-  const anchorUuid = msg ?? restored.uuid;
-  const anchorTool = tool ?? restored.toolUseId;
+  const spent = restoreSpent.current === id;
+  const anchorUuid = msg ?? (spent ? null : restored.uuid);
+  const anchorTool = tool ?? (spent ? null : restored.toolUseId);
 
   const navigate = useNavigate();
   useEffect(() => {

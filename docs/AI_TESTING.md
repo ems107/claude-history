@@ -266,6 +266,17 @@ Then Chrome over CDP, with check 9's harness:
   outputs searched only in part" is not self-evident.
 - **Every row in the panel leads with a clock**, before the role, short in the
   row and full plus relative on the hover.
+- **A click retires the URL's anchor** ([AI_VIEWER.md](AI_VIEWER.md)), and the
+  reason to check it is that the bug had no way out: press `↑ 1 mention` (or the
+  subagents panel's `↓ the report`), then click the empty gutter — `location.search`
+  must come back **empty**, nothing may be selected, `ch:selected:<id>` must be
+  gone, and F5 must then land with **no selection and no flash** rather than back
+  on that message. Clicking the anchored message itself must leave the URL exactly
+  as it was. Clicking a DIFFERENT message must retire the anchor, select that one,
+  and **not** jump to the ring the tab was opened on. And watch the class with a
+  `MutationObserver`: retiring mid-flash must produce a `has: false` for the
+  flashed element — without it the timer that removes `match-flash` is cancelled by
+  the effect's cleanup and the class stays for ever.
 - **Selecting works with the bar shut**, which is the point of it being its own
   feature: click a bubble on arrival and `[data-selected]` must be on it with
   the ring drawn, click the empty gutter and it must go. And **a deep link
