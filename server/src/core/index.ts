@@ -252,12 +252,18 @@ export class SessionIndex {
    * those mean tokens were spent — a typed prompt, a tool result and the
    * sidecar lines rewritten every turn all move the file without moving the
    * subscription figures, and reading usage for them was pure noise.
+   *
+   * `agents` is the same idea one level down: which subagent transcripts grew.
+   * A session with eleven agents is eleven conversations of 350-500 KB, and
+   * "something under this session moved" would have a browser watching one of
+   * them re-read all eleven on every write.
    */
   async rescan(): Promise<void> {
     const scanned = await scanSessions(this.config.projectsDir);
     const seen = new Set<string>();
     const changed: string[] = [];
     const assistantIds: string[] = [];
+    const agents: { sessionId: string; agentId: string }[] = [];
     for (const s of scanned) {
       seen.add(s.id);
       const prev = this.scanned.get(s.id);
@@ -277,6 +283,12 @@ export class SessionIndex {
       // not counted: a new session's first write is its header and prompt, and
       // a resumed one is copied history whose tokens were spent long ago.
       if (prev && (await hasAssistantWrite(s, prev.sizeBytes))) assistantIds.push(s.id);
+      // An agent that wrote, or one that has just appeared. A file we have never
+      // seen is listed on purpose here, unlike the assistant test above: its
+      // whole transcript is news to anyone watching, not tokens spent long ago.
+      for (const [agentId, size] of Object.entries(s.subagentSizes)) {
+        if (prev?.subagentSizes[agentId] !== size) agents.push({ sessionId: s.id, agentId });
+      }
       await this.refreshSummary(s);
       changed.push(s.id);
       void this.enrichOne(s);
@@ -291,7 +303,7 @@ export class SessionIndex {
     if (changed.length > 0) {
       this.applyLive();
       this.saveIndexCache();
-      this.events.emit('sessions-changed', { ids: changed, assistantIds });
+      this.events.emit('sessions-changed', { ids: changed, assistantIds, agents });
     }
   }
 
@@ -504,7 +516,7 @@ export class SessionIndex {
     // One event for the whole list rather than one per id: the ids are only the
     // ones whose row can look different, and `assistantIds` stays empty because
     // nothing was answered — that field is what triggers a usage read.
-    this.events.emit('sessions-changed', { ids: [...touched], assistantIds: [] });
+    this.events.emit('sessions-changed', { ids: [...touched], assistantIds: [], agents: [] });
     this.events.emit('stars-changed');
     this.events.emit('settings-changed', this.settings);
     this.events.emit('prices-changed');

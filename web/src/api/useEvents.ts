@@ -71,6 +71,25 @@ export function useEvents(): void {
           void queryClient.invalidateQueries({ queryKey: ['sessions'] });
           void queryClient.invalidateQueries({ queryKey: ['projects'] });
           for (const id of event.ids) void queryClient.invalidateQueries({ queryKey: ['session', id] });
+          /**
+           * A subagent's transcript is a conversation of its own behind its own
+           * key, and nothing else here reaches it: without this the drawer drew
+           * an agent once and never looked at the file again, so watching one
+           * work meant closing and reopening it.
+           *
+           * One key per agent the server says moved, and NOT the `['subagent',
+           * id]` prefix: with the list open every agent of the session is
+           * mounted, and 350-500 KB re-read eleven times per write is the whole
+           * reason the event carries the ids. It beats the list's own 5-minute
+           * `staleTime` — an invalidation refetches an active query whatever its
+           * staleness — so the rows and the drawer move together.
+           *
+           * `session-updated` needs none of this: it lands right behind the same
+           * rescan, and re-reading them twice would be the noise this avoids.
+           */
+          for (const a of event.agents ?? []) {
+            void queryClient.invalidateQueries({ queryKey: ['subagent', a.sessionId, a.agentId] });
+          }
           kickUsage(event.assistantIds ?? []);
           break;
         case 'session-updated':

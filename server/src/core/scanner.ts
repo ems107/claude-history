@@ -20,28 +20,49 @@ export interface ScannedSession {
    * This is what tells the enricher to look again.
    */
   subagentBytes: number;
+  /**
+   * The same bytes, per agent (`agentId` → size), which is the only thing that
+   * can say WHICH agent wrote. The total above answers "is this session's spend
+   * stale"; a browser watching one agent's transcript needs the narrower answer,
+   * and re-reading every agent of a session on every write is what not having it
+   * costs. Diffed in `SessionIndex.rescan`.
+   */
+  subagentSizes: Record<string, number>;
 }
 
-async function scanSubagents(sessionDir: string): Promise<{ count: number; bytes: number }> {
+interface ScannedSubagents {
+  count: number;
+  bytes: number;
+  sizes: Record<string, number>;
+}
+
+const NO_SUBAGENTS: ScannedSubagents = { count: 0, bytes: 0, sizes: {} };
+
+async function scanSubagents(sessionDir: string): Promise<ScannedSubagents> {
   const dir = path.join(sessionDir, 'subagents');
   let entries: string[];
   try {
     entries = await fsp.readdir(dir);
   } catch {
-    return { count: 0, bytes: 0 };
+    return NO_SUBAGENTS;
   }
   let bytes = 0;
+  const sizes: Record<string, number> = {};
   for (const name of entries) {
     if (!name.endsWith('.jsonl')) continue;
     try {
-      bytes += (await fsp.stat(path.join(dir, name))).size;
+      const size = (await fsp.stat(path.join(dir, name))).size;
+      bytes += size;
+      // Keyed on the agent id, because that is what the URL, the query key and a
+      // notification all call this agent; the filename is where it is written.
+      sizes[name.slice('agent-'.length, -'.jsonl'.length)] = size;
     } catch {
       // deleted between readdir and stat
     }
   }
   // Counted by the meta files, as before: a transcript with no meta is not an
   // agent we can name, and a meta with no transcript is still one that ran.
-  return { count: entries.filter((e) => e.endsWith('.meta.json')).length, bytes };
+  return { count: entries.filter((e) => e.endsWith('.meta.json')).length, bytes, sizes };
 }
 
 /** Enumerate all top-level session transcripts under ~/.claude/projects. */
@@ -77,7 +98,7 @@ export async function scanSessions(projectsDir: string): Promise<ScannedSession[
         continue; // deleted between readdir and stat
       }
       const sessionDir = subdirs.has(id) ? path.join(dirPath, id) : null;
-      const subagents = sessionDir ? await scanSubagents(sessionDir) : { count: 0, bytes: 0 };
+      const subagents = sessionDir ? await scanSubagents(sessionDir) : NO_SUBAGENTS;
       result.push({
         id,
         filePath,
@@ -87,6 +108,7 @@ export async function scanSessions(projectsDir: string): Promise<ScannedSession[
         sessionDir,
         subagentCount: subagents.count,
         subagentBytes: subagents.bytes,
+        subagentSizes: subagents.sizes,
       });
     }
   }

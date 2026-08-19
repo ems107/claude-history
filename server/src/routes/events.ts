@@ -24,8 +24,13 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
     };
     const onUpdated = (id: string) => send({ type: 'session-updated', id });
-    const onChanged = (payload: { ids: string[]; assistantIds: string[] }) =>
-      send({ type: 'sessions-changed', ids: payload.ids, assistantIds: payload.assistantIds ?? [] });
+    const onChanged = (payload: { ids: string[]; assistantIds: string[]; agents: { sessionId: string; agentId: string }[] }) =>
+      send({
+        type: 'sessions-changed',
+        ids: payload.ids,
+        assistantIds: payload.assistantIds ?? [],
+        agents: payload.agents ?? [],
+      });
     const onLive = () => send({ type: 'live-changed' });
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });

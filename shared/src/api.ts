@@ -1387,8 +1387,18 @@ export type ServerEvent =
    * were spent. Every other write (your prompt, a tool result, the sidecar
    * lines re-appended each turn) moves the file without moving the figures, so
    * only this subset is worth a usage read.
+   *
+   * `agents` classifies the same change one level down: the subagent
+   * transcripts that grew, each with the session it belongs to. Those are
+   * separate conversations of 350-500 KB apiece behind their own query key, so
+   * a panel or a drawer reading one of them refetches only when that one moved.
    */
-  | { type: 'sessions-changed'; ids: string[]; assistantIds: string[] }
+  | {
+      type: 'sessions-changed';
+      ids: string[];
+      assistantIds: string[];
+      agents: { sessionId: string; agentId: string }[];
+    }
   | { type: 'session-updated'; id: string }
   | { type: 'live-changed' }
   | { type: 'index-progress'; enriched: number; total: number }
