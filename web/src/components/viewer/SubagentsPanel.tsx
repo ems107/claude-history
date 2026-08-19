@@ -98,8 +98,14 @@ function asTree(rows: SubagentRow[], nesting: Map<string, Nesting>): { row: Suba
   return out;
 }
 
-function StatusChip({ row, nesting }: { row: SubagentRow; nesting: Nesting | null }) {
-  const status = nesting ? (nesting.reportStatus ?? 'unknown') : rowStatus(row);
+function StatusChip({ row, nesting, busy }: { row: SubagentRow; nesting: Nesting | null; busy: boolean }) {
+  /**
+   * A nested row's silence IS information here, unlike in `rowStatus`: the tree
+   * was built by reading the transcript of the agent that spawned it, which is
+   * where its report would be — so a missing report there really is missing, and
+   * a busy session makes it `running` like any other.
+   */
+  const status = nesting ? (nesting.reportStatus ?? (busy ? 'running' : 'unknown')) : rowStatus(row, busy);
   const where = nesting ? ` — it reported to ⑂ ${nesting.parent.agentType}, the agent that spawned it` : '';
   if (status === 'failed') {
     return (
@@ -115,6 +121,21 @@ function StatusChip({ row, nesting }: { row: SubagentRow; nesting: Nesting | nul
         title={`It finished${where}`}
       >
         completed
+      </span>
+    );
+  }
+  // The same absence as below, read while the session is mid-turn: it has not
+  // come back YET. The accent is the working indicator's own colour, so the row
+  // and the drawer it opens are saying one thing in two places.
+  if (status === 'running') {
+    return (
+      <span
+        className="shrink-0 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase"
+        title={`It was sent out and has not reported back${
+          nesting ? ` to ⑂ ${nesting.parent.agentType}, the agent that spawned it` : ''
+        } — and the session is mid-turn, so it is still working`}
+      >
+        running
       </span>
     );
   }
@@ -180,6 +201,7 @@ function AgentRow({
   loading,
   active,
   nesting,
+  busy,
 }: {
   row: SubagentRow;
   /** How deep under the session this agent sits: 0 for one it sent out itself. */
@@ -188,6 +210,8 @@ function AgentRow({
   prices: PriceTable;
   loading: boolean;
   active: boolean;
+  /** The session is mid-turn, which is half of what makes a row `running`. */
+  busy: boolean;
   /** Set when another agent spawned this one, which is where both its ends are. */
   nesting: Nesting | null;
 }) {
@@ -248,7 +272,7 @@ function AgentRow({
         >
           {meta.agentId}
         </span>
-        <StatusChip row={row} nesting={nesting} />
+        <StatusChip row={row} nesting={nesting} busy={busy} />
         {figures && <CostPill entries={figures.entries} prices={prices} variant="badge" />}
       </div>
       {nesting && (
@@ -329,11 +353,19 @@ export function SubagentsPanel({
   sessionId,
   rows,
   openAgentId,
+  busy,
 }: {
   sessionId: string;
   rows: SubagentRow[];
   /** The one whose transcript is open in the drawer, marked so the two agree. */
   openAgentId: string | null;
+  /**
+   * The session is mid-turn. Read off `['live']` by the page and passed down,
+   * never off the detail's own `summary.live`: the busy/idle flip is a write
+   * under `~/.claude/sessions` and fires no `sessions-changed`, so a row taking
+   * it from the transcript would still say `running` after the turn ended.
+   */
+  busy: boolean;
 }) {
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
   const prices = pricesQ.data?.prices ?? NO_PRICES;
@@ -431,6 +463,7 @@ export function SubagentsPanel({
             loading={details[i]?.isLoading ?? false}
             active={row.meta.agentId === openAgentId}
             nesting={nesting.get(row.meta.agentId) ?? null}
+            busy={busy}
           />
         );
       })}

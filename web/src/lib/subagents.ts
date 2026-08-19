@@ -135,9 +135,24 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
   };
 }
 
-/** `failed` on any of its reports is what the row leads with — a retry files a second one. */
-export function rowStatus(row: SubagentRow): 'completed' | 'failed' | 'unknown' {
+export type SubagentStatus = 'completed' | 'failed' | 'running' | 'unknown';
+
+/**
+ * `failed` on any of its reports is what the row leads with — a retry files a
+ * second one.
+ *
+ * **`running` is a claim about NOW, and it takes two facts.** A subagent has no
+ * status on disk of its own: it shares its parent's process, so the only thing
+ * that says it has finished is the report it hands back. Absent, with the
+ * session mid-turn, it is still working — but the absence only MEANS that where
+ * we hold the transcript the report would have landed in. A nested agent reports
+ * inside the agent that spawned it and a `/branch` fork copies no calls at all,
+ * so there `row.call` is null, nothing can be read off the silence, and the
+ * honest answer stays `unknown`. (The panel does better for a nested row, where
+ * it has read the parent's transcript to build the tree: see `StatusChip`.)
+ */
+export function rowStatus(row: SubagentRow, busy = false): SubagentStatus {
   if (row.reports.some((r) => r.status === 'failed')) return 'failed';
   if (row.reports.some((r) => r.status === 'completed')) return 'completed';
-  return 'unknown';
+  return busy && row.call !== null ? 'running' : 'unknown';
 }

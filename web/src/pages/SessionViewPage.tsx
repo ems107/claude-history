@@ -16,7 +16,7 @@ import { useFoldState } from '../lib/folding.ts';
 import { anchorOfKey, focusKeyAt, parseHighlight, setHighlightTerms, TOOL_PARAM } from '../lib/highlight.ts';
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { collectSessionFiles } from '../lib/sessionFiles.ts';
-import { buildSubagentIndex } from '../lib/subagents.ts';
+import { buildSubagentIndex, rowStatus } from '../lib/subagents.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
@@ -583,6 +583,18 @@ export function SessionViewPage() {
   const activity = useMemo(() => turnActivity(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
 
   /**
+   * Whether the agent open in the drawer is still working, which takes both
+   * halves and only this page holds them: the session's live status, which comes
+   * from `['live']` and nowhere else, and the report the agent would have filed,
+   * which is in this conversation. `rowStatus` is the rule, and it is also where
+   * the one case it cannot answer is written down.
+   */
+  const agentRunning = useMemo(() => {
+    const row = agentId ? subagentIndex.rows.find((r) => r.meta.agentId === agentId) : null;
+    return row ? rowStatus(row, isWorking(liveInfo)) === 'running' : false;
+  }, [agentId, subagentIndex, liveInfo]);
+
+  /**
    * The column's real width, which is the limit OR the window when the window is
    * the smaller of the two. Two things do arithmetic with it against the follow
    * pill's corner — the composer's action row and the working indicator's clocks
@@ -781,7 +793,9 @@ export function SessionViewPage() {
               onGoToMessage={(uuid, marks) => jumpTo('msg', uuid, marks)}
             />
           )}
-          {agentsOpen && <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} />}
+          {agentsOpen && (
+            <SubagentsPanel sessionId={id} rows={subagentIndex.rows} openAgentId={agentId} busy={isWorking(liveInfo)} />
+          )}
           {/* The scroller reaches the foot of the window, and the composer rides
               INSIDE it, stuck to the bottom. Nothing is cut off half way down any
               more: the scrollbar runs the full height, the conversation slides
@@ -913,6 +927,7 @@ export function SessionViewPage() {
               scrollToTool={searchParams.get(AGENT_TOOL_PARAM)}
               scrollToUuid={searchParams.get(AGENT_MSG_PARAM)}
               jumpNonce={jumpNonce}
+              running={agentRunning}
               onClose={closeAgent}
             />
           )}
