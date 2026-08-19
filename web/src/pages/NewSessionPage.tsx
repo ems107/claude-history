@@ -1,16 +1,19 @@
-import type { ProjectInfo } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../api/client.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
+import { sortProjectsByName } from '../lib/projects.ts';
 
 /** The folder this page opened on last time — a project key, or `folder:<path>`. */
 const REMEMBERED = 'ch:newSessionProject';
-/** What the picker calls "not one of these". */
-const OTHER = '\u0000other';
+/**
+ * The row that is not a project. A space cannot begin a project key — they are
+ * normalized absolute paths — so this can never collide with a real one.
+ */
+const OTHER = ' other';
 
 /**
  * A backstop only. `sessions-changed` invalidates `['session', id]` the moment
@@ -20,8 +23,59 @@ const OTHER = '\u0000other';
  */
 const HANDOVER_POLL_MS = 1_500;
 
-function label(p: ProjectInfo): string {
-  return p.name === p.path ? p.path : `${p.name} — ${p.path}`;
+/**
+ * One project in the picker, drawn as the filter sidebar draws it.
+ *
+ * The dot, the colour, the name and the count are that list's, deliberately:
+ * these are the same projects, and a person who has learnt which colour their
+ * repo is should not have to learn it twice. What a native `<select>` did with
+ * them was the argument — the options came out in the operating system's own
+ * palette, a blue highlight and a white sheet, with no colour and no counts,
+ * which is a different list of the same things.
+ */
+function ProjectRow({
+  color,
+  name,
+  count,
+  path,
+  selected,
+  onSelect,
+}: {
+  /** The project's tag colour, or null for the row that is not a project yet. */
+  color: string | null;
+  name: string;
+  count?: number;
+  path?: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  // The accent edge is on every row, transparent until it is wanted, so the
+  // selection cannot shift the names by two pixels as it moves. A tint on its own
+  // read as a hover — and this row decides where the session will run, so it has
+  // to be unmistakable rather than merely visible.
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
+      title={path}
+      onClick={onSelect}
+      className={`flex w-full items-center gap-2 border-l-2 py-1 pr-3 pl-2.5 text-left text-sm ${
+        selected
+          ? 'border-[var(--accent)] bg-[var(--bg-hover)] text-[var(--text)]'
+          : 'border-transparent text-[var(--text-dim)] hover:bg-[var(--bg-hover)]'
+      }`}
+    >
+      {/* The dot keeps its column either way, so the names line up: a project
+          fills it, and the row that has no project yet outlines it. */}
+      <span
+        className={`size-2 shrink-0 rounded-full ${color ? '' : 'border border-dashed border-[var(--text-dim)]'}`}
+        style={color ? { backgroundColor: color } : undefined}
+      />
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {count !== undefined && <span className="shrink-0 text-xs text-[var(--text-dim)]">{count}</span>}
+    </button>
+  );
 }
 
 /**
@@ -50,18 +104,38 @@ export function NewSessionPage() {
   const [folder, setFolder] = useState(() =>
     remembered.startsWith('folder:') ? remembered.slice('folder:'.length) : '',
   );
+  const [filter, setFilter] = useState('');
   /** The reserved id and the folder behind it, or null while the picker is up. */
   const [draft, setDraft] = useState<{ sessionId: string; cwd: string } | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Prompts the server has taken, before Claude Code has written them down. */
   const [pending, setPending] = useState<{ text: string; at: number }[]>([]);
+  const folderBox = useRef<HTMLInputElement>(null);
 
-  // Nothing is chosen on a machine with no projects and no memory, and the
-  // first row is a better guess than an empty box that refuses to start.
+  // Alphabetical, from the same helper the sidebar uses — the API's own order is
+  // by last activity, which is right for a list you are browsing and wrong for
+  // one you are looking a name up in.
+  const sorted = useMemo(() => sortProjectsByName(projects.data ?? []), [projects.data]);
+  const shown = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter((p) => p.name.toLowerCase().includes(q) || p.path.toLowerCase().includes(q));
+  }, [sorted, filter]);
+
+  const selected = sorted.find((p) => p.key === choice) ?? null;
+  // Nothing is chosen on a machine with no memory, and the first row is a better
+  // guess than a dead button. Filtering re-decides it, so typing never leaves the
+  // selection on a row that is no longer on screen.
+  //
+  // Gated on the projects having ARRIVED, not merely on the list being empty:
+  // before they do, every remembered key is "not in the list" and this would
+  // throw the last choice away a tick before it could be honoured.
+  const projectsReady = projects.isSuccess;
   useEffect(() => {
-    if (!choice && projects.data?.length) setChoice(projects.data[0].key);
-  }, [choice, projects.data]);
+    if (!projectsReady || choice === OTHER) return;
+    if (!shown.some((p) => p.key === choice)) setChoice(shown[0]?.key ?? OTHER);
+  }, [projectsReady, choice, shown]);
 
   /**
    * The transcript, once there is one. This is the handover: the same query key
@@ -89,7 +163,9 @@ export function NewSessionPage() {
     if (bornId) navigate(`/session/${bornId}`, { replace: true });
   }, [bornId, navigate]);
 
+  const canStart = choice === OTHER ? !!folder.trim() : !!selected;
   const start = () => {
+    if (!canStart || creating) return;
     setCreating(true);
     setError(null);
     const body = choice === OTHER ? { cwd: folder } : { projectKey: choice };
@@ -101,6 +177,13 @@ export function NewSessionPage() {
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setCreating(false));
+  };
+
+  /** Up and down the list from the filter box, so a name can be typed and taken. */
+  const step = (delta: number) => {
+    const rows = [...shown.map((p) => p.key), OTHER];
+    const at = rows.indexOf(choice);
+    setChoice(rows[Math.min(rows.length - 1, Math.max(0, at + delta))]);
   };
 
   if (settings.isPending) return null;
@@ -121,55 +204,100 @@ export function NewSessionPage() {
   // since it is what the whole session's cwd will be.
   if (!draft) {
     return (
-      <div className="mx-auto max-w-2xl p-8">
+      <div className="mx-auto flex h-full max-w-2xl flex-col p-8">
         <h1 className="text-lg font-semibold tracking-tight">New session</h1>
         <p className="mt-1 text-sm text-[var(--text-dim)]">
           Claude Code runs in a folder, and everything it reads or writes is relative to that folder.
         </p>
         <form
-          className="mt-6 space-y-3"
+          className="mt-5 flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!creating) start();
+            start();
           }}
         >
-          <select
-            value={choice}
-            onChange={(e) => setChoice(e.target.value)}
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-sm text-[var(--text)]"
+          <input
+            autoFocus
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                step(e.key === 'ArrowDown' ? 1 : -1);
+              }
+            }}
+            placeholder="Filter projects…"
+            spellCheck={false}
+            className="w-full rounded-t-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)]"
+          />
+          {/* The list scrolls, the page does not: the folder, the error and the
+              button have to stay where they are however many projects there are. */}
+          <div
+            role="listbox"
+            aria-label="Project"
+            className="min-h-0 flex-1 overflow-y-auto rounded-b-lg border border-t-0 border-[var(--border)] bg-[var(--bg-raised)] py-1"
           >
-            {(projects.data ?? []).map((p) => (
-              <option key={p.key} value={p.key}>
-                {label(p)}
-              </option>
+            {shown.map((p) => (
+              <ProjectRow
+                key={p.key}
+                color={p.color}
+                name={p.name}
+                count={p.sessionCount}
+                path={p.path}
+                selected={choice === p.key}
+                onSelect={() => setChoice(p.key)}
+              />
             ))}
-            <option value={OTHER}>Another folder…</option>
-          </select>
-          {/* The one place in this app where a path comes from the browser. The
-              server validates it — absolute, there, a folder — and says which of
-              the three is wrong, because this box is the only feedback there is. */}
-          {choice === OTHER && (
-            <input
-              autoFocus
-              value={folder}
-              onChange={(e) => setFolder(e.target.value)}
-              placeholder="C:\path\to\the\project"
-              spellCheck={false}
-              className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 font-mono text-sm text-[var(--text)] outline-none focus:border-[var(--accent-dim)]"
+            {shown.length === 0 && (
+              <div className="px-3 py-1 text-sm text-[var(--text-dim)]">No project matches that.</div>
+            )}
+            {/* Always last and never filtered out: it is the way out of a list
+                that cannot contain what you want — a folder Claude Code has
+                never run in is in no index, which is the whole reason it exists. */}
+            <ProjectRow
+              color={null}
+              name="Another folder…"
+              selected={choice === OTHER}
+              onSelect={() => {
+                setChoice(OTHER);
+                // The box appears with this click, so focus it on the next frame.
+                setTimeout(() => folderBox.current?.focus(), 0);
+              }}
             />
-          )}
+          </div>
+          {/* Under the list rather than in it: the paths are long enough to
+              swamp the names, and only the chosen one has to be readable — which
+              is also what tells two projects with the same name apart. */}
+          <div className="mt-3">
+            {choice === OTHER ? (
+              <input
+                ref={folderBox}
+                value={folder}
+                onChange={(e) => setFolder(e.target.value)}
+                placeholder="C:\path\to\the\project"
+                spellCheck={false}
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-sm text-[var(--text)] outline-none focus:border-[var(--accent-dim)]"
+              />
+            ) : (
+              <div className="truncate px-1 font-mono text-xs text-[var(--text-dim)]" title={selected?.path}>
+                {selected?.path ?? ''}
+              </div>
+            )}
+          </div>
           {error && (
-            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
+            <div className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
               {error}
             </div>
           )}
-          <button
-            type="submit"
-            disabled={creating || (choice === OTHER ? !folder.trim() : !choice)}
-            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[#1b1512] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100"
-          >
-            {creating ? 'Starting…' : 'Start here'}
-          </button>
+          <div className="mt-4">
+            <button
+              type="submit"
+              disabled={creating || !canStart}
+              className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[#1b1512] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100"
+            >
+              {creating ? 'Starting…' : 'Start here'}
+            </button>
+          </div>
         </form>
       </div>
     );

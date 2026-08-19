@@ -2,6 +2,7 @@ import type { ProjectInfo, SessionSummary } from '@claude-history/shared';
 import { useMemo, type ReactNode } from 'react';
 import { entrypointLabel, shortModel } from '../../lib/format.ts';
 import type { BadgeFilter, FilterState } from '../../lib/filters.ts';
+import { sortProjectsByName } from '../../lib/projects.ts';
 import { RetentionFooter } from './RetentionFooter.tsx';
 
 const BADGE_OPTIONS: Array<{ id: BadgeFilter; label: string }> = [
@@ -137,10 +138,7 @@ export function FilterSidebar({
     return 'custom';
   };
 
-  const sortedProjects = useMemo(
-    () => [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
-    [projects],
-  );
+  const sortedProjects = useMemo(() => sortProjectsByName(projects), [projects]);
 
   return (
     <aside className="flex h-full w-full flex-col overflow-y-auto border-r border-[var(--border)]">

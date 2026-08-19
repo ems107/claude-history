@@ -250,3 +250,15 @@ ahora nombra su única excepción en lugar de afirmar algo que ya no es cierto. 
 `columnWidth` es opcional también en el composer, por la misma razón por la que ya lo era en los relojes.
 `AI_TESTING.md`: **check 37**, y las dos reglas de los checks que ejecutan `claude` de verdad ahora
 incluyen el 37.
+
+### El desplegable, corregido
+
+El `<select>` nativo pintaba las opciones con la paleta del sistema — resalte azul, fondo blanco, sin
+color y sin contadores — es decir, otra lista de las mismas cosas. Sustituido por una lista propia que
+es la de la barra lateral: mismo punto de color (`ProjectInfo.color`), mismo orden alfabético
+(`sortProjectsByName`, extraído de `FilterSidebar` para que las dos no se separen) y mismo contador de
+sesiones. Encima, un filtro; debajo, la ruta completa de la fila elegida, que es lo que distingue dos
+proyectos llamados igual. `Another folder…` va siempre la última y no la esconde ningún filtro.
+
+Comprobado en Chrome: nombres, colores calculados y contadores **idénticos y en el mismo orden** en las
+dos listas (20 de 20), cero `<select>` en la página.
