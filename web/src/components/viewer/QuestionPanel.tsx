@@ -1,8 +1,9 @@
 import type { ChatPlanDecision, ChatQuestion } from '@claude-history/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileRefChip } from './FileRefLink.tsx';
 import { Markdown } from './Markdown.tsx';
+import { type PlanComment, PlanReview, commentsFeedback } from './PlanReview.tsx';
 import { Sketch } from './Sketch.tsx';
 
 /**
@@ -42,6 +43,9 @@ export function QuestionPanel({
   const [note, setNote] = useState('');
   /** Reading the plan over the whole window instead of in the strip. */
   const [full, setFull] = useState(false);
+  /** Remarks filed against passages of the plan — see `PlanReview`. */
+  const [comments, setComments] = useState<PlanComment[]>([]);
+  const commentId = useRef(0);
   const isPlan = question.toolName === 'ExitPlanMode';
 
   useEffect(() => {
@@ -56,6 +60,7 @@ export function QuestionPanel({
     setFocused({});
     setActive(0);
     setFull(false);
+    setComments([]);
   }, [question.askedAt]);
 
   // Escape comes back from full screen, and stops there: the page's own handler
@@ -152,6 +157,25 @@ export function QuestionPanel({
   const hasSketches = !!current?.options.some((o) => o.preview);
   /** A single-choice question whose answer is being typed: the options are out. */
   const typing = !!current && !current.multiSelect && !!other[current.question]?.trim();
+
+  /**
+   * What *keep planning* sends: the note, then the comments in Claude Code's own
+   * `[Re: "…"] …` shape. Both in one string because there is one channel — the
+   * deny message, which the transcript keeps as `userFeedback`.
+   */
+  const feedback = commentsFeedback(comments);
+  const planNote = [note.trim(), feedback].filter(Boolean).join('\n\n');
+  /**
+   * Approving with comments pending is refused rather than allowed to drop them.
+   * The approval's tool_result is a fixed template — there is no `userFeedback`
+   * on that side of the tool for them to travel in (checked against the CLI:
+   * `userComments`, which the IDE panel sends, appears in it nowhere) — so a
+   * button that took them would be a button that ate them.
+   */
+  const approveTitle =
+    comments.length > 0
+      ? `${String(comments.length)} comment${comments.length === 1 ? '' : 's'} to send: comments travel with "Keep planning". Remove them to approve as it stands.`
+      : null;
 
   const card = (
     <div
@@ -303,7 +327,14 @@ export function QuestionPanel({
             markdown it is. Escaped inside a <pre> — which is what every
             other permission gets — it was unreadable at exactly the moment
             it had to be read. */}
-        {isPlan && question.plan && <Markdown text={question.plan} />}
+        {isPlan && question.plan && (
+          <PlanReview
+            plan={question.plan}
+            comments={comments}
+            onAdd={(c) => setComments((prev) => [...prev, { ...c, id: `c${String(++commentId.current)}` }])}
+            onRemove={(id) => setComments((prev) => prev.filter((c) => c.id !== id))}
+          />
+        )}
         {isPlan && !question.plan && (
           <p className="text-sm text-[var(--text-dim)]">
             Claude has finished planning, but the plan itself could not be read
@@ -331,26 +362,42 @@ export function QuestionPanel({
           "the user said". */}
       {isPlan ? (
         <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--accent-dim)]/40 px-3 py-1.5">
+          {/* Full width, above the row: the reason two of the three buttons are
+              out has to be readable without hovering one of them. */}
+          {comments.length > 0 && (
+            <div className="w-full text-[11px] text-[var(--text-dim)]">
+              ✎ {comments.length} comment{comments.length === 1 ? '' : 's'} go back with{' '}
+              <span className="text-[var(--text)]">Keep planning</span> — approving sends the plan as it stands, so
+              remove them first.
+            </div>
+          )}
           {question.planFilePath && <FileRefChip path={question.planFilePath} title="Open the plan file" />}
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="What should change? (sent back with the plan)"
+            placeholder={
+              comments.length > 0 ? 'Anything else? (sent with the comments)' : 'What should change? (sent back with the plan)'
+            }
             className="min-w-40 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)]"
           />
           <button
             type="button"
-            onClick={() => onPlanDecision('keep-planning', note)}
+            onClick={() => onPlanDecision('keep-planning', planNote)}
             disabled={busy}
+            title={
+              comments.length > 0
+                ? `Send the plan back with your note and ${String(comments.length)} comment${comments.length === 1 ? '' : 's'}.`
+                : 'Send the plan back for more work, with your note as the reason.'
+            }
             className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
           >
-            Keep planning
+            Keep planning{comments.length > 0 ? ` · ${String(comments.length)} ✎` : ''}
           </button>
           <button
             type="button"
             onClick={() => onPlanDecision('approve-manual')}
-            disabled={busy}
-            title="Approve the plan and ask before each change from here on."
+            disabled={busy || comments.length > 0}
+            title={approveTitle ?? 'Approve the plan and ask before each change from here on.'}
             className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
           >
             Approve · ask me
@@ -358,8 +405,8 @@ export function QuestionPanel({
           <button
             type="button"
             onClick={() => onPlanDecision('approve-auto')}
-            disabled={busy}
-            title="Approve the plan and let Claude carry it out the way it normally works."
+            disabled={busy || comments.length > 0}
+            title={approveTitle ?? 'Approve the plan and let Claude carry it out the way it normally works.'}
             className="rounded border border-[var(--accent-dim)] px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
           >
             {busy ? 'Sending…' : 'Approve · go ahead'}

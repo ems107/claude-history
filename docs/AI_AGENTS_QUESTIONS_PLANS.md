@@ -116,6 +116,16 @@ So the TYPE is the verdict and the prose never has to be read — the tool_resul
 - The plan-mode system reminder ("Plan mode is active…") is **never written to disk**: it is injected into the model's context at request time. A UI wanting that banner has to write its own.
 - `ExitPlanModeV2` exists in the 2.1.233 binary — with an HTML `<section>` plan format — behind a feature gate that is off, and appears nowhere in the corpus. Do not build for it; just do not break on it.
 
+### What the IDE does with a plan
+
+Read out of the installed `anthropic.claude-code` extension and the CLI binary, because it is the only description of this that exists — and because our own panel had to decide the same things.
+
+**The plan is a webview of its own** (`claudePlanPreview`, opened `ViewColumn.Beside`), not a document with a comment API: the markdown is rendered to HTML and, on `mouseup`, a selection puts a floating *Comment* button under itself. Submitting posts `{id, selectedText, sectionHeading, comment}` — **the anchor is the selected text plus the nearest `h1`-`h6` above it, never a line number** — and the passage is wrapped in a numbered `<mark>`. The chat card then lists them with an × each.
+
+**They leave as prose either way**: `[Re: "<selectedText>"] <comment>` joined by newlines, into `userFeedback` on approval and behind `Comments on the plan:` in the rejection message. On the rejection side that reaches the transcript; **on the approval side it goes nowhere** — the approval tool_result is a fixed template ("User has approved your plan. You can now start coding…"), and `userComments` does not appear in the CLI binary at all.
+
+**The one thing the CLI really does read back from an approval is the PLAN ITSELF.** `ExitPlanMode`'s call takes `plan` from its input; when it is there the CLI writes it to `plans/<slug>.md` and sets `planWasEdited`, and the tool_result echoes it under `## Approved Plan (edited by user)` instead of `## Approved Plan` — the schema calls that "the user edited the plan (CCR web UI or Ctrl+G)". **Nothing on this machine has ever done it**: 0 of the 33 archived calls carry `planWasEdited`, and every plan submitted from this app so far was sent back rather than approved, so this is read from the binary and not yet from a transcript.
+
 A plan is also the one piece of tool input that IS indexed — see [AI_SEARCH.md](AI_SEARCH.md).
 
 The Plans page orders itself with the same control as the Starred page (`askedAt`, a direction, grouping by session) — see [AI_VIEWER.md](AI_VIEWER.md). `/api/plans` still answers newest-first, which is what the page opens on.
