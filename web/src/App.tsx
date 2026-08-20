@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
+import { ActiveSessionsGuardProvider } from './components/ActiveSessionsDialog.tsx';
 import { GearIcon } from './components/icons.tsx';
 import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
@@ -78,7 +79,16 @@ export function AppGate() {
       </div>
     );
   }
-  if (auth.authenticated) return <App />;
+  // The guard's dialog is mounted here rather than inside `App` so it is above
+  // the routes AND above the header: the update button raises it too, and the
+  // page underneath must be able to go on drawing while it is up.
+  if (auth.authenticated) {
+    return (
+      <ActiveSessionsGuardProvider>
+        <App />
+      </ActiveSessionsGuardProvider>
+    );
+  }
   if (!auth.remoteAccessEnabled || !auth.configured) return <RemoteDisabledPage />;
   return (
     <LoginPage

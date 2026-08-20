@@ -1,4 +1,6 @@
 import type {
+  ActiveAppSession,
+  ActiveSessionsResponse,
   AppSettings,
   AuthStatusResponse,
   AutoReloadRun,
@@ -71,6 +73,37 @@ export const UNAUTHORIZED_EVENT = 'ch:unauthorized';
 
 function noteAuthFailure(status: number): void {
   if (status === 401 || status === 403) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+}
+
+/**
+ * A 409 that came from the app running Claude, carrying what it is running.
+ *
+ * An error class rather than a flag on the response, because every one of these
+ * six calls already has a `catch` that shows a sentence — and this refusal is
+ * not a sentence, it is a dialog with a list in it. `instanceof` is what lets a
+ * call site tell the two apart without knowing which endpoint answered.
+ */
+export class ActiveSessionsError extends Error {
+  constructor(
+    message: string,
+    readonly sessions: ActiveAppSession[],
+  ) {
+    super(message);
+    this.name = 'ActiveSessionsError';
+  }
+}
+
+/**
+ * The error one of the guarded endpoints failed with: the active-sessions one
+ * when the body carries a list, an ordinary Error otherwise. `activeSessions`
+ * being present is the whole test — the server sends it nowhere else.
+ */
+function refusal(res: Response, body: { error?: string; activeSessions?: ActiveAppSession[] }): Error {
+  const message = body.error ?? `${res.status} ${res.statusText}`;
+  if (res.status === 409 && Array.isArray(body.activeSessions)) {
+    return new ActiveSessionsError(message, body.activeSessions);
+  }
+  return new Error(message);
 }
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -237,8 +270,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ version }),
     });
-    const body = (await res.json()) as { ok?: boolean; error?: string };
-    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    const body = (await res.json()) as { ok?: boolean; error?: string; activeSessions?: ActiveAppSession[] };
+    if (!res.ok) throw refusal(res, body);
     return body;
   },
   // Reserves the id a new conversation will have, and says where it will run.
@@ -347,13 +380,20 @@ export const api = {
     return payload;
   },
   settings: () => getJson<SettingsResponse>('/api/settings'),
+  /**
+   * Refused (409) with a list when the patch would switch `chatEnabled` or
+   * `chatMode` while the app is running Claude. Every other setting saves.
+   */
   saveSettings: async (patch: Partial<AppSettings>) => {
     const res = await fetch('/api/settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string; activeSessions?: ActiveAppSession[] };
+      throw refusal(res, body);
+    }
     return res.json() as Promise<{ settings: AppSettings }>;
   },
   userdataBackups: () => getJson<UserdataBackupsResponse>('/api/userdata/backups'),
@@ -378,8 +418,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     });
-    const body = (await res.json().catch(() => ({}))) as UserdataRestoreResponse & { error?: string };
-    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    const body = (await res.json().catch(() => ({}))) as UserdataRestoreResponse & {
+      error?: string;
+      activeSessions?: ActiveAppSession[];
+    };
+    if (!res.ok) throw refusal(res, body);
     return body;
   },
   // Claude Code's own `cleanupPeriodDays`, read from its settings files. We only
@@ -448,8 +491,20 @@ export const api = {
   },
   clearCache: async () => {
     const res = await fetch('/api/cache/clear', { method: 'POST' });
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string; activeSessions?: ActiveAppSession[] };
+      throw refusal(res, body);
+    }
     return res.json();
+  },
+  /** What the app is running right now, and how many it is allowed. */
+  activeSessions: () => getJson<ActiveSessionsResponse>('/api/active-sessions'),
+  /** Close all of them, and say what is left. The dialog's way out of a refusal. */
+  closeActiveSessions: async () => {
+    const res = await fetch('/api/active-sessions/close', { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as ActiveSessionsResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
   },
   openDataFolder: () => fetch('/api/open-data-folder', { method: 'POST' }),
   openInstallFolder: () => fetch('/api/open-install-folder', { method: 'POST' }),
@@ -467,8 +522,8 @@ export const api = {
   stopServer: async () => {
     const res = await fetch('/api/server/stop', { method: 'POST' });
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+      const body = (await res.json().catch(() => ({}))) as { error?: string; activeSessions?: ActiveAppSession[] };
+      throw refusal(res, body);
     }
     return { ok: true };
   },
@@ -479,8 +534,8 @@ export const api = {
   restartServer: async () => {
     const res = await fetch('/api/server/restart', { method: 'POST' });
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+      const body = (await res.json().catch(() => ({}))) as { error?: string; activeSessions?: ActiveAppSession[] };
+      throw refusal(res, body);
     }
     return { ok: true };
   },

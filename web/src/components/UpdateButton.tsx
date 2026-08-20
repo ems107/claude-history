@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import { api } from '../api/client.ts';
 import { useIsRemote } from '../api/useLocal.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
+import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
 import { UpgradeIcon } from './icons.tsx';
 import { Markdown } from './viewer/Markdown.tsx';
 
@@ -67,6 +68,7 @@ export function UpdateButton() {
   const [checking, setChecking] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const remote = useIsRemote();
+  const guard = useActiveSessionsGuard();
   const [target, setTarget] = useState<string | null>(null);
   /** The version being installed, frozen for the duration of the attempt. */
   const [applyingTo, setApplyingTo] = useState<string | null>(null);
@@ -179,14 +181,27 @@ export function UpdateButton() {
     ) {
       return;
     }
+    applyNow(selected.version);
+  };
+
+  /**
+   * The apply itself. Split from the question above so the active-sessions
+   * dialog can run it again once they are closed, without asking a remote
+   * browser the same thing twice.
+   */
+  const applyNow = (version: string) => {
     setApplyError(null);
     startedAtRef.current = Date.now();
     handoverAtRef.current = 0;
     oldVersionSinceRef.current = 0;
-    setApplyingTo(selected.version);
-    void api.updateApply(selected.version).catch((e) => {
-      setApplyError(String(e instanceof Error ? e.message : e));
+    setApplyingTo(version);
+    void api.updateApply(version).catch((e: unknown) => {
       setApplyingTo(null);
+      // An update replaces this server, so it is refused while the app is
+      // running Claude — the dialog names the sessions and installs once they
+      // are closed.
+      if (guard.refused(e, () => applyNow(version))) return;
+      setApplyError(String(e instanceof Error ? e.message : e));
     });
   };
 

@@ -111,6 +111,9 @@ export function useEvents(): void {
         // ~/.claude/sessions, so `live-changed` never speaks for these.
         case 'chat-changed':
           void queryClient.invalidateQueries({ queryKey: ['chat', event.id] });
+          // A composer process came or went, which is what six actions refuse
+          // over — so the notice on the settings page moves with it.
+          void queryClient.invalidateQueries({ queryKey: ['activeSessions'] });
           // The list shows these turns as busy, and its only source for that is
           // the chat state — so the badge moves with this event, not with
           // 'live-changed', which knows nothing about our processes.
@@ -122,6 +125,7 @@ export function useEvents(): void {
         // inside it on purpose, so ~/.claude/sessions cannot speak for it.
         case 'terminal-changed':
           void queryClient.invalidateQueries({ queryKey: ['terminal', event.id] });
+          void queryClient.invalidateQueries({ queryKey: ['activeSessions'] });
           // The buttons that refuse while a terminal holds a session read this:
           // the composer's `blockedReason` and "Resume in terminal".
           void queryClient.invalidateQueries({ queryKey: ['chat', event.id] });
@@ -149,6 +153,8 @@ export function useEvents(): void {
         case 'settings-changed':
           void queryClient.invalidateQueries({ queryKey: ['settings'] });
           void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
+          // `maxActiveSessions` is one of them, and it is half of "3 of 10".
+          void queryClient.invalidateQueries({ queryKey: ['activeSessions'] });
           break;
         // Costs are computed in the browser wherever they appear, so a saved
         // table has to reach the windows that did not save it.

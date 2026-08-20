@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api/client.ts';
 import { useLocalOnly } from '../api/useLocal.ts';
+import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
 
 const btn =
   'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
@@ -39,6 +40,7 @@ export function RemoteAccessPanel({
   dev: boolean;
 }) {
   const queryClient = useQueryClient();
+  const guard = useActiveSessionsGuard();
   const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
   const credentials = useLocalOnly('credentials');
   const firewallOnly = useLocalOnly('firewall');
@@ -112,6 +114,15 @@ export function RemoteAccessPanel({
    */
   const restart = () => {
     if (!confirm('Restart the server now? This page reconnects on its own in a few seconds.')) return;
+    restartNow();
+  };
+
+  /**
+   * The restart itself, without the question. Its own function because the
+   * active-sessions dialog runs it again once the sessions are closed, and
+   * asking twice for the same restart would be the app arguing with itself.
+   */
+  const restartNow = () => {
     setNote(null);
     setError(null);
     setBusy('restart');
@@ -129,6 +140,9 @@ export function RemoteAccessPanel({
         setNote(back ? 'The server restarted.' : 'The server was asked to restart but has not answered yet.');
         await queryClient.invalidateQueries();
       } catch (e: unknown) {
+        // Refused while the app is running Claude: the dialog lists what to
+        // close and restarts once it is closed.
+        if (guard.refused(e, restartNow)) return;
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setBusy(null);

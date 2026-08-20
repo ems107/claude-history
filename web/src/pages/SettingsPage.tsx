@@ -1,4 +1,6 @@
 import {
+  ACTIVE_SESSIONS_MAX,
+  ACTIVE_SESSIONS_MIN,
   type AppSettings,
   CLAUDE_MODELS,
   DEFAULT_SETTINGS,
@@ -13,7 +15,9 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
+import { useActiveSessions } from '../api/useActiveSessions.ts';
 import { useLocalOnly } from '../api/useLocal.ts';
+import { useActiveSessionsGuard } from '../components/ActiveSessionsDialog.tsx';
 import { BackupsPanel } from '../components/BackupsPanel.tsx';
 import { RemoteAccessPanel } from '../components/RemoteAccessPanel.tsx';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
@@ -417,6 +421,10 @@ export function SettingsPage() {
   const update = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });
   const meta = useQuery({ queryKey: ['meta'], queryFn: api.meta });
   const dev = meta.data?.devInstance ?? false;
+  const guard = useActiveSessionsGuard();
+  // Only to SAY how many are running, beside the cap. Nothing on this page is
+  // disabled from it: the server is what refuses, and its refusal is the dialog.
+  const { data: active } = useActiveSessions();
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
@@ -453,16 +461,53 @@ export function SettingsPage() {
   if (!data) return <div className="p-8 text-[var(--text-dim)]">Loading settings…</div>;
 
   const save = (patch: Partial<AppSettings>) => {
-    void api.saveSettings(patch).then((r) => {
-      queryClient.setQueryData(['settings'], { ...data, settings: r.settings });
-      markUsageRead('widget-settings');
-      void queryClient.invalidateQueries({ queryKey: ['usage'] });
-      void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
-      // The hidden-folder option changes what the browsing views contain.
-      for (const key of ['sessions', 'projects', 'prompts']) {
-        void queryClient.invalidateQueries({ queryKey: [key] });
-      }
+    void api
+      .saveSettings(patch)
+      .then((r) => {
+        queryClient.setQueryData(['settings'], { ...data, settings: r.settings });
+        markUsageRead('widget-settings');
+        void queryClient.invalidateQueries({ queryKey: ['usage'] });
+        void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
+        // The hidden-folder option changes what the browsing views contain.
+        for (const key of ['sessions', 'projects', 'prompts']) {
+          void queryClient.invalidateQueries({ queryKey: [key] });
+        }
+      })
+      .catch((e: unknown) => {
+        // Two of these can be refused — `chatEnabled` and `chatMode`, while the
+        // app is running Claude — and the refusal is a dialog with the sessions
+        // in it. Saving again is what happens if they are closed from there.
+        if (guard.refused(e, () => save(patch))) return;
+        setNote(e instanceof Error ? e.message : String(e));
+      });
+  };
+
+  /**
+   * Stop the server, and be able to do it again.
+   *
+   * Named rather than written into the button because both refusals it can meet
+   * are worth retrying: an update finishing, or the sessions in the dialog being
+   * closed from it — and the dialog needs the same closure to run again.
+   */
+  const stopNow = () => {
+    setStopped(true);
+    void api.stopServer().catch((e: unknown) => {
+      setStopped(false);
+      if (guard.refused(e, stopNow)) return;
+      setNote(String(e instanceof Error ? e.message : e));
     });
+  };
+
+  const clearCacheNow = () => {
+    setBusy('cache');
+    void api
+      .clearCache()
+      .then(() => setNote('Cache deleted. It rebuilds itself the next time the server starts.'))
+      .catch((e: unknown) => {
+        if (guard.refused(e, clearCacheNow)) return;
+        setNote(`Failed: ${String(e)}`);
+      })
+      .finally(() => setBusy(null));
   };
 
   const s = data.settings;
@@ -786,6 +831,28 @@ export function SettingsPage() {
               ]}
             />
           </Row>
+          <Row badge={<DefaultBadge field="maxActiveSessions" value={s.maxActiveSessions} save={save} />}>
+            <label className="flex items-center gap-2">
+              <span>Run at most</span>
+              <input
+                type="number"
+                min={ACTIVE_SESSIONS_MIN}
+                max={ACTIVE_SESSIONS_MAX}
+                value={s.maxActiveSessions}
+                onChange={(e) => save({ maxActiveSessions: Number(e.target.value) })}
+                className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right"
+              />
+              <span>
+                of them at once
+                {active && active.sessions.length > 0 && (
+                  <span className="text-[var(--text)]">
+                    {' '}
+                    — {active.sessions.length} running right now
+                  </span>
+                )}
+              </span>
+            </label>
+          </Row>
           <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
             The model and effort are not set here: the composer starts each session from whatever that conversation was
             last answered with, and you change them per session there; a terminal is asked inside the CLI, with{' '}
@@ -803,6 +870,13 @@ export function SettingsPage() {
             rewrite the whole prompt often enough to matter — so a shorter timeout would cost you money rather than save
             it, and once the hour is up there is nothing left to lose. Either mode can also be closed by hand, which
             asks first.
+            <br />
+            <br />
+            While the app is running Claude, the two settings above are <span className="text-[var(--text)]">locked</span>
+            {' '}— and so are stopping the server, restarting it, installing an update, clearing the cache and restoring a
+            copy of your data. Each of those would end a session that is still holding its transcript, so each of them
+            says how many are running, which they are, and offers to close them for you. The number above is not one of
+            them: lowering it never closes anything, it only refuses the next one to ask.
           </div>
         </Section>
 
@@ -916,14 +990,7 @@ export function SettingsPage() {
               type="button"
               className={btn}
               disabled={busy !== null}
-              onClick={() => {
-                setBusy('cache');
-                void api
-                  .clearCache()
-                  .then(() => setNote('Cache deleted. It rebuilds itself the next time the server starts.'))
-                  .catch((e) => setNote(`Failed: ${String(e)}`))
-                  .finally(() => setBusy(null));
-              }}
+              onClick={clearCacheNow}
               title="Deletes the derived cache only. Your renames, pins, starred messages and prices live elsewhere and are kept."
             >
               {busy === 'cache' ? 'Clearing…' : 'Clear cache'}
@@ -942,13 +1009,10 @@ export function SettingsPage() {
                   ? 'Stop the dev server? This page will stop working until you start it again with dev.ps1. The installed release on 7433 is not affected.'
                   : 'Stop the claude-history server? This page will stop working until you start it again from the Start Menu shortcut or Task Scheduler.';
                 if (!confirm(question)) return;
-                setStopped(true);
-                // The server refuses while an update is being installed:
-                // stopping would abort the download and lose it.
-                void api.stopServer().catch((e) => {
-                  setStopped(false);
-                  setNote(String(e instanceof Error ? e.message : e));
-                });
+                // The server refuses while an update is being installed —
+                // stopping would abort the download and lose it — and while it
+                // is running Claude, which answers with a dialog.
+                stopNow();
               }}
             >
               {stopped ? 'Stopping…' : 'Stop server'}
