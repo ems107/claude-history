@@ -183,25 +183,37 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
   // exits with it, so Task Scheduler reports the task as finished and the
   // Start Menu shortcut can start it again.
   //
-  // Refused while an update is being installed: stopping here kills the
-  // download in flight and leaves nothing behind — which is exactly how one
-  // update was lost, since the natural reaction to a slow one is to stop and
-  // restart the server.
+  // Two refusals, and the ORDER between them is deliberate. Sessions first:
+  // that refusal is about something outside this process which the user has to
+  // act on — go and close a conversation — and it is the only one whose subject
+  // cannot be recovered by waiting. An update in flight, by contrast, is this
+  // process's own business and passes on its own in a minute. Saying "wait"
+  // first would hide the thing that needs doing behind the thing that needs
+  // nothing.
+  //
+  // The corner where that costs something: an update installing WHILE a session
+  // of ours runs (only reachable by starting one after the update began, since
+  // applying is itself refused while any is alive). Then the dialog's "close
+  // them all and continue" clears the way and the retry lands on the update
+  // refusal — sessions closed for a stop that still will not happen. Rare, and
+  // it fails loudly with the real reason rather than quietly.
   app.post('/api/server/stop', async (_request, reply) => {
+    // Every session the app is running dies with this process whether it is
+    // answering or not, so an idle one is refused too — and the body names them,
+    // because a refusal that cannot say what to close is a dead end.
+    const stopActive = refuseWhileActive(ctx, 'stopServer');
+    if (stopActive) {
+      log.warn(`stop refused: the app is running ${stopActive.activeSessions.length} session(s)`);
+      return reply.code(409).send(stopActive);
+    }
+    // Stopping here kills the download in flight and leaves nothing behind —
+    // which is exactly how one update was lost, since the natural reaction to a
+    // slow one is to stop and restart the server.
     if (ctx.updates.isApplying()) {
       log.warn('stop refused: an update is being installed');
       return reply.code(409).send({
         error: 'An update is being installed right now — stopping the server would abort it. Wait for it to finish.',
       });
-    }
-    // Same reasoning one step down, and wider than it used to be: every session
-    // the app is running dies with this process whether it is answering or not,
-    // so an idle one is refused too — and the body names them, because a refusal
-    // that cannot say what to close is a dead end.
-    const stopActive = refuseWhileActive(ctx, 'stopServer');
-    if (stopActive) {
-      log.warn(`stop refused: the app is running ${stopActive.activeSessions.length} session(s)`);
-      return reply.code(409).send(stopActive);
     }
     void reply.send({ ok: true });
     setTimeout(() => {
@@ -227,6 +239,24 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
    * from another machine is a door closing with the key on the inside.
    */
   app.post('/api/server/restart', async (_request, reply) => {
+    // First, ahead of even "this is not an install", for the same reason as in
+    // stop — and here it also decides what a SOURCE run is told. A dev instance
+    // cannot restart itself at all, but it can perfectly well be running two
+    // conversations, and "not a managed install" is a fact about the button
+    // while a live session is a fact about the work: the second is the one
+    // worth saying, and the only one anybody can act on.
+    //
+    // It is also what makes this half testable from a dev instance, which the
+    // other order made impossible (check 39).
+    //
+    // The rule that cost a session once: this kills the `claude` process the
+    // composer is talking through — or the one inside an embedded terminal —
+    // and it does that to an idle one just as thoroughly as to one mid-answer.
+    const restartActive = refuseWhileActive(ctx, 'restartServer');
+    if (restartActive) {
+      log.warn(`restart refused: the app is running ${restartActive.activeSessions.length} session(s)`);
+      return reply.code(409).send(restartActive);
+    }
     const install = ctx.updates.install;
     if (!install) {
       return reply.code(400).send({
@@ -238,14 +268,6 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       return reply.code(409).send({
         error: 'An update is being installed right now — it restarts the server itself. Wait for it to finish.',
       });
-    }
-    // The rule that cost a session once: this kills the `claude` process the
-    // composer is talking through — or the one inside an embedded terminal —
-    // and it does that to an idle one just as thoroughly as to one mid-answer.
-    const restartActive = refuseWhileActive(ctx, 'restartServer');
-    if (restartActive) {
-      log.warn(`restart refused: the app is running ${restartActive.activeSessions.length} session(s)`);
-      return reply.code(409).send(restartActive);
     }
     const script = path.join(install.versionDir, 'update-helper.ps1');
     if (!fs.existsSync(script)) {
