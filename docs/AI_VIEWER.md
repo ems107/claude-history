@@ -530,6 +530,13 @@ The third is the weakest of them by nature and says so on every row that needs i
 
 ## The end of the conversation
 
+**Two things can sit in this slot** — the composer, or an embedded terminal, decided by `chatMode` ([Running Claude](AI_RUNNING_CLAUDE.md)). The wrapper is deliberately the same for both: what changes is how you talk to Claude, not where the conversation ends, and a slot that moved between the modes would announce itself as a different screen. So everything below is written about the composer and is true of the terminal word for word — `footerRef`, `data-sticky-bottom`, the click that must not deselect, and the `max()` that keeps the follow pill's corner clear.
+
+Two things the terminal added, both of them properties of this slot that nobody had had to name before:
+
+- **A portal cannot be used from here.** xterm is attached to a host div by `term.open()`, so rendering the panel somewhere else unmounts that div and takes the terminal's whole DOM with it — a full screen with nothing in it, measured. Full screen is therefore a class on the element that is already there.
+- **`position: sticky` creates a stacking context.** A `fixed inset-0 z-50` child of this wrapper is numbered only against its siblings, so the follow pill — a later sibling of the scroller, with no z-index at all — paints over it. Lifting the wrapper is the only fix available, and it is why `SessionTerminal` tells the page when it goes full screen.
+
 The scroller reaches the **foot of the window** and the composer rides inside it:
 last in the conversation's own column, `mt-auto` so it sits at the bottom of a
 short session and `sticky bottom-0` so it stays there through a long one. Nothing
