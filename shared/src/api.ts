@@ -1294,6 +1294,16 @@ export const GUARDED_ACTION_LABELS: Record<GuardedAction, string> = {
   restoreUserdata: 'Restoring a copy of your data',
 };
 
+/**
+ * Why a new session cannot be started: the cap is full. One sentence for both
+ * doors, because a composer and a terminal fill the same slots and would
+ * otherwise have said it two slightly different ways.
+ */
+export function activeSessionLimitMessage(max: number): string {
+  const n = max === 1 ? 'session' : 'sessions';
+  return `The app is already running ${max} Claude Code ${n}, which is the most it is allowed (Settings).`;
+}
+
 /** The sentence itself. The plural lives here, so neither side counts twice. */
 export function activeSessionsRefusal(action: GuardedAction, count: number): string {
   const what = count === 1 ? 'a Claude Code session' : count + ' Claude Code sessions';

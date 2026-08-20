@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { IPty } from '@lydell/node-pty';
 import type { AppSettings, TerminalExit, TerminalStatus } from '@claude-history/shared';
 import {
+  activeSessionLimitMessage,
   TERMINAL_MAX_COLS,
   TERMINAL_MAX_ROWS,
   TERMINAL_MIN_COLS,
@@ -187,7 +188,7 @@ export class SessionTerminalService implements TranscriptWriter {
     // One cap for both doors: a composer process elsewhere in the app fills one
     // of these slots too, because what it costs is the same machine.
     if (atActiveSessionLimit(sessionId, s.maxActiveSessions)) {
-      return `The app is already running ${s.maxActiveSessions} Claude Code sessions, which is the most it is allowed (Settings).`;
+      return activeSessionLimitMessage(s.maxActiveSessions);
     }
     return null;
   }

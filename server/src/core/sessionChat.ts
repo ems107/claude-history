@@ -22,7 +22,7 @@ import type {
   ChatState,
   ChatStatus,
 } from '@claude-history/shared';
-import { CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import { activeSessionLimitMessage, CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
@@ -382,7 +382,7 @@ export class SessionChatService implements TranscriptWriter {
     // The cap counts both doors: a terminal running elsewhere in the app fills
     // one of these slots too, because what it costs is the same machine.
     if (atActiveSessionLimit(sessionId, s.maxActiveSessions)) {
-      return `The app is already running ${s.maxActiveSessions} Claude Code sessions, which is the most it is allowed (Settings).`;
+      return activeSessionLimitMessage(s.maxActiveSessions);
     }
     return null;
   }
@@ -444,11 +444,7 @@ export class SessionChatService implements TranscriptWriter {
     if (!findClaudeCli()) throw new Error('The Claude Code CLI could not be found.');
     // A reservation spawns nothing, but the first prompt would, and refusing
     // here says so before the browser is pointed at a session it cannot use.
-    if (atActiveSessionLimit('', s.maxActiveSessions)) {
-      throw new Error(
-        `The app is already running ${s.maxActiveSessions} Claude Code sessions, which is the most it is allowed (Settings).`,
-      );
-    }
+    if (atActiveSessionLimit('', s.maxActiveSessions)) throw new Error(activeSessionLimitMessage(s.maxActiveSessions));
     const cwd = input.projectKey ? this.projectPath(input.projectKey) : validateCwd(input.cwd);
     // Astronomically unlikely, and free to rule out. A collision would resume
     // somebody else's conversation instead of starting one, which is the one
