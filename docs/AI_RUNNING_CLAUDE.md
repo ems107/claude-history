@@ -242,7 +242,7 @@ How often is the part that decides the wording. Over this machine's history, a r
 Two consequences worth keeping:
 
 - **Coming back quickly does not help.** The risk is in the rebuild, not in the clock, which is the opposite of what everyone assumes.
-- **The composer's hour is the cache's hour, and a shorter one would be worse.** Killing an idle process while its cache is still warm is taking the 38.7% bet for nothing; once the TTL is up there is nothing left to lose. That is why `CHAT_IDLE_TIMEOUT_MINUTES` is 60, and why it is not a setting: there is no better answer than the TTL, and offering the choice would invite a worse one.
+- **The composer's hour is the cache's hour — the same clock, not a coincidence.** The TTL is refreshed by use, so it runs from the last request, which is exactly what the idle timer counts ([AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTEXT.md): 100% of requests that crossed the hour re-cached, against 0.2% under five minutes). Killing an idle process before that is taking the 38.7% bet for nothing; after it there is nothing left to lose. That is why `CHAT_IDLE_TIMEOUT_MINUTES` is 60, and why it is not a setting: there is no better answer than the TTL, and offering the choice would invite a worse one.
 
 ## The embedded terminal: the other half of `chatMode`
 
