@@ -94,7 +94,13 @@ export function SessionViewPage() {
    * out-number anything outside, and the follow pill went straight over it.
    * Lifting the whole slot is the only place that can be fixed from.
    */
-  const [terminalFull, setTerminalFull] = useState(false);
+  const [terminalLayout, setTerminalLayout] = useState({ full: false, height: 0 });
+  // The terminal reports from a ResizeObserver, so this fires on every pixel of
+  // a drag. Keep the previous object when nothing actually moved: otherwise the
+  // whole page re-renders once per frame for a value that did not change.
+  const onTerminalLayout = useCallback((next: { full: boolean; height: number }) => {
+    setTerminalLayout((prev) => (prev.full === next.full && prev.height === next.height ? prev : next));
+  }, []);
   /**
    * Prompts sent from the composer that the transcript has not caught up with.
    * `at` is when it was accepted, which is also when the turn really began —
@@ -896,6 +902,9 @@ export function SessionViewPage() {
                 the closures. */}
             <div
               ref={follow.scrollRef}
+              // The embedded terminal's drag handle measures this to run its bar
+              // the full width of the scroller rather than of the column.
+              data-conversation-scroller
               onClick={selectFromClick}
               className={`h-full overflow-y-auto px-4 pt-4 [scrollbar-gutter:stable_both-edges] ${
                 // With no composer there is nothing to keep the last bubble off
@@ -969,7 +978,7 @@ export function SessionViewPage() {
                   <div
                     ref={follow.footerRef}
                     data-sticky-bottom
-                    className={`sticky bottom-0 mt-auto pt-6 ${terminalFull ? 'z-50' : ''}`}
+                    className={`sticky bottom-0 mt-auto pt-6 ${terminalLayout.full ? 'z-50' : ''}`}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {/* The two modes share this slot and everything it imposes.
@@ -977,11 +986,7 @@ export function SessionViewPage() {
                         changes is how you talk to Claude, not where the
                         conversation ends. */}
                     {terminalMode ? (
-                      <SessionTerminal
-                        sessionId={id}
-                        columnWidth={columnWidth}
-                        onFullScreenChange={setTerminalFull}
-                      />
+                      <SessionTerminal sessionId={id} columnWidth={columnWidth} onLayout={onTerminalLayout} />
                     ) : (
                       <Composer
                         sessionId={id}
@@ -1010,6 +1015,9 @@ export function SessionViewPage() {
               unseen={follow.unseen}
               working={isWorking(liveInfo) || agentsWorking !== null}
               workingWhat={isWorking(liveInfo) ? undefined : (agentsWorking ?? undefined)}
+              // Above an open terminal rather than over it: that panel is content
+              // in every cell and has no corner to spare.
+              liftPx={terminalMode && !terminalLayout.full ? terminalLayout.height : 0}
             />
           </div>
           {agentId && (

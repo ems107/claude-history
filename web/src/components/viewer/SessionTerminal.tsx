@@ -52,14 +52,19 @@ export function SessionTerminal({
    * scroller with no z-index at all, paints straight over it. Measured:
    * `elementFromPoint` in the middle of a full-screen terminal answered with
    * the pill. The page lifts the whole slot instead.
+   *
+   * The height goes with it for a second reason: the follow pill floats in the
+   * corner this panel now fills, and the page moves it up rather than the panel
+   * giving ground. Measured off the root, not added up from the parts, because
+   * an arithmetic answer would be wrong the day a padding changes.
    */
-  onFullScreenChange,
+  onLayout,
 }: {
   sessionId: string;
   /** A CSS length, not a number — `min(896px, 100vw)` and the like. */
   columnWidth?: string;
   onStarted?: () => void;
-  onFullScreenChange?: (full: boolean) => void;
+  onLayout?: (layout: { full: boolean; height: number }) => void;
 }) {
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ['terminal', sessionId], queryFn: () => api.terminalStatus(sessionId) });
@@ -67,6 +72,7 @@ export function SessionTerminal({
   const [full, setFull] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -341,7 +347,51 @@ export function SessionTerminal({
     document.addEventListener('mouseup', onUp);
   }, []);
 
-  useEffect(() => onFullScreenChange?.(full), [full, onFullScreenChange]);
+  // What the page needs to know about this panel: how tall it is, and whether
+  // it has taken the window. Reported from a measurement of the root so it
+  // stays true through a drag, an open, a close and a window resize.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const report = (): void => onLayout?.({ full, height: root.offsetHeight });
+    report();
+    const observer = new ResizeObserver(report);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [full, open, onLayout]);
+
+  /**
+   * The drag handle spans the whole scroller, not just this column.
+   *
+   * A resize bar the width of the panel reads as part of the panel; one that
+   * runs edge to edge reads as the seam between two things, which is what it
+   * is. The width has to be measured rather than written as `100vw`: the
+   * scroller reserves a scrollbar gutter on both edges and pads itself, so a
+   * viewport-wide child would hang outside its padding box and earn the page a
+   * horizontal scrollbar. `clientWidth` is exactly the box that cannot overflow.
+   */
+  const [bleed, setBleed] = useState<{ width: number; marginLeft: number } | null>(null);
+  useEffect(() => {
+    const root = rootRef.current;
+    const scroller = root?.closest('[data-conversation-scroller]');
+    if (!open || full || !root || !(scroller instanceof HTMLElement)) {
+      setBleed(null);
+      return;
+    }
+    const measure = (): void => {
+      const rootBox = root.getBoundingClientRect();
+      const scrollerBox = scroller.getBoundingClientRect();
+      setBleed({
+        width: scroller.clientWidth,
+        marginLeft: Math.round(scrollerBox.left + scroller.clientLeft - rootBox.left),
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroller);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [open, full]);
 
   // Escape leaves full screen and stops there: the page's own handler ends in
   // `navigate(-1)`, so letting it through would leave the session as well.
@@ -413,7 +463,7 @@ export function SessionTerminal({
     // The page's own background, so the conversation scrolls UNDER this rather
     // than through it — which it literally does: this is stuck to the bottom of
     // the scroller the turns are in. `relative` is what the fade below hangs on.
-    <div className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3">
+    <div ref={rootRef} className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3">
       {notice && (
         <div
           className={`mb-1.5 rounded-lg border px-3 py-1.5 text-[11px] ${
@@ -449,6 +499,7 @@ export function SessionTerminal({
             // the thing it resizes is a target you have to aim at.
             <div
               className="group relative -mb-1 h-2 cursor-row-resize"
+              style={bleed ? { width: bleed.width, marginLeft: bleed.marginLeft } : undefined}
               onMouseDown={startResize}
               title="Drag to resize"
             >
@@ -469,21 +520,13 @@ export function SessionTerminal({
                 ? 'fixed inset-0 z-50 flex flex-col bg-[var(--bg)] p-2'
                 : 'flex flex-col'
             }
-            style={
-              full
-                ? undefined
-                : {
-                    height,
-                    // At Full width the column reaches the window's edge and the
-                    // follow pill floats over this corner. A terminal cannot
-                    // reflow around it the way the composer's action row does, so
-                    // the panel itself stops short — the same `max()`, which
-                    // costs nothing at any narrower width.
-                    paddingRight: columnWidth
-                      ? `max(0px, calc(${String(PILL_CORNER_PX)}px - 50vw + ${columnWidth} / 2))`
-                      : undefined,
-                  }
-            }
+            // Nothing but the height. The follow pill floats over this corner
+            // and the composer answers that by keeping `Send` out of it — but a
+            // terminal has no spare corner to give: every cell is content, and
+            // reserving the pill's width just makes the panel narrower than the
+            // conversation above it for no reason anyone can see. The pill moves
+            // up instead; the page does it, from the height reported above.
+            style={full ? undefined : { height }}
           >
             {screen}
           </div>

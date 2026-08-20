@@ -235,6 +235,7 @@ export function FollowBottomButton({
   unseen,
   working = false,
   workingWhat = 'Claude is working',
+  liftPx = 0,
 }: {
   following: boolean;
   toggle: () => void;
@@ -255,6 +256,17 @@ export function FollowBottomButton({
    * answer is still arriving, still means it has landed.
    */
   working?: boolean;
+  /**
+   * Sit this far above the foot of the scroller instead of the usual 16 px.
+   *
+   * For the embedded terminal, which fills the corner this floats in. The
+   * composer answers the same problem by keeping `Send` out of the corner, and
+   * that works because a composer has spare corner to give; a terminal is
+   * content in every cell, and reserving the pill's width there just makes the
+   * panel narrower than the conversation above it for no visible reason. So the
+   * pill moves and the panel does not.
+   */
+  liftPx?: number;
 }) {
   const badge = following ? 0 : unseen;
   return (
@@ -271,6 +283,7 @@ export function FollowBottomButton({
             ? `${badge} new message${badge === 1 ? '' : 's'} below — click to jump to the end and follow`
             : 'jump to the end and follow new messages')
       }
+      style={liftPx > 0 ? { bottom: liftPx + 16 } : undefined}
       className={`absolute right-4 bottom-4 flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-lg backdrop-blur-sm transition-colors ${
         following
           ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]'
