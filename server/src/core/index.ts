@@ -12,6 +12,8 @@ import type {
 import {
   AUTO_RELOAD_MESSAGE_MAX,
   CHAT_UI_MODES,
+  ACTIVE_SESSIONS_MAX,
+  ACTIVE_SESSIONS_MIN,
   CLAUDE_EFFORTS,
   CLAUDE_MODELS,
   DEFAULT_PRICES,
@@ -597,6 +599,12 @@ export class SessionIndex {
       logLevel: (LOG_LEVEL_CHOICES as readonly string[]).includes(patch.logLevel ?? this.settings.logLevel)
         ? (patch.logLevel ?? this.settings.logLevel)
         : DEFAULT_SETTINGS.logLevel,
+      // Both ends clamped: zero would switch the feature off through the back
+      // door, and the ceiling is the machine's, not a preference.
+      maxActiveSessions: Math.min(
+        ACTIVE_SESSIONS_MAX,
+        clampInt(patch.maxActiveSessions, this.settings.maxActiveSessions, ACTIVE_SESSIONS_MIN),
+      ),
       logRetentionDays: Math.max(
         MIN_LOG_RETENTION_DAYS,
         Math.round(patch.logRetentionDays ?? this.settings.logRetentionDays),

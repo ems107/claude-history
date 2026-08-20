@@ -16,17 +16,16 @@ import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
 import { createLogger } from './logger.ts';
 import type { SessionChatService } from './sessionChat.ts';
-import { appHolderOf, pidOwnedByApp, registerWriter, type TranscriptWriter } from './writerGuard.ts';
+import {
+  appHolderOf,
+  atActiveSessionLimit,
+  pidOwnedByApp,
+  registerWriter,
+  type TranscriptWriter,
+  type WriterSession,
+} from './writerGuard.ts';
 
 const log = createLogger('terminal');
-
-/**
- * Pseudo-terminals with a LIVE CLI at once. Same reasoning as the composer's
- * MAX_CHAT_SESSIONS: each holds a `claude` with its MCP servers loaded, so this
- * is about the machine and not about correctness. A terminal whose CLI has
- * exited holds no slot — it is a screen, not a process.
- */
-const MAX_TERMINALS = 3;
 
 /**
  * How much output is kept per terminal so a reconnecting browser can be shown
@@ -93,6 +92,7 @@ export interface TerminalClient {
  */
 export class SessionTerminalService implements TranscriptWriter {
   readonly what = 'the embedded terminal';
+  readonly kind = 'terminal' as const;
   readonly events = new EventEmitter();
 
   private readonly procs = new Map<string, TerminalProcess>();
@@ -184,8 +184,10 @@ export class SessionTerminalService implements TranscriptWriter {
     if (this.index.liveSessions.some((l) => l.sessionId === sessionId && !pidOwnedByApp(l.pid) && pidAlive(l.pid))) {
       return 'This session is open in a terminal — two writers would corrupt its transcript.';
     }
-    if (!this.running(sessionId) && this.liveCount() >= MAX_TERMINALS) {
-      return `Too many terminals are already running (${MAX_TERMINALS}).`;
+    // One cap for both doors: a composer process elsewhere in the app fills one
+    // of these slots too, because what it costs is the same machine.
+    if (atActiveSessionLimit(sessionId, s.maxActiveSessions)) {
+      return `The app is already running ${s.maxActiveSessions} Claude Code sessions, which is the most it is allowed (Settings).`;
     }
     return null;
   }
@@ -368,12 +370,25 @@ export class SessionTerminalService implements TranscriptWriter {
    * `~/.claude/sessions` already reports for an interactive session.
    */
   get busy(): boolean {
+    return this.activeSessions().some((s) => s.busy);
+  }
+
+  /**
+   * `TranscriptWriter`: every terminal with a live CLI in it.
+   *
+   * An OPEN terminal whose CLI has exited is left out — it is a screen kept for
+   * the diagnosis, it writes nothing and it costs nothing. `busy` comes from
+   * `~/.claude/sessions`, the same reading `busy` above is built on, because an
+   * interactive CLI is the one thing that reports its own state there.
+   */
+  activeSessions(): WriterSession[] {
+    const out: WriterSession[] = [];
     for (const [sessionId, p] of this.procs) {
       if (!p.pty || p.exit !== null) continue;
       const live = this.index.liveSessions.find((l) => l.sessionId === sessionId && pidAlive(l.pid));
-      if (live && live.status === 'busy') return true;
+      out.push({ sessionId, busy: live?.status === 'busy', startedAt: localIso(p.startedAt) });
     }
-    return false;
+    return out;
   }
 
   shutdown(): void {
@@ -384,12 +399,6 @@ export class SessionTerminalService implements TranscriptWriter {
   }
 
   // ---- internals ----
-
-  private liveCount(): number {
-    let n = 0;
-    for (const p of this.procs.values()) if (p.pty && p.exit === null) n++;
-    return n;
-  }
 
   private append(p: TerminalProcess, bytes: Buffer): void {
     p.buffer.push(bytes);

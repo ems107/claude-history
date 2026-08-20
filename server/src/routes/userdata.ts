@@ -2,6 +2,7 @@ import type { UserdataBackupsResponse, UserdataRestoreResponse } from '@claude-h
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { createLogger } from '../core/logger.ts';
+import { refuseWhileActive } from '../util/appSessions.ts';
 
 const log = createLogger('backups');
 
@@ -39,6 +40,14 @@ export function registerUserdataRoutes(app: FastifyInstance, ctx: AppContext): v
   app.post<{ Body?: { name?: string } }>('/api/userdata/restore', async (request, reply) => {
     const name = request.body?.name;
     if (typeof name !== 'string' || !name) return reply.code(400).send({ error: 'A backup name is required.' });
+    // A restore replaces the whole of userdata.json, `chatEnabled` and
+    // `chatMode` included — which is the back door onto the two settings a
+    // running CLI protects, and it would arrive without anyone meaning it.
+    const active = refuseWhileActive(ctx, 'restoreUserdata');
+    if (active) {
+      log.warn(`restore refused: the app is running ${active.activeSessions.length} session(s)`);
+      return reply.code(409).send(active);
+    }
     try {
       const result = await ctx.index.restoreBackup(name);
       return { ok: true, ...result } satisfies UserdataRestoreResponse;
