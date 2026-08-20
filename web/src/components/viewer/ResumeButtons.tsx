@@ -102,7 +102,7 @@ export function ResumeButtons({ session }: { session: SessionSummary }) {
             ? error
             : (terminal.reason ??
               (holder
-                ? `This session is already open (pid ${String(holder.pid)}) — resuming it twice would corrupt its transcript`
+                ? `This session is already open (pid ${String(holder.pid)}) — close it there first`
                 : `Open a terminal in ${session.projectPath} and resume this session`))
         }
       >

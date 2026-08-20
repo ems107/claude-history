@@ -175,7 +175,7 @@ export class SessionTerminalService implements TranscriptWriter {
     // Another part of this app already holding it — the composer, today.
     const holder = appHolderOf(sessionId, this);
     if (holder) {
-      return `The app is already running Claude in this session through ${holder} — stop it there first, or two writers would corrupt its transcript.`;
+      return `This session is already open in ${holder}. Close it there and you can pick it up here.`;
     }
     // A real terminal elsewhere. Our own pids are excluded (they register in
     // ~/.claude/sessions like any other CLI), and `pidAlive` is re-checked
@@ -183,7 +183,7 @@ export class SessionTerminalService implements TranscriptWriter {
     // writes to that directory — a CLI killed outright writes nothing on the
     // way out, so its entry would block us forever.
     if (this.index.liveSessions.some((l) => l.sessionId === sessionId && !pidOwnedByApp(l.pid) && pidAlive(l.pid))) {
-      return 'This session is open in a terminal — two writers would corrupt its transcript.';
+      return 'This session is already open in a terminal. Close it there and you can pick it up here.';
     }
     // One cap for both doors: a composer process elsewhere in the app fills one
     // of these slots too, because what it costs is the same machine.

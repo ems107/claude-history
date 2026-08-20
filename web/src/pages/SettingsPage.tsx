@@ -808,7 +808,7 @@ export function SettingsPage() {
               checked={s.chatEnabled}
               onChange={(v) => save({ chatEnabled: v })}
               label="Talk to Claude from inside a session"
-              hint="Continue a conversation without leaving the app, in whichever of the two ways you pick below. Either way it runs Claude Code on this machine, in that session's own folder, and the answer appears in the viewer as it is written to the transcript. It is blocked while the session is open in a terminal elsewhere: two processes writing the same transcript corrupt it."
+              hint="Continue a conversation without leaving the app, in whichever of the two ways you pick below. Either way it runs Claude Code on this machine, in that session's own folder, and the answer appears in the viewer as it is written to the transcript. It is blocked while that conversation is already open somewhere else — a terminal, or the app's other mode — since only one Claude at a time can answer in a session."
             />
           </Row>
           <Row badge={<DefaultBadge field="chatMode" value={s.chatMode} save={save} />}>

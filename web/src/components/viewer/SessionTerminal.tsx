@@ -9,6 +9,7 @@ import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
 import { clamp, HEIGHT_KEY, readHeight } from '../../lib/terminalPrefs.ts';
+import { BlockedBar } from './BlockedBar.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
 /**
@@ -418,7 +419,10 @@ export function SessionTerminal({
     return () => document.removeEventListener('keydown', onKey);
   }, [full]);
 
-  const notice = error ?? (open ? null : blocked);
+  // What went WRONG, and nothing else: a `blocked` session takes the place of
+  // the start bar instead ([BlockedBar]), because a greyed-out button with a
+  // sentence over it is two rows saying one thing.
+  const notice = error;
 
   const screen = (
     <div
@@ -496,13 +500,7 @@ export function SessionTerminal({
         />
       )}
       {notice && (
-        <div
-          className={`mb-1.5 rounded-lg border px-3 py-1.5 text-[11px] ${
-            error
-              ? 'border-red-900/60 bg-red-950/30 text-red-300'
-              : 'border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-dim)]'
-          }`}
-        >
+        <div className="mb-1.5 rounded-lg border border-red-900/60 bg-red-950/30 px-3 py-1.5 text-[11px] text-red-300">
           {notice}
         </div>
       )}
@@ -563,7 +561,10 @@ export function SessionTerminal({
           </div>
         </>
       )}
-      {!open && (
+      {/* Blocked replaces the start bar rather than disabling its button: there
+          is nothing to press, and the reason is the row. */}
+      {!open && blocked && <BlockedBar reason={blocked} columnWidth={columnWidth} />}
+      {!open && !blocked && (
         <div
           className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs"
           style={{
@@ -577,7 +578,7 @@ export function SessionTerminal({
           <button
             type="button"
             onClick={() => start.mutate()}
-            disabled={start.isPending || !!blocked}
+            disabled={start.isPending}
             className="rounded-lg border border-[var(--border)] px-2 py-1 text-[var(--text)] hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             {start.isPending ? 'starting…' : '❯ Start a terminal here'}

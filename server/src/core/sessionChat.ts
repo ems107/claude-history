@@ -367,7 +367,7 @@ export class SessionChatService implements TranscriptWriter {
     // would be about "a terminal" — true, and useless.
     const holder = appHolderOf(sessionId, this);
     if (holder) {
-      return `The app is already running Claude in this session through ${holder} — stop it there first, or two writers would corrupt its transcript.`;
+      return `This session is already open in ${holder}. Close it there and you can pick it up here.`;
     }
     // Our own processes are excluded by pid: they register themselves there
     // too. And `pidAlive` is re-checked rather than trusted from the list,
@@ -377,7 +377,7 @@ export class SessionChatService implements TranscriptWriter {
     if (
       this.index.liveSessions.some((l) => l.sessionId === sessionId && !pidOwnedByApp(l.pid) && pidAlive(l.pid))
     ) {
-      return 'This session is open in a terminal — two writers would corrupt its transcript.';
+      return 'This session is already open in a terminal. Close it there and you can pick it up here.';
     }
     // The cap counts both doors: a terminal running elsewhere in the app fills
     // one of these slots too, because what it costs is the same machine.

@@ -143,6 +143,16 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 
 **They are exclusive and must stay so**: both at once is two writers on one transcript, which is the corruption everything around this feature exists to prevent. Each refuses while the other holds a session, and both say which one it is.
 
+### How a refusal looks, and what it says
+
+`blockedReason` is one string for the endpoint and the page both, and `BlockedBar` is the only thing that draws it — in **place of** the control, never above it. A greyed-out composer with a grey sentence stacked on top was two rows for one fact, and the control was dead in both of them; here there is no control, because there is nothing to press.
+
+**Amber, not red.** Nothing has gone wrong: the commonest reason by far is that the conversation is open somewhere else, which is a state to resolve rather than a failure to report. Red stays for what actually broke — a prompt that came back with an error, a CLI that would not start — and those keep their box, because retrying is exactly what you do with them. Blurring the two would cost the palette its meaning.
+
+**The sentence says what to do, not what would go wrong.** "Two writers would corrupt its transcript" was true, and it explained our problem to somebody who only wanted their conversation: *This session is already open in a terminal. Close it there and you can pick it up here.* Being open twice is reason enough on its own. The corruption stays written down where it belongs — in the code and in this document — and the same shape is kept by every door: `resume` names the pid and offers the copied command, and the app's own other mode is named ("already open in the composer") rather than called "a terminal", which is the whole point of `appHolderOf`.
+
+It clears itself: every reason behind it is re-read on the events that could change it, so closing the other terminal brings the control back with no reload.
+
 ## Nothing kills a CLI of ours from another page
 
 Six actions destroy a live `claude` this app started, and the page they are pressed from is never the page it is running on: **stopping** the server, **restarting** it, **installing an update**, **clearing the cache**, **restoring a copy of userdata**, and switching **`chatEnabled` / `chatMode`**. All six ask `util/appSessions.ts` first and answer **409** while the app is running anything at all.
