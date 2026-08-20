@@ -868,8 +868,9 @@ export function SettingsPage() {
             <span className="text-[var(--text)]">{CHAT_IDLE_TIMEOUT_MINUTES} minutes</span>, and that number is not a
             preference. Claude's prompt cache lives for an hour, and a CLI that restarts while it is still warm has to
             rewrite the whole prompt often enough to matter — so a shorter timeout would cost you money rather than save
-            it, and once the hour is up there is nothing left to lose. Either mode can also be closed by hand, which
-            asks first.
+            it, and once the hour is up there is nothing left to lose. Either mode can also be closed by hand, and that
+            asks first only while there is something to lose — a warm cache, or an answer in flight; otherwise it just
+            closes.
             <br />
             <br />
             While the app is running Claude, the two settings above are <span className="text-[var(--text)]">locked</span>

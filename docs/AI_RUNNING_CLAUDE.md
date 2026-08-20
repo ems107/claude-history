@@ -246,7 +246,9 @@ That is the thing being prevented — it is what produces the duplicated uuids a
 
 ### Closing a session, and what it really costs
 
-Both modes can be closed by hand, and both ask first — `CloseSessionDialog`, shared. The care is in what it says, because the obvious sentence is false.
+Both modes can be closed by hand, and both ask first **when there is something to lose** — `CloseSessionDialog`, shared, gated by `closingNeedsAsking`. The care is in what it says, because the obvious sentence is false.
+
+**A dialog whose own text says the answer does not matter is worse than no dialog**, and that is what the unconditional version had become: the commonest thing on screen was a confirmation reading "closing it now costs nothing" above two buttons, which is how people learn to click through the one that matters. So it is raised only where something is genuinely at risk — a turn in flight, a cache with time left on it, or a transcript nobody has read yet, because unknown is not free. A session whose hour is up closes on the click, and so does one that has never been answered: `/api/sessions/:id` 404s for an id with no transcript, and that 404 is an answer, not a gap. The decision is read off the queries the page already holds (`['session', id]`, and `['live']` for a TUI's own `status`) — a dialog is no reason to re-read a transcript, and this stands between a click and its effect.
 
 **Closing does not evict the prompt cache.** That cache lives at Anthropic, keyed on the content prefix, and it outlives the process: measured, by killing a terminal and resuming it 45 s later — 39,894 read, 89 written, nothing re-cached. It also survives a 51-minute gap the same way.
 

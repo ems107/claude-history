@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
-import { cacheClockOf, CloseSessionDialog } from './CloseSessionDialog.tsx';
+import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
 import { clamp, HEIGHT_KEY, readHeight } from '../../lib/terminalPrefs.ts';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
@@ -74,10 +74,11 @@ export function SessionTerminal({
   const [full, setFull] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
-   * Closing is asked about while a CLI is alive, for the reason in
-   * [CloseSessionDialog]: the next prompt would come from one that has just
-   * started, and that is what risks the cached prefix. A terminal holding a dead
-   * process's screen has nothing to lose and closes on the first click.
+   * Closing is asked about only when there is something to lose by it — a warm
+   * cache, or a turn in flight ([CloseSessionDialog]). A terminal holding a dead
+   * process's screen, or a live one whose hour is already up, closes on the
+   * first click: a dialog whose own text says it does not matter is what teaches
+   * people to click through the one that does.
    */
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -456,7 +457,7 @@ export function SessionTerminal({
           <button
             type="button"
             onClick={() => {
-              if (running) setConfirmClose(true);
+              if (running && closingNeedsAsking(queryClient, sessionId)) setConfirmClose(true);
               else close.mutate();
             }}
             title={running ? 'Stop Claude and close this terminal' : 'Close this terminal'}
@@ -483,6 +484,10 @@ export function SessionTerminal({
           // From the cache the page already holds: a dialog is no reason to go
           // and re-read a whole transcript.
           cache={cacheClockOf(queryClient.getQueryData<SessionDetailResponse>(['session', sessionId]))}
+          // The CLI's own `status`, which is what makes "that turn will be cut
+          // off" a fact rather than a guess. Read at render, right after the
+          // click that opened this.
+          busy={busyFromLive(queryClient, sessionId)}
           onCancel={() => setConfirmClose(false)}
           onConfirm={() => {
             setConfirmClose(false);

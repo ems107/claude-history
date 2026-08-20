@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { shortModel } from '../../lib/format.ts';
-import { cacheClockOf, CloseSessionDialog } from './CloseSessionDialog.tsx';
+import { cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 import { QuestionPanel } from './QuestionPanel.tsx';
 
@@ -295,10 +295,11 @@ export function Composer({
   };
 
   /**
-   * Closing is asked about, because it ends the CLI and the next prompt then
-   * comes from one that has just started — which is the thing that risks the
-   * cached prefix ([CloseSessionDialog]). Only when there is a process to close:
-   * confirming the closing of nothing is a dialog that teaches nothing.
+   * Closing can end the CLI mid-answer, and the next prompt then comes from one
+   * that has just started — which is the thing that risks the cached prefix
+   * ([CloseSessionDialog]). Two conditions, both about not asking a question
+   * with no content: there has to be a process to close, and there has to be
+   * something to lose by closing it (`closingNeedsAsking`).
    */
   const [confirmClose, setConfirmClose] = useState(false);
   const closeNow = () => {
@@ -309,7 +310,7 @@ export function Composer({
       .finally(() => void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] }));
   };
   const stop = () => {
-    if (status?.running) setConfirmClose(true);
+    if (status?.running && closingNeedsAsking(queryClient, sessionId, working)) setConfirmClose(true);
     else closeNow();
   };
 

@@ -1,5 +1,6 @@
 import { CACHE_TTL_MS } from '@claude-history/shared';
-import type { SessionDetailResponse } from '@claude-history/shared';
+import type { LiveResponse, SessionDetailResponse } from '@claude-history/shared';
+import type { QueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { formatContextTokens } from '../../lib/context.ts';
@@ -29,7 +30,62 @@ export function cacheClockOf(detail: SessionDetailResponse | undefined): { token
 }
 
 /**
- * Asked before a Claude Code session is closed by hand, in either mode.
+ * Is closing worth asking about at all?
+ *
+ * **A dialog whose own text says the answer does not matter is worse than no
+ * dialog**: it teaches people to click through the one that does. The old rule
+ * asked whenever a CLI was alive, which meant the commonest case on screen was
+ * the one reading "closing it now costs nothing" above two buttons.
+ *
+ * So it is asked only where something is genuinely at risk, and there are three
+ * such places:
+ *
+ * - **a turn in flight** — that answer is cut off, whatever the cache says;
+ * - **a cache with time left on it** — the case the wording was written for;
+ * - **a transcript nobody has read yet** — unknown is not the same as free, and
+ *   this one is transient anyway (the page that draws the conversation holds
+ *   that query).
+ *
+ * Everything else closes on the click. A session whose hour is up has nothing
+ * left to lose — that is measured, not assumed ([AI_COST_AND_CONTEXT.md]) — and
+ * one that has never been answered has nothing cached in the first place, which
+ * is what an *error* on that query means here: `/api/sessions/:id` 404s for an
+ * id whose transcript does not exist yet, and that 404 is an answer.
+ *
+ * Read off the query the page already holds and never fetched: a dialog is no
+ * reason to go and re-read a whole transcript, and the decision has to be
+ * instant because it stands between a click and its effect.
+ */
+export function closingNeedsAsking(client: QueryClient, sessionId: string, busy = false): boolean {
+  // A turn in flight, from whichever of the two places can know about one: the
+  // composer passes its own, because a `--print` run writes no `status`
+  // anywhere, and for a terminal it is `~/.claude/sessions` — read here, so
+  // neither caller has to learn the other's mechanism.
+  if (busy || busyFromLive(client, sessionId)) return true;
+  const state = client.getQueryState<SessionDetailResponse>(['session', sessionId]);
+  if (!state || state.status === 'pending') return true;
+  if (state.status === 'error') return false;
+  const cache = cacheClockOf(state.data);
+  return cache !== null && cache.minutesLeft > 0;
+}
+
+/**
+ * Is an interactive CLI in this session reporting itself busy right now?
+ *
+ * `~/.claude/sessions/<pid>.json` is the only thing that knows — and only for a
+ * real TUI: a `--print` run writes no `status` there, which is why the composer
+ * answers for itself instead. Exported because the terminal needs the same
+ * answer twice: once to decide whether to ask, and once to say so in the dialog.
+ */
+export function busyFromLive(client: QueryClient, sessionId: string): boolean {
+  const live = client.getQueryData<LiveResponse>(['live']);
+  return !!live?.some((l) => l.sessionId === sessionId && l.status === 'busy');
+}
+
+/**
+ * Asked before a Claude Code session is closed by hand — but only when
+ * `closingNeedsAsking` says there is something to lose, which is what keeps
+ * this dialog meaningful.
  *
  * **The warning is conditional on purpose, and that is the whole care in it.**
  * Closing does not evict the cache — that lives at Anthropic, keyed on the
@@ -81,9 +137,12 @@ export function CloseSessionDialog({
           {cache && cache.minutesLeft === 0 ? (
             // The hour is up, so there is nothing left to lose and saying otherwise
             // would be the same overstatement the conditional exists to avoid.
+            // Reachable only beside a turn in flight now — with nothing running,
+            // an expired session closes on the click — so it speaks about the
+            // cache alone and leaves the turn to the line below.
             <>
-              The prompt cache lasts an hour and this session's has already expired, so closing it now costs nothing:
-              the next prompt would have re-sent the conversation either way.
+              The prompt cache lasts an hour and this session's has already expired, so there is nothing cached left to
+              lose: the next prompt would have re-sent the conversation either way.
             </>
           ) : cache ? (
             <>
