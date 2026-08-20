@@ -40,6 +40,14 @@ const MAX_TERMINALS = 3;
 const SCROLLBACK_BYTES = 256 * 1024;
 
 /**
+ * A CLI that dies sooner than this never really started, whatever it says on
+ * the way out — so its last screen is kept even on a zero exit. Long enough to
+ * cover a spawn that fails after printing something, short enough that nobody
+ * typing `/exit` lands inside it.
+ */
+const STARTUP_GRACE_MS = 3_000;
+
+/**
  * Sent before a replay: leave the alternate screen, stop mouse reporting, show
  * the cursor, drop any colour still in force. A truncated backlog can begin
  * inside the sequence that switched one of those on, and then never contain the
@@ -250,13 +258,30 @@ export class SessionTerminalService implements TranscriptWriter {
     });
 
     child.onExit(({ exitCode }) => {
-      // The process is gone; the terminal is NOT. Its last screen is the only
-      // diagnosis there is for a CLI that failed to start, and dropping it here
-      // is what would turn that into a flash of something unreadable.
       p.exit = { code: exitCode ?? null, at: localIso(new Date()) };
       p.pty = null;
-      log.info(`terminal for ${sessionId} exited (code ${String(exitCode)})`);
+      /**
+       * Whether the terminal outlives the process inside it, and the two
+       * answers are both wanted.
+       *
+       * A CLI that failed to start has its last screen as the only diagnosis
+       * there is, and clearing it would turn a readable error into a flash of
+       * something — so a bad exit, or one that came too soon to be a real
+       * session, keeps the panel with its exit code on the header.
+       *
+       * Somebody typing `/exit`, though, has said they are done, and leaving a
+       * dead panel for them to dismiss by hand is one click that means nothing.
+       * A clean exit from a session that actually ran takes the terminal with
+       * it and the start bar comes back.
+       */
+      const lived = Date.now() - p.startedAt.getTime();
+      const finished = exitCode === 0 && lived >= STARTUP_GRACE_MS;
+      log.info(
+        `terminal for ${sessionId} exited (code ${String(exitCode)}) after ${String(Math.round(lived / 1000))}s — ` +
+          (finished ? 'closing it' : 'keeping the screen'),
+      );
       for (const client of p.clients) client.sendJson({ t: 'exit', code: exitCode ?? null });
+      if (finished) this.procs.delete(sessionId);
       this.events.emit('terminal-changed', sessionId);
       // The LIVE badge is driven by ~/.claude/sessions, and a CLI on its way out
       // has just removed its file — give the directory a moment, then re-read.

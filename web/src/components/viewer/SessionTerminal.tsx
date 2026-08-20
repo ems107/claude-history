@@ -222,6 +222,23 @@ export function SessionTerminal({
      * fixed.
      */
     term.attachCustomKeyEventHandler((e) => {
+      /**
+       * Ctrl+V pastes, and the way to make it paste is to do nothing.
+       *
+       * xterm maps every Ctrl+letter to its control code — `\x16` here — and
+       * that mapping carries `cancel: true`, so xterm calls `preventDefault`
+       * and the browser's own paste command never runs. Its `paste` listener
+       * was there all along, bracketed-paste and all; nothing was ever
+       * reaching it. Returning false makes `_keyDown` bail before that
+       * `cancel`, the browser pastes into the helper textarea as it would
+       * anywhere else, and the listener turns it into `ESC[200~ … ESC[201~`.
+       *
+       * This is the native paste command, not `navigator.clipboard`, so it
+       * keeps working from a browser on another machine over plain HTTP, where
+       * that API does not exist at all ([AI_REMOTE_ACCESS.md]).
+       */
+      if ((e.key === 'v' || e.key === 'V') && e.ctrlKey && !e.altKey && !e.metaKey) return false;
+
       const shiftEnter = e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
       if (!shiftEnter || !kittyRef.current) return true;
       if (e.type === 'keydown') {
@@ -425,11 +442,18 @@ export function SessionTerminal({
               The terminal is filling the window. Esc brings it back.
             </div>
           ) : (
+            // The grab area straddles the panel's top edge instead of floating
+            // above it: 8 px tall with a negative margin of half that, so the
+            // hairline sits exactly ON the border and there is something to
+            // catch on either side of it. A 1 px target four pixels clear of
+            // the thing it resizes is a target you have to aim at.
             <div
-              className="mb-1 h-1 cursor-row-resize rounded hover:bg-[var(--accent-dim)]"
+              className="group relative -mb-1 h-2 cursor-row-resize"
               onMouseDown={startResize}
               title="Drag to resize"
-            />
+            >
+              <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded transition-colors group-hover:bg-[var(--accent-dim)]" />
+            </div>
           )}
           {/*
             ONE element, in one place, whatever `full` is doing — and that is not
