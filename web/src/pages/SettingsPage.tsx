@@ -821,7 +821,7 @@ export function SettingsPage() {
                 {
                   value: 'terminal',
                   label: 'An embedded terminal running the Claude Code CLI',
-                  hint: 'The real CLI, drawn in the page where the box would be, resizable by dragging its top edge. Everything the terminal can do and nothing the app adds — and it keeps running while you read other sessions.',
+                  hint: 'The real CLI, drawn in the page where the box would be — resizable by dragging its top edge, and collapsible to a single line when you want the conversation back. Everything the terminal can do and nothing the app adds, and it keeps running while you read other sessions.',
                 },
                 {
                   value: 'composer',
@@ -843,7 +843,7 @@ export function SettingsPage() {
                 className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right"
               />
               <span>
-                of them at once
+                sessions at once
                 {active && active.sessions.length > 0 && (
                   <span className="text-[var(--text)]">
                     {' '}

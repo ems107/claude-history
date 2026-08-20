@@ -72,11 +72,16 @@ export function useActiveSessionsGuard(): GuardApi {
   return useContext(GuardContext);
 }
 
-/** "claude-history — Folding a replayed turn", or the folder when there is no transcript yet. */
+/**
+ * "claude-history — Folding a replayed turn", or, for a session with no
+ * transcript yet, the same words its own page uses: `New session` and the folder
+ * it will run in. The row links there, so the two must not disagree about what
+ * this is ([draftSession.ts]).
+ */
 function nameOf(s: ActiveAppSession): string {
   if (s.projectName && s.title) return `${s.projectName} — ${s.title}`;
   if (s.projectName) return s.projectName;
-  return s.cwd ?? s.sessionId.slice(0, 8);
+  return s.cwd ? `New session — ${s.cwd}` : s.sessionId.slice(0, 8);
 }
 
 function ActiveSessionsDialog({
