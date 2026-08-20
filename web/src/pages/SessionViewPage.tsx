@@ -87,6 +87,15 @@ export function SessionViewPage() {
   // `chatEnabled` is off, and never read there: nothing is drawn either way.
   const terminalMode = chatEnabled && settings.data?.settings.chatMode === 'terminal';
   /**
+   * A terminal has filled the window.
+   *
+   * The page has to know because the slot below is `position: sticky`, which
+   * creates a stacking context: a full-screen panel rendered inside it cannot
+   * out-number anything outside, and the follow pill went straight over it.
+   * Lifting the whole slot is the only place that can be fixed from.
+   */
+  const [terminalFull, setTerminalFull] = useState(false);
+  /**
    * Prompts sent from the composer that the transcript has not caught up with.
    * `at` is when it was accepted, which is also when the turn really began —
    * the indicator counts from it while the server's own figure is in flight.
@@ -960,7 +969,7 @@ export function SessionViewPage() {
                   <div
                     ref={follow.footerRef}
                     data-sticky-bottom
-                    className="sticky bottom-0 mt-auto pt-6"
+                    className={`sticky bottom-0 mt-auto pt-6 ${terminalFull ? 'z-50' : ''}`}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {/* The two modes share this slot and everything it imposes.
@@ -968,7 +977,11 @@ export function SessionViewPage() {
                         changes is how you talk to Claude, not where the
                         conversation ends. */}
                     {terminalMode ? (
-                      <SessionTerminal sessionId={id} columnWidth={columnWidth} />
+                      <SessionTerminal
+                        sessionId={id}
+                        columnWidth={columnWidth}
+                        onFullScreenChange={setTerminalFull}
+                      />
                     ) : (
                       <Composer
                         sessionId={id}

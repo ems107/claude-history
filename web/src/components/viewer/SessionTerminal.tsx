@@ -3,7 +3,6 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { api } from '../../api/client.ts';
 import { clamp, HEIGHT_KEY, readHeight } from '../../lib/terminalPrefs.ts';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
@@ -42,11 +41,23 @@ export function SessionTerminal({
   columnWidth,
   /** Called once a terminal has really started, so `/new` can begin waiting for a transcript. */
   onStarted,
+  /**
+   * Full screen is the PAGE's business, not just this component's.
+   *
+   * The slot this sits in is `position: sticky`, and sticky creates a stacking
+   * context — so a `fixed inset-0 z-50` panel rendered inside it is numbered
+   * only against its siblings, and the follow pill, a later sibling of the
+   * scroller with no z-index at all, paints straight over it. Measured:
+   * `elementFromPoint` in the middle of a full-screen terminal answered with
+   * the pill. The page lifts the whole slot instead.
+   */
+  onFullScreenChange,
 }: {
   sessionId: string;
   /** A CSS length, not a number — `min(896px, 100vw)` and the like. */
   columnWidth?: string;
   onStarted?: () => void;
+  onFullScreenChange?: (full: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ['terminal', sessionId], queryFn: () => api.terminalStatus(sessionId) });
@@ -127,6 +138,18 @@ export function SessionTerminal({
       }
     };
     socket.onerror = () => setError('The connection to the terminal was lost.');
+    // The FIRST thing said up the socket is how big this panel really is.
+    //
+    // Two moments need it and neither can be served by the server's own guess.
+    // At the start the CLI was spawned before an xterm existed to measure — the
+    // panel is a one-line bar until the terminal opens — so it is born at a
+    // fallback size and would draw its whole layout for a console nobody has.
+    // And on a reconnect the window may be a different one entirely: opened on
+    // a laptop, come back to on a monitor. Sending it here also makes the CLI
+    // repaint in full, which is what tidies a replayed backlog.
+    socket.onopen = () => {
+      socket.send(JSON.stringify({ t: 'r', cols: term.cols, rows: term.rows }));
+    };
 
     const input = term.onData((data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'i', d: data }));
@@ -208,6 +231,8 @@ export function SessionTerminal({
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }, []);
+
+  useEffect(() => onFullScreenChange?.(full), [full, onFullScreenChange]);
 
   // Escape leaves full screen and stops there: the page's own handler ends in
   // `navigate(-1)`, so letting it through would leave the session as well.
@@ -298,17 +323,55 @@ export function SessionTerminal({
         aria-hidden
         className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-b from-transparent to-[var(--bg)]"
       />
-      {open && !full && (
-        <div
-          className="mb-1 h-1 cursor-row-resize rounded hover:bg-[var(--accent-dim)]"
-          onMouseDown={startResize}
-          title="Drag to resize"
-        />
-      )}
-      {open && !full && (
-        <div className="flex flex-col" style={{ height }}>
-          {screen}
-        </div>
+      {open && (
+        <>
+          {full ? (
+            // The strip keeps its place with a line saying where the panel went,
+            // exactly as the plan panel does: two live copies of one terminal
+            // would be two views fighting over one cursor.
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">
+              The terminal is filling the window. Esc brings it back.
+            </div>
+          ) : (
+            <div
+              className="mb-1 h-1 cursor-row-resize rounded hover:bg-[var(--accent-dim)]"
+              onMouseDown={startResize}
+              title="Drag to resize"
+            />
+          )}
+          {/*
+            ONE element, in one place, whatever `full` is doing — and that is not
+            a simplification, it is the whole trick. xterm is attached to the host
+            div below by `term.open()`, so moving the panel into a portal unmounts
+            that div and takes the terminal's entire DOM with it: measured, and
+            what it looks like is a full screen with nothing in it. So full screen
+            is a class on this element rather than a different place to render it.
+          */}
+          <div
+            className={
+              full
+                ? 'fixed inset-0 z-50 flex flex-col bg-[var(--bg)] p-2'
+                : 'flex flex-col'
+            }
+            style={
+              full
+                ? undefined
+                : {
+                    height,
+                    // At Full width the column reaches the window's edge and the
+                    // follow pill floats over this corner. A terminal cannot
+                    // reflow around it the way the composer's action row does, so
+                    // the panel itself stops short — the same `max()`, which
+                    // costs nothing at any narrower width.
+                    paddingRight: columnWidth
+                      ? `max(0px, calc(${String(PILL_CORNER_PX)}px - 50vw + ${columnWidth} / 2))`
+                      : undefined,
+                  }
+            }
+          >
+            {screen}
+          </div>
+        </>
       )}
       {!open && (
         <div
@@ -334,13 +397,6 @@ export function SessionTerminal({
           </span>
         </div>
       )}
-      {full &&
-        createPortal(
-          <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg)] p-2" data-terminal>
-            {screen}
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }
