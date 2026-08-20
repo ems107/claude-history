@@ -7,7 +7,10 @@ allowBuilds:
 # The Agent SDK ships a whole copy of the Claude Code CLI as a per-platform
 # optional dependency -- 293 MB on Windows. We never use it: the server points
 # the SDK at the CLI the user already has (findClaudeCli), and the release
-# bundle carries no node_modules at all. Excluded here rather than with an
-# install flag so a clean `pnpm install` cannot quietly bring it back.
+# bundle carries exactly one dependency -- @lydell/node-pty, the embedded
+# terminal's pseudo-console, which is a compiled binary and so cannot go inside
+# the esbuild bundle (scripts/package.mjs copies it beside server.cjs).
+# Excluded here rather than with an install flag so a clean `pnpm install`
+# cannot quietly bring the SDK's copy back.
 ignoredOptionalDependencies:
   - "@anthropic-ai/claude-agent-sdk-*"
