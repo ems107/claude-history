@@ -1,5 +1,6 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -104,7 +105,11 @@ export function SessionTerminal({
       // geometrically whatever the font does, which is the other half of it.
       fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', monospace",
       fontSize: 12,
-      lineHeight: 1.2,
+      // Exactly 1, and this is the logo. The CLI draws it out of half-block
+      // characters that are meant to tile edge to edge; any leading at all puts
+      // a stripe of background through every row of it. 1.2 reads better for
+      // prose and this is not prose.
+      lineHeight: 1,
       scrollback: 5_000,
       theme: themeFrom(hostRef.current),
     });
@@ -118,6 +123,25 @@ export function SessionTerminal({
     term.loadAddon(unicode11);
     term.unicode.activeVersion = '11';
     term.open(hostRef.current);
+    // AFTER `open`, which is a requirement of the addon and not a preference.
+    //
+    // The default DOM renderer draws every cell as a span, so box-drawing and
+    // block characters are whatever the font makes of them — and
+    // `customGlyphs`, which draws those geometrically so they tile perfectly at
+    // any size, is a canvas/WebGL feature that the DOM renderer simply does not
+    // have. That is the difference between a logo with stripes through it and
+    // the one a real terminal draws.
+    //
+    // A lost context is not an error worth showing anybody: dispose the addon
+    // and xterm falls back to the DOM renderer, which still works.
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      term.loadAddon(webgl);
+    } catch {
+      // No WebGL here (a locked-down browser, a headless run without a GPU).
+      // The DOM renderer is the fallback and it is the one we started with.
+    }
     fit.fit();
     termRef.current = term;
     fitRef.current = fit;
@@ -198,12 +222,29 @@ export function SessionTerminal({
      * fixed.
      */
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== 'keydown' || e.key !== 'Enter' || !e.shiftKey) return true;
-      if (e.ctrlKey || e.altKey || e.metaKey || !kittyRef.current) return true;
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ t: 'i', d: '\u001b[13;2u' }));
+      const shiftEnter = e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
+      if (!shiftEnter || !kittyRef.current) return true;
+      if (e.type === 'keydown') {
+        e.preventDefault();
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ t: 'i', d: '\u001b[13;2u' }));
+        }
       }
-      return false; // handled: xterm must not also send its bare CR
+      // FALSE FOR THE KEYPRESS TOO, and that line is the fix.
+      //
+      // Returning false makes xterm's `_keyDown` bail BEFORE it calls its own
+      // `cancel()`, so nothing has stopped the browser firing `keypress` — and
+      // `_keyPress` asks this same handler again. An earlier version answered
+      // only for `keydown` and let the keypress through, so xterm sent `\r`
+      // from its char code: the CLI got the sequence AND a carriage return, a
+      // newline followed instantly by the prompt being submitted, which is the
+      // exact behaviour this exists to remove. Proved by putting it back:
+      // Shift+Enter sent `bbb` on its own.
+      //
+      // `preventDefault` above suppresses the keypress at source, so either
+      // line alone is enough in Chrome. Both stay because they fail
+      // differently, and this is not a place to be clever.
+      return false;
     });
     const resize = term.onResize(({ cols, rows }) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'r', cols, rows }));
