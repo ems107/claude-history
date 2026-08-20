@@ -14,6 +14,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A deep link must point at something visible**: unfold the way in, then scroll, then say which one it was.
 - **Marks are `Range`s in the CSS Custom Highlight API**, never `<mark>` nodes in React's markdown.
 - **A message bubble takes no `onClick`.**
+- **A session with no transcript YET is not a session that does not exist** — the page draws it from the reservation ([Running Claude](AI_RUNNING_CLAUDE.md#starting-one-that-does-not-exist-yet)), and only a 404 with no reservation behind it is an error.
 - **A panel that indexes files asks the disk in ONE request**, and joins the answer on the ref it sent.
 - **A collector of paths written in prose may be stricter than what the renderer linkifies, never looser.**
 - **A starred message says so without being hovered, and nothing is drawn on the bubble.**

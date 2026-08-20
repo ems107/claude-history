@@ -405,6 +405,7 @@ export class SessionChatService implements TranscriptWriter {
       // the birth by a rescan or two, and "no transcript yet" is the fact the
       // browser is waiting on.
       draft: this.drafts.has(sessionId) && this.index.get(sessionId) === undefined,
+      cwd: this.cwdOf(sessionId),
       turnStartedAt: p?.turnStartedAt ? new Date(p.turnStartedAt).toISOString() : null,
       idleClosesAt: idleCloses ? new Date(idleCloses).toISOString() : null,
       queued: p?.queued.length ?? 0,
@@ -1035,7 +1036,11 @@ export class SessionChatService implements TranscriptWriter {
     // two come to disagree.
     for (const [id, draft] of [...this.drafts]) {
       if (this.index.get(id)) this.drafts.delete(id);
-      else if (!this.procs.has(id) && now - draft.createdAt > DRAFT_TTL_MS) {
+      // `appHolderOf` rather than our own `procs`: a TERMINAL on a reserved id is
+      // a writer this service knows nothing about, and dropping the reservation
+      // under it would take away the only thing that can say where that session
+      // lives — its own routes would then 404 on a CLI they are running.
+      else if (!appHolderOf(id) && now - draft.createdAt > DRAFT_TTL_MS) {
         log.debug(`dropping the unused reservation ${id}`);
         this.drafts.delete(id);
       }

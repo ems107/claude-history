@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { draftSessionDetail } from '../lib/draftSession.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
 import { collectMentionedFiles, filterMentions } from '../lib/mentionedFiles.ts';
 import { useFoldState } from '../lib/folding.ts';
@@ -62,7 +63,7 @@ export function SessionViewPage() {
   const detail = useQuery({ queryKey: ['session', id], queryFn: () => api.session(id), enabled: !!id });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   /**
-   * The live state comes from here and NOT from `detail.data.summary.live`,
+   * The live state comes from here and NOT from `session.summary.live`,
    * which carries the same field: that query is invalidated by 'sessions-changed'
    * (the transcript grew), while the busy/idle flip is a write under
    * ~/.claude/sessions and only ever fires 'live-changed'. Reading it off the
@@ -136,6 +137,23 @@ export function SessionViewPage() {
     queryFn: () => api.chatStatus(id),
     enabled: !!id && chatEnabled,
   });
+  /**
+   * The session this page draws — the transcript when there is one, and the
+   * shape of a session about to be born when there is not.
+   *
+   * `draft` is the server saying "I know this id and it has no file yet", which
+   * is exactly the window in which `GET /api/sessions/:id` 404s while a CLI of
+   * ours runs in it ([draftSessionDetail]). Taken from the chat status rather
+   * than from that 404, so the page comes up at once instead of after the retry
+   * — and the real detail wins the moment it exists, with no navigation.
+   */
+  const draft = useMemo(
+    () => (chat.data?.draft ? draftSessionDetail(id, chat.data.cwd) : null),
+    [chat.data?.draft, chat.data?.cwd, id],
+  );
+  const session = detail.data ?? draft;
+  /** Drawing a session that has no transcript yet: a few things must say less. */
+  const isDraft = !detail.data && !!draft;
   const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
   const [expandTools, setExpandTools] = useState(() => localStorage.getItem('expandTools') === 'true');
   // Not persisted: folded is the point of the feature, and a session opened
@@ -263,7 +281,7 @@ export function SessionViewPage() {
     );
   }, [setSearchParams]);
 
-  const projectPath = detail.data?.summary.projectPath ?? '';
+  const projectPath = session?.summary.projectPath ?? '';
   const fileRefs = useMemo<FileRefContextValue>(
     () => ({
       sessionId: id,
@@ -291,7 +309,7 @@ export function SessionViewPage() {
    * another transcript, which this bar does not read (its `find` prop is already
    * the right shape to serve that list when it does).
    */
-  const finder = useFindBar(detail.data?.turns ?? EMPTY_TURNS, id, {
+  const finder = useFindBar(session?.turns ?? EMPTY_TURNS, id, {
     showThinking,
     enabled: !fileRef && !agentId,
     // Read once, on open, and never written back: `hl` belongs to the search
@@ -410,7 +428,7 @@ export function SessionViewPage() {
    * match on. A failed turn clears the lot: the process is gone and no line is
    * coming, and an echo left on screen would claim a message that never landed.
    */
-  const turnsData = detail.data?.turns;
+  const turnsData = session?.turns;
   const chatState = chat.data?.state;
   useEffect(() => {
     if (pending.length === 0) return;
@@ -436,7 +454,7 @@ export function SessionViewPage() {
 
   // Above the early returns (hooks are not optional) and above TurnList: the
   // header buttons need to know whether anything is left to fold or unfold.
-  const fold = useFoldState(detail.data?.turns ?? EMPTY_TURNS, showThinking, id);
+  const fold = useFoldState(session?.turns ?? EMPTY_TURNS, showThinking, id);
 
   /**
    * The session's subagents joined to the calls and the reports they left in
@@ -444,8 +462,8 @@ export function SessionViewPage() {
    * Agent call, hence a context rather than three more props threaded down.
    */
   const subagentIndex = useMemo(
-    () => buildSubagentIndex(detail.data?.turns ?? EMPTY_TURNS, detail.data?.subagents ?? EMPTY_AGENTS),
-    [detail.data],
+    () => buildSubagentIndex(session?.turns ?? EMPTY_TURNS, session?.subagents ?? EMPTY_AGENTS),
+    [session],
   );
   const subagentContext = useMemo<SubagentContextValue>(
     () => ({
@@ -499,7 +517,7 @@ export function SessionViewPage() {
    * One calculation feeding both the header's count and the panel's rows, so the
    * button can never promise a number the panel does not draw.
    */
-  const sessionFiles = useMemo(() => collectSessionFiles(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
+  const sessionFiles = useMemo(() => collectSessionFiles(session?.turns ?? EMPTY_TURNS), [session]);
 
   /**
    * And every path the answers merely NAMED. Three steps rather than one, because
@@ -514,8 +532,8 @@ export function SessionViewPage() {
    *    news here.
    */
   const mentionCandidates = useMemo(
-    () => collectMentionedFiles(detail.data?.turns ?? EMPTY_TURNS),
-    [detail.data],
+    () => collectMentionedFiles(session?.turns ?? EMPTY_TURNS),
+    [session],
   );
   // Capped at what the endpoint accepts, and what is over the cap is REPORTED by
   // the panel rather than dropped in silence.
@@ -550,8 +568,8 @@ export function SessionViewPage() {
    * files an answer keeps pointing at are usually the ones it also worked on.
    */
   const changedPaths = useMemo(
-    () => new Set((detail.data?.fileChanges ?? []).map((fc) => normalisePath(fc.path))),
-    [detail.data],
+    () => new Set((session?.fileChanges ?? []).map((fc) => normalisePath(fc.path))),
+    [session],
   );
   const sentPaths = useMemo(
     () => new Set([...sessionFiles.sent, ...sessionFiles.artifacts, ...sessionFiles.plans].map((r) => r.key)),
@@ -572,7 +590,7 @@ export function SessionViewPage() {
   );
 
   const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {
-    const items = (detail.data?.turns ?? []).flatMap((t) => t.items);
+    const items = (session?.turns ?? []).flatMap((t) => t.items);
     const blocks = items.flatMap((i) => i.blocks);
     return {
       // What the follow pill's badge counts: messages, the unit the header
@@ -587,7 +605,7 @@ export function SessionViewPage() {
       toolCount: blocks.filter((b) => b.kind === 'tool').length,
       compactionCount: blocks.filter((b) => b.kind === 'compact').length,
     };
-  }, [detail.data]);
+  }, [session]);
 
   /**
    * A turn we started gets a LiveInfo of its own rather than a second
@@ -624,7 +642,7 @@ export function SessionViewPage() {
    * and nothing about what has happened inside it — and memoised on the parse,
    * so a re-render that changed no message leaves the indicator's props alone.
    */
-  const activity = useMemo(() => turnActivity(detail.data?.turns ?? EMPTY_TURNS), [detail.data]);
+  const activity = useMemo(() => turnActivity(session?.turns ?? EMPTY_TURNS), [session]);
 
   /**
    * The clock the running-agent rule is read against, and it has to tick: an
@@ -754,22 +772,23 @@ export function SessionViewPage() {
     [pending, liveInfo, activity, clockColumnWidth],
   );
 
-  if (detail.isLoading) {
+  if (!session && (detail.isLoading || chat.isLoading)) {
     return <div className="p-8 text-[var(--text-dim)]">Parsing conversation…</div>;
   }
-  if (detail.isError || !detail.data) {
+  // Only now is it really missing: no transcript AND no reservation behind it.
+  if (!session) {
     return <div className="p-8 text-red-400">Failed to load session: {String(detail.error ?? 'not found')}</div>;
   }
 
   const color =
-    projects.data?.find((p) => p.key === detail.data.summary.projectKey)?.color ?? FALLBACK_COLOR;
+    projects.data?.find((p) => p.key === session.summary.projectKey)?.color ?? FALLBACK_COLOR;
   /**
    * How this session was last answered — the composer's starting point. Read
    * from the end backwards, because that is the state the conversation is
    * actually in; the model at the top may be several changes old.
    */
   const lastAnswer = (() => {
-    const turns = detail.data.turns;
+    const turns = session.turns;
     for (let t = turns.length - 1; t >= 0; t--) {
       const items = turns[t].items;
       for (let i = items.length - 1; i >= 0; i--) {
@@ -787,7 +806,7 @@ export function SessionViewPage() {
    * left in `acceptEdits` opens in `auto` rather than claiming otherwise.
    */
   const lastMode: ChatPermissionMode | null = (() => {
-    const turns = detail.data.turns;
+    const turns = session.turns;
     for (let t = turns.length - 1; t >= 0; t--) {
       const items = turns[t].items;
       for (let i = items.length - 1; i >= 0; i--) {
@@ -805,7 +824,8 @@ export function SessionViewPage() {
       <SubagentContext value={subagentContext}>
         <div className="flex h-full flex-col">
           <SessionHeader
-            detail={detail.data}
+            detail={session}
+            draft={isDraft}
             color={color}
             // Not detail.summary.live: that one only moves when the transcript
             // grows, so the badge would still read "live" through a turn the app
@@ -854,15 +874,19 @@ export function SessionViewPage() {
             actions={
               <>
                 <ViewButton view={view} />
-                <ExportButton detail={detail.data} />
-                <ResumeButtons session={detail.data.summary} />
+                <ExportButton detail={session} />
+                {/* Both of them resume a transcript, and a draft has none: the
+                    endpoints resolve the folder from the index and would answer
+                    404 for this id. The app's own foot below is how you pick a
+                    session up at this stage. */}
+                {!isDraft && <ResumeButtons session={session.summary} />}
               </>
             }
           />
           <FindBar {...finder.bar} />
-          {showTokens && <TokenPanel summary={detail.data.summary} turns={detail.data.turns} />}
+          {showTokens && <TokenPanel summary={session.summary} turns={session.turns} />}
           {showLineage && <LineagePanel sessionId={id} />}
-          {showFiles && <FileChangesPanel fileChanges={detail.data.fileChanges} />}
+          {showFiles && <FileChangesPanel fileChanges={session.fileChanges} />}
           {showSentFiles && (
             <SessionFilesPanel
               sessionId={id}
@@ -955,7 +979,7 @@ export function SessionViewPage() {
                       // Keyed on the session: what the user unfolded here must not
                       // carry over to the next session's segments and turns.
                       key={id}
-                      turns={detail.data.turns}
+                      turns={session.turns}
                       showThinking={showThinking}
                       expandTools={expandTools}
                       fold={fold}
@@ -971,8 +995,12 @@ export function SessionViewPage() {
                       pending={pendingTurns}
                     />
                   </StarContext>
-                  {detail.data.turns.length === 0 && pending.length === 0 && (
-                    <div className="p-8 text-center text-[var(--text-dim)]">This session has no conversation content.</div>
+                  {session.turns.length === 0 && pending.length === 0 && (
+                    <div className="p-8 text-center text-[var(--text-dim)]">
+                      {isDraft
+                        ? 'Nothing here yet — this conversation starts with your first message.'
+                        : 'This session has no conversation content.'}
+                    </div>
                   )}
                 </div>
                 {/* The last thing in the conversation's own column, and stuck to

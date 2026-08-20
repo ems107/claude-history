@@ -1040,6 +1040,13 @@ export interface ChatStatus {
    * Claude Code has written the file and the index has picked it up.
    */
   draft: boolean;
+  /**
+   * The folder this session runs in — known even for a reservation, which is
+   * the whole reason it is here: a session with no transcript has no summary to
+   * read a path off, and its own page has to be able to name where it lives.
+   * `TerminalStatus` carries it for the same reason.
+   */
+  cwd: string | null;
   /** Start of the turn in flight — what the working indicator counts from. */
   turnStartedAt: string | null;
   /**
