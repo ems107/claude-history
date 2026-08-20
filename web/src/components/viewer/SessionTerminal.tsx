@@ -466,9 +466,25 @@ export function SessionTerminal({
                   ? 'Show the terminal again'
                   : 'Collapse to this line — the CLI keeps running and comes back where you left it'
               }
-              className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
             >
-              {minimised ? '⌃ expand' : '⌄ minimise'}
+              {/* A drawn chevron rather than `⌄`/`⌃`: those two are tiny and sit
+                  at different heights in the font, so the button jumped a pixel
+                  every time it was pressed. This one is centred by the flex row
+                  and is the same shape either way up. */}
+              <svg
+                aria-hidden
+                viewBox="0 0 12 12"
+                className="size-3 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={minimised ? 'M2.5 7.5 6 4 9.5 7.5' : 'M2.5 4.5 6 8 9.5 4.5'} />
+              </svg>
+              {minimised ? 'expand' : 'minimise'}
             </button>
           )}
           {!running && (
