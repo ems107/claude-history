@@ -64,7 +64,7 @@ export function SessionTerminal({
   /** A CSS length, not a number — `min(896px, 100vw)` and the like. */
   columnWidth?: string;
   onStarted?: () => void;
-  onLayout?: (layout: { full: boolean; height: number }) => void;
+  onLayout?: (layout: { full: boolean; open: boolean; height: number; rightGap: number }) => void;
 }) {
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ['terminal', sessionId], queryFn: () => api.terminalStatus(sessionId) });
@@ -347,51 +347,56 @@ export function SessionTerminal({
     document.addEventListener('mouseup', onUp);
   }, []);
 
-  // What the page needs to know about this panel: how tall it is, and whether
-  // it has taken the window. Reported from a measurement of the root so it
-  // stays true through a drag, an open, a close and a window resize.
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const report = (): void => onLayout?.({ full, height: root.offsetHeight });
-    report();
-    const observer = new ResizeObserver(report);
-    observer.observe(root);
-    return () => observer.disconnect();
-  }, [full, open, onLayout]);
-
   /**
-   * The drag handle spans the whole scroller, not just this column.
+   * One measurement, two answers, because both are about where this panel ends.
    *
-   * A resize bar the width of the panel reads as part of the panel; one that
-   * runs edge to edge reads as the seam between two things, which is what it
-   * is. The width has to be measured rather than written as `100vw`: the
+   * `bleed` stretches the drag handle across the whole scroller instead of the
+   * column: a resize bar the width of the panel reads as part of the panel, and
+   * one that runs edge to edge reads as the seam between two things, which is
+   * what it is. The width is measured rather than written as `100vw` — the
    * scroller reserves a scrollbar gutter on both edges and pads itself, so a
    * viewport-wide child would hang outside its padding box and earn the page a
    * horizontal scrollbar. `clientWidth` is exactly the box that cannot overflow.
+   *
+   * `rightGap` is how much room is left between this panel and the scroller's
+   * right edge, which is the only thing that decides whether the follow pill has
+   * anywhere to sit beside it. Reported rather than acted on here: the pill
+   * belongs to the page.
    */
   const [bleed, setBleed] = useState<{ width: number; marginLeft: number } | null>(null);
   useEffect(() => {
     const root = rootRef.current;
-    const scroller = root?.closest('[data-conversation-scroller]');
-    if (!open || full || !root || !(scroller instanceof HTMLElement)) {
-      setBleed(null);
-      return;
-    }
+    if (!root) return;
+    const scroller = root.closest('[data-conversation-scroller]');
     const measure = (): void => {
       const rootBox = root.getBoundingClientRect();
+      if (!(scroller instanceof HTMLElement)) {
+        setBleed(null);
+        onLayout?.({ full, open, height: root.offsetHeight, rightGap: 0 });
+        return;
+      }
       const scrollerBox = scroller.getBoundingClientRect();
-      setBleed({
-        width: scroller.clientWidth,
-        marginLeft: Math.round(scrollerBox.left + scroller.clientLeft - rootBox.left),
+      setBleed(
+        open && !full
+          ? {
+              width: scroller.clientWidth,
+              marginLeft: Math.round(scrollerBox.left + scroller.clientLeft - rootBox.left),
+            }
+          : null,
+      );
+      onLayout?.({
+        full,
+        open,
+        height: root.offsetHeight,
+        rightGap: Math.round(scrollerBox.right - rootBox.right),
       });
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(scroller);
+    if (scroller instanceof HTMLElement) observer.observe(scroller);
     observer.observe(root);
     return () => observer.disconnect();
-  }, [open, full]);
+  }, [open, full, onLayout]);
 
   // Escape leaves full screen and stops there: the page's own handler ends in
   // `navigate(-1)`, so letting it through would leave the session as well.

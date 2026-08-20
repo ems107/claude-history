@@ -28,7 +28,7 @@ import { MentionedFilesPanel } from '../components/viewer/MentionedFilesPanel.ts
 import { SessionFilesPanel } from '../components/viewer/SessionFilesPanel.tsx';
 import { FileRefContext, type FileRefContextValue } from '../components/viewer/FileRefContext.ts';
 import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
-import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
+import { FollowBottomButton, PILL_CORNER_PX, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
@@ -94,13 +94,31 @@ export function SessionViewPage() {
    * out-number anything outside, and the follow pill went straight over it.
    * Lifting the whole slot is the only place that can be fixed from.
    */
-  const [terminalLayout, setTerminalLayout] = useState({ full: false, height: 0 });
+  const [terminalLayout, setTerminalLayout] = useState({ full: false, open: false, height: 0, rightGap: 0 });
   // The terminal reports from a ResizeObserver, so this fires on every pixel of
   // a drag. Keep the previous object when nothing actually moved: otherwise the
   // whole page re-renders once per frame for a value that did not change.
-  const onTerminalLayout = useCallback((next: { full: boolean; height: number }) => {
-    setTerminalLayout((prev) => (prev.full === next.full && prev.height === next.height ? prev : next));
+  const onTerminalLayout = useCallback((next: typeof terminalLayout) => {
+    setTerminalLayout((prev) =>
+      prev.full === next.full && prev.open === next.open && prev.height === next.height && prev.rightGap === next.rightGap
+        ? prev
+        : next,
+    );
   }, []);
+  /**
+   * Where the follow pill goes when a terminal is open.
+   *
+   * Beside it whenever there is room — that corner is where the pill has always
+   * lived, and at the ordinary column width the gutter beside the panel is two
+   * hundred pixels of nothing. It only climbs above the panel when the column
+   * has grown enough to leave it nowhere to stand, which in practice means the
+   * `Full` width. Measured, never assumed: `rightGap` is the real distance from
+   * the panel's right edge to the scroller's.
+   */
+  const pillLift =
+    terminalMode && terminalLayout.open && !terminalLayout.full && terminalLayout.rightGap < PILL_CORNER_PX
+      ? terminalLayout.height
+      : 0;
   /**
    * Prompts sent from the composer that the transcript has not caught up with.
    * `at` is when it was accepted, which is also when the turn really began —
@@ -1015,9 +1033,7 @@ export function SessionViewPage() {
               unseen={follow.unseen}
               working={isWorking(liveInfo) || agentsWorking !== null}
               workingWhat={isWorking(liveInfo) ? undefined : (agentsWorking ?? undefined)}
-              // Above an open terminal rather than over it: that panel is content
-              // in every cell and has no corner to spare.
-              liftPx={terminalMode && !terminalLayout.full ? terminalLayout.height : 0}
+              liftPx={pillLift}
             />
           </div>
           {agentId && (
