@@ -243,6 +243,23 @@ The PTY's direct child is `claude.exe` itself — not `pwsh` with the CLI inside
 
 **Read `pty.pid` from the live getter, never from a snapshot.** ConPTY reports the child on `ready_datapipe`, about 100 ms after `spawn` returns; until then it is 0. Measured.
 
+### The terminal declares what it is, because it knows
+
+Everywhere else this app spawns `claude` it passes `cleanEnv()` and nothing more. A terminal is the one case where the environment describes a *screen*, and we drew that screen — so `terminalEnv()` corrects three variables on the way in, and each one is load-bearing:
+
+- **`NO_COLOR` is deleted.** Not hypothetical: it is persisted nowhere on this machine, and **Claude Code injects it into the environment of the subprocesses it runs**. So a dev server started from inside a Claude Code session inherits it, hands it to the CLI, and the embedded terminal comes up monochrome — no colour, and no grey bar behind the user's own prompts. Measured on the socket: **ONE SGR sequence, against 62 for the same CLI spawned by hand**, and 19 truecolor sequences afterwards. The variable is a statement about the device that launched the server; the device the CLI is drawing on is an xterm.js panel that renders 24-bit colour. Same shape as the `CLAUDE_CODE_*` strip — an inherited fact about somebody else's terminal, corrected rather than passed on.
+- **`TERM` and `COLORTERM` are set.** node-pty on Windows takes a `name` and keeps it on the terminal object but **never writes it into the child's environment** (`windowsTerminal.js` reads `opt.name` and stores it), so without this the CLI is told nothing at all about what it is talking to.
+
+This is deliberately NOT in `cleanEnv()`, which the composer and the auto-reload also use: neither of them renders ANSI, so for them `NO_COLOR` is at worst harmless.
+
+### Looking like a terminal, and behaving like one
+
+Three things separate "a CLI running in a web page" from "the CLI", and all three were visible side by side against a real Windows Terminal before they were fixed:
+
+- **The font has to be a terminal font.** The CLI draws its logo and its panels out of block and box-drawing characters, and those only line up in a font whose cell the glyphs were cut for — so `Cascadia Mono` leads the stack, ahead of the generic `ui-monospace`. xterm's `customGlyphs` (on by default) draws the rules geometrically whatever the font does, which is the other half of it.
+- **Widths must be Unicode 11.** xterm.js defaults to the Unicode 6 tables, where an emoji is one cell wide; every terminal written this decade makes it two. One cell of error shifts everything drawn after it on the line, which is what a panel border landing in a different column each row is. `@xterm/addon-unicode11` plus `term.unicode.activeVersion = '11'`.
+- **Shift+Enter is a newline, and needs a protocol to be one.** A terminal sends a bare CR for Enter and, historically, the same bare CR for Shift+Enter — the modifier has nowhere to go, so the CLI saw two identical keys and sent the prompt. The **kitty keyboard protocol** is what gives the modifier somewhere to go, and Claude Code pushes it at startup (`CSI > 1 u`, alongside `modifyOtherKeys`); xterm.js implements neither, so the client sends `CSI 13;2u` itself. **Only while the protocol is actually active** — tracked by watching the output stream for the push and the matching `CSI < u` pop, because a program that never asked for it would receive the sequence as text typed into its prompt, which is a worse bug than the one being fixed.
+
 ### The PTY belongs to the server, not to the tab
 
 There is no idle timeout, deliberately, and unlike the composer's `chatIdleTimeoutMinutes`: a process between turns has nothing to lose, and a terminal left half way through a sentence does. It ends when it is closed, when the CLI exits, or when the server does.

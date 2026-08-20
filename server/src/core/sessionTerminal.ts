@@ -226,10 +226,7 @@ export class SessionTerminalService implements TranscriptWriter {
       cols: c,
       rows: r,
       cwd,
-      // Inheriting our own CLAUDE_CODE_* markers makes the child treat itself as
-      // a nested session and stop persisting its transcript — the same trap the
-      // composer and the auto-reload both step around.
-      env: cleanEnv() as Record<string, string>,
+      env: terminalEnv(),
     });
 
     const p: TerminalProcess = {
@@ -404,6 +401,37 @@ export class SessionTerminalService implements TranscriptWriter {
       return false; // no ~/.claude/projects at all
     }
   }
+}
+
+/**
+ * The environment for a CLI whose display we drew ourselves.
+ *
+ * `cleanEnv()` first, for the reason every spawn here uses it: inheriting our
+ * own `CLAUDE_CODE_*` markers makes the child treat itself as a nested session
+ * and stop persisting its transcript. Then three lines that exist only for a
+ * terminal, because only a terminal has a screen to be wrong about.
+ *
+ * **`NO_COLOR` has to go, and it is not hypothetical.** It is not persisted
+ * anywhere on this machine — Claude Code injects it into the environment of the
+ * subprocesses it runs, so a dev server started from inside a Claude Code
+ * session inherits it, passes it on, and the embedded terminal comes up
+ * monochrome: measured, ONE SGR sequence against 62 for the same CLI spawned by
+ * hand. The variable is a statement about the device that launched us, and the
+ * device the CLI is drawing on is this one — an xterm.js panel that renders
+ * 24-bit colour and was built to. Same shape as the `CLAUDE_CODE_*` strip:
+ * an inherited fact about somebody else's terminal, corrected on the way in.
+ *
+ * `TERM` and `COLORTERM` are the other half of that sentence. node-pty on
+ * Windows takes a `name` and stores it on the terminal object, but **never puts
+ * it in the child's environment** (`windowsTerminal.js` reads it and keeps it),
+ * so without this the CLI is told nothing at all about what it is talking to.
+ */
+function terminalEnv(): Record<string, string> {
+  const env = { ...(cleanEnv() as Record<string, string>) };
+  env.TERM = 'xterm-256color';
+  env.COLORTERM = 'truecolor';
+  delete env.NO_COLOR;
+  return env;
 }
 
 function clamp(n: number, min: number, max: number): number {

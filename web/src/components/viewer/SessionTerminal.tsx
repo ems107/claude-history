@@ -1,4 +1,5 @@
 import { FitAddon } from '@xterm/addon-fit';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -69,6 +70,15 @@ export function SessionTerminal({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  /**
+   * Whether the program inside has asked for the kitty keyboard protocol.
+   *
+   * Read off the output stream rather than assumed, so a key is only ever
+   * encoded the enhanced way while something is listening for it. Claude Code
+   * pushes it at startup (verified in the raw stream), which is what makes
+   * Shift+Enter a distinguishable key at all.
+   */
+  const kittyRef = useRef(false);
 
   const open = status.data?.open ?? false;
   const running = status.data?.running ?? false;
@@ -87,7 +97,12 @@ export function SessionTerminal({
       allowProposedApi: true,
       convertEol: false,
       cursorBlink: true,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      // The font a Windows terminal actually uses, ahead of the generic stack.
+      // It is not taste: the CLI draws its logo and its panels out of block and
+      // box-drawing characters, and those only line up in a font whose cell the
+      // glyphs were cut for. `customGlyphs` (on by default) draws the box rules
+      // geometrically whatever the font does, which is the other half of it.
+      fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', monospace",
       fontSize: 12,
       lineHeight: 1.2,
       scrollback: 5_000,
@@ -95,6 +110,13 @@ export function SessionTerminal({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
+    // Emoji and CJK are two cells wide in every terminal written this decade,
+    // and one cell wide under the Unicode 6 tables xterm.js defaults to. Get
+    // that wrong by one and everything drawn after it on the line is shifted —
+    // which is what a panel border landing in a different column each row is.
+    const unicode11 = new Unicode11Addon();
+    term.loadAddon(unicode11);
+    term.unicode.activeVersion = '11';
     term.open(hostRef.current);
     fit.fit();
     termRef.current = term;
@@ -126,7 +148,14 @@ export function SessionTerminal({
       if (typeof event.data !== 'string') {
         // PTY output. Binary because it is 99% of the traffic and wrapping it
         // in JSON would cost a parse per keystroke echoed back.
-        term.write(decoder.decode(event.data as ArrayBuffer, { stream: true }));
+        const text = decoder.decode(event.data as ArrayBuffer, { stream: true });
+        // `CSI > <flags> u` pushes the kitty keyboard protocol, `CSI < u` pops
+        // it. xterm.js implements neither, so this is the only way to know
+        // whether an enhanced key encoding would be understood or would land in
+        // the prompt as rubbish.
+        if (/\u001b\[>\d*u/.test(text)) kittyRef.current = true;
+        else if (text.includes('\u001b[<u')) kittyRef.current = false;
+        term.write(text);
         return;
       }
       try {
@@ -153,6 +182,28 @@ export function SessionTerminal({
 
     const input = term.onData((data) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'i', d: data }));
+    });
+    /**
+     * Shift+Enter, which is a newline in the CLI and was sending the prompt.
+     *
+     * A terminal sends a bare CR for Enter and, historically, the same bare CR
+     * for Shift+Enter — the modifier has nowhere to go. The kitty keyboard
+     * protocol is what gives it one, and Claude Code enables it at startup;
+     * xterm.js does not implement it, so the shift was being dropped on the
+     * floor and the CLI saw two identical keys.
+     *
+     * `13;2u` is Enter with shift in that encoding. Only sent while the program
+     * has actually asked for the protocol — otherwise the sequence would be
+     * typed into the prompt as text, which is a worse bug than the one being
+     * fixed.
+     */
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.type !== 'keydown' || e.key !== 'Enter' || !e.shiftKey) return true;
+      if (e.ctrlKey || e.altKey || e.metaKey || !kittyRef.current) return true;
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ t: 'i', d: '\u001b[13;2u' }));
+      }
+      return false; // handled: xterm must not also send its bare CR
     });
     const resize = term.onResize(({ cols, rows }) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'r', cols, rows }));
