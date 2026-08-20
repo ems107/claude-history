@@ -620,6 +620,14 @@ export function SessionViewPage() {
   // Off the same list rather than asked again, so the drawer and the count can
   // never disagree — and so a tick that changes nothing changes no prop.
   const agentRunning = agentId !== null && running.ids.split(',').includes(agentId);
+  /**
+   * The foot's news while the turn is over and something it sent out is not.
+   * Written once because two things say it: the row at the end of the
+   * conversation, and the follow pill's hover — the pill is the only one of the
+   * two still on screen once the reader scrolls away from the end.
+   */
+  const agentsWorking =
+    running.count > 0 ? `⑂ ${running.count} subagent${running.count === 1 ? '' : 's'} still working` : null;
 
   /**
    * The column's real width, which is the limit OR the window when the window is
@@ -664,15 +672,15 @@ export function SessionViewPage() {
        * transcripts is in THEIR drawers, and `activity` describes the parent's
        * last turn, which is precisely the turn that already ended.
        */
-      pending.length === 0 && running.count > 0 ? (
+      pending.length === 0 && agentsWorking !== null ? (
         <WorkingIndicator
           since={running.since}
           columnWidth={clockColumnWidth}
           startHint="Sent out"
-          label={`⑂ ${running.count} subagent${running.count === 1 ? '' : 's'} still working…`}
+          label={`${agentsWorking}…`}
         />
       ) : undefined,
-    [pending.length, liveInfo, activity, clockColumnWidth, running.count, running.since],
+    [pending.length, liveInfo, activity, clockColumnWidth, agentsWorking, running.since],
   );
   /**
    * The follow-the-end pill. Keyed on the session id, so opening another one
@@ -963,12 +971,15 @@ export function SessionViewPage() {
             </div>
             {/* `isWorking(liveInfo)` and not `workingFooter`: the footer is held
                 back while a prompt of ours is still an echo, and the turn is in
-                flight all the same. */}
+                flight all the same. Agents outstanding spin it too — what the
+                pill answers is whether anything more is coming, and their
+                reports will land here — but they say so in their own words. */}
             <FollowBottomButton
               following={follow.following}
               toggle={follow.toggle}
               unseen={follow.unseen}
-              working={isWorking(liveInfo)}
+              working={isWorking(liveInfo) || agentsWorking !== null}
+              workingWhat={isWorking(liveInfo) ? undefined : (agentsWorking ?? undefined)}
             />
           </div>
           {agentId && (

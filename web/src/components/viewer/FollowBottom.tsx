@@ -234,11 +234,19 @@ export function FollowBottomButton({
   toggle,
   unseen,
   working = false,
+  workingWhat = 'Claude is working',
 }: {
   following: boolean;
   toggle: () => void;
   /** Messages landed since the reader let go of the end; 0 draws no badge. */
   unseen: number;
+  /**
+   * What that is, when it is not Claude: a turn can END with the agents it sent
+   * out still running, and the answer to "is anything more coming" is yes — the
+   * report they file will land in this conversation. The spinner says the same
+   * thing either way; only the sentence changes.
+   */
+  workingWhat?: string;
   /**
    * A turn is in flight. The `Claude is working…` bubble says so far better, but
    * it says it at the END of the conversation — scroll up, or fold the turn away,
@@ -256,7 +264,7 @@ export function FollowBottomButton({
       title={
         // The turn comes first: it is news about the session, while the rest is
         // about this control.
-        (working ? 'Claude is working — ' : '') +
+        (working ? `${workingWhat} — ` : '') +
         (following
           ? 'following the end of the conversation; click, or scroll up, to stop'
           : badge > 0

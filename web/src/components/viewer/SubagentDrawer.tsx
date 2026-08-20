@@ -200,6 +200,7 @@ export function SubagentDrawer({
           toggle={follow.toggle}
           unseen={follow.unseen}
           working={running}
+          workingWhat="This subagent is working"
         />
       </div>
     </div>
