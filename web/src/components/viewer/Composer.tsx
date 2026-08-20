@@ -10,7 +10,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { shortModel } from '../../lib/format.ts';
-import { cacheClockOf, CloseSessionDialog } from './CloseSessionDialog.tsx';
+import { cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
+import { BlockedBar } from './BlockedBar.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 import { QuestionPanel } from './QuestionPanel.tsx';
 
@@ -96,7 +97,8 @@ function Picker({
 }: {
   value: string;
   options: { value: string; label: string }[];
-  disabled: boolean;
+  /** Optional: the mode picker is never disabled, since it needs no running CLI. */
+  disabled?: boolean;
   title: string;
   onChange: (v: string) => void;
 }) {
@@ -295,10 +297,11 @@ export function Composer({
   };
 
   /**
-   * Closing is asked about, because it ends the CLI and the next prompt then
-   * comes from one that has just started — which is the thing that risks the
-   * cached prefix ([CloseSessionDialog]). Only when there is a process to close:
-   * confirming the closing of nothing is a dialog that teaches nothing.
+   * Closing can end the CLI mid-answer, and the next prompt then comes from one
+   * that has just started — which is the thing that risks the cached prefix
+   * ([CloseSessionDialog]). Two conditions, both about not asking a question
+   * with no content: there has to be a process to close, and there has to be
+   * something to lose by closing it (`closingNeedsAsking`).
    */
   const [confirmClose, setConfirmClose] = useState(false);
   const closeNow = () => {
@@ -309,7 +312,7 @@ export function Composer({
       .finally(() => void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] }));
   };
   const stop = () => {
-    if (status?.running) setConfirmClose(true);
+    if (status?.running && closingNeedsAsking(queryClient, sessionId, working)) setConfirmClose(true);
     else closeNow();
   };
 
@@ -326,9 +329,11 @@ export function Composer({
     ? commands.filter((c) => c.startsWith(typedCommand[1])).slice(0, 8)
     : [];
 
-  // A message the user cannot act on is worse than no message: say why the box
-  // is dead, right next to it.
-  const notice = blocked ?? error ?? status?.lastError ?? null;
+  // What went WRONG, which is not the same as what is not allowed: a failed
+  // prompt or a CLI that would not start is red and keeps the box, while a
+  // `blocked` session replaces the box altogether ([BlockedBar]) — the box would
+  // be dead, and a dead box plus a sentence is two rows saying one thing.
+  const notice = error ?? status?.lastError ?? null;
   // Read from the cache rather than fetched: the page already holds this query,
   // and a dialog is no reason to go and ask for a whole transcript again.
   const cacheClock = confirmClose
@@ -391,148 +396,140 @@ export function Composer({
         className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-b from-transparent to-[var(--bg)]"
       />
       <div>
-        {notice && (
-          <div
-            className={`mb-1.5 rounded-lg px-3 py-1.5 text-xs ${
-              blocked
-                ? 'border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-dim)]'
-                : 'border border-red-500/40 bg-red-500/10 text-red-300'
-            }`}
-          >
-            {notice}
-          </div>
-        )}
-        <div
-          className={`rounded-2xl border bg-[var(--bg-raised)] shadow-lg transition-colors ${
-            blocked
-              ? 'border-[var(--border)] opacity-60'
-              : 'border-[var(--border)] focus-within:border-[var(--accent-dim)]'
-          }`}
-        >
-          <textarea
-            ref={box}
-            value={text}
-            rows={1}
-            maxLength={CHAT_MESSAGE_MAX}
-            disabled={!!blocked}
-            placeholder={blocked ? 'Sending is unavailable' : 'Message Claude…'}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter sends, Shift+Enter is a newline. The page's own Escape
-              // handler already ignores TEXTAREA, so nothing else to guard.
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)]"
-          />
-          <div
-            className="flex items-center gap-1 px-2 pt-0.5 pb-2"
-            style={
-              columnWidth
-                ? { paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }
-                : undefined
-            }
-          >
-            {/* No running CLI, no model list — so instead of a stale guess,
-                the offer to go and get the real one. Sending works without it:
-                the prompt goes out on whatever answered this session last. */}
-            {models.length === 0 ? (
-              <button
-                type="button"
-                onClick={open}
-                disabled={opening || !!blocked}
-                title={`Loads this session so you can pick a model and effort. Without it, a prompt goes out on ${shortModel(wantedModel) ?? wantedModel}${effort ? ` at ${effort}` : ''} — how this session was last answered.`}
-                className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40 disabled:hover:bg-transparent"
+        {blocked ? (
+          <BlockedBar reason={blocked} columnWidth={columnWidth} />
+        ) : (
+          <>
+            {notice && (
+              <div className="mb-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
+                {notice}
+              </div>
+            )}
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg transition-colors focus-within:border-[var(--accent-dim)]">
+              <textarea
+                ref={box}
+                value={text}
+                rows={1}
+                maxLength={CHAT_MESSAGE_MAX}
+                placeholder="Message Claude…"
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter sends, Shift+Enter is a newline. The page's own Escape
+                  // handler already ignores TEXTAREA, so nothing else to guard.
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)]"
+              />
+              <div
+                className="flex items-center gap-1 px-2 pt-0.5 pb-2"
+                style={
+                  columnWidth
+                    ? { paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }
+                    : undefined
+                }
               >
-                {opening ? 'opening…' : 'choose model…'}
-              </button>
-            ) : (
-              <>
-                <Picker
-                  value={model}
-                  options={models.map((m) => ({ value: m.value, label: modelLabel(m) }))}
-                  disabled={working || !!blocked}
-                  title={current?.description || 'Model for the next prompt'}
-                  onChange={(v) => {
-                    // The new model may not take the effort the old one was on.
-                    const next = models.find((m) => m.value === v);
-                    const keep = next && effort && next.efforts.includes(effort) ? effort : (next?.efforts[0] ?? null);
-                    change({ model: v, effort: keep });
-                  }}
-                />
-                {/* Hidden entirely for a model with no effort levels, rather
-                    than shown greyed: there is no setting to make. */}
-                {efforts.length > 0 && (
-                  <Picker
-                    value={effort ?? efforts[0]}
-                    options={efforts.map((e: string) => ({ value: e, label: e }))}
-                    disabled={working || !!blocked}
-                    title="Effort for the next prompt"
-                    onChange={(v) => change({ effort: v })}
-                  />
+                {/* No running CLI, no model list — so instead of a stale guess,
+                    the offer to go and get the real one. Sending works without it:
+                    the prompt goes out on whatever answered this session last. */}
+                {models.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={open}
+                    disabled={opening}
+                    title={`Loads this session so you can pick a model and effort. Without it, a prompt goes out on ${shortModel(wantedModel) ?? wantedModel}${effort ? ` at ${effort}` : ''} — how this session was last answered.`}
+                    className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    {opening ? 'opening…' : 'choose model…'}
+                  </button>
+                ) : (
+                  <>
+                    <Picker
+                      value={model}
+                      options={models.map((m) => ({ value: m.value, label: modelLabel(m) }))}
+                      disabled={working}
+                      title={current?.description || 'Model for the next prompt'}
+                      onChange={(v) => {
+                        // The new model may not take the effort the old one was on.
+                        const next = models.find((m) => m.value === v);
+                        const keep = next && effort && next.efforts.includes(effort) ? effort : (next?.efforts[0] ?? null);
+                        change({ model: v, effort: keep });
+                      }}
+                    />
+                    {/* Hidden entirely for a model with no effort levels, rather
+                        than shown greyed: there is no setting to make. */}
+                    {efforts.length > 0 && (
+                      <Picker
+                        value={effort ?? efforts[0]}
+                        options={efforts.map((e: string) => ({ value: e, label: e }))}
+                        disabled={working}
+                        title="Effort for the next prompt"
+                        onChange={(v) => change({ effort: v })}
+                      />
+                    )}
+                  </>
                 )}
-              </>
-            )}
-            {/* Always offered, model list or not: unlike the model and the
-                effort, the mode needs nothing from a running CLI to be picked,
-                and plan mode is most useful on the FIRST prompt of a piece of
-                work — which is exactly when no process exists yet. */}
-            <Picker
-              value={mode}
-              options={[
-                { value: 'auto', label: 'auto' },
-                { value: 'plan', label: 'plan' },
-              ]}
-              disabled={!!blocked}
-              title={
-                mode === 'plan'
-                  ? 'Plan mode: Claude explores and designs, but changes nothing until you approve a plan.'
-                  : 'Claude works as usual, approving the ordinary tools by itself.'
-              }
-              onChange={(v) => change({ permissionMode: v as ChatPermissionMode })}
-            />
-            {status?.state === 'starting' && (
-              <span className="px-1 text-[11px] text-[var(--text-dim)]">starting…</span>
-            )}
-            {(status?.queued ?? 0) > 0 && (
-              <span className="px-1 text-[11px] text-[var(--text-dim)]">{status?.queued} queued</span>
-            )}
-            {!working && status?.running && (
-              <IdleProcess closesAt={status.idleClosesAt} onClose={stop} />
-            )}
-            <span className="ml-auto" />
-            {working ? (
-              <button
-                type="button"
-                onClick={stop}
-                title="Stop this turn"
-                aria-label="Stop this turn"
-                className="flex size-7 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-              >
-                <span aria-hidden className="size-2.5 rounded-[2px] bg-current" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={send}
-                disabled={!canSend}
-                title="Send (Enter)"
-                aria-label="Send"
-                className={`flex size-7 items-center justify-center rounded-full transition-colors ${
-                  canSend
-                    ? 'bg-[var(--accent)] text-[#1b1512] hover:brightness-110'
-                    : 'bg-[var(--bg-hover)] text-[var(--text-dim)]'
-                }`}
-              >
-                <svg aria-hidden viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M8 13V3.5M8 3.5 4 7.5M8 3.5l4 4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
+                {/* Always offered, model list or not: unlike the model and the
+                    effort, the mode needs nothing from a running CLI to be picked,
+                    and plan mode is most useful on the FIRST prompt of a piece of
+                    work — which is exactly when no process exists yet. */}
+                <Picker
+                  value={mode}
+                  options={[
+                    { value: 'auto', label: 'auto' },
+                    { value: 'plan', label: 'plan' },
+                  ]}
+                  title={
+                    mode === 'plan'
+                      ? 'Plan mode: Claude explores and designs, but changes nothing until you approve a plan.'
+                      : 'Claude works as usual, approving the ordinary tools by itself.'
+                  }
+                  onChange={(v) => change({ permissionMode: v as ChatPermissionMode })}
+                />
+                {status?.state === 'starting' && (
+                  <span className="px-1 text-[11px] text-[var(--text-dim)]">starting…</span>
+                )}
+                {(status?.queued ?? 0) > 0 && (
+                  <span className="px-1 text-[11px] text-[var(--text-dim)]">{status?.queued} queued</span>
+                )}
+                {!working && status?.running && (
+                  <IdleProcess closesAt={status.idleClosesAt} onClose={stop} />
+                )}
+                <span className="ml-auto" />
+                {working ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    title="Stop this turn"
+                    aria-label="Stop this turn"
+                    className="flex size-7 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+                  >
+                    <span aria-hidden className="size-2.5 rounded-[2px] bg-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={send}
+                    disabled={!canSend}
+                    title="Send (Enter)"
+                    aria-label="Send"
+                    className={`flex size-7 items-center justify-center rounded-full transition-colors ${
+                      canSend
+                        ? 'bg-[var(--accent)] text-[#1b1512] hover:brightness-110'
+                        : 'bg-[var(--bg-hover)] text-[var(--text-dim)]'
+                    }`}
+                  >
+                    <svg aria-hidden viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M8 13V3.5M8 3.5 4 7.5M8 3.5l4 4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

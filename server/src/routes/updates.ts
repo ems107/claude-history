@@ -1,7 +1,7 @@
 import type { UpdateStatusResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
-import { busyWith } from '../util/appBusy.ts';
+import { refuseWhileActive } from '../util/appSessions.ts';
 
 export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/update', async (): Promise<UpdateStatusResponse> => ctx.updates.getStatus());
@@ -13,14 +13,11 @@ export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): voi
   // `progress` on GET /api/update (pushed over SSE). Holding the request open
   // for the whole download is what made a slow one look like a dead server.
   app.post<{ Body?: { version?: string } }>('/api/update/apply', async (request, reply) => {
-    // An update ends with this server being killed and replaced, which would
-    // cut off a turn in flight mid-answer.
-    const busy = busyWith(ctx);
-    if (busy) {
-      return reply.code(409).send({
-        error: `Claude is ${busy} — updating would cut it off. Wait for it to finish.`,
-      });
-    }
+    // An update ends with this server being killed and replaced, which takes
+    // every session the app is running with it — a turn in flight, and an idle
+    // one that is still holding a transcript just the same.
+    const active = refuseWhileActive(ctx, 'update');
+    if (active) return reply.code(409).send(active);
     try {
       const started = ctx.updates.apply(ctx.config.port, request.body?.version);
       // Taken here, by the version that is still running and known to work: a

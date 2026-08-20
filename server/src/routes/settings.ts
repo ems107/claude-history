@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { createLogger } from '../core/logger.ts';
 import type { ReadCause } from '../core/usage.ts';
-import { busyWith } from '../util/appBusy.ts';
+import { busyWith, refuseWhileActive } from '../util/appSessions.ts';
 import { APP_VERSION } from '../version.ts';
 
 const log = createLogger('server');
@@ -59,9 +59,35 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
     version: APP_VERSION,
   }));
 
-  app.put<{ Body: Partial<AppSettings> }>('/api/settings', async (request) => ({
-    settings: await ctx.index.setSettings(request.body ?? {}),
-  }));
+  /**
+   * Saving settings, and the two that cannot be saved under a running CLI.
+   *
+   * `chatEnabled` and `chatMode` decide WHICH door a session is talking through,
+   * and both of them off — or the other one on — is the ground going out from
+   * under a composer or a terminal somebody left open two pages away. So they
+   * are refused while the app is running Claude, and refused HERE rather than in
+   * the browser: the settings page is not the only thing that can PUT here.
+   *
+   * Only when they really change. Everything else on that page saves normally,
+   * and a write that sets a value to what it already is — the "restore default"
+   * badge, pressed on a default — must not be refused for something it does not
+   * do.
+   */
+  app.put<{ Body: Partial<AppSettings> }>('/api/settings', async (request, reply) => {
+    const patch = request.body ?? {};
+    const current = ctx.index.getSettings();
+    const switchesDoors =
+      (patch.chatEnabled !== undefined && patch.chatEnabled !== current.chatEnabled) ||
+      (patch.chatMode !== undefined && patch.chatMode !== current.chatMode);
+    if (switchesDoors) {
+      const active = refuseWhileActive(ctx, 'chatSettings');
+      if (active) {
+        log.warn(`chat settings refused: the app is running ${active.activeSessions.length} session(s)`);
+        return reply.code(409).send(active);
+      }
+    }
+    return { settings: await ctx.index.setSettings(patch) };
+  });
 
   app.get<{ Querystring: { reason?: string; ids?: string } }>('/api/usage', async (request): Promise<UsageResponse> => {
     if (!ctx.index.getSettings().usageWidget) {
@@ -83,6 +109,14 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
   // Wipe the derived cache; the index rebuilds it from ~/.claude on restart.
   // userdata.json lives outside cacheDir, so renames/pins/prices survive.
   app.post('/api/cache/clear', async (_request, reply) => {
+    // The cache is rebuilt from ~/.claude on the next start, and "the next
+    // start" is the problem: a live CLI is what makes this a restart somebody
+    // did not ask for while the app is mid-conversation.
+    const active = refuseWhileActive(ctx, 'clearCache');
+    if (active) {
+      log.warn(`clear cache refused: the app is running ${active.activeSessions.length} session(s)`);
+      return reply.code(409).send(active);
+    }
     try {
       await fs.promises.rm(ctx.config.cacheDir, { recursive: true, force: true });
       return { ok: true };
@@ -149,23 +183,36 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
   // exits with it, so Task Scheduler reports the task as finished and the
   // Start Menu shortcut can start it again.
   //
-  // Refused while an update is being installed: stopping here kills the
-  // download in flight and leaves nothing behind — which is exactly how one
-  // update was lost, since the natural reaction to a slow one is to stop and
-  // restart the server.
+  // Two refusals, and the ORDER between them is deliberate. Sessions first:
+  // that refusal is about something outside this process which the user has to
+  // act on — go and close a conversation — and it is the only one whose subject
+  // cannot be recovered by waiting. An update in flight, by contrast, is this
+  // process's own business and passes on its own in a minute. Saying "wait"
+  // first would hide the thing that needs doing behind the thing that needs
+  // nothing.
+  //
+  // The corner where that costs something: an update installing WHILE a session
+  // of ours runs (only reachable by starting one after the update began, since
+  // applying is itself refused while any is alive). Then the dialog's "close
+  // them all and continue" clears the way and the retry lands on the update
+  // refusal — sessions closed for a stop that still will not happen. Rare, and
+  // it fails loudly with the real reason rather than quietly.
   app.post('/api/server/stop', async (_request, reply) => {
+    // Every session the app is running dies with this process whether it is
+    // answering or not, so an idle one is refused too — and the body names them,
+    // because a refusal that cannot say what to close is a dead end.
+    const stopActive = refuseWhileActive(ctx, 'stopServer');
+    if (stopActive) {
+      log.warn(`stop refused: the app is running ${stopActive.activeSessions.length} session(s)`);
+      return reply.code(409).send(stopActive);
+    }
+    // Stopping here kills the download in flight and leaves nothing behind —
+    // which is exactly how one update was lost, since the natural reaction to a
+    // slow one is to stop and restart the server.
     if (ctx.updates.isApplying()) {
       log.warn('stop refused: an update is being installed');
       return reply.code(409).send({
         error: 'An update is being installed right now — stopping the server would abort it. Wait for it to finish.',
-      });
-    }
-    // Same reasoning one step down: stopping now kills the turn mid-answer.
-    const stopBusy = busyWith(ctx);
-    if (stopBusy) {
-      log.warn(`stop refused: Claude is ${stopBusy}`);
-      return reply.code(409).send({
-        error: `Claude is ${stopBusy} — stopping the server would cut it off. Wait for it to finish.`,
       });
     }
     void reply.send({ ok: true });
@@ -192,6 +239,24 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
    * from another machine is a door closing with the key on the inside.
    */
   app.post('/api/server/restart', async (_request, reply) => {
+    // First, ahead of even "this is not an install", for the same reason as in
+    // stop — and here it also decides what a SOURCE run is told. A dev instance
+    // cannot restart itself at all, but it can perfectly well be running two
+    // conversations, and "not a managed install" is a fact about the button
+    // while a live session is a fact about the work: the second is the one
+    // worth saying, and the only one anybody can act on.
+    //
+    // It is also what makes this half testable from a dev instance, which the
+    // other order made impossible (check 39).
+    //
+    // The rule that cost a session once: this kills the `claude` process the
+    // composer is talking through — or the one inside an embedded terminal —
+    // and it does that to an idle one just as thoroughly as to one mid-answer.
+    const restartActive = refuseWhileActive(ctx, 'restartServer');
+    if (restartActive) {
+      log.warn(`restart refused: the app is running ${restartActive.activeSessions.length} session(s)`);
+      return reply.code(409).send(restartActive);
+    }
     const install = ctx.updates.install;
     if (!install) {
       return reply.code(400).send({
@@ -202,16 +267,6 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn('restart refused: an update is being installed');
       return reply.code(409).send({
         error: 'An update is being installed right now — it restarts the server itself. Wait for it to finish.',
-      });
-    }
-    // The rule that cost a session once: this kills the `claude` process the
-    // composer is talking through — or the one inside an embedded terminal —
-    // mid-answer.
-    const restartBusy = busyWith(ctx);
-    if (restartBusy) {
-      log.warn(`restart refused: Claude is ${restartBusy}`);
-      return reply.code(409).send({
-        error: `Claude is ${restartBusy} — restarting the server would cut it off. Wait for it to finish.`,
       });
     }
     const script = path.join(install.versionDir, 'update-helper.ps1');

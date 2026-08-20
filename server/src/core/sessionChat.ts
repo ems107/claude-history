@@ -22,13 +22,20 @@ import type {
   ChatState,
   ChatStatus,
 } from '@claude-history/shared';
-import { CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import { activeSessionLimitMessage, CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
-import { createLogger } from './logger.ts';
-import { appHolderOf, pidOwnedByApp, registerWriter, type TranscriptWriter } from './writerGuard.ts';
+import { createLogger, localIso } from './logger.ts';
+import {
+  appHolderOf,
+  atActiveSessionLimit,
+  pidOwnedByApp,
+  registerWriter,
+  type TranscriptWriter,
+  type WriterSession,
+} from './writerGuard.ts';
 
 const log = createLogger('chat');
 
@@ -42,12 +49,6 @@ const TICK_MS = 30_000;
  * then the silence is ours, not the CLI's.
  */
 const TURN_SILENCE_MS = 10 * 60_000;
-
-/**
- * Processes alive at once. Each holds a CLI with its MCP servers loaded, so
- * this is about the machine, not correctness.
- */
-const MAX_CHAT_SESSIONS = 3;
 
 /**
  * How long a reserved id is kept when nothing is ever sent to it.
@@ -231,6 +232,8 @@ interface ChatProcess {
   /** Switched live over the control channel, and by Claude Code when a plan is approved. */
   permissionMode: ChatPermissionMode;
   queued: string[];
+  /** When this process came up. Only the dialog that lists live sessions reads it. */
+  startedAt: number;
   working: boolean;
   starting: boolean;
   turnStartedAt: number | null;
@@ -301,6 +304,7 @@ function messageChannel() {
  */
 export class SessionChatService implements TranscriptWriter {
   readonly what = 'the composer';
+  readonly kind = 'composer' as const;
   readonly events = new EventEmitter();
   private readonly procs = new Map<string, ChatProcess>();
   /** Ids reserved for sessions that do not exist yet — see `Draft`. */
@@ -363,7 +367,7 @@ export class SessionChatService implements TranscriptWriter {
     // would be about "a terminal" — true, and useless.
     const holder = appHolderOf(sessionId, this);
     if (holder) {
-      return `The app is already running Claude in this session through ${holder} — stop it there first, or two writers would corrupt its transcript.`;
+      return `This session is already open in ${holder}. Close it if you want to continue here.`;
     }
     // Our own processes are excluded by pid: they register themselves there
     // too. And `pidAlive` is re-checked rather than trusted from the list,
@@ -373,10 +377,12 @@ export class SessionChatService implements TranscriptWriter {
     if (
       this.index.liveSessions.some((l) => l.sessionId === sessionId && !pidOwnedByApp(l.pid) && pidAlive(l.pid))
     ) {
-      return 'This session is open in a terminal — two writers would corrupt its transcript.';
+      return 'This session is already open in a terminal. Close it if you want to continue here.';
     }
-    if (!this.procs.has(sessionId) && this.procs.size >= MAX_CHAT_SESSIONS) {
-      return `Too many sessions are already running (${MAX_CHAT_SESSIONS}).`;
+    // The cap counts both doors: a terminal running elsewhere in the app fills
+    // one of these slots too, because what it costs is the same machine.
+    if (atActiveSessionLimit(sessionId, s.maxActiveSessions)) {
+      return activeSessionLimitMessage(s.maxActiveSessions);
     }
     return null;
   }
@@ -399,6 +405,7 @@ export class SessionChatService implements TranscriptWriter {
       // the birth by a rescan or two, and "no transcript yet" is the fact the
       // browser is waiting on.
       draft: this.drafts.has(sessionId) && this.index.get(sessionId) === undefined,
+      cwd: this.cwdOf(sessionId),
       turnStartedAt: p?.turnStartedAt ? new Date(p.turnStartedAt).toISOString() : null,
       idleClosesAt: idleCloses ? new Date(idleCloses).toISOString() : null,
       queued: p?.queued.length ?? 0,
@@ -436,9 +443,9 @@ export class SessionChatService implements TranscriptWriter {
     const s = this.settings();
     if (!s.chatEnabled) throw new Error('Sending from the app is turned off in Settings.');
     if (!findClaudeCli()) throw new Error('The Claude Code CLI could not be found.');
-    if (this.procs.size >= MAX_CHAT_SESSIONS) {
-      throw new Error(`Too many sessions are already running (${MAX_CHAT_SESSIONS}).`);
-    }
+    // A reservation spawns nothing, but the first prompt would, and refusing
+    // here says so before the browser is pointed at a session it cannot use.
+    if (atActiveSessionLimit('', s.maxActiveSessions)) throw new Error(activeSessionLimitMessage(s.maxActiveSessions));
     const cwd = input.projectKey ? this.projectPath(input.projectKey) : validateCwd(input.cwd);
     // Astronomically unlikely, and free to rule out. A collision would resume
     // somebody else's conversation instead of starting one, which is the one
@@ -657,6 +664,21 @@ export class SessionChatService implements TranscriptWriter {
     return [...this.procs.values()].some((p) => p.working);
   }
 
+  /**
+   * `TranscriptWriter`: every session we hold a CLI for, live or idle.
+   *
+   * Idle ones count. A composer process with nothing in flight still owns the
+   * transcript and still has an hour of prompt cache behind it, which is the
+   * whole reason the actions that would kill it ask this.
+   */
+  activeSessions(): WriterSession[] {
+    return [...this.procs.values()].map((p) => ({
+      sessionId: p.sessionId,
+      busy: p.working,
+      startedAt: localIso(new Date(p.startedAt)),
+    }));
+  }
+
   /** Sessions with a turn in flight — the session list shows these as busy. */
   workingSessions(): Map<string, number> {
     const out = new Map<string, number>();
@@ -742,6 +764,7 @@ export class SessionChatService implements TranscriptWriter {
       effort,
       permissionMode,
       queued: [],
+      startedAt: Date.now(),
       working: false,
       starting: true,
       turnStartedAt: null,
@@ -1013,7 +1036,11 @@ export class SessionChatService implements TranscriptWriter {
     // two come to disagree.
     for (const [id, draft] of [...this.drafts]) {
       if (this.index.get(id)) this.drafts.delete(id);
-      else if (!this.procs.has(id) && now - draft.createdAt > DRAFT_TTL_MS) {
+      // `appHolderOf` rather than our own `procs`: a TERMINAL on a reserved id is
+      // a writer this service knows nothing about, and dropping the reservation
+      // under it would take away the only thing that can say where that session
+      // lives — its own routes would then 404 on a CLI they are running.
+      else if (!appHolderOf(id) && now - draft.createdAt > DRAFT_TTL_MS) {
         log.debug(`dropping the unused reservation ${id}`);
         this.drafts.delete(id);
       }

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api/client.ts';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
+import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
 
 const btn =
   'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
@@ -55,6 +56,7 @@ function contentsLabel(contents: UserdataBackup['contents']): string {
  */
 export function BackupsPanel() {
   const queryClient = useQueryClient();
+  const guard = useActiveSessionsGuard();
   const { data, isFetching } = useQuery({ queryKey: ['userdataBackups'], queryFn: api.userdataBackups });
   /** Which copy is waiting for a yes, so the confirmation sits on its own row. */
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -94,7 +96,13 @@ export function BackupsPanel() {
           void queryClient.invalidateQueries({ queryKey: [key] });
         }
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => {
+        // A restore replaces `chatEnabled` and `chatMode` along with everything
+        // else, so it is refused while the app is running Claude — with the
+        // dialog that lists them and restores once they are closed.
+        if (guard.refused(err, () => restore(name))) return;
+        setError(err instanceof Error ? err.message : String(err));
+      })
       .finally(() => {
         setBusy(false);
         refresh();

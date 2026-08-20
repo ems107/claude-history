@@ -7,6 +7,7 @@ import { createLogger } from './core/logger.ts';
 import { isSameOrigin } from './util/sameOrigin.ts';
 import { localOnlyAction } from './util/localOnlyRoutes.ts';
 import { isLocalRequest } from './util/remote.ts';
+import { registerActiveSessionRoutes } from './routes/activeSessions.ts';
 import { isAuthenticated, registerAuthRoutes } from './routes/auth.ts';
 import { registerAutoReloadRoutes } from './routes/autoReload.ts';
 import { registerChatRoutes } from './routes/chat.ts';
@@ -150,6 +151,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   app.get('/api/health', async () => ({ ok: true }));
   registerAuthRoutes(app, ctx);
+  registerActiveSessionRoutes(app, ctx);
   registerMetaRoutes(app, ctx);
   registerProjectRoutes(app, ctx);
   registerSessionRoutes(app, ctx);

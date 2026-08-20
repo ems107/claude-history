@@ -7,8 +7,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
-import { cacheClockOf, CloseSessionDialog } from './CloseSessionDialog.tsx';
-import { clamp, HEIGHT_KEY, readHeight } from '../../lib/terminalPrefs.ts';
+import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
+import { clamp, HEIGHT_KEY, MINIMISED_KEY, readHeight, readMinimised } from '../../lib/terminalPrefs.ts';
+import { BlockedBar } from './BlockedBar.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
 /**
@@ -72,12 +73,25 @@ export function SessionTerminal({
   const status = useQuery({ queryKey: ['terminal', sessionId], queryFn: () => api.terminalStatus(sessionId) });
   const [height, setHeight] = useState(readHeight);
   const [full, setFull] = useState(false);
+  /**
+   * Collapsed to its title bar. The CLI keeps running and the socket stays
+   * attached — this is a panel getting out of the way of the conversation, not a
+   * session being closed, which is the distinction the × button owns.
+   */
+  const [minimised, setMinimised] = useState(readMinimised);
+  const toggleMinimised = () => {
+    setMinimised((v) => {
+      localStorage.setItem(MINIMISED_KEY, String(!v));
+      return !v;
+    });
+  };
   const [error, setError] = useState<string | null>(null);
   /**
-   * Closing is asked about while a CLI is alive, for the reason in
-   * [CloseSessionDialog]: the next prompt would come from one that has just
-   * started, and that is what risks the cached prefix. A terminal holding a dead
-   * process's screen has nothing to lose and closes on the first click.
+   * Closing is asked about only when there is something to lose by it — a warm
+   * cache, or a turn in flight ([CloseSessionDialog]). A terminal holding a dead
+   * process's screen, or a live one whose hour is already up, closes on the
+   * first click: a dialog whose own text says it does not matter is what teaches
+   * people to click through the one that does.
    */
   const [confirmClose, setConfirmClose] = useState(false);
 
@@ -296,7 +310,9 @@ export function SessionTerminal({
       // Measuring a panel that is mid-transition; the next call gets it.
     }
   }, []);
-  useEffect(refit, [height, full, refit]);
+  // `minimised` among them: coming back from a hidden host means xterm has been
+  // measuring a box of zero, and nothing else would tell it otherwise.
+  useEffect(refit, [height, full, minimised, refit]);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -417,7 +433,10 @@ export function SessionTerminal({
     return () => document.removeEventListener('keydown', onKey);
   }, [full]);
 
-  const notice = error ?? (open ? null : blocked);
+  // What went WRONG, and nothing else: a `blocked` session takes the place of
+  // the start bar instead ([BlockedBar]), because a greyed-out button with a
+  // sentence over it is two rows saying one thing.
+  const notice = error;
 
   const screen = (
     <div
@@ -435,6 +454,39 @@ export function SessionTerminal({
         </span>
         {status.data?.pid ? <span className="shrink-0">pid {status.data.pid}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          {/* Not offered while the panel is filling the window: Esc is what
+              brings that back, and collapsing from there would leave the
+              conversation behind two undos instead of one. */}
+          {!full && (
+            <button
+              type="button"
+              onClick={toggleMinimised}
+              title={
+                minimised
+                  ? 'Show the terminal again'
+                  : 'Collapse to this line — the CLI keeps running and comes back where you left it'
+              }
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+            >
+              {/* A drawn chevron rather than `⌄`/`⌃`: those two are tiny and sit
+                  at different heights in the font, so the button jumped a pixel
+                  every time it was pressed. This one is centred by the flex row
+                  and is the same shape either way up. */}
+              <svg
+                aria-hidden
+                viewBox="0 0 12 12"
+                className="size-3 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d={minimised ? 'M2.5 7.5 6 4 9.5 7.5' : 'M2.5 4.5 6 8 9.5 4.5'} />
+              </svg>
+              {minimised ? 'expand' : 'minimise'}
+            </button>
+          )}
           {!running && (
             <button
               type="button"
@@ -447,7 +499,14 @@ export function SessionTerminal({
           )}
           <button
             type="button"
-            onClick={() => setFull((v) => !v)}
+            onClick={() => {
+              // Filling the window is a request to SEE it, so it cannot leave the
+              // panel collapsed: the host is hidden while minimised, and a full
+              // screen with a hidden host is a blank window — the same failure
+              // the portal caused, arrived at from the other side.
+              if (!full && minimised) toggleMinimised();
+              setFull((v) => !v);
+            }}
             title={full ? 'Back to the conversation (Esc)' : 'Fill the window'}
             className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
           >
@@ -456,7 +515,7 @@ export function SessionTerminal({
           <button
             type="button"
             onClick={() => {
-              if (running) setConfirmClose(true);
+              if (running && closingNeedsAsking(queryClient, sessionId)) setConfirmClose(true);
               else close.mutate();
             }}
             title={running ? 'Stop Claude and close this terminal' : 'Close this terminal'}
@@ -469,7 +528,10 @@ export function SessionTerminal({
       {/* The xterm host. `min-h-0` so it can be smaller than its content, which
           is what lets the flex column own the height instead of the terminal
           growing the page. */}
-      <div ref={hostRef} className="min-h-0 flex-1 overflow-hidden px-1 py-0.5" />
+      {/* Hidden, never unmounted: xterm is attached to this div, so taking it
+          out of the tree would take the terminal's whole DOM with it — the same
+          trap the full-screen class avoids. */}
+      <div ref={hostRef} className={minimised ? 'hidden' : 'min-h-0 flex-1 overflow-hidden px-1 py-0.5'} />
     </div>
   );
 
@@ -483,6 +545,10 @@ export function SessionTerminal({
           // From the cache the page already holds: a dialog is no reason to go
           // and re-read a whole transcript.
           cache={cacheClockOf(queryClient.getQueryData<SessionDetailResponse>(['session', sessionId]))}
+          // The CLI's own `status`, which is what makes "that turn will be cut
+          // off" a fact rather than a guess. Read at render, right after the
+          // click that opened this.
+          busy={busyFromLive(queryClient, sessionId)}
           onCancel={() => setConfirmClose(false)}
           onConfirm={() => {
             setConfirmClose(false);
@@ -491,13 +557,7 @@ export function SessionTerminal({
         />
       )}
       {notice && (
-        <div
-          className={`mb-1.5 rounded-lg border px-3 py-1.5 text-[11px] ${
-            error
-              ? 'border-red-900/60 bg-red-950/30 text-red-300'
-              : 'border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-dim)]'
-          }`}
-        >
+        <div className="mb-1.5 rounded-lg border border-red-900/60 bg-red-950/30 px-3 py-1.5 text-[11px] text-red-300">
           {notice}
         </div>
       )}
@@ -510,14 +570,7 @@ export function SessionTerminal({
       />
       {open && (
         <>
-          {full ? (
-            // The strip keeps its place with a line saying where the panel went,
-            // exactly as the plan panel does: two live copies of one terminal
-            // would be two views fighting over one cursor.
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">
-              The terminal is filling the window. Esc brings it back.
-            </div>
-          ) : (
+          {full || minimised ? null : (
             // The grab area straddles the panel's top edge instead of floating
             // above it: 8 px tall with a negative margin of half that, so the
             // hairline sits exactly ON the border and there is something to
@@ -530,6 +583,14 @@ export function SessionTerminal({
               title="Drag to resize"
             >
               <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded transition-colors group-hover:bg-[var(--accent-dim)]" />
+            </div>
+          )}
+          {full && (
+            // The strip keeps its place with a line saying where the panel went,
+            // exactly as the plan panel does: two live copies of one terminal
+            // would be two views fighting over one cursor.
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">
+              The terminal is filling the window. Esc brings it back.
             </div>
           )}
           {/*
@@ -546,19 +607,23 @@ export function SessionTerminal({
                 ? 'fixed inset-0 z-50 flex flex-col bg-[var(--bg)] p-2'
                 : 'flex flex-col'
             }
-            // Nothing but the height. The follow pill floats over this corner
+            // Nothing but the height — and none at all when collapsed, so the
+            // box is exactly its own title bar. The follow pill floats over this corner
             // and the composer answers that by keeping `Send` out of it — but a
             // terminal has no spare corner to give: every cell is content, and
             // reserving the pill's width just makes the panel narrower than the
             // conversation above it for no reason anyone can see. The pill moves
             // up instead; the page does it, from the height reported above.
-            style={full ? undefined : { height }}
+            style={full || minimised ? undefined : { height }}
           >
             {screen}
           </div>
         </>
       )}
-      {!open && (
+      {/* Blocked replaces the start bar rather than disabling its button: there
+          is nothing to press, and the reason is the row. */}
+      {!open && blocked && <BlockedBar reason={blocked} columnWidth={columnWidth} />}
+      {!open && !blocked && (
         <div
           className="flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs"
           style={{
@@ -572,14 +637,11 @@ export function SessionTerminal({
           <button
             type="button"
             onClick={() => start.mutate()}
-            disabled={start.isPending || !!blocked}
+            disabled={start.isPending}
             className="rounded-lg border border-[var(--border)] px-2 py-1 text-[var(--text)] hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {start.isPending ? 'starting…' : '❯ Start a terminal here'}
+            {start.isPending ? 'starting…' : '❯ Start an embedded terminal here'}
           </button>
-          <span className="min-w-0 truncate text-[var(--text-dim)]" title={cwd ?? undefined}>
-            {cwd ? `Claude Code, in ${cwd}` : 'Claude Code'}
-          </span>
         </div>
       )}
     </div>

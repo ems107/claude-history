@@ -36,7 +36,7 @@ export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): voi
       const holder = appHolderOf(id);
       if (holder) {
         return reply.code(409).send({
-          error: `The app is already running Claude in this session through ${holder} — stop it there first, or two writers would corrupt its transcript.`,
+          error: `This session is already open in ${holder}. Close it there first, or copy the command if you mean to.`,
         });
       }
       // `pidAlive` is re-checked rather than trusted from the list: that list is
@@ -48,7 +48,7 @@ export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): voi
       );
       if (open) {
         return reply.code(409).send({
-          error: `This session is already open in a terminal (pid ${String(open.pid)}) — resuming it twice would corrupt its transcript. Close that window first, or copy the command if you mean to.`,
+          error: `This session is already open in a terminal (pid ${String(open.pid)}). Close that window first, or copy the command if you mean to.`,
         });
       }
       try {

@@ -96,6 +96,7 @@ function TitleEditor({
 
 export function SessionHeader({
   detail,
+  draft,
   color,
   showThinking,
   onToggleThinking,
@@ -131,6 +132,14 @@ export function SessionHeader({
   live,
 }: {
   detail: SessionDetail;
+  /**
+   * This session has no transcript yet — the app is running a CLI in it and
+   * Claude Code has not written the file ([draftSession.ts]). Everything that
+   * would be a claim about history says less: there are no dates to show, and
+   * renaming or pinning would act on an id the index has never heard of (both
+   * endpoints answer 404, correctly).
+   */
+  draft?: boolean;
   color: string;
   /** Live state from the page, which tracks it far more closely than the summary. */
   live?: import('@claude-history/shared').LiveInfo | null;
@@ -207,7 +216,11 @@ export function SessionHeader({
           ←
         </Link>
         <ProjectTag name={s.projectName} path={s.projectPath} color={color} />
-        {editing ? (
+        {draft ? (
+          <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--text-dim)]" title={s.title}>
+            {s.title}
+          </h1>
+        ) : editing ? (
           <TitleEditor sessionId={s.id} title={s.title} isLocal={s.titleSource === 'local'} onDone={() => setEditing(false)} />
         ) : (
           // Rename/pin sit next to the title and only appear on hover, as in
@@ -386,12 +399,20 @@ export function SessionHeader({
         </div>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)]">
-        <span>
-          <span className="opacity-60">created</span> {formatDateTimeFull(s.createdAt)}
-        </span>
-        <span>
-          <span className="opacity-60">last activity</span> {formatDateTimeFull(s.lastActivityAt)}
-        </span>
+        {draft ? (
+          // Two dashes where the dates go would read as data we lost. There are
+          // no dates: nothing has happened in this session yet.
+          <span className="opacity-60">not started yet</span>
+        ) : (
+          <>
+            <span>
+              <span className="opacity-60">created</span> {formatDateTimeFull(s.createdAt)}
+            </span>
+            <span>
+              <span className="opacity-60">last activity</span> {formatDateTimeFull(s.lastActivityAt)}
+            </span>
+          </>
+        )}
         {s.gitBranch && <span>⎇ {s.gitBranch}</span>}
         {s.model && <span className="font-mono">{shortModel(s.model)}</span>}
         {s.entrypoint && <span>{entrypointLabel(s.entrypoint)}</span>}

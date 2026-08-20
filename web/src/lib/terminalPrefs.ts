@@ -28,6 +28,21 @@ export function readHeight(): number {
 }
 
 /**
+ * Collapsed to its own title bar, with the CLI still running behind it.
+ *
+ * The height has a floor (`TERMINAL_HEIGHT_MIN`) because below it there is no
+ * room for the CLI's status line and a prompt — so "drag it small" was never the
+ * way to get the conversation back, and this is. Remembered like the height, and
+ * for the same reason: it is a property of this window and of what its owner is
+ * doing right now, not of the session.
+ */
+export const MINIMISED_KEY = 'terminalMinimised';
+
+export function readMinimised(): boolean {
+  return localStorage.getItem(MINIMISED_KEY) === 'true';
+}
+
+/**
  * Did this event come from inside an embedded terminal?
  *
  * With the focus in one, every key belongs to the CLI: Ctrl+F is its search,

@@ -704,6 +704,21 @@ export interface AppSettings {
    */
   chatMode: ChatUiMode;
   /**
+   * How many Claude Code processes this app may have alive at once, counting
+   * BOTH doors together.
+   *
+   * One number rather than one per door, because it is one machine either way:
+   * each of them is a `claude` with its MCP servers loaded. And it is the same
+   * number the refusals count against -- nothing that ends this server or
+   * changes how prompts are sent may run while any of them is alive -- so two
+   * caps would have meant the tally in the dialog disagreeing with the tally
+   * that produced it.
+   *
+   * Lowering it never kills anything: what is already running goes on running,
+   * and the next one to ask is the one refused.
+   */
+  maxActiveSessions: number;
+  /**
    * Let browsers on OTHER machines use this app, after logging in.
    *
    * Off by default, and the only thing standing between the LAN and a composer
@@ -738,6 +753,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadHideSessions: false,
   chatEnabled: true,
   chatMode: 'terminal',
+  maxActiveSessions: 10,
   remoteAccessEnabled: false,
   logLevel: 'info',
   logRetentionDays: 14,
@@ -813,6 +829,17 @@ export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
  * a worse one.
  */
 export const CHAT_IDLE_TIMEOUT_MINUTES = 60;
+
+/**
+ * Floor and ceiling on `maxActiveSessions`.
+ *
+ * One is the floor because zero would switch the feature off through the back
+ * door, and `chatEnabled` is the switch for that. The ceiling is the machine
+ * talking rather than a rule: every slot is a CLI with its MCP servers loaded,
+ * and anybody who really wants more of those at once has a terminal.
+ */
+export const ACTIVE_SESSIONS_MIN = 1;
+export const ACTIVE_SESSIONS_MAX = 25;
 
 // ---- Auto-reload of the 5-hour window ----
 
@@ -1013,6 +1040,13 @@ export interface ChatStatus {
    * Claude Code has written the file and the index has picked it up.
    */
   draft: boolean;
+  /**
+   * The folder this session runs in — known even for a reservation, which is
+   * the whole reason it is here: a session with no transcript has no summary to
+   * read a path off, and its own page has to be able to name where it lives.
+   * `TerminalStatus` carries it for the same reason.
+   */
+  cwd: string | null;
   /** Start of the turn in flight — what the working indicator counts from. */
   turnStartedAt: string | null;
   /**
@@ -1172,7 +1206,7 @@ export interface TerminalStatus {
   /** Local ISO-8601 with offset. */
   startedAt: string | null;
   exit: TerminalExit | null;
-  /** The folder it runs in, so the start bar can say where before anything is spawned. */
+  /** The folder it runs in — the strip's own subtitle, and known before anything is spawned. */
   cwd: string | null;
   /**
    * Why it cannot be started, in the words shown to the user. Null when it can.
@@ -1201,6 +1235,98 @@ export type TerminalServerMessage =
   /** Sent once, after the scrollback replay, so the client knows the backlog has ended. */
   | { t: 'ready'; pid: number | null; running: boolean }
   | { t: 'error'; message: string };
+
+// ---- What the app is running, and what may not happen while it is ----
+
+/**
+ * One `claude` this app has alive right now.
+ *
+ * The shape a refusal is built from, which is why it carries the words as well
+ * as the ids: whoever reads that dialog is looking for the session to go and
+ * close, and "the composer, in claude-history — Folding a replayed turn" is
+ * what lets them find it. `busy` is the one field that changes what closing
+ * costs.
+ */
+export interface ActiveAppSession {
+  sessionId: string;
+  /** Which of the two doors holds it. */
+  kind: ChatUiMode;
+  /** Its name in a sentence: "the composer", "the embedded terminal". */
+  what: string;
+  /** From the index. Null for a session being born, which has no transcript yet. */
+  projectName: string | null;
+  title: string | null;
+  /** Where it runs. Known even for a session the index has never seen. */
+  cwd: string | null;
+  /** A turn in flight right now — closing this one cuts an answer off. */
+  busy: boolean;
+  /** Local ISO-8601 with offset, like every other date crossing this API. */
+  startedAt: string | null;
+}
+
+export interface ActiveSessionsResponse {
+  sessions: ActiveAppSession[];
+  /** `maxActiveSessions`, so a UI can say "3 of 10" without a second read. */
+  max: number;
+}
+
+/**
+ * The things that may not happen while the app is running Claude.
+ *
+ * All six either kill this process or pull the ground from under a live CLI,
+ * and a CLI of ours is a writer on somebody's transcript with a warm prompt
+ * cache behind it. Refusing only while a turn is IN FLIGHT was the narrower
+ * reading of the same worry, and it let an idle-but-alive session be destroyed
+ * by a button two pages away.
+ */
+export type GuardedAction =
+  | 'chatSettings'
+  | 'update'
+  | 'stopServer'
+  | 'restartServer'
+  | 'clearCache'
+  | 'restoreUserdata';
+
+/**
+ * What each one would do, as the subject of the refusal sentence. Written once
+ * so the 409 and the dialog cannot drift apart: the server builds the sentence,
+ * the browser only shows it.
+ */
+export const GUARDED_ACTION_LABELS: Record<GuardedAction, string> = {
+  chatSettings: 'Changing how prompts are sent from the app',
+  update: 'Installing an update',
+  stopServer: 'Stopping the server',
+  restartServer: 'Restarting the server',
+  clearCache: 'Clearing the cache',
+  restoreUserdata: 'Restoring a copy of your data',
+};
+
+/**
+ * Why a new session cannot be started: the cap is full. One sentence for both
+ * doors, because a composer and a terminal fill the same slots and would
+ * otherwise have said it two slightly different ways.
+ */
+export function activeSessionLimitMessage(max: number): string {
+  const n = max === 1 ? 'session' : 'sessions';
+  return `The app is already running ${max} Claude Code ${n}, which is the most it is allowed (Settings).`;
+}
+
+/** The sentence itself. The plural lives here, so neither side counts twice. */
+export function activeSessionsRefusal(action: GuardedAction, count: number): string {
+  const what = count === 1 ? 'a Claude Code session' : count + ' Claude Code sessions';
+  const it = count === 1 ? 'it' : 'them';
+  return GUARDED_ACTION_LABELS[action] + ' would end ' + what + ' this app is running. Close ' + it + ' first.';
+}
+
+/**
+ * The body every guarded action answers 409 with. `error` is the sentence above;
+ * `activeSessions` is what the dialog lists, and its presence is how the browser
+ * tells this refusal from every other 409 those endpoints can produce.
+ */
+export interface ActiveSessionsRefusal {
+  error: string;
+  activeSessions: ActiveAppSession[];
+}
 
 // ---- Claude Code's own history retention (cleanupPeriodDays) ----
 
