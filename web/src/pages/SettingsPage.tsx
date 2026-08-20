@@ -4,7 +4,7 @@ import {
   DEFAULT_SETTINGS,
   defaultSettings,
   LOG_LEVEL_CHOICES,
-  MIN_CHAT_IDLE_MINUTES,
+  CHAT_IDLE_TIMEOUT_MINUTES,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
 } from '@claude-history/shared';
@@ -786,22 +786,6 @@ export function SettingsPage() {
               ]}
             />
           </Row>
-          <Row badge={<DefaultBadge field="chatIdleTimeoutMinutes" value={s.chatIdleTimeoutMinutes} save={save} />}>
-            <label className={`flex items-center gap-2 ${s.chatEnabled && s.chatMode === 'composer' ? '' : 'opacity-40'}`}>
-              <span>Close an idle composer process after</span>
-              <input
-                type="number"
-                min={MIN_CHAT_IDLE_MINUTES}
-                max={240}
-                step={5}
-                value={s.chatIdleTimeoutMinutes}
-                disabled={!s.chatEnabled || s.chatMode !== 'composer'}
-                onChange={(e) => save({ chatIdleTimeoutMinutes: Number(e.target.value) })}
-                className="w-16 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
-              />
-              <span>minutes (minimum {MIN_CHAT_IDLE_MINUTES})</span>
-            </label>
-          </Row>
           <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
             The model and effort are not set here: the composer starts each session from whatever that conversation was
             last answered with, and you change them per session there; a terminal is asked inside the CLI, with{' '}
@@ -811,6 +795,14 @@ export function SettingsPage() {
             else. Your MCP servers are loaded as usual either way, so the first prompt of a session takes a moment
             longer than the ones after it. A terminal is never closed by a timer, and it survives closing the tab: it
             belongs to the server, so you come back to it still running.
+            <br />
+            <br />
+            An idle composer process closes itself after{' '}
+            <span className="text-[var(--text)]">{CHAT_IDLE_TIMEOUT_MINUTES} minutes</span>, and that number is not a
+            preference. Claude's prompt cache lives for an hour, and a CLI that restarts while it is still warm has to
+            rewrite the whole prompt often enough to matter — so a shorter timeout would cost you money rather than save
+            it, and once the hour is up there is nothing left to lose. Either mode can also be closed by hand, which
+            asks first.
           </div>
         </Section>
 

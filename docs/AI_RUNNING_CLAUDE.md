@@ -135,7 +135,7 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 | Owns | `core/sessionTerminal.ts` | `core/sessionChat.ts` |
 | Questions and plans | whatever the TUI draws | structured panels, plan comments |
 | Model / effort / mode | `/model` inside the CLI | pickers beside Send |
-| Idle timeout | none, ever | `chatIdleTimeoutMinutes` |
+| Idle timeout | none, ever | 60 min, fixed |
 | Survives closing the tab | the process AND the screen | the process does; nothing is drawn |
 
 **`chatEnabled` is ON by default**, unlike `autoReloadEnabled`, and the difference is what each does when nobody is looking: the auto-reload spawns sessions on a timer and had to be asked for, while this spawns nothing until somebody presses a button or types a prompt. **The default mode is `terminal`**, and the composer is the one the UI marks experimental — not because it is newer, it is not, but because everything it draws it draws itself, while a terminal is the CLI with nothing in between.
@@ -229,6 +229,21 @@ That is the thing being prevented — it is what produces the duplicated uuids a
 
 **The answer is NOT rendered from the SDK's message stream.** Claude Code writes its own transcript, the watcher sees the file grow, the viewer re-reads it — the path that already draws every live session, with its folding, its cost pills and its context figures. So the loop follows only enough to know when a turn ends (`result`), nothing is accumulated, and an unrecognised message costs nothing. Rendering from the stream would mean a second, poorer viewer for the same data.
 
+### Closing a session, and what it really costs
+
+Both modes can be closed by hand, and both ask first — `CloseSessionDialog`, shared. The care is in what it says, because the obvious sentence is false.
+
+**Closing does not evict the prompt cache.** That cache lives at Anthropic, keyed on the content prefix, and it outlives the process: measured, by killing a terminal and resuming it 45 s later — 39,894 read, 89 written, nothing re-cached. It also survives a 51-minute gap the same way.
+
+**What closing does is guarantee the next prompt comes from a CLI that has just started, and a restarted CLI rebuilds its prompt.** It re-injects its session context — the skill listing above all, ~2.8k tokens — and when that lands inside the prefix rather than after it, the whole thing is written again. The arithmetic is visible in a transcript: a resumed request wrote 51,691 where the live one had 48,902 cached, a difference of 2,789, and read **zero**.
+
+How often is the part that decides the wording. Over this machine's history, a request that follows a re-injection re-caches **38.7% of the time (36 of 93)**; every other request, **0.3% (40 of 12,186)**. So restarting is by far the biggest cause of re-caching there is — and it is still not a certainty. The dialog therefore says the tokens **could** be lost. "Will be lost" would be false, and a dialog that overstates its case teaches people to click through it.
+
+Two consequences worth keeping:
+
+- **Coming back quickly does not help.** The risk is in the rebuild, not in the clock, which is the opposite of what everyone assumes.
+- **The composer's hour is the cache's hour, and a shorter one would be worse.** Killing an idle process while its cache is still warm is taking the 38.7% bet for nothing; once the TTL is up there is nothing left to lose. That is why `CHAT_IDLE_TIMEOUT_MINUTES` is 60, and why it is not a setting: there is no better answer than the TTL, and offering the choice would invite a worse one.
+
 ## The embedded terminal: the other half of `chatMode`
 
 `core/sessionTerminal.ts`, reached when `chatEnabled` is on **and** `chatMode` is `terminal`. One `claude.exe` per session inside a Windows pseudo-console (`@lydell/node-pty`), drawn in the page by `web/src/components/viewer/SessionTerminal.tsx` with xterm.js, over a WebSocket at `/api/sessions/:id/terminal/ws`.
@@ -268,7 +283,7 @@ Three things separate "a CLI running in a web page" from "the CLI", and all thre
 
 ### The PTY belongs to the server, not to the tab
 
-There is no idle timeout, deliberately, and unlike the composer's `chatIdleTimeoutMinutes`: a process between turns has nothing to lose, and a terminal left half way through a sentence does. It ends when it is closed, when the CLI exits, or when the server does.
+There is no idle timeout, deliberately, and unlike the composer's fixed hour: a process between turns has nothing to lose, and a terminal left half way through a sentence does. It ends when it is closed, when the CLI exits, or when the server does.
 
 - **A closed tab detaches and nothing more.** Coming back replays a bounded scrollback (`SCROLLBACK_BYTES`, 256 KB, trimmed whole chunks from the front) and the terminal is where it was. That is also what makes `/new` work in terminal mode: the handover to `/session/<id>` remounts the component and it comes back attached.
 - **The replay is raw bytes and can begin mid-escape**, so it is prefixed with a reset (leave the alternate screen, stop mouse reporting, show the cursor, drop the colour) and the client follows it by sending its real size, which makes a full-screen TUI repaint everything. Keeping a rendered screen server-side (`@xterm/headless`) is the alternative, and has not been needed.

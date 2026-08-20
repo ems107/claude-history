@@ -704,16 +704,6 @@ export interface AppSettings {
    */
   chatMode: ChatUiMode;
   /**
-   * Minutes of silence before a chat process is closed (minimum
-   * MIN_CHAT_IDLE_MINUTES). It costs nothing to keep one alive, but it holds a
-   * slot and a `claude` process, and a forgotten tab should not own either.
-   *
-   * The composer's alone: an embedded terminal is never closed by a timer. A
-   * process between turns has nothing to lose; a terminal you left half way
-   * through a sentence does.
-   */
-  chatIdleTimeoutMinutes: number;
-  /**
    * Let browsers on OTHER machines use this app, after logging in.
    *
    * Off by default, and the only thing standing between the LAN and a composer
@@ -748,7 +738,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadHideSessions: false,
   chatEnabled: true,
   chatMode: 'terminal',
-  chatIdleTimeoutMinutes: 10,
   remoteAccessEnabled: false,
   logLevel: 'info',
   logRetentionDays: 14,
@@ -806,7 +795,24 @@ export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
  * and rebuilt between two prompts of the same conversation, paying the whole
  * startup — MCP servers included — for nothing.
  */
-export const MIN_CHAT_IDLE_MINUTES = 1;
+/**
+ * Silence before the composer's process is closed. Fixed, and the number is the
+ * cache's.
+ *
+ * A restarted CLI does not lose the prompt cache — that lives at Anthropic and
+ * survives the process — but it does rebuild its prompt, and when the rebuilt
+ * one differs the whole prefix is written again. Measured over this corpus: a
+ * request that follows a restart re-caches **38.7% of the time (36 of 93)**
+ * against **0.3%** for every other request. So while the cache is alive, killing
+ * an idle process is a bet; once the hour is up there is nothing left to lose,
+ * and that is exactly when it costs nothing to close.
+ *
+ * Which is why a shorter timeout would be WORSE, not more careful: it would kill
+ * processes whose cache is still warm. Not configurable for the same reason —
+ * there is no better answer than the TTL, and offering the choice would invite
+ * a worse one.
+ */
+export const CHAT_IDLE_TIMEOUT_MINUTES = 60;
 
 // ---- Auto-reload of the 5-hour window ----
 

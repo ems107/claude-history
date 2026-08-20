@@ -22,7 +22,7 @@ import type {
   ChatState,
   ChatStatus,
 } from '@claude-history/shared';
-import { CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import { CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
@@ -390,7 +390,7 @@ export class SessionChatService implements TranscriptWriter {
     else if (p?.working) state = p.starting ? 'starting' : 'working';
     else if (lastError) state = 'error';
     const idleCloses =
-      p && !p.working ? p.lastActivityAt + Math.max(1, s.chatIdleTimeoutMinutes) * 60_000 : null;
+      p && !p.working ? p.lastActivityAt + CHAT_IDLE_TIMEOUT_MINUTES * 60_000 : null;
     return {
       sessionId,
       state,
@@ -1005,7 +1005,7 @@ export class SessionChatService implements TranscriptWriter {
   }
 
   private sweep(): void {
-    const idleMs = Math.max(1, this.settings().chatIdleTimeoutMinutes) * 60_000;
+    const idleMs = CHAT_IDLE_TIMEOUT_MINUTES * 60_000;
     const now = Date.now();
     // Reservations that have become sessions, and reservations nobody ever used.
     // The first is the point — once the transcript exists the index is the

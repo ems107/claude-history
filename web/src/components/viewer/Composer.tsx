@@ -7,8 +7,10 @@ import {
 } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { shortModel } from '../../lib/format.ts';
+import { cacheClockOf, CloseSessionDialog } from './CloseSessionDialog.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 import { QuestionPanel } from './QuestionPanel.tsx';
 
@@ -292,11 +294,23 @@ export function Composer({
       });
   };
 
-  const stop = () => {
+  /**
+   * Closing is asked about, because it ends the CLI and the next prompt then
+   * comes from one that has just started — which is the thing that risks the
+   * cached prefix ([CloseSessionDialog]). Only when there is a process to close:
+   * confirming the closing of nothing is a dialog that teaches nothing.
+   */
+  const [confirmClose, setConfirmClose] = useState(false);
+  const closeNow = () => {
+    setConfirmClose(false);
     api
       .chatStop(sessionId)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] }));
+  };
+  const stop = () => {
+    if (status?.running) setConfirmClose(true);
+    else closeNow();
   };
 
   const change = (patch: { model?: string; effort?: string | null; permissionMode?: ChatPermissionMode }) => {
@@ -315,6 +329,11 @@ export function Composer({
   // A message the user cannot act on is worse than no message: say why the box
   // is dead, right next to it.
   const notice = blocked ?? error ?? status?.lastError ?? null;
+  // Read from the cache rather than fetched: the page already holds this query,
+  // and a dialog is no reason to go and ask for a whole transcript again.
+  const cacheClock = confirmClose
+    ? cacheClockOf(queryClient.getQueryData<SessionDetailResponse>(['session', sessionId]))
+    : null;
   const canSend = !!text.trim() && !sending && !blocked;
 
   return (
@@ -322,6 +341,14 @@ export function Composer({
     // than through it — which it now literally does: this is stuck to the bottom
     // of the scroller the turns are in.
     <div className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3">
+      {confirmClose && (
+        <CloseSessionDialog
+          cache={cacheClock}
+          busy={working}
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={closeNow}
+        />
+      )}
       {/* Above the box, below the conversation: where the next message goes.
           Not a modal — a question is no reason to stop the app being usable. */}
       {status?.question && (

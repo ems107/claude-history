@@ -5,7 +5,9 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
+import { cacheClockOf, CloseSessionDialog } from './CloseSessionDialog.tsx';
 import { clamp, HEIGHT_KEY, readHeight } from '../../lib/terminalPrefs.ts';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
@@ -71,6 +73,13 @@ export function SessionTerminal({
   const [height, setHeight] = useState(readHeight);
   const [full, setFull] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Closing is asked about while a CLI is alive, for the reason in
+   * [CloseSessionDialog]: the next prompt would come from one that has just
+   * started, and that is what risks the cached prefix. A terminal holding a dead
+   * process's screen has nothing to lose and closes on the first click.
+   */
+  const [confirmClose, setConfirmClose] = useState(false);
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -449,7 +458,10 @@ export function SessionTerminal({
           </button>
           <button
             type="button"
-            onClick={() => close.mutate()}
+            onClick={() => {
+              if (running) setConfirmClose(true);
+              else close.mutate();
+            }}
             title={running ? 'Stop Claude and close this terminal' : 'Close this terminal'}
             className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
           >
@@ -469,6 +481,18 @@ export function SessionTerminal({
     // than through it — which it literally does: this is stuck to the bottom of
     // the scroller the turns are in. `relative` is what the fade below hangs on.
     <div ref={rootRef} className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3">
+      {confirmClose && (
+        <CloseSessionDialog
+          // From the cache the page already holds: a dialog is no reason to go
+          // and re-read a whole transcript.
+          cache={cacheClockOf(queryClient.getQueryData<SessionDetailResponse>(['session', sessionId]))}
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={() => {
+            setConfirmClose(false);
+            close.mutate();
+          }}
+        />
+      )}
       {notice && (
         <div
           className={`mb-1.5 rounded-lg border px-3 py-1.5 text-[11px] ${
