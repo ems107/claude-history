@@ -1628,7 +1628,15 @@ export type ServerEvent =
       agents: { sessionId: string; agentId: string }[];
     }
   | { type: 'session-updated'; id: string }
-  | { type: 'live-changed' }
+  /**
+   * The set of `claude` processes registered under `~/.claude/sessions`
+   * changed. `ids` names the sessions that ENTERED or LEFT that set, and
+   * nothing else: a busy/idle flip writes to the same directory and carries no
+   * ids at all. Those are exactly the sessions whose `blockedReason` can have
+   * changed, and no other event can speak for them — a CLI in a real terminal
+   * is not ours to hear from.
+   */
+  | { type: 'live-changed'; ids: string[] }
   | { type: 'index-progress'; enriched: number; total: number }
   | { type: 'update-status' }
   /**

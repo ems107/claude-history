@@ -309,10 +309,21 @@ export class SessionIndex {
     }
   }
 
+  /**
+   * Re-read what is running, and say which sessions came or went.
+   *
+   * The ids are the membership difference and not the whole list: a busy/idle
+   * flip writes to that directory too, and it changes nothing about who holds a
+   * transcript. What it does change is every `blockedReason` that names a
+   * terminal, so those -- and only those -- are worth re-asking for.
+   */
   async refreshLive(): Promise<void> {
+    const before = new Set(this.live.map((l) => l.sessionId));
     this.live = await readLiveSessions(this.config.sessionsDir);
+    const after = new Set(this.live.map((l) => l.sessionId));
+    const ids = [...new Set([...before, ...after])].filter((id) => before.has(id) !== after.has(id));
     this.applyLive();
-    this.events.emit('live-changed');
+    this.events.emit('live-changed', ids);
   }
 
   private applyLive(): void {

@@ -31,7 +31,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
         assistantIds: payload.assistantIds ?? [],
         agents: payload.agents ?? [],
       });
-    const onLive = () => send({ type: 'live-changed' });
+    const onLive = (ids: string[]) => send({ type: 'live-changed', ids });
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });
     const onChat = (id: string) => send({ type: 'chat-changed', id });

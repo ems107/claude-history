@@ -75,12 +75,12 @@ export function SessionViewPage() {
     queryKey: ['live'],
     queryFn: api.live,
     enabled: !!id,
-    // The poll is a backstop for the one thing SSE cannot report: a CLI killed
-    // outright leaves its file saying "busy" and writes nothing more, so no
-    // event ever comes — the server drops it by pid liveness, but only if asked.
-    // It runs solely while a turn is in flight, and never touches the network.
-    refetchInterval: (query) =>
-      query.state.data?.some((l) => l.sessionId === id && l.status === 'busy') ? 10_000 : false,
+    // No poll here any more. The thing it was a backstop for — a CLI killed
+    // outright, which leaves its file saying "busy" and writes nothing more —
+    // is now caught by the server's watcher, one pid check per running CLI, and
+    // announced as `live-changed` like any other. A poll here could only ever
+    // tell this page; the event tells every reader of that list, including the
+    // amber "already open in a terminal" under the composer.
   });
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;

@@ -96,9 +96,27 @@ export function useEvents(): void {
           void queryClient.invalidateQueries({ queryKey: ['sessions'] });
           void queryClient.invalidateQueries({ queryKey: ['session', event.id] });
           break;
+        // Something registered under ~/.claude/sessions moved: a turn started or
+        // ended, a CLI came up, a CLI is gone.
         case 'live-changed':
           void queryClient.invalidateQueries({ queryKey: ['sessions'] });
           void queryClient.invalidateQueries({ queryKey: ['live'] });
+          /**
+           * A CLI that is not ours took a session or let go of it, and the only
+           * place that is ever said is `blockedReason` — the composer and the
+           * embedded terminal both refuse over this same list. Without this the
+           * amber bar sat there naming a terminal that had been closed, until
+           * somebody reloaded the page.
+           *
+           * By id, never the `['chat']` prefix: `ids` is the sessions that came
+           * or went, and a busy/idle flip carries none, so a composer nobody
+           * blocked is not refetched — which would throw away the model it has
+           * just been switched to.
+           */
+          for (const id of event.ids ?? []) {
+            void queryClient.invalidateQueries({ queryKey: ['chat', id] });
+            void queryClient.invalidateQueries({ queryKey: ['terminal', id] });
+          }
           break;
         case 'index-progress':
           void queryClient.invalidateQueries({ queryKey: ['meta'] });
