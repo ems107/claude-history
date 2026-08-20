@@ -12,6 +12,7 @@ import {
 } from '../../lib/findInSession.ts';
 import type { MatchHighlight } from '../../lib/highlight.ts';
 import { useSelectedMessage } from '../../lib/selectedMessage.ts';
+import { isFromTerminal } from '../../lib/terminalPrefs.ts';
 import { SnippetRow } from '../list/SnippetRow.tsx';
 import type { FindState, FindTarget } from './TurnList.tsx';
 
@@ -306,6 +307,9 @@ export function useFindBar(
   useEffect(() => {
     if (!opts.enabled) return;
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl+F belongs to whatever has the focus, and inside an embedded
+      // terminal that is the CLI's own search, not this bar.
+      if (isFromTerminal(e.target)) return;
       if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
         e.preventDefault();
         openBar(e.shiftKey);

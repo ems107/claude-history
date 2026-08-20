@@ -17,6 +17,7 @@ import { anchorOfKey, focusKeyAt, parseHighlight, setHighlightTerms, TOOL_PARAM 
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
+import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
@@ -27,11 +28,12 @@ import { MentionedFilesPanel } from '../components/viewer/MentionedFilesPanel.ts
 import { SessionFilesPanel } from '../components/viewer/SessionFilesPanel.tsx';
 import { FileRefContext, type FileRefContextValue } from '../components/viewer/FileRefContext.ts';
 import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
-import { FollowBottomButton, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
+import { FollowBottomButton, PILL_CORNER_PX, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
+import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
@@ -81,6 +83,42 @@ export function SessionViewPage() {
   });
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
+  // Which of the two the app offers at the foot of a session. Meaningless while
+  // `chatEnabled` is off, and never read there: nothing is drawn either way.
+  const terminalMode = chatEnabled && settings.data?.settings.chatMode === 'terminal';
+  /**
+   * A terminal has filled the window.
+   *
+   * The page has to know because the slot below is `position: sticky`, which
+   * creates a stacking context: a full-screen panel rendered inside it cannot
+   * out-number anything outside, and the follow pill went straight over it.
+   * Lifting the whole slot is the only place that can be fixed from.
+   */
+  const [terminalLayout, setTerminalLayout] = useState({ full: false, open: false, height: 0, rightGap: 0 });
+  // The terminal reports from a ResizeObserver, so this fires on every pixel of
+  // a drag. Keep the previous object when nothing actually moved: otherwise the
+  // whole page re-renders once per frame for a value that did not change.
+  const onTerminalLayout = useCallback((next: typeof terminalLayout) => {
+    setTerminalLayout((prev) =>
+      prev.full === next.full && prev.open === next.open && prev.height === next.height && prev.rightGap === next.rightGap
+        ? prev
+        : next,
+    );
+  }, []);
+  /**
+   * Where the follow pill goes when a terminal is open.
+   *
+   * Beside it whenever there is room — that corner is where the pill has always
+   * lived, and at the ordinary column width the gutter beside the panel is two
+   * hundred pixels of nothing. It only climbs above the panel when the column
+   * has grown enough to leave it nowhere to stand, which in practice means the
+   * `Full` width. Measured, never assumed: `rightGap` is the real distance from
+   * the panel's right edge to the scroller's.
+   */
+  const pillLift =
+    terminalMode && terminalLayout.open && !terminalLayout.full && terminalLayout.rightGap < PILL_CORNER_PX
+      ? terminalLayout.height
+      : 0;
   /**
    * Prompts sent from the composer that the transcript has not caught up with.
    * `at` is when it was accepted, which is also when the turn really began —
@@ -344,6 +382,10 @@ export function SessionViewPage() {
       if (e.key !== 'Escape') return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      // Escape inside an embedded terminal is the CLI's — it closes ITS menus.
+      // (The textarea check above already covers where xterm usually puts the
+      // focus; this is the one that stays true when it moves.)
+      if (isFromTerminal(e.target)) return;
       // Innermost first: the file sits on top of the subagent drawer, which sits
       // on top of the list that opened it — a path is often clicked from inside a
       // subagent report, and that whole stack has to unwind in order.
@@ -878,6 +920,9 @@ export function SessionViewPage() {
                 the closures. */}
             <div
               ref={follow.scrollRef}
+              // The embedded terminal's drag handle measures this to run its bar
+              // the full width of the scroller rather than of the column.
+              data-conversation-scroller
               onClick={selectFromClick}
               className={`h-full overflow-y-auto px-4 pt-4 [scrollbar-gutter:stable_both-edges] ${
                 // With no composer there is nothing to keep the last bubble off
@@ -951,20 +996,28 @@ export function SessionViewPage() {
                   <div
                     ref={follow.footerRef}
                     data-sticky-bottom
-                    className="sticky bottom-0 mt-auto pt-6"
+                    className={`sticky bottom-0 mt-auto pt-6 ${terminalLayout.full ? 'z-50' : ''}`}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Composer
-                      sessionId={id}
-                      // The box does arithmetic with it: without this, Send ends
-                      // up under the follow pill at the widths where the column
-                      // reaches the window's edge.
-                      columnWidth={columnWidth}
-                      onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
-                      lastModel={lastAnswer?.model ?? null}
-                      lastEffort={lastAnswer?.effort ?? null}
-                      lastMode={lastMode}
-                    />
+                    {/* The two modes share this slot and everything it imposes.
+                        The wrapper is the same for both deliberately: what
+                        changes is how you talk to Claude, not where the
+                        conversation ends. */}
+                    {terminalMode ? (
+                      <SessionTerminal sessionId={id} columnWidth={columnWidth} onLayout={onTerminalLayout} />
+                    ) : (
+                      <Composer
+                        sessionId={id}
+                        // The box does arithmetic with it: without this, Send ends
+                        // up under the follow pill at the widths where the column
+                        // reaches the window's edge.
+                        columnWidth={columnWidth}
+                        onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
+                        lastModel={lastAnswer?.model ?? null}
+                        lastEffort={lastAnswer?.effort ?? null}
+                        lastMode={lastMode}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -980,6 +1033,7 @@ export function SessionViewPage() {
               unseen={follow.unseen}
               working={isWorking(liveInfo) || agentsWorking !== null}
               workingWhat={isWorking(liveInfo) ? undefined : (agentsWorking ?? undefined)}
+              liftPx={pillLift}
             />
           </div>
           {agentId && (

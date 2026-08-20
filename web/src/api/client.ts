@@ -32,6 +32,8 @@ import type {
   StarsResponse,
   StarUpdateResponse,
   SubagentDetailResponse,
+  TerminalStartRequest,
+  TerminalStatus,
   ToolResultFileResponse,
   UpdateLogResponse,
   UpdateStatusResponse,
@@ -317,6 +319,29 @@ export const api = {
   },
   chatStop: async (id: string) => {
     const res = await fetch(`/api/sessions/${id}/chat/stop`, { method: 'POST' });
+    const payload = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload;
+  },
+  terminalStatus: (id: string) => getJson<TerminalStatus>(`/api/sessions/${id}/terminal`),
+  // Starting is a POST and not something the socket does, so a refusal arrives
+  // as a sentence instead of as a socket that opens and closes again for
+  // reasons nobody can read. The size goes with it: the CLI decides its whole
+  // layout from the console it is born into.
+  terminalStart: async (id: string, body: TerminalStartRequest) => {
+    const res = await fetch(`/api/sessions/${id}/terminal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = (await res.json()) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    return payload;
+  },
+  // Kills the CLI and forgets the terminal, last screen included. Closing one
+  // that is not open is not an error.
+  terminalStop: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/terminal/stop`, { method: 'POST' });
     const payload = (await res.json()) as { ok?: boolean; error?: string };
     if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
     return payload;

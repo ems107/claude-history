@@ -530,6 +530,15 @@ The third is the weakest of them by nature and says so on every row that needs i
 
 ## The end of the conversation
 
+**Two things can sit in this slot** — the composer, or an embedded terminal, decided by `chatMode` ([Running Claude](AI_RUNNING_CLAUDE.md)). The wrapper is deliberately the same for both: what changes is how you talk to Claude, not where the conversation ends, and a slot that moved between the modes would announce itself as a different screen. So everything below is written about the composer and is true of the terminal word for word — `footerRef`, `data-sticky-bottom`, the click that must not deselect, and the `max()` that keeps the follow pill's corner clear.
+
+Two things the terminal added, both of them properties of this slot that nobody had had to name before:
+
+- **A portal cannot be used from here.** xterm is attached to a host div by `term.open()`, so rendering the panel somewhere else unmounts that div and takes the terminal's whole DOM with it — a full screen with nothing in it, measured. Full screen is therefore a class on the element that is already there.
+- **`position: sticky` creates a stacking context.** A `fixed inset-0 z-50` child of this wrapper is numbered only against its siblings, so the follow pill — a later sibling of the scroller, with no z-index at all — paints over it. Lifting the wrapper is the only fix available, and it is why `SessionTerminal` reports its layout to the page.
+- **Who gives up the pill's corner depends on what is in it.** The composer keeps `Send` out of it with a `max()` over the column width and gives up nothing else, because a composer has corner to spare. A terminal has none: every cell is content, and reserving 120 px there just makes the panel narrower than the conversation above it for no reason a reader can see. So the PILL moves instead of the panel shrinking — but only when it has to. At the ordinary column width the gutter beside the panel is 252 px of nothing and the pill stays exactly where it has always been, bottom right; it climbs above the panel (`liftPx`, the panel's measured height) only once `rightGap` falls under `PILL_CORNER_PX`, which in practice means `Full`. Measured from the panel's own right edge to the scroller's, never inferred from the width setting.
+- **The terminal's drag handle spans the scroller, not the column.** A resize bar the width of the panel reads as part of the panel; one that runs edge to edge reads as the seam it is. The width is measured (`clientWidth` of the element tagged `data-conversation-scroller`) rather than written as `100vw`, because the scroller reserves a scrollbar gutter on both edges and pads itself — a viewport-wide child would hang outside its padding box and earn the page a horizontal scrollbar.
+
 The scroller reaches the **foot of the window** and the composer rides inside it:
 last in the conversation's own column, `mt-auto` so it sits at the bottom of a
 short session and `sticky bottom-0` so it stays there through a long one. Nothing

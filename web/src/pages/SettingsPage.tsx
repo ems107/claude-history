@@ -4,7 +4,7 @@ import {
   DEFAULT_SETTINGS,
   defaultSettings,
   LOG_LEVEL_CHOICES,
-  MIN_CHAT_IDLE_MINUTES,
+  CHAT_IDLE_TIMEOUT_MINUTES,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
 } from '@claude-history/shared';
@@ -353,6 +353,54 @@ function AutoReloadStatusPanel() {
   );
 }
 
+/**
+ * A group of mutually exclusive choices, each with a line of explanation.
+ *
+ * A `<select>` would have been fewer pixels and the wrong shape: these two are
+ * not values of one thing, they are two different features, and what separates
+ * them is the sentence underneath — which a dropdown cannot show until it is
+ * open, and then only one at a time.
+ */
+function RadioGroup<T extends string>({
+  name,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  name: string;
+  value: T;
+  options: { value: T; label: string; hint: string }[];
+  disabled?: boolean;
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className={disabled ? 'opacity-40' : ''}>
+      {options.map((option) => (
+        <label
+          key={option.value}
+          className={`flex items-baseline gap-2 rounded px-1 py-0.5 select-none ${
+            disabled ? '' : 'cursor-pointer hover:bg-[var(--bg-hover)]'
+          }`}
+        >
+          <input
+            type="radio"
+            name={name}
+            checked={value === option.value}
+            disabled={disabled}
+            onChange={() => onChange(option.value)}
+            className="accent-[var(--accent)]"
+          />
+          <span>
+            {option.label}
+            <span className="block text-[11px] text-[var(--text-dim)]">{option.hint}</span>
+          </span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 /** A setting and its "changed from default" marker, aligned on the first line. */
 function Row({ children, badge }: { children: React.ReactNode; badge: React.ReactNode }) {
   return (
@@ -423,7 +471,6 @@ export function SettingsPage() {
   // than leave controls that look live and are not.
   const autoReloadOff = !s.autoReloadEnabled;
   const dimmed = autoReloadOff ? 'opacity-40' : '';
-  const chatOff = s.chatEnabled ? '' : 'opacity-40';
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -715,32 +762,47 @@ export function SettingsPage() {
             <Toggle
               checked={s.chatEnabled}
               onChange={(v) => save({ chatEnabled: v })}
-              label="Show a composer at the foot of every session (experimental)"
-              hint="Continue a conversation without leaving the app. The prompt goes to a Claude Code process the server keeps alive for that session, and the answer appears in the viewer as it is written to the transcript. Sending is blocked while the session is open in a terminal: two processes writing the same transcript corrupt it."
+              label="Talk to Claude from inside a session"
+              hint="Continue a conversation without leaving the app, in whichever of the two ways you pick below. Either way it runs Claude Code on this machine, in that session's own folder, and the answer appears in the viewer as it is written to the transcript. It is blocked while the session is open in a terminal elsewhere: two processes writing the same transcript corrupt it."
             />
           </Row>
-          <Row badge={<DefaultBadge field="chatIdleTimeoutMinutes" value={s.chatIdleTimeoutMinutes} save={save} />}>
-            <label className={`flex items-center gap-2 ${chatOff}`}>
-              <span>Close an idle process after</span>
-              <input
-                type="number"
-                min={MIN_CHAT_IDLE_MINUTES}
-                max={240}
-                step={5}
-                value={s.chatIdleTimeoutMinutes}
-                disabled={!s.chatEnabled}
-                onChange={(e) => save({ chatIdleTimeoutMinutes: Number(e.target.value) })}
-                className="w-16 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
-              />
-              <span>minutes (minimum {MIN_CHAT_IDLE_MINUTES})</span>
-            </label>
+          <Row badge={<DefaultBadge field="chatMode" value={s.chatMode} save={save} />}>
+            <RadioGroup
+              name="chat-mode"
+              value={s.chatMode}
+              disabled={!s.chatEnabled}
+              onChange={(chatMode) => save({ chatMode })}
+              options={[
+                {
+                  value: 'terminal',
+                  label: 'An embedded terminal running the Claude Code CLI',
+                  hint: 'The real CLI, drawn in the page where the box would be, resizable by dragging its top edge. Everything the terminal can do and nothing the app adds — and it keeps running while you read other sessions.',
+                },
+                {
+                  value: 'composer',
+                  label: 'A composer at the foot of the conversation (experimental)',
+                  hint: 'A box you type a prompt into. Questions arrive as buttons, plans can be read full screen and commented passage by passage, and the model, effort and plan mode are pickers beside Send — all of it drawn by this app rather than by Claude Code, which is what makes it the experimental one.',
+                },
+              ]}
+            />
           </Row>
           <div className="text-[11px] leading-relaxed text-[var(--text-dim)]">
-            The model and effort are not set here: each session's composer starts from whatever that conversation was
-            last answered with, and you change them per session there. Tools run under Claude Code's{' '}
+            The model and effort are not set here: the composer starts each session from whatever that conversation was
+            last answered with, and you change them per session there; a terminal is asked inside the CLI, with{' '}
+            <span className="text-[var(--text)]">/model</span>. The composer runs tools under Claude Code's{' '}
             <span className="text-[var(--text)]">auto</span> permission mode, so it only stops when it genuinely needs
-            you — and then it asks in the conversation, above the box. Your MCP servers are loaded as usual, so the
-            first prompt of a session takes a moment longer than the ones after it.
+            you — and then it asks in the conversation, above the box; a terminal asks exactly as it would anywhere
+            else. Your MCP servers are loaded as usual either way, so the first prompt of a session takes a moment
+            longer than the ones after it. A terminal is never closed by a timer, and it survives closing the tab: it
+            belongs to the server, so you come back to it still running.
+            <br />
+            <br />
+            An idle composer process closes itself after{' '}
+            <span className="text-[var(--text)]">{CHAT_IDLE_TIMEOUT_MINUTES} minutes</span>, and that number is not a
+            preference. Claude's prompt cache lives for an hour, and a CLI that restarts while it is still warm has to
+            rewrite the whole prompt often enough to matter — so a shorter timeout would cost you money rather than save
+            it, and once the hour is up there is nothing left to lose. Either mode can also be closed by hand, which
+            asks first.
           </div>
         </Section>
 

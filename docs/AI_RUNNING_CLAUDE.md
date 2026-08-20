@@ -1,6 +1,6 @@
-# Running Claude: usage, auto-reload and the composer
+# Running Claude: usage, auto-reload, the composer and the embedded terminal
 
-**Load this when:** you touch `core/usage.ts`, `core/autoReload.ts`, `core/sessionChat.ts`, the usage widget, the auto-reload panel or the composer — i.e. anything that talks to Anthropic or spawns a `claude` process.
+**Load this when:** you touch `core/usage.ts`, `core/autoReload.ts`, `core/sessionChat.ts`, `core/sessionTerminal.ts`, `core/writerGuard.ts`, the usage widget, the auto-reload panel, the composer or the terminal — i.e. anything that talks to Anthropic or spawns a `claude` process.
 
 ## The line between reading and running
 
@@ -22,6 +22,9 @@ The app has two halves and they are not the same kind of thing. **Everything tha
 - **The composer never renders the answer from the SDK stream** — the transcript is the source, as for any other session.
 - **A new session's id is minted here, and which of `sessionId` / `resume` applies is asked of the disk**, never remembered in a flag.
 - **A typed folder is the one path that comes from the request**, and it is validated rather than trusted.
+- **The embedded terminal runs `claude.exe` with no shell around it** — that is what keeps the pid guard honest and a remote browser no more powerful than the composer already makes it.
+- **A pseudo-terminal belongs to the server, not to the tab.** Closing a browser detaches; it never kills anything.
+- **A terminal outlives the CLI inside it**, because the last screen is the only diagnosis a failed start leaves.
 
 ## Subscription usage (read-only)
 
@@ -122,9 +125,26 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 
 `autoReloadHideSessions` filters that folder's project out of `index.list()` / `projects()` — hence the list, the filters, the counts, search and the stats — plus `/api/prompts`. `index.get(id)` stays unfiltered so a direct link still opens them, and nothing is ever deleted. It is gated on `autoReloadEnabled` as well as on its own flag: the UI disables the whole settings block when the feature is off, and a greyed control that still hid sessions would be a trap.
 
+## Two ways to talk to Claude, and one switch between them
+
+`chatEnabled` decides whether the app talks to Claude at all. `chatMode` decides HOW, and is meaningless while the first is off — nothing is drawn at the foot of a session either way, so nothing reads it there:
+
+| | `terminal` (default) | `composer` |
+| --- | --- | --- |
+| What runs | `claude.exe` in a pseudo-console | the Agent SDK driving `claude` |
+| Owns | `core/sessionTerminal.ts` | `core/sessionChat.ts` |
+| Questions and plans | whatever the TUI draws | structured panels, plan comments |
+| Model / effort / mode | `/model` inside the CLI | pickers beside Send |
+| Idle timeout | none, ever | 60 min, fixed |
+| Survives closing the tab | the process AND the screen | the process does; nothing is drawn |
+
+**`chatEnabled` is ON by default**, unlike `autoReloadEnabled`, and the difference is what each does when nobody is looking: the auto-reload spawns sessions on a timer and had to be asked for, while this spawns nothing until somebody presses a button or types a prompt. **The default mode is `terminal`**, and the composer is the one the UI marks experimental — not because it is newer, it is not, but because everything it draws it draws itself, while a terminal is the CLI with nothing in between.
+
+**They are exclusive and must stay so**: both at once is two writers on one transcript, which is the corruption everything around this feature exists to prevent. Each refuses while the other holds a session, and both say which one it is.
+
 ## The composer: sending a prompt from the app
 
-`core/sessionChat.ts`, off by default behind `chatEnabled`, `GET`/`POST /api/sessions/:id/chat` plus `POST /api/chat/new`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>` — or `sessionId: <id>` for one that does not exist yet, below — and `permissionMode` from the composer, `auto` unless plan mode was asked for), kept alive between turns. Where the box sits on screen — inside the conversation's own scroller — is in [AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation).
+`core/sessionChat.ts`, reached when `chatEnabled` is on and `chatMode` is `composer`, `GET`/`POST /api/sessions/:id/chat` plus `POST /api/chat/new`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>` — or `sessionId: <id>` for one that does not exist yet, below — and `permissionMode` from the composer, `auto` unless plan mode was asked for), kept alive between turns. Where the box sits on screen — inside the conversation's own scroller — is in [AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation).
 
 ### Starting one that does not exist yet
 
@@ -202,12 +222,95 @@ That is the thing being prevented — it is what produces the duplicated uuids a
 - **`index.liveSessions` is only rebuilt when something writes to that directory**, and a CLI killed outright writes nothing on the way out. Its file stays, no event ever announces it, and a guard that trusts the list stays blocked forever with nothing running (measured). **Re-check `pidAlive` at the moment of the decision.**
 - **The guard holds across instances, and only because it is written where both can see it.** With the release and a dev instance up at once, each knows nothing of the other's chat processes — but the CLI they spawn registers its pid in `~/.claude/sessions`, the one directory they share, so the second one to try is blocked by the first exactly as it would be by a terminal. Nothing in either server's memory could have answered that.
 - **One string, `sendBlockedReason()`**, for the endpoint and the composer both: the same shape as `runBlockedReason()`, and for the same reason — a disabled control with nothing to say is the bug.
-- **Both doors are guarded, not only the composer's.** `POST /api/sessions/:id/resume` used to launch a terminal on a session already open in one, which is the same corruption the composer refuses — through the door that is likelier to be used twice, with a window open per monitor. It answers 409 as well: **our own process first** (`chat.status(id).running`), because the CLI we spawn registers a pid file like any other and the live check would otherwise blame a terminal that does not exist, and a live pid after that. Only the launch is refused — **"Copy resume cmd" stays live**, so doing it anyway remains possible and deliberate. The button says which of the two it is before the click, from `summary.live`; the 409 is the authority, because that field takes a moment to appear.
+- **Every door is guarded, not only the composer's.** `POST /api/sessions/:id/resume` used to launch a terminal on a session already open in one, which is the same corruption the composer refuses — through the door that is likelier to be used twice, with a window open per monitor. It answers 409 as well: **our own processes first** (`appHolderOf`), because the CLIs we spawn register a pid file like any other and the live check would otherwise blame a terminal that does not exist, and a live pid after that.
+- **There are three doors now, so who-owns-which-pid has one home**: `core/writerGuard.ts`. Both services register as a `TranscriptWriter`; `pidOwnedByApp` answers for all of them at once and `appHolderOf` names the holder, which is what lets a refusal say *through the composer* or *through the embedded terminal* rather than blaming "a terminal". As a private field on one service the answer was correct; with two it would have had to be mirrored, and the day one copy fell behind, the app would have blocked itself and pointed at a window that does not exist. Only the launch is refused — **"Copy resume cmd" stays live**, so doing it anyway remains possible and deliberate. The button says which of the two it is before the click, from `summary.live`; the 409 is the authority, because that field takes a moment to appear.
 
 ### Rendering
 
 **The answer is NOT rendered from the SDK's message stream.** Claude Code writes its own transcript, the watcher sees the file grow, the viewer re-reads it — the path that already draws every live session, with its folding, its cost pills and its context figures. So the loop follows only enough to know when a turn ends (`result`), nothing is accumulated, and an unrecognised message costs nothing. Rendering from the stream would mean a second, poorer viewer for the same data.
 
+### Closing a session, and what it really costs
+
+Both modes can be closed by hand, and both ask first — `CloseSessionDialog`, shared. The care is in what it says, because the obvious sentence is false.
+
+**Closing does not evict the prompt cache.** That cache lives at Anthropic, keyed on the content prefix, and it outlives the process: measured, by killing a terminal and resuming it 45 s later — 39,894 read, 89 written, nothing re-cached. It also survives a 51-minute gap the same way.
+
+**What closing does is guarantee the next prompt comes from a CLI that has just started, and a restarted CLI rebuilds its prompt.** It re-injects its session context — the skill listing above all, ~2.8k tokens — and when that lands inside the prefix rather than after it, the whole thing is written again. The arithmetic is visible in a transcript: a resumed request wrote 51,691 where the live one had 48,902 cached, a difference of 2,789, and read **zero**.
+
+How often is the part that decides the wording. Over this machine's history, a request that follows a re-injection re-caches **38.7% of the time (36 of 93)**; every other request, **0.3% (40 of 12,186)**. So restarting is by far the biggest cause of re-caching there is — and it is still not a certainty. The dialog therefore says the tokens **could** be lost. "Will be lost" would be false, and a dialog that overstates its case teaches people to click through it.
+
+Two consequences worth keeping:
+
+- **Coming back quickly does not help.** The risk is in the rebuild, not in the clock, which is the opposite of what everyone assumes.
+- **The composer's hour is the cache's hour — the same clock, not a coincidence.** The TTL is refreshed by use, so it runs from the last request, which is exactly what the idle timer counts ([AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTEXT.md): 100% of requests that crossed the hour re-cached, against 0.2% under five minutes). Killing an idle process before that is taking the 38.7% bet for nothing; after it there is nothing left to lose. That is why `CHAT_IDLE_TIMEOUT_MINUTES` is 60, and why it is not a setting: there is no better answer than the TTL, and offering the choice would invite a worse one.
+
+## The embedded terminal: the other half of `chatMode`
+
+`core/sessionTerminal.ts`, reached when `chatEnabled` is on **and** `chatMode` is `terminal`. One `claude.exe` per session inside a Windows pseudo-console (`@lydell/node-pty`), drawn in the page by `web/src/components/viewer/SessionTerminal.tsx` with xterm.js, over a WebSocket at `/api/sessions/:id/terminal/ws`.
+
+It is the same CLI a terminal window would run, so everything the TUI does works and **nothing the composer adds exists**: no structured `AskUserQuestion` panel, no plan review with comments anchored to a quote, no model/effort/mode pickers. All of those come from the SDK's control channel, and there is no SDK here. That is the trade the radio in Settings offers, and it is why neither mode is a better default than the other.
+
+### No shell, and why that is load-bearing
+
+The PTY's direct child is `claude.exe` itself — not `pwsh` with the CLI inside it, which is what "Resume in terminal" launches. Three things follow, and the second is the one that would have cost real bugs:
+
+- **The environment is the composer's, exactly.** `cleanEnv()`, no profile, inherited from this server — which runs as the user in their own interactive logon session, because the release is a scheduled task and [deliberately not a service](AI_DISTRIBUTION.md). So Credential Manager, DPAPI and everything else a `git pull` needs work here for the same reason they already work in the composer. A PowerShell profile that adds to `PATH` would NOT be loaded; the composer has never loaded one either, and the `PATH`-at-logon snapshot in [AI_WINDOWS.md](AI_WINDOWS.md) bites both the same way.
+- **The pid we know IS the pid Claude Code registers.** `~/.claude/sessions/<pid>.json` carries the pid of the process the CLI runs as, so `ownsPid` works on the pid ConPTY hands back and the two-writers guard needed no new idea. With a shell in between, ours would be the shell's and Claude's a grandchild — a process-tree walk on every check, and a guard that gets that wrong blocks the app against itself.
+- **A signed-in remote browser gains nothing it did not have.** The composer already runs Claude with auto-approved tools in any indexed project ([Remote access](AI_REMOTE_ACCESS.md)); `claude.exe` with no shell around it is that and no more. A shell would have been strictly more, and that is the whole reason this is reachable remotely at all.
+
+**Read `pty.pid` from the live getter, never from a snapshot.** ConPTY reports the child on `ready_datapipe`, about 100 ms after `spawn` returns; until then it is 0. Measured.
+
+### The terminal declares what it is, because it knows
+
+Everywhere else this app spawns `claude` it passes `cleanEnv()` and nothing more. A terminal is the one case where the environment describes a *screen*, and we drew that screen — so `terminalEnv()` corrects three variables on the way in, and each one is load-bearing:
+
+- **`NO_COLOR` is deleted.** Not hypothetical: it is persisted nowhere on this machine, and **Claude Code injects it into the environment of the subprocesses it runs**. So a dev server started from inside a Claude Code session inherits it, hands it to the CLI, and the embedded terminal comes up monochrome — no colour, and no grey bar behind the user's own prompts. Measured on the socket: **ONE SGR sequence, against 62 for the same CLI spawned by hand**, and 19 truecolor sequences afterwards. The variable is a statement about the device that launched the server; the device the CLI is drawing on is an xterm.js panel that renders 24-bit colour. Same shape as the `CLAUDE_CODE_*` strip — an inherited fact about somebody else's terminal, corrected rather than passed on.
+- **`TERM` and `COLORTERM` are set.** node-pty on Windows takes a `name` and keeps it on the terminal object but **never writes it into the child's environment** (`windowsTerminal.js` reads `opt.name` and stores it), so without this the CLI is told nothing at all about what it is talking to.
+
+This is deliberately NOT in `cleanEnv()`, which the composer and the auto-reload also use: neither of them renders ANSI, so for them `NO_COLOR` is at worst harmless.
+
+### Looking like a terminal, and behaving like one
+
+Three things separate "a CLI running in a web page" from "the CLI", and all three were visible side by side against a real Windows Terminal before they were fixed:
+
+- **The renderer has to be the WebGL one, and that is not about speed.** xterm.js draws with the DOM by default — one span per cell — and `customGlyphs`, which draws box-drawing and block characters geometrically so they tile perfectly at any size, **exists only in the canvas and WebGL renderers**. With the DOM renderer those glyphs are whatever the font makes of them. Loaded after `term.open()`, which the addon requires, and disposed on context loss so a browser without WebGL falls back to the DOM rather than showing nothing.
+- **`lineHeight` must be exactly 1.** The logo is half-block characters meant to tile edge to edge; 1.2 puts a stripe of background through every row of it. Leading is for prose.
+- **The font still has to be a terminal font**, because the fallback path is the DOM renderer: `Cascadia Mono` leads the stack, ahead of the generic `ui-monospace`.
+- **Widths must be Unicode 11.** xterm.js defaults to the Unicode 6 tables, where an emoji is one cell wide; every terminal written this decade makes it two. One cell of error shifts everything drawn after it on the line, which is what a panel border landing in a different column each row is. `@xterm/addon-unicode11` plus `term.unicode.activeVersion = '11'`.
+- **Shift+Enter is a newline, and needs a protocol to be one.** A terminal sends a bare CR for Enter and, historically, the same bare CR for Shift+Enter — the modifier has nowhere to go, so the CLI saw two identical keys and sent the prompt. The **kitty keyboard protocol** is what gives the modifier somewhere to go, and Claude Code pushes it at startup (`CSI > 1 u`, alongside `modifyOtherKeys`); xterm.js implements neither, so the client sends `CSI 13;2u` itself. **Only while the protocol is actually active** — tracked by watching the output stream for the push and the matching `CSI < u` pop, because a program that never asked for it would receive the sequence as text typed into its prompt, which is a worse bug than the one being fixed.
+
+  **The custom key handler must answer for the `keypress` too, and that is the whole fix.** Returning false from it makes xterm's `_keyDown` bail *before* it calls its own `cancel()`, so nothing stops the browser firing `keypress` — and `_keyPress` consults the same handler again. Answering only for `keydown` let that through, xterm sent `\r` from the char code, and the CLI got the sequence AND a carriage return: a newline, then the prompt submitted, which is the exact behaviour the fix was for. `preventDefault` on the keydown suppresses the keypress at source and either line alone is enough in Chrome; both stay because they fail differently.
+
+### The PTY belongs to the server, not to the tab
+
+There is no idle timeout, deliberately, and unlike the composer's fixed hour: a process between turns has nothing to lose, and a terminal left half way through a sentence does. It ends when it is closed, when the CLI exits, or when the server does.
+
+- **A closed tab detaches and nothing more.** Coming back replays a bounded scrollback (`SCROLLBACK_BYTES`, 256 KB, trimmed whole chunks from the front) and the terminal is where it was. That is also what makes `/new` work in terminal mode: the handover to `/session/<id>` remounts the component and it comes back attached.
+- **The replay is raw bytes and can begin mid-escape**, so it is prefixed with a reset (leave the alternate screen, stop mouse reporting, show the cursor, drop the colour) and the client follows it by sending its real size, which makes a full-screen TUI repaint everything. Keeping a rendered screen server-side (`@xterm/headless`) is the alternative, and has not been needed.
+- **Whether the terminal outlives the CLI inside it depends on HOW it died**, and both answers are wanted. A bad exit, or one that came sooner than `STARTUP_GRACE_MS` and so was never a real session, keeps the panel: that last screen is the only diagnosis a failed start leaves, and clearing it would turn a readable error into a flash of something. A clean exit from a session that actually ran takes the terminal with it and the start bar comes back — somebody who typed `/exit` has said they are done, and a dead panel for them to dismiss by hand is one click that means nothing. `open && !running` is the first case; the log line says which was chosen and why.
+- **`busy` is the CLI working, not the terminal existing.** An interactive session writes `status` into its pid file — verified: `entrypoint: "cli"`, `status` moving `idle` → `busy`, which a `--print` run does not do and is why the composer needs its own answer — so `busyWith(ctx)` reads it. Gating stop, restart, uninstall and update on a terminal merely being OPEN would, with no idle timeout, be a feature that quietly stops the app being maintainable.
+
+### The socket, and what guards it
+
+Starting is a **POST**, never the socket: a refusal has to arrive as `blockedReason` in the page, not as a socket that opens and closes again for reasons nobody can read. The socket only ever attaches.
+
+Output goes down as **binary frames** and control messages as JSON text — output is 99% of the traffic, and wrapping it would cost a parse per keystroke echoed back. Input comes up as JSON (`{t:'i'}` / `{t:'r'}`), length-bounded.
+
+The upgrade is an ordinary GET, so the session hook in `app.ts` covers it and a remote browser without a cookie never arrives. **Same-origin is checked in the route itself**, because the global hook exempts GET on purpose — a plain-HTTP page sends neither `Sec-Fetch-Site` nor `Origin` on an ordinary same-origin GET ([Remote access](AI_REMOTE_ACCESS.md)) — while a browser always sends `Origin` on a WebSocket upgrade, so there its absence means something.
+
+### What the page had to learn
+
+The slot at the foot of the conversation is shared with the composer, and everything it imposes stays in `SessionViewPage` ([AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation)). Two of its properties turned out to be traps:
+
+- **Full screen cannot be a portal.** `term.open()` attaches xterm's whole DOM to the host div, and a portal is a different place in the tree — React unmounts that div and takes the terminal with it. Measured: a full screen with zero rows in it. So full screen is a class on the element that is already there, and the strip left behind says where the panel went.
+- **`position: sticky` creates a stacking context**, so a `fixed inset-0 z-50` panel rendered inside that slot is numbered only against its siblings, and the follow pill — a later sibling of the scroller, with no z-index at all — paints straight over it. `elementFromPoint` in the middle of a full-screen terminal answered with the pill. The page lifts the whole slot instead, which is the only reason `SessionTerminal` reports its full-screen state upwards.
+- **The keys belong to the CLI.** `isFromTerminal` asks the DOM, and the find bar's Ctrl+F and the page's Escape both stand aside for anything born inside `[data-terminal]`. Asked of the DOM rather than tracked in state, because xterm moves focus between its helper textarea and its own elements as it pleases, and a boolean beside that would be wrong exactly when it mattered.
+- **Ctrl+V pastes, and the way to make it paste is to do nothing.** xterm maps every Ctrl+letter to its control code — `\x16` here — and that mapping carries `cancel: true`, so xterm calls `preventDefault` and the browser's own paste command never runs. Its `paste` listener was there the whole time, bracketed-paste and all; nothing was reaching it. Returning false from the custom handler makes `_keyDown` bail before that `cancel`, the browser pastes into the helper textarea, and the listener does the rest. Worth knowing: this is the NATIVE paste command, not `navigator.clipboard`, so it keeps working from another machine over plain HTTP, where that API does not exist ([Remote access](AI_REMOTE_ACCESS.md)).
+
+### The native dependency
+
+`@lydell/node-pty` — prebuilt, N-API, never node-gyp — is the first native dependency this project has, and the only reason a release carries a `node_modules` at all ([Distribution](AI_DISTRIBUTION.md)). It is imported **dynamically and caught**: a binary that will not load is a broken feature, not a server that refuses to start, and the reason has to come back through `blockedReason`, which stays the one string the endpoint and the button both read.
+
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 8 (auto-reload), 19 (the composer, and the rules for testing it safely), 23 (plan mode round trip), 24 (answers written back), 37 (starting a session from the app).
+[AI_TESTING.md](AI_TESTING.md) — checks 8 (auto-reload), 19 (the composer, and the rules for testing it safely), 23 (plan mode round trip), 24 (answers written back), 37 (starting a session from the app), 38 (the embedded terminal, end to end).

@@ -35,6 +35,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });
     const onChat = (id: string) => send({ type: 'chat-changed', id });
+    const onTerminal = (id: string) => send({ type: 'terminal-changed', id });
     const onStars = () => send({ type: 'stars-changed' });
     // The settings themselves are NOT carried: every event here announces, and
     // the browser asks. `/api/settings` is a local read and answers in ~3 ms.
@@ -58,6 +59,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.index.events.on('prices-changed', onPrices);
     ctx.updates.events.on('update-status', onUpdateStatus);
     ctx.chat.events.on('chat-changed', onChat);
+    ctx.terminals.events.on('terminal-changed', onTerminal);
     logEvents.on('appended', onLogAppended);
 
     const heartbeat = setInterval(() => reply.raw.write(': hb\n\n'), HEARTBEAT_MS);
@@ -75,6 +77,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.index.events.off('prices-changed', onPrices);
       ctx.updates.events.off('update-status', onUpdateStatus);
       ctx.chat.events.off('chat-changed', onChat);
+      ctx.terminals.events.off('terminal-changed', onTerminal);
     });
   });
 }

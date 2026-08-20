@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { pidAlive } from '../core/live.ts';
 import { UUID_RE } from '../core/scanner.ts';
+import { appHolderOf, pidOwnedByApp } from '../core/writerGuard.ts';
 import { launchResume, openInExplorer, openInVsCode } from '../util/launcher.ts';
 
 export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -27,18 +28,24 @@ export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): voi
       // Launching a second terminal is the same corruption through the other
       // door — and the likelier one, with a window open per monitor.
       //
-      // Our own process first: it registers a pid file like any other CLI, so
-      // the check below would find it and blame a terminal that does not exist.
-      if (ctx.chat.status(id).running) {
+      // Our own processes first: they register a pid file like any other CLI,
+      // so the check below would find one and blame a terminal that does not
+      // exist. `appHolderOf` names which of them it is — the composer or an
+      // embedded terminal — because "stop it in the composer" is no help to
+      // somebody looking at a terminal.
+      const holder = appHolderOf(id);
+      if (holder) {
         return reply.code(409).send({
-          error: 'The app is already running Claude in this session — stop it in the composer first, or two writers would corrupt its transcript.',
+          error: `The app is already running Claude in this session through ${holder} — stop it there first, or two writers would corrupt its transcript.`,
         });
       }
       // `pidAlive` is re-checked rather than trusted from the list: that list is
       // only rebuilt when something writes to ~/.claude/sessions, and a CLI
       // killed outright writes nothing on the way out, so its file would block
       // the session forever.
-      const open = ctx.index.liveSessions.find((l) => l.sessionId === id && pidAlive(l.pid));
+      const open = ctx.index.liveSessions.find(
+        (l) => l.sessionId === id && !pidOwnedByApp(l.pid) && pidAlive(l.pid),
+      );
       if (open) {
         return reply.code(409).send({
           error: `This session is already open in a terminal (pid ${String(open.pid)}) — resuming it twice would corrupt its transcript. Close that window first, or copy the command if you mean to.`,

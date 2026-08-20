@@ -6,6 +6,7 @@ import { api } from '../api/client.ts';
 import { useLocalOnly } from '../api/useLocal.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { Composer } from '../components/viewer/Composer.tsx';
+import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { ViewButton } from '../components/viewer/ViewButton.tsx';
 import { WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
@@ -145,6 +146,9 @@ export function NewSessionPage() {
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
+  const terminalMode = chatEnabled && settings.data?.settings.chatMode === 'terminal';
+  /** A terminal was started on this draft — the terminal-mode equivalent of a first prompt. */
+  const [terminalStarted, setTerminalStarted] = useState(false);
   const view = useViewPrefs();
   const browse = useLocalOnly('pickFolder');
 
@@ -203,7 +207,12 @@ export function NewSessionPage() {
    * CLI. So ask, once, and only then: opening a process to fill a dropdown that
    * is already filled would be a `claude` spawned for nothing.
    */
-  const needsCapabilities = !!chat.data && chat.data.availableModels.length === 0 && !chat.data.blockedReason;
+  // Never in terminal mode: there are no pickers to fill, and opening a
+  // composer process to fill them would take the transcript the terminal is
+  // about to be started on — the two-writers guard would then, correctly,
+  // refuse the terminal on the strength of a CLI nobody asked for.
+  const needsCapabilities =
+    !terminalMode && !!chat.data && chat.data.availableModels.length === 0 && !chat.data.blockedReason;
   const asked = useRef(false);
   useEffect(() => {
     if (!draft || !needsCapabilities || asked.current) return;
@@ -227,8 +236,14 @@ export function NewSessionPage() {
    * writes no transcript (measured), but a session started from a terminal in
    * the same second would be indistinguishable — and jumping out of a page with
    * an empty box is the one thing this must never do.
+   *
+   * In terminal mode the equivalent is the terminal having been started: the
+   * CLI is there, waiting to be typed into, and the transcript appears when the
+   * first turn runs exactly as it would from the composer. Nothing is lost by
+   * arriving at the session view — the pseudo-terminal belongs to the server, so
+   * it survives the navigation and comes back attached.
    */
-  const sent = pending.length > 0;
+  const sent = pending.length > 0 || terminalStarted;
   const born = useQuery({
     queryKey: ['session', draft?.sessionId ?? ''],
     queryFn: () => api.session(draft?.sessionId ?? ''),
@@ -511,19 +526,26 @@ export function NewSessionPage() {
                 follow pill here for `Send` to step aside from. */}
             {draft && (
               <div className="sticky bottom-0 mt-auto pt-6">
-                <Composer
-                  sessionId={draft.sessionId}
-                  // Nothing to continue from — so the last new session is the
-                  // best evidence there is, and the composer's own fallbacks
-                  // are what a first-ever one gets.
-                  lastModel={started?.model ?? null}
-                  lastEffort={started?.effort ?? null}
-                  lastMode={started?.permissionMode ?? null}
-                  onSent={(text, how) => {
-                    setPending((prev) => [...prev, { text, at: Date.now() }]);
-                    localStorage.setItem(REMEMBERED_MODEL, JSON.stringify(how));
-                  }}
-                />
+                {terminalMode ? (
+                  <SessionTerminal
+                    sessionId={draft.sessionId}
+                    onStarted={() => setTerminalStarted(true)}
+                  />
+                ) : (
+                  <Composer
+                    sessionId={draft.sessionId}
+                    // Nothing to continue from — so the last new session is the
+                    // best evidence there is, and the composer's own fallbacks
+                    // are what a first-ever one gets.
+                    lastModel={started?.model ?? null}
+                    lastEffort={started?.effort ?? null}
+                    lastMode={started?.permissionMode ?? null}
+                    onSent={(text, how) => {
+                      setPending((prev) => [...prev, { text, at: Date.now() }]);
+                      localStorage.setItem(REMEMBERED_MODEL, JSON.stringify(how));
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>

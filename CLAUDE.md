@@ -12,7 +12,7 @@ The detail lives in `docs/`, one document per area. **Load the ones that match w
 | [The viewer](docs/AI_VIEWER.md) | anything under `web/src/`: folding, deep links, highlighting, the find bar, file references, the working indicator |
 | [Search](docs/AI_SEARCH.md) | the index, the deep scan, folding/matching, the paged match list |
 | [Architecture](docs/AI_ARCHITECTURE.md) | the scan → summarize → cache → enrich pipeline, a new endpoint, where state lives, containment rules |
-| [Running Claude](docs/AI_RUNNING_CLAUDE.md) | subscription usage, the auto-reload, the composer — anything that talks to Anthropic or spawns `claude` |
+| [Running Claude](docs/AI_RUNNING_CLAUDE.md) | subscription usage, the auto-reload, the composer, the embedded terminal — anything that talks to Anthropic or spawns `claude` |
 | [Remote access](docs/AI_REMOTE_ACCESS.md) | the bind address, signing in, the local/remote split, anything that acts on the server's own desktop |
 | [Logging](docs/AI_LOGGING.md) | adding logging, or working out what an installed instance did |
 | [Distribution](docs/AI_DISTRIBUTION.md) | packaging, the installer, self-update, cutting a release |
@@ -70,7 +70,8 @@ shared/src/     types.ts · api.ts · prices.ts · recache.ts · fold.ts · matc
 server/src/
   config.ts     data root / cache dir / logs dir / port resolution, dev-instance split
   core/         scanner → summarizer → cache → enricher → watcher, parser, index,
-                search · deepSearch · searchText, usage · autoReload · sessionChat,
+                search · deepSearch · searchText, usage · autoReload,
+                sessionChat · sessionTerminal · writerGuard,
                 updates · updateLogImport, logger · logReader, retention, bind
   routes/       the REST surface (shapes in shared/src/api.ts)
   util/         launcher (executable resolution), sameOrigin, fetchError, firewall
@@ -91,6 +92,8 @@ scripts/        package.mjs · release.mjs
 - **Session renames are local overrides**; the UI always surfaces `originalTitle` beside them. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **A starred message keeps its own copy of the text**, keyed on the message's canonical uuid, and starring never invalidates `['session', id]`. → [Architecture](docs/AI_ARCHITECTURE.md)
 - **The reading half is ours; the Agent SDK is only used to run Claude.** → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
+- **Only one thing may hold a session's transcript at a time** — the composer, an embedded terminal or a real terminal window — and every door asks `core/writerGuard.ts`, never its own memory. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
+- **The embedded terminal runs `claude.exe` with no shell around it**, and the pseudo-terminal belongs to the server rather than to the tab. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **Everything in `~/.claude` has an expiry date** (`cleanupPeriodDays`), fixtures included. → [Transcripts](docs/AI_TRANSCRIPTS.md)
 - **The installed release is never touched from here** — not its port, not its data folder, not its scheduled task. Everything this repo runs is the dev instance. → [Two instances](#two-instances-and-the-line-between-them)
 - **Never log with `console.*`** in new code. → [Logging](docs/AI_LOGGING.md)
@@ -98,4 +101,4 @@ scripts/        package.mjs · release.mjs
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 37 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 38 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

@@ -8,6 +8,7 @@
 //   versions/v<version>/
 //     node/node.exe                               <- embedded Node runtime
 //     server.cjs                                  <- esbuild bundle of the server
+//     node_modules/@lydell/node-pty*              <- the ONE native dependency
 //     web/                                        <- built frontend (web/dist)
 //     start-hidden.vbs, update-helper.ps1         <- per-version runtime scripts
 //
@@ -18,6 +19,7 @@ import AdmZip from 'adm-zip';
 import { build } from 'esbuild';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,6 +66,10 @@ await build({
   target: 'node24',
   format: 'cjs',
   outfile: path.join(verDir, 'server.cjs'),
+  // The embedded terminal's pseudo-console is a compiled `.node` binary, and a
+  // binary cannot go inside a JS bundle. It is copied beside server.cjs below
+  // instead, where Node's own resolution finds it walking up from that file.
+  external: ['@lydell/node-pty'],
   // The Agent SDK calls `createRequire(import.meta.url)` at module scope. In a
   // CJS bundle esbuild has no import.meta to give it, so that argument arrives
   // undefined and the whole bundle throws ERR_INVALID_ARG_VALUE before a line
@@ -74,10 +80,66 @@ await build({
   logLevel: 'warning',
 });
 
-// 2. Frontend.
+// 2. The one native dependency, beside the bundle.
+//
+// This is the only reason a release carries a node_modules at all. Two packages:
+// the wrapper, whose `index.js` requires the platform one by name, and the
+// win32-x64 build itself, which holds `conpty.node` and the ConPTY runtime
+// (conpty.dll + OpenConsole.exe). Both go under `versions/v<version>/`, so an
+// update carries them like everything else and two versions never share one.
+//
+// The `.pdb` files are debug symbols for a debugger nobody here is running, and
+// they are 10.6 of the package's 12 MB. Dropped.
+console.log('[package] copying the native pseudo-terminal...');
+const requireFromServer = createRequire(path.join(rootDir, 'server', 'package.json'));
+
+/**
+ * The directory a package actually lives in.
+ *
+ * `require.resolve` answers with an ENTRY POINT, and these packages export only
+ * `./lib/index.js`, so neither the dirname of that nor `resolve('<pkg>/package.json')`
+ * is the answer. Walk up until a package.json says its own name.
+ */
+function packageDirOf(req, name) {
+  let dir = path.dirname(req.resolve(name));
+  for (let i = 0; i < 8; i++) {
+    const manifest = path.join(dir, 'package.json');
+    if (fs.existsSync(manifest)) {
+      try {
+        if (JSON.parse(fs.readFileSync(manifest, 'utf8')).name === name) return dir;
+      } catch {
+        // Unreadable manifest on the way up — keep climbing.
+      }
+    }
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  console.error(`Could not locate the package directory for ${name} — run "pnpm install" first.`);
+  process.exit(1);
+}
+
+const ptyWrapperDir = packageDirOf(requireFromServer, '@lydell/node-pty');
+const ptyPlatformDir = packageDirOf(
+  createRequire(path.join(ptyWrapperDir, 'package.json')),
+  '@lydell/node-pty-win32-x64',
+);
+for (const [src, name] of [
+  [ptyWrapperDir, 'node-pty'],
+  [ptyPlatformDir, 'node-pty-win32-x64'],
+]) {
+  fs.cpSync(src, path.join(verDir, 'node_modules', '@lydell', name), {
+    recursive: true,
+    // pnpm links rather than copies, so the sources are symlinks into the store.
+    dereference: true,
+    filter: (from) => !from.endsWith('.pdb'),
+  });
+}
+
+// 3. Frontend.
 fs.cpSync(webDist, path.join(verDir, 'web'), { recursive: true });
 
-// 3. Embedded Node runtime (downloaded once, cached under dist/.node-cache).
+// 4. Embedded Node runtime (downloaded once, cached under dist/.node-cache).
 const nodeZipName = `node-v${NODE_VERSION}-win-x64.zip`;
 const nodeCache = path.join(distDir, '.node-cache', nodeZipName);
 if (!fs.existsSync(nodeCache)) {
@@ -100,7 +162,7 @@ if (!nodeExe) {
 fs.mkdirSync(path.join(verDir, 'node'), { recursive: true });
 fs.writeFileSync(path.join(verDir, 'node', 'node.exe'), nodeExe.getData());
 
-// 4. Installer / runtime scripts.
+// 5. Installer / runtime scripts.
 const installerDir = path.join(rootDir, 'installer');
 const rootScripts = ['install.ps1', 'uninstall.ps1', 'launch.vbs'];
 // The installer scripts also ship inside the version folder: the in-app
@@ -129,7 +191,7 @@ for (const [files, target] of [
   }
 }
 
-// 5. Zip + checksums.
+// 6. Zip + checksums.
 const zipName = `claude-history-${version}-win-x64.zip`;
 const zipPath = path.join(distDir, zipName);
 fs.rmSync(zipPath, { force: true });

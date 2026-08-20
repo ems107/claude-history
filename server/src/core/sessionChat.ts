@@ -22,12 +22,13 @@ import type {
   ChatState,
   ChatStatus,
 } from '@claude-history/shared';
-import { CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import { CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
 import { createLogger } from './logger.ts';
+import { appHolderOf, pidOwnedByApp, registerWriter, type TranscriptWriter } from './writerGuard.ts';
 
 const log = createLogger('chat');
 
@@ -298,7 +299,8 @@ function messageChannel() {
  * structured — header, options, descriptions — and is answered from the UI,
  * which is the whole point: the app changes how it looks, not how it behaves.
  */
-export class SessionChatService {
+export class SessionChatService implements TranscriptWriter {
+  readonly what = 'the composer';
   readonly events = new EventEmitter();
   private readonly procs = new Map<string, ChatProcess>();
   /** Ids reserved for sessions that do not exist yet — see `Draft`. */
@@ -326,6 +328,7 @@ export class SessionChatService {
   ) {
     // One listener per SSE client, same as the index's emitter.
     this.events.setMaxListeners(100);
+    registerWriter(this);
   }
 
   start(): void {
@@ -354,12 +357,21 @@ export class SessionChatService {
     // session, and two writers is exactly what produces the duplicated uuids
     // and replayed segments the parser has to undo.
     //
-    // Our own process is excluded by pid: it registers itself there too. And
-    // `pidAlive` is re-checked rather than trusted from the list, which is only
-    // rebuilt when something writes to that directory — a CLI killed outright
-    // writes nothing on the way out, so its entry would block us forever.
+    // The other half of this app first, so a refusal names what is holding it
+    // rather than blaming a terminal that does not exist: an embedded terminal
+    // registers a pid in that same directory, and without this the message
+    // would be about "a terminal" — true, and useless.
+    const holder = appHolderOf(sessionId, this);
+    if (holder) {
+      return `The app is already running Claude in this session through ${holder} — stop it there first, or two writers would corrupt its transcript.`;
+    }
+    // Our own processes are excluded by pid: they register themselves there
+    // too. And `pidAlive` is re-checked rather than trusted from the list,
+    // which is only rebuilt when something writes to that directory — a CLI
+    // killed outright writes nothing on the way out, so its entry would block
+    // us forever.
     if (
-      this.index.liveSessions.some((l) => l.sessionId === sessionId && !this.ownsPid(l.pid) && pidAlive(l.pid))
+      this.index.liveSessions.some((l) => l.sessionId === sessionId && !pidOwnedByApp(l.pid) && pidAlive(l.pid))
     ) {
       return 'This session is open in a terminal — two writers would corrupt its transcript.';
     }
@@ -378,7 +390,7 @@ export class SessionChatService {
     else if (p?.working) state = p.starting ? 'starting' : 'working';
     else if (lastError) state = 'error';
     const idleCloses =
-      p && !p.working ? p.lastActivityAt + Math.max(1, s.chatIdleTimeoutMinutes) * 60_000 : null;
+      p && !p.working ? p.lastActivityAt + CHAT_IDLE_TIMEOUT_MINUTES * 60_000 : null;
     return {
       sessionId,
       state,
@@ -654,9 +666,14 @@ export class SessionChatService {
     return out;
   }
 
-  private ownsPid(pid: number): boolean {
+  ownsPid(pid: number): boolean {
     for (const p of this.procs.values()) if (p.pid === pid) return true;
     return false;
+  }
+
+  /** `TranscriptWriter`: is a `claude` of ours alive in this session right now? */
+  holds(sessionId: string): boolean {
+    return this.procs.has(sessionId);
   }
 
   // ---- internals ----
@@ -988,7 +1005,7 @@ export class SessionChatService {
   }
 
   private sweep(): void {
-    const idleMs = Math.max(1, this.settings().chatIdleTimeoutMinutes) * 60_000;
+    const idleMs = CHAT_IDLE_TIMEOUT_MINUTES * 60_000;
     const now = Date.now();
     // Reservations that have become sessions, and reservations nobody ever used.
     // The first is the point — once the transcript exists the index is the

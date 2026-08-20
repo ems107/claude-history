@@ -19,6 +19,14 @@ Everything here was verified on this machine. The user-facing half (what the ins
 
 `pnpm package` (`scripts/package.mjs`) esbuild-bundles the server to `server.cjs` — CJS, so **`main.ts` must stay free of top-level await** — embeds a pinned Node runtime, and assembles the versioned layout plus the installer scripts into `dist/`. It also carries the `import.meta.url` shim the Agent SDK needs ([AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md)).
 
+### The one thing that cannot go in the bundle
+
+A compiled `.node` binary is not JavaScript, so the embedded terminal's pseudo-console is `external` in the esbuild call and copied beside `server.cjs` instead — **`versions/v<version>/node_modules/@lydell/node-pty*`, which is the only `node_modules` a release carries**. Per version, so an update brings its own and two versions never share one; the updater extracts `versions/` whole, so nothing in `update-helper.ps1` had to learn about it.
+
+- **Finding the packages is the fiddly half.** `require.resolve` answers with an entry point, and these export only `./lib/index.js`, so neither its dirname nor `resolve('<pkg>/package.json')` is the package directory — `packageDirOf` walks up until a manifest says its own name. pnpm links rather than copies, so `dereference: true` is not optional.
+- **The `.pdb` files are dropped.** They are debug symbols for a debugger nobody here is running, and they are 10.6 of the package's 12 MB. What is left costs the zip 0.9 MB.
+- **The prebuild is N-API**, so bumping `NODE_VERSION` does not invalidate it — which is the whole reason that fork was chosen over building from source. Verify it against the PINNED runtime rather than the machine's: from the staged layout, `versions/v<version>/node/node.exe` must resolve `@lydell/node-pty` and spawn a console.
+
 **A local build is always version `dev`** (folder `versions/vdev`); only `release.mjs` passes `--release --version X.Y.Z`. Never hand a real version number to a local build: an install reporting `1.3.1` would treat the actual 1.3.1 release as already installed and never offer it. A `dev` install is still a managed install (updates apply) and is offered every published release, since `dev` has no place in the version order.
 
 ## The installed layout
@@ -29,7 +37,7 @@ Everything here was verified on this machine. The user-facing half (what the ins
 ├── install.json                               <- marker; the updater detects installed mode by it
 ├── update.log
 ├── current  -> junction -> versions\vX.Y.Z    <- the scheduled task points THROUGH this
-└── versions\vX.Y.Z\{node\node.exe, server.cjs, web\, start-hidden.vbs, update-helper.ps1}
+└── versions\vX.Y.Z\{node\node.exe, server.cjs, node_modules\, web\, start-hidden.vbs, update-helper.ps1}
 ```
 
 `install.ps1` **relocates** the app to `%LOCALAPPDATA%\Programs\claude-history` (overridable with `-InstallTo`), so the user can extract the zip anywhere and delete it afterwards. `-Portable` skips the managed install entirely and just runs the server in the console — no task, no shortcut, no `install.json`, so the updater reports `installed: false` and refuses to apply. A **dev instance is not an install either** and is detected the same way: `detectInstall()` resolves from the running entry path, so a source run can never find — let alone swap — the release's `current` junction, whatever port it is on. **`Program Files` is deliberately NOT supported**: self-update writes into the install folder and would need elevation on every update.

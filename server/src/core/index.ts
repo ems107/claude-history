@@ -11,13 +11,13 @@ import type {
 } from '@claude-history/shared';
 import {
   AUTO_RELOAD_MESSAGE_MAX,
+  CHAT_UI_MODES,
   CLAUDE_EFFORTS,
   CLAUDE_MODELS,
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
   defaultSettings,
   LOG_LEVEL_CHOICES,
-  MIN_CHAT_IDLE_MINUTES,
   MIN_LOG_RETENTION_DAYS,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
@@ -585,11 +585,9 @@ export class SessionIndex {
       )
         ? (patch.autoReloadModel ?? this.settings.autoReloadModel)
         : DEFAULT_SETTINGS.autoReloadModel,
-      chatIdleTimeoutMinutes: clampInt(
-        patch.chatIdleTimeoutMinutes,
-        this.settings.chatIdleTimeoutMinutes,
-        MIN_CHAT_IDLE_MINUTES,
-      ),
+      chatMode: (CHAT_UI_MODES as readonly string[]).includes(patch.chatMode ?? this.settings.chatMode)
+        ? (patch.chatMode ?? this.settings.chatMode)
+        : DEFAULT_SETTINGS.chatMode,
       autoReloadMessage: (patch.autoReloadMessage ?? this.settings.autoReloadMessage).slice(
         0,
         AUTO_RELOAD_MESSAGE_MAX,
