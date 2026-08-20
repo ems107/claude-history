@@ -1,6 +1,7 @@
 import type { UpdateStatusResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { busyWith } from '../util/appBusy.ts';
 
 export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/update', async (): Promise<UpdateStatusResponse> => ctx.updates.getStatus());
@@ -14,9 +15,10 @@ export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): voi
   app.post<{ Body?: { version?: string } }>('/api/update/apply', async (request, reply) => {
     // An update ends with this server being killed and replaced, which would
     // cut off a turn in flight mid-answer.
-    if (ctx.chat.busy) {
+    const busy = busyWith(ctx);
+    if (busy) {
       return reply.code(409).send({
-        error: 'Claude is answering a prompt sent from the app — updating would cut it off. Wait for it to finish.',
+        error: `Claude is ${busy} — updating would cut it off. Wait for it to finish.`,
       });
     }
     try {

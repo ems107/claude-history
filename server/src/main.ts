@@ -7,6 +7,7 @@ import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/
 import { DeepSearchService } from './core/deepSearch.ts';
 import { SearchService } from './core/search.ts';
 import { SessionChatService } from './core/sessionChat.ts';
+import { SessionTerminalService } from './core/sessionTerminal.ts';
 import { startUpdateLogImport } from './core/updateLogImport.ts';
 import { UpdateService } from './core/updates.ts';
 import { UsageService } from './core/usage.ts';
@@ -50,13 +51,30 @@ async function main(): Promise<void> {
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const chat = new SessionChatService(config, index, () => index.getSettings());
-  const app = await buildApp({ config, bind, index, search, deepSearch, updates, usage, autoReload, chat });
+  const terminals = new SessionTerminalService(config, index, chat, () => index.getSettings());
+  const app = await buildApp({
+    config,
+    bind,
+    index,
+    search,
+    deepSearch,
+    updates,
+    usage,
+    autoReload,
+    chat,
+    terminals,
+  });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
   chat.start();
-  // The `claude` processes it owns outlive this one unless something kills
+  // Loading the native pseudo-terminal module. Awaited so the very first status
+  // read already knows whether the feature works; a failure is recorded inside
+  // and reported through `blockedReason`, never thrown.
+  await terminals.start();
+  // The `claude` processes they own outlive this one unless something kills
   // them; the logger runs this on every exit path there is.
   onShutdown(() => chat.shutdown());
+  onShutdown(() => terminals.shutdown());
 
   const watcher = new Watcher(config, index);
   watcher.start();

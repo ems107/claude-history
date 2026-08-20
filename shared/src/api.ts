@@ -597,6 +597,14 @@ export interface UpdateStatusResponse {
 
 // ---- Settings (persisted in userdata.json) ----
 
+/**
+ * The two ways of talking to Claude from the app. Exclusive on purpose: both at
+ * once would be two writers on one transcript, which is the corruption
+ * everything around this feature exists to prevent.
+ */
+export const CHAT_UI_MODES = ['composer', 'terminal'] as const;
+export type ChatUiMode = (typeof CHAT_UI_MODES)[number];
+
 export interface AppSettings {
   /** Poll GitHub for new releases in the background. */
   updateAutoCheck: boolean;
@@ -677,9 +685,25 @@ export interface AppSettings {
    */
   chatEnabled: boolean;
   /**
+   * WHICH of the two ways of talking to Claude the app offers, once
+   * `chatEnabled` is on. Meaningless while it is off -- nothing is drawn at the
+   * foot of a session either way, so this is never read there.
+   *
+   * `composer`: the bubble driven by the Agent SDK. Structured questions, plan
+   * review, the model and effort pickers -- a different client for the same CLI.
+   * `terminal`: the real Claude Code CLI in a pseudo-terminal, drawn in the page.
+   * Everything the TUI can do, and none of the panels the SDK's control channel
+   * is what makes possible.
+   */
+  chatMode: ChatUiMode;
+  /**
    * Minutes of silence before a chat process is closed (minimum
    * MIN_CHAT_IDLE_MINUTES). It costs nothing to keep one alive, but it holds a
    * slot and a `claude` process, and a forgotten tab should not own either.
+   *
+   * The composer's alone: an embedded terminal is never closed by a timer. A
+   * process between turns has nothing to lose; a terminal you left half way
+   * through a sentence does.
    */
   chatIdleTimeoutMinutes: number;
   /**
@@ -716,6 +740,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadCwd: '',
   autoReloadHideSessions: false,
   chatEnabled: false,
+  chatMode: 'composer',
   chatIdleTimeoutMinutes: 10,
   remoteAccessEnabled: false,
   logLevel: 'info',
@@ -1102,6 +1127,68 @@ export interface ChatCreateResponse {
   cwd: string;
 }
 
+// ---- The embedded terminal (chatMode: 'terminal') ----
+
+/** Lower bound on the pseudo-terminal, so a collapsed panel cannot ask for 0x0. */
+export const TERMINAL_MIN_COLS = 20;
+export const TERMINAL_MIN_ROWS = 4;
+/** Upper bound, so a hostile or broken client cannot ask for a million-column console. */
+export const TERMINAL_MAX_COLS = 500;
+export const TERMINAL_MAX_ROWS = 200;
+
+/** How the CLI inside a terminal ended. Kept after the process is gone: the last screen is the diagnosis. */
+export interface TerminalExit {
+  /** Process exit code. `null` when it was killed by a signal rather than exiting. */
+  code: number | null;
+  /** Local ISO-8601 with offset, like every other date crossing this API. */
+  at: string;
+}
+
+export interface TerminalStatus {
+  sessionId: string;
+  /** A pseudo-terminal exists for this session -- whether or not the CLI inside it is still alive. */
+  open: boolean;
+  /** The CLI is still running. `open && !running` is a terminal holding a dead process's last screen. */
+  running: boolean;
+  /**
+   * The pid of the `claude.exe` inside, or null before ConPTY has reported it
+   * (~100 ms) and after it exits. This is the pid the two-writers guard excludes,
+   * which is the whole reason the CLI is spawned with no shell around it.
+   */
+  pid: number | null;
+  /** Local ISO-8601 with offset. */
+  startedAt: string | null;
+  exit: TerminalExit | null;
+  /** The folder it runs in, so the start bar can say where before anything is spawned. */
+  cwd: string | null;
+  /**
+   * Why it cannot be started, in the words shown to the user. Null when it can.
+   * ONE string for the endpoint and the button, exactly like `sendBlockedReason`.
+   */
+  blockedReason: string | null;
+}
+
+export interface TerminalStartRequest {
+  cols: number;
+  rows: number;
+}
+
+/**
+ * What the browser sends up the socket. Output comes back the other way as raw
+ * binary -- it is 99% of the traffic and wrapping it in JSON would cost a parse
+ * per keystroke echoed.
+ */
+export type TerminalClientMessage =
+  | { t: 'i'; d: string }
+  | { t: 'r'; cols: number; rows: number };
+
+/** What the server sends as JSON (text frames). Anything binary is PTY output. */
+export type TerminalServerMessage =
+  | { t: 'exit'; code: number | null }
+  /** Sent once, after the scrollback replay, so the client knows the backlog has ended. */
+  | { t: 'ready'; pid: number | null; running: boolean }
+  | { t: 'error'; message: string };
+
 // ---- Claude Code's own history retention (cleanupPeriodDays) ----
 
 /**
@@ -1267,6 +1354,8 @@ export const LOG_SOURCES = [
   'auto-reload',
   /** The Claude Code processes the composer talks to. */
   'chat',
+  /** The Claude Code processes running inside an embedded terminal. */
+  'terminal',
   /** Reading Claude Code's own `cleanupPeriodDays` out of its settings files. */
   'retention',
   /** Reading and launching the local files a transcript names. */
@@ -1410,6 +1499,14 @@ export type ServerEvent =
    * they started a turn or finished one.
    */
   | { type: 'chat-changed'; id: string }
+  /**
+   * A session's embedded terminal started, exited or was closed. Its own event
+   * for the reason `chat-changed` is one, and one more: the PTY lives in this
+   * process, and `~/.claude/sessions` only ever hears about the CLI inside it --
+   * never about the terminal around it, which outlives the CLI so its last
+   * screen stays readable.
+   */
+  | { type: 'terminal-changed'; id: string }
   /**
    * A message was starred or unstarred. Its own event rather than
    * `session-updated`, which invalidates `['session', id]` — and that is a full

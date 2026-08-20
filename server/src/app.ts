@@ -1,4 +1,5 @@
 import fastifyStatic from '@fastify/static';
+import fastifyWebsocket from '@fastify/websocket';
 import { LOCAL_ONLY_ACTIONS } from '@claude-history/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
@@ -26,6 +27,7 @@ import { registerSettingsRoutes } from './routes/settings.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerStarRoutes } from './routes/stars.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
+import { registerTerminalRoutes } from './routes/terminal.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
 import { registerUpdateRoutes } from './routes/updates.ts';
 import { registerUserdataRoutes } from './routes/userdata.ts';
@@ -71,6 +73,13 @@ function fastifyLogStream(): { write(line: string): void } {
 export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const { config } = ctx;
   const app = Fastify({ logger: { level: 'warn', stream: fastifyLogStream() } });
+
+  // The embedded terminal is the only thing here that needs a socket both ways:
+  // everything else announces over the one SSE stream and asks over HTTP. It is
+  // registered before the hooks so an upgrade goes through them like any other
+  // GET — the session check above all, which is what keeps a terminal off the
+  // network until somebody has signed in.
+  await app.register(fastifyWebsocket);
 
   /**
    * Authentication, and it comes first because everything after it assumes the
@@ -155,6 +164,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
   registerChatRoutes(app, ctx);
+  registerTerminalRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
   registerFirewallRoutes(app, ctx);

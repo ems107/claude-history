@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { createLogger } from '../core/logger.ts';
 import type { ReadCause } from '../core/usage.ts';
+import { busyWith } from '../util/appBusy.ts';
 import { APP_VERSION } from '../version.ts';
 
 const log = createLogger('server');
@@ -117,9 +118,10 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn('uninstall refused: an update is being installed');
       return reply.code(409).send({ error: 'An update is being installed right now. Wait for it to finish.' });
     }
-    if (ctx.chat.busy) {
-      log.warn('uninstall refused: a prompt is being answered');
-      return reply.code(409).send({ error: 'Claude is answering a prompt sent from the app. Wait for it to finish.' });
+    const uninstallBusy = busyWith(ctx);
+    if (uninstallBusy) {
+      log.warn(`uninstall refused: Claude is ${uninstallBusy}`);
+      return reply.code(409).send({ error: `Claude is ${uninstallBusy}. Wait for it to finish.` });
     }
     const script = path.join(install.versionDir, 'uninstall.ps1');
     if (!fs.existsSync(script)) {
@@ -159,10 +161,11 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       });
     }
     // Same reasoning one step down: stopping now kills the turn mid-answer.
-    if (ctx.chat.busy) {
-      log.warn('stop refused: a prompt is being answered');
+    const stopBusy = busyWith(ctx);
+    if (stopBusy) {
+      log.warn(`stop refused: Claude is ${stopBusy}`);
       return reply.code(409).send({
-        error: 'Claude is answering a prompt sent from the app — stopping the server would cut it off. Wait for it to finish.',
+        error: `Claude is ${stopBusy} — stopping the server would cut it off. Wait for it to finish.`,
       });
     }
     void reply.send({ ok: true });
@@ -202,11 +205,13 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       });
     }
     // The rule that cost a session once: this kills the `claude` process the
-    // composer is talking through, mid-answer.
-    if (ctx.chat.busy) {
-      log.warn('restart refused: a prompt is being answered');
+    // composer is talking through — or the one inside an embedded terminal —
+    // mid-answer.
+    const restartBusy = busyWith(ctx);
+    if (restartBusy) {
+      log.warn(`restart refused: Claude is ${restartBusy}`);
       return reply.code(409).send({
-        error: 'Claude is answering a prompt sent from the app — restarting the server would cut it off. Wait for it to finish.',
+        error: `Claude is ${restartBusy} — restarting the server would cut it off. Wait for it to finish.`,
       });
     }
     const script = path.join(install.versionDir, 'update-helper.ps1');
