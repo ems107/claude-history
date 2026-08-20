@@ -117,6 +117,17 @@ export function useEvents(): void {
           void queryClient.invalidateQueries({ queryKey: ['sessions'] });
           void queryClient.invalidateQueries({ queryKey: ['live'] });
           break;
+        // A terminal opened, its CLI exited, or it was closed. Its own event
+        // rather than `live-changed`: the pseudo-terminal outlives the CLI
+        // inside it on purpose, so ~/.claude/sessions cannot speak for it.
+        case 'terminal-changed':
+          void queryClient.invalidateQueries({ queryKey: ['terminal', event.id] });
+          // The buttons that refuse while a terminal holds a session read this:
+          // the composer's `blockedReason` and "Resume in terminal".
+          void queryClient.invalidateQueries({ queryKey: ['chat', event.id] });
+          void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+          void queryClient.invalidateQueries({ queryKey: ['live'] });
+          break;
         // Only the stars. Never `['session', id]`: the transcript did not
         // change, and re-parsing a multi-MB one to redraw a star would be the
         // most expensive way possible to colour a glyph.

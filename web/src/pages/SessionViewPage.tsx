@@ -17,6 +17,7 @@ import { anchorOfKey, focusKeyAt, parseHighlight, setHighlightTerms, TOOL_PARAM 
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
+import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
@@ -32,6 +33,7 @@ import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
+import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
@@ -81,6 +83,9 @@ export function SessionViewPage() {
   });
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
+  // Which of the two the app offers at the foot of a session. Meaningless while
+  // `chatEnabled` is off, and never read there: nothing is drawn either way.
+  const terminalMode = chatEnabled && settings.data?.settings.chatMode === 'terminal';
   /**
    * Prompts sent from the composer that the transcript has not caught up with.
    * `at` is when it was accepted, which is also when the turn really began —
@@ -344,6 +349,10 @@ export function SessionViewPage() {
       if (e.key !== 'Escape') return;
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      // Escape inside an embedded terminal is the CLI's — it closes ITS menus.
+      // (The textarea check above already covers where xterm usually puts the
+      // focus; this is the one that stays true when it moves.)
+      if (isFromTerminal(e.target)) return;
       // Innermost first: the file sits on top of the subagent drawer, which sits
       // on top of the list that opened it — a path is often clicked from inside a
       // subagent report, and that whole stack has to unwind in order.
@@ -954,17 +963,25 @@ export function SessionViewPage() {
                     className="sticky bottom-0 mt-auto pt-6"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Composer
-                      sessionId={id}
-                      // The box does arithmetic with it: without this, Send ends
-                      // up under the follow pill at the widths where the column
-                      // reaches the window's edge.
-                      columnWidth={columnWidth}
-                      onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
-                      lastModel={lastAnswer?.model ?? null}
-                      lastEffort={lastAnswer?.effort ?? null}
-                      lastMode={lastMode}
-                    />
+                    {/* The two modes share this slot and everything it imposes.
+                        The wrapper is the same for both deliberately: what
+                        changes is how you talk to Claude, not where the
+                        conversation ends. */}
+                    {terminalMode ? (
+                      <SessionTerminal sessionId={id} columnWidth={columnWidth} />
+                    ) : (
+                      <Composer
+                        sessionId={id}
+                        // The box does arithmetic with it: without this, Send ends
+                        // up under the follow pill at the widths where the column
+                        // reaches the window's edge.
+                        columnWidth={columnWidth}
+                        onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
+                        lastModel={lastAnswer?.model ?? null}
+                        lastEffort={lastAnswer?.effort ?? null}
+                        lastMode={lastMode}
+                      />
+                    )}
                   </div>
                 )}
               </div>

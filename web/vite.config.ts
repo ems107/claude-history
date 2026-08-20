@@ -12,6 +12,10 @@ export default defineConfig({
       '/api': {
         target: `http://127.0.0.1:${process.env.PORT || 7434}`,
         changeOrigin: false,
+        // The embedded terminal's socket lives under /api too, and without this
+        // the upgrade is answered with the SPA's index.html instead of being
+        // forwarded — which reads as a terminal that never connects.
+        ws: true,
       },
     },
   },
