@@ -1206,7 +1206,7 @@ export interface TerminalStatus {
   /** Local ISO-8601 with offset. */
   startedAt: string | null;
   exit: TerminalExit | null;
-  /** The folder it runs in, so the start bar can say where before anything is spawned. */
+  /** The folder it runs in — the strip's own subtitle, and known before anything is spawned. */
   cwd: string | null;
   /**
    * Why it cannot be started, in the words shown to the user. Null when it can.
