@@ -129,20 +129,22 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 
 `chatEnabled` decides whether the app talks to Claude at all. `chatMode` decides HOW, and is meaningless while the first is off — nothing is drawn at the foot of a session either way, so nothing reads it there:
 
-| | `composer` (default) | `terminal` |
+| | `terminal` (default) | `composer` |
 | --- | --- | --- |
-| What runs | the Agent SDK driving `claude` | `claude.exe` in a pseudo-console |
-| Owns | `core/sessionChat.ts` | `core/sessionTerminal.ts` |
-| Questions and plans | structured panels, plan comments | whatever the TUI draws |
-| Model / effort / mode | pickers beside Send | `/model` inside the CLI |
-| Idle timeout | `chatIdleTimeoutMinutes` | none, ever |
-| Survives closing the tab | the process does; nothing is drawn | the process AND the screen |
+| What runs | `claude.exe` in a pseudo-console | the Agent SDK driving `claude` |
+| Owns | `core/sessionTerminal.ts` | `core/sessionChat.ts` |
+| Questions and plans | whatever the TUI draws | structured panels, plan comments |
+| Model / effort / mode | `/model` inside the CLI | pickers beside Send |
+| Idle timeout | none, ever | `chatIdleTimeoutMinutes` |
+| Survives closing the tab | the process AND the screen | the process does; nothing is drawn |
+
+**`chatEnabled` is ON by default**, unlike `autoReloadEnabled`, and the difference is what each does when nobody is looking: the auto-reload spawns sessions on a timer and had to be asked for, while this spawns nothing until somebody presses a button or types a prompt. **The default mode is `terminal`**, and the composer is the one the UI marks experimental — not because it is newer, it is not, but because everything it draws it draws itself, while a terminal is the CLI with nothing in between.
 
 **They are exclusive and must stay so**: both at once is two writers on one transcript, which is the corruption everything around this feature exists to prevent. Each refuses while the other holds a session, and both say which one it is.
 
 ## The composer: sending a prompt from the app
 
-`core/sessionChat.ts`, off by default behind `chatEnabled`, `GET`/`POST /api/sessions/:id/chat` plus `POST /api/chat/new`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>` — or `sessionId: <id>` for one that does not exist yet, below — and `permissionMode` from the composer, `auto` unless plan mode was asked for), kept alive between turns. Where the box sits on screen — inside the conversation's own scroller — is in [AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation).
+`core/sessionChat.ts`, reached when `chatEnabled` is on and `chatMode` is `composer`, `GET`/`POST /api/sessions/:id/chat` plus `POST /api/chat/new`. One Claude Code session per conversation, driven through the **Agent SDK** (`query()` with a streaming-input generator, `resume: <id>` — or `sessionId: <id>` for one that does not exist yet, below — and `permissionMode` from the composer, `auto` unless plan mode was asked for), kept alive between turns. Where the box sits on screen — inside the conversation's own scroller — is in [AI_VIEWER.md](AI_VIEWER.md#the-end-of-the-conversation).
 
 ### Starting one that does not exist yet
 

@@ -602,7 +602,7 @@ export interface UpdateStatusResponse {
  * once would be two writers on one transcript, which is the corruption
  * everything around this feature exists to prevent.
  */
-export const CHAT_UI_MODES = ['composer', 'terminal'] as const;
+export const CHAT_UI_MODES = ['terminal', 'composer'] as const;
 export type ChatUiMode = (typeof CHAT_UI_MODES)[number];
 
 export interface AppSettings {
@@ -678,10 +678,15 @@ export interface AppSettings {
   /** Leave that folder's sessions out of the list, the filters and the counts. */
   autoReloadHideSessions: boolean;
   /**
-   * Show the composer at the foot of a session and let it send prompts to a
-   * Claude Code process the server keeps alive. Off by default: it runs Claude
-   * and spends subscription quota, so it waits to be asked for — same reasoning
-   * as `autoReloadEnabled`.
+   * Offer a way to talk to Claude at the foot of a session — which of the two is
+   * `chatMode`.
+   *
+   * ON by default, unlike `autoReloadEnabled`, and the difference is what each
+   * one does when nobody is looking. The auto-reload spawns sessions on a timer
+   * and had to be asked for; this spawns nothing at all until somebody presses
+   * a button or types a prompt. What it costs switched on is a row at the foot
+   * of the page, and what it buys is the app being somewhere you can answer
+   * from rather than only read.
    */
   chatEnabled: boolean;
   /**
@@ -689,11 +694,13 @@ export interface AppSettings {
    * `chatEnabled` is on. Meaningless while it is off -- nothing is drawn at the
    * foot of a session either way, so this is never read there.
    *
+   * `terminal` (the default): the real Claude Code CLI in a pseudo-terminal,
+   * drawn in the page. Everything the TUI can do, and none of the panels the
+   * SDK's control channel is what makes possible.
    * `composer`: the bubble driven by the Agent SDK. Structured questions, plan
-   * review, the model and effort pickers -- a different client for the same CLI.
-   * `terminal`: the real Claude Code CLI in a pseudo-terminal, drawn in the page.
-   * Everything the TUI can do, and none of the panels the SDK's control channel
-   * is what makes possible.
+   * review, the model and effort pickers -- and a different client for the same
+   * CLI, which is why it is the one marked experimental on screen: everything
+   * it draws, it draws itself.
    */
   chatMode: ChatUiMode;
   /**
@@ -739,8 +746,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadMessage: 'Hi, Claude!',
   autoReloadCwd: '',
   autoReloadHideSessions: false,
-  chatEnabled: false,
-  chatMode: 'composer',
+  chatEnabled: true,
+  chatMode: 'terminal',
   chatIdleTimeoutMinutes: 10,
   remoteAccessEnabled: false,
   logLevel: 'info',

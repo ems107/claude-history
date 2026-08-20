@@ -762,7 +762,7 @@ export function SettingsPage() {
             <Toggle
               checked={s.chatEnabled}
               onChange={(v) => save({ chatEnabled: v })}
-              label="Talk to Claude from inside a session (experimental)"
+              label="Talk to Claude from inside a session"
               hint="Continue a conversation without leaving the app, in whichever of the two ways you pick below. Either way it runs Claude Code on this machine, in that session's own folder, and the answer appears in the viewer as it is written to the transcript. It is blocked while the session is open in a terminal elsewhere: two processes writing the same transcript corrupt it."
             />
           </Row>
@@ -774,14 +774,14 @@ export function SettingsPage() {
               onChange={(chatMode) => save({ chatMode })}
               options={[
                 {
-                  value: 'composer',
-                  label: 'A composer at the foot of the conversation',
-                  hint: 'A box you type a prompt into. Questions arrive as buttons, plans can be read full screen and commented passage by passage, and the model, effort and plan mode are pickers beside Send.',
-                },
-                {
                   value: 'terminal',
                   label: 'An embedded terminal running the Claude Code CLI',
                   hint: 'The real CLI, drawn in the page where the box would be, resizable by dragging its top edge. Everything the terminal can do and nothing the app adds — and it keeps running while you read other sessions.',
+                },
+                {
+                  value: 'composer',
+                  label: 'A composer at the foot of the conversation (experimental)',
+                  hint: 'A box you type a prompt into. Questions arrive as buttons, plans can be read full screen and commented passage by passage, and the model, effort and plan mode are pickers beside Send — all of it drawn by this app rather than by Claude Code, which is what makes it the experimental one.',
                 },
               ]}
             />
