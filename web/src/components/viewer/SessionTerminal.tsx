@@ -85,7 +85,6 @@ export function SessionTerminal({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
   /**
    * Whether the program inside has asked for the kitty keyboard protocol.
    *
@@ -180,7 +179,6 @@ export function SessionTerminal({
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
-    socketRef.current = socket;
 
     const decoder = new TextDecoder();
     socket.onmessage = (event) => {
@@ -286,7 +284,6 @@ export function SessionTerminal({
       input.dispose();
       resize.dispose();
       socket.close();
-      socketRef.current = null;
     };
   }, [open, sessionId, queryClient]);
 
