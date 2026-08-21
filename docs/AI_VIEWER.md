@@ -457,13 +457,12 @@ folded text is a decision, not somewhere to find yourself.
   and nothing after it is.
 - **Kinds are chips with their own counts**, so turning one off is informed
   rather than a guess, and a kind with nothing in it disables itself.
-- **A row in the list leads with WHEN**, before the role: the rows come out in
-  reading order, so the clock is the column that lines up down the list and
-  gives it its shape. Short there and full on the hover, with the relative time. The rows are lines lifted out of a conversation, and a
-  hundred of them all reading TOOL are otherwise the same row a hundred times;
-  the clock is the only thing that puts them back. `SearchSnippet` carries no
-  timestamp — the server's rows have none to give — so it rides on `FindUnit`
-  and reaches `SnippetRow` as an optional prop.
+- **A row in the list leads with WHEN**, before the role — the same clock the
+  global search's rows now carry, and for the same reasons:
+  [AI_SEARCH.md](AI_SEARCH.md#a-row-says-when-it-was-written). What is this
+  bar's own is where the hour comes from: `FindUnit.timestamp`, which
+  `hitSnippet` puts on the block it builds, so the row is served by the same
+  field the server fills.
 
 **Scope and kinds live in component state, not in the URL.** `hl` means the
 terms the SERVER matched; overloading it with a live client query would give one

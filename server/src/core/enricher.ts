@@ -71,7 +71,16 @@ function fillPlanText(record: PlanRecord, text: string, searchBlocks: SearchBloc
   record.chars = text.length;
   record.title = planTitle(text);
   record.preview = text.slice(0, PLAN_PREVIEW_CHARS);
-  searchBlocks.push({ uuid: record.uuid, role: PLAN_ROLE, text, toolUseId: record.toolUseId });
+  searchBlocks.push({
+    uuid: record.uuid,
+    role: PLAN_ROLE,
+    text,
+    toolUseId: record.toolUseId,
+    // When the plan was ASKED, even when its text only exists on the approval
+    // line that came later: the row is anchored on the call, so it has to say
+    // the call's own hour rather than dating the plan by the reader's answer.
+    when: record.askedAt,
+  });
 }
 
 /** The UTC day a line belongs to — the key of the stats buckets. */
@@ -239,7 +248,7 @@ export async function enrichSession(
           userMessageCount++;
           const day = dayOf(o);
           if (day && !carried) dayBucket(day).prompts++;
-          searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text });
+          searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text, when: str(o.timestamp) });
         }
       }
       // The verdict on a plan comes back on the result line, which is a `user`
@@ -276,7 +285,7 @@ export async function enrichSession(
         userMessageCount++;
         const day = dayOf(o);
         if (day && !carried) dayBucket(day).prompts++;
-        searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text });
+        searchBlocks.push({ uuid: str(o.uuid), role: 'user', text: prompt.text, when: str(o.timestamp) });
       }
     } else if (type === 'assistant' && isRec(o.message)) {
       const model = str(o.message.model);
@@ -343,7 +352,7 @@ export async function enrichSession(
         for (const block of o.message.content) {
           if (!isRec(block)) continue;
           if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-            searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.text });
+            searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.text, when: str(o.timestamp) });
           } else if (block.type === 'tool_use') {
             toolUseCount++;
             // The second exception to "tool calls are never indexed", and the
@@ -357,6 +366,7 @@ export async function enrichSession(
                 role: INTENT_ROLE,
                 text: intent,
                 toolUseId: str(block.id),
+                when: str(o.timestamp),
               });
             }
             if (block.name === 'ExitPlanMode') {
@@ -398,6 +408,7 @@ export async function enrichSession(
           uuid: str(o.uuid),
           role: RECAP_ROLE,
           text: text.slice(0, systemChars(RECAP_SUBTYPE)),
+          when: str(o.timestamp),
         });
       }
     }

@@ -10,6 +10,7 @@
 - **The deep scan re-matches the indexed text too**, so it is a superset of the plain search by construction.
 - **One predicate decides what is searchable** (`skipBlock`), shared by the index, the deep scan and both paged match lists.
 - **A find bar counts occurrences; a match page counts places.**
+- **A row leads with WHEN, and the column is drawn even when it is empty.**
 - **There is exactly one `normalize('NFD')` in the repo** (`shared/src/fold.ts`) and it must stay that way.
 - **Every occurrence belongs to exactly one window** (`matchWindows`), or the counts stop adding up.
 - **A partial answer must never read as a complete one** (`stoppedEarly`).
@@ -55,6 +56,16 @@ Each page re-walks the session rather than keeping a cursor (the folded text is 
 - **Opening replaces the teaser instead of continuing after it.** Those snippets are picked one per term so that every word gets a slot — the right teaser and the wrong beginning for an ordered list. The list runs in the order the corpus is read (prose, then tool calls and output, then subagents, for a deep one).
 - The button counts **rows**, the footer counts **matches**: a row can carry several occurrences, so a button promising matches would overpromise, while the footer has to speak in the same unit as the `+N` that was clicked.
 
+## A row says when it was written
+
+A match row is a line lifted out of a conversation, and **a hundred of them all reading TOOL are the same row a hundred times**. The clock is what puts one back: short on the row (`dd/MM HH:mm`), full plus relative on the hover, and FIRST — the rows come out in reading order, so it is the column that lines up down the list and gives it its shape.
+
+- **It rides on the BLOCK.** `buildSnippet` is the only place a snippet is made in the whole repo, so one field serves all three corpora and the three lists — the results, a hit's paged matches, the find bar — cannot disagree about a row's hour. It began as a prop on `SnippetRow` that only the find bar passed, because the server's rows had no clock to give; that prop is gone.
+- **A plan is dated by the call that ASKED for it** (`askedAt`), even when its text exists only on the approval line that came later: the row is anchored on the call, and dating it by the answer would date the plan by its reader.
+- **What a session makes up about itself has no clock, on purpose** — its id, its agents' ids, its title, the previews of one not yet enriched. An id is not something written at an hour. Those rows keep the column and leave it blank: a row that pulled the role and the text left would cost the list the very alignment the clock is there to give it.
+- **A subagent's rows are the ones that need it most.** They carry `uuid: null` and link nowhere in particular, so the hour is the only thing that places them at all.
+- Adding it moved the cached blocks, so `CACHE_VERSION` went to 17. Measured here: 11,899 blocks across 225 sessions, ~0.4 MB on a 4.2 MB text cache.
+
 ## Session and agent ids are indexed blocks
 
 **A session's own id is one of them** (role `id`, text the bare uuid), so pasting the eight characters the app writes on a fork chip, in a log line or in a URL lands on the session they name — the one thing about a session that is on screen everywhere and used to be searchable nowhere.
@@ -85,4 +96,4 @@ The advanced panel's tuning lives in the **URL only** — no settings, no persis
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 3 and 9 (search, deep search, paging, ids, marking), and 26 for the find bar's own corpus and its agreement with this one.
+[AI_TESTING.md](AI_TESTING.md) — checks 3 and 9 (search, deep search, paging, ids, marking, the clock on a row), and 26 for the find bar's own corpus and its agreement with this one.
