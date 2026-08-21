@@ -66,13 +66,12 @@ export const FONT_SIZE_KEY = 'terminalFontSize';
  */
 export const TERMINAL_FONT_MIN = 8;
 /**
- * The ceiling is arithmetic, not taste. A panel dragged to `TERMINAL_HEIGHT_MIN`
- * is 180 px, of which the title bar takes 32 and the host's own padding 2: at
- * 24 px with `lineHeight: 1` that is 6 rows, still clear of the
- * `TERMINAL_MIN_ROWS` floor the server clamps to. Any higher and xterm would ask
- * for fewer rows than the pseudo-terminal is allowed to have, which is the one
- * failure that does not look like one — the view and the pty disagree, and the
- * CLI draws its status line over its own prompt.
+ * The ceiling is arithmetic, not taste. Measured at the two floors at once — a
+ * panel dragged to `TERMINAL_HEIGHT_MIN` at 24 px asks for 62x5, and 5 rows is
+ * still clear of the `TERMINAL_MIN_ROWS` the server clamps to. Any higher and
+ * xterm would ask for fewer rows than the pseudo-terminal is allowed to have,
+ * which is the one failure that does not look like one — the view and the pty
+ * disagree, and the CLI draws its status line over its own prompt.
  */
 export const TERMINAL_FONT_MAX = 24;
 /** xterm's own default, and what every terminal here was before it could be changed. */
