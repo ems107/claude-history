@@ -1312,6 +1312,69 @@ export interface ActiveSessionsResponse {
   max: number;
 }
 
+// ---- Sessions that have stopped ----
+
+/**
+ * Why a session stopped, which is the only classification the bell makes.
+ *
+ * The two are not a guess: a CLI writes `LIVE_WAITING` the moment a dialog goes
+ * up and one of `LIVE_STOPPED` the moment a turn ends, so `needs-you` and
+ * `finished` are read off the same field rather than inferred from a transcript.
+ */
+export type StopKind = 'needs-you' | 'finished';
+
+/**
+ * One session that stopped while we were watching.
+ *
+ * **A stop is a transition, not a state**, and that is the whole reason this is
+ * kept server-side instead of computed from `/api/live`: `idle` is the resting
+ * state of every open session, so a list of idle sessions is a list of every
+ * terminal you have open. Only a session seen to LEAVE `busy` is here.
+ */
+export interface StoppedSession {
+  sessionId: string;
+  kind: StopKind;
+  /**
+   * What it is waiting for, in the CLI's own words ("permission prompt",
+   * "input needed"). Null on a `finished` stop, which waits for nothing.
+   */
+  waitingFor: string | null;
+  /**
+   * When it stopped, epoch ms — like every field of `LiveInfo`, and unlike the
+   * ISO strings elsewhere in this file, because that is what it is copied from
+   * (`statusUpdatedAt`, the instant the CLI stamped the flip).
+   */
+  at: number;
+  /**
+   * Which half saw it: `cli` from `~/.claude/sessions`, `app` from a composer
+   * process of ours, which registers no status of its own. It decides one thing
+   * — whether the notification outlives the process (see `stillOpen`).
+   */
+  source: 'cli' | 'app';
+}
+
+/** A row of the panel: the stop, plus what it takes to draw it without a second read. */
+export interface StoppedSessionEntry extends StoppedSession {
+  /** From the index. Null for a session with no transcript yet. */
+  title: string | null;
+  projectName: string | null;
+  /** What a project tag's colour is keyed by. */
+  projectKey: string | null;
+  cwd: string | null;
+  /**
+   * Whether a `claude` still has this session open. Always true for `cli`,
+   * whose notification is dropped when the process goes: the bell is about
+   * sessions that are OPEN and have stopped. A composer stop can be false —
+   * its `--print` process exiting is not the session closing.
+   */
+  stillOpen: boolean;
+}
+
+export interface NotificationsResponse {
+  /** Newest stop first. */
+  stopped: StoppedSessionEntry[];
+}
+
 /**
  * The things that may not happen while the app is running Claude.
  *
@@ -1715,4 +1778,12 @@ export type ServerEvent =
   | { type: 'settings-changed' }
   /** The price table was saved. The list, the stats page and three panels in the viewer all cost tokens in the browser from it. */
   | { type: 'prices-changed' }
+  /**
+   * A session stopped, came back, or was cleared from the bell. Its own event
+   * and not `live-changed`, which fires on every write under
+   * `~/.claude/sessions` — most of them nothing to do with a stop — and which
+   * cannot speak for the composer at all. Payload-free on purpose: the list is
+   * a handful of rows and is refetched whole.
+   */
+  | { type: 'notifications-changed' }
   | { type: 'logs-appended' };

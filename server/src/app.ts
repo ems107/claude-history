@@ -17,6 +17,7 @@ import { registerFirewallRoutes } from './routes/firewall.ts';
 import { registerLogRoutes } from './routes/logs.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
+import { registerNotificationRoutes } from './routes/notifications.ts';
 import { registerPlanRoutes } from './routes/plans.ts';
 import { registerPriceRoutes } from './routes/prices.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
@@ -153,6 +154,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerAuthRoutes(app, ctx);
   registerActiveSessionRoutes(app, ctx);
   registerMetaRoutes(app, ctx);
+  registerNotificationRoutes(app, ctx);
   registerProjectRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
   registerSearchRoutes(app, ctx);

@@ -3,6 +3,7 @@ import { loadConfig } from './config.ts';
 import { AutoReloadService } from './core/autoReload.ts';
 import { decideBind, logBind } from './core/bind.ts';
 import { SessionIndex } from './core/index.ts';
+import { NotificationsService } from './core/notifications.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
 import { SearchService } from './core/search.ts';
@@ -52,6 +53,9 @@ async function main(): Promise<void> {
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const chat = new SessionChatService(config, index, () => index.getSettings());
   const terminals = new SessionTerminalService(config, index, chat, () => index.getSettings());
+  // After both halves it watches, and started below once the index has been
+  // built — it seeds itself from what is already running.
+  const notifications = new NotificationsService(index, chat);
   const app = await buildApp({
     config,
     bind,
@@ -63,10 +67,12 @@ async function main(): Promise<void> {
     autoReload,
     chat,
     terminals,
+    notifications,
   });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
   chat.start();
+  notifications.start();
   // Loading the native pseudo-terminal module. Awaited so the very first status
   // read already knows whether the feature works; a failure is recorded inside
   // and reported through `blockedReason`, never thrown.
