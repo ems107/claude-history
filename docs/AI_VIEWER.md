@@ -30,7 +30,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
 - **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
-- **Nothing the composer does may hide a message** — growing it scrolls the conversation clear of it.
+- **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
 - **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
 
@@ -557,13 +557,27 @@ hold that up, and both were bugs first:
   Without it the last bubble ended flush against the box and the fade dissolved
   its last 20 px — the message was on screen and unreadable, which looked exactly
   like being cut off.
-- **Growing the box scrolls the conversation clear of it** rather than covering
-  it: the growth is also new scrollable height, so moving `scrollTop` by the same
-  difference hands back precisely what was covered (and shrinking gives it back).
-  That is `footerRef`, and it is the half the pinning cannot do — with the follow
+- **Growing the box scrolls the conversation clear of it — but only from the
+  END.** Down there the growth is also new scrollable height, so moving
+  `scrollTop` by the same difference hands back precisely what was covered. That
+  is `footerRef`, and it is the half the pinning cannot do — with the follow
   switched off, nothing else would move. Six lines typed into the box, measured:
   composer 119 → 255 px, `scrollTop` +136, the last bubble still against the top
   of the gap, and the pill still reading `To the end`.
+
+  **Anywhere else the box floats over the conversation and the scroll is left
+  alone.** The embedded terminal is what made the difference impossible to miss:
+  the composer grows by a line and the compensation reads as a nudge, a terminal
+  opens 380 px tall and the same line of code reads as the page jumping under
+  somebody who was reading the middle of a session. Nothing about their page has
+  changed, so nothing about their page may move — a strip they are not looking at
+  being covered is the smaller price by far. **The test is the geometry, not the
+  follow flag**: the distance from the end *before* the change, which is the one
+  measured now less what has just appeared, so at the end with the follow off it
+  still compensates. And **shrinking needs no rule at all** — at the end the
+  browser's own clamp has already pulled `scrollTop` to the new maximum, which
+  leaves the last line where it was with more history above it, and in the middle
+  there is nothing to clamp.
 
 Three more things follow from the composer being inside the scroller, each of them
 a bug until it was named:

@@ -71,10 +71,12 @@ export function useFollowBottom(
   scrollRef: (el: HTMLDivElement | null) => void;
   contentRef: (el: HTMLDivElement | null) => void;
   /**
-   * The box stuck to the foot of the scroller — the composer. It is content like
-   * any other, so growing it makes the conversation shorter on screen: without
-   * this the last message would go behind it, which is not the same thing as
-   * being at the end of it.
+   * The box stuck to the foot of the scroller — the composer, or the embedded
+   * terminal. It is content like any other, so growing it makes the conversation
+   * shorter on screen: at the end, the last message would go behind it, which is
+   * not the same thing as being at the end of it. Only at the end, though —
+   * elsewhere the box is left to float over the conversation rather than shift
+   * it, which is the note in the observer below.
    */
   footerRef: (el: HTMLDivElement | null) => void;
 } {
@@ -149,11 +151,37 @@ export function useFollowBottom(
       const height = footerEl?.offsetHeight ?? 0;
       const grew = footerHeight === null ? 0 : height - footerHeight;
       footerHeight = height;
-      // The stuck box changed size — a line typed, a question arriving. It grew
-      // over the conversation, and the growth is also new scrollable height, so
-      // scrolling by the difference hands the view back exactly what was just
-      // covered. Shrinking gives it back the other way.
-      if (grew !== 0) scrollEl.scrollTop += grew;
+      /**
+       * The stuck box grew — a line typed, a terminal opened. The growth is also
+       * new scrollable height, so scrolling by the difference hands the view back
+       * exactly what was just covered.
+       *
+       * **Only while the view was already AT the end**, and that is the rule this
+       * whole thing turns on: down there the box grows into the conversation's
+       * last line and moving with it is what keeps the end the end. Anywhere else
+       * the reader is looking at something in the middle, nothing about their page
+       * has changed, and scrolling it would be the app moving the text under
+       * somebody's eyes to protect a strip they are not reading. Opening the
+       * embedded terminal is what made the difference impossible to miss: the
+       * composer grows by a line and the compensation reads as a nudge, a terminal
+       * arrives 380 px tall and the same code reads as the page jumping. So the
+       * box floats over the conversation instead, and the conversation stays where
+       * it was put.
+       *
+       * Where the end was BEFORE this: the growth is all at the bottom, so the
+       * distance measured now, less what has just appeared, is the one the reader
+       * had.
+       *
+       * **Shrinking needs nothing at all.** At the end, the browser's own clamp
+       * has already pulled `scrollTop` down to the new maximum, which leaves the
+       * last line exactly where it was with more history above it; in the middle
+       * there is nothing to clamp and nothing that should move. It is the same
+       * answer as growing, arrived at for free.
+       */
+      if (grew > 0) {
+        const distance = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight - grew;
+        if (distance <= BOTTOM_SLACK) scrollEl.scrollTop += grew;
+      }
       if (followingRef.current) scrollEl.scrollTop = scrollEl.scrollHeight;
       // AFTER both, and on every content change whether we moved or not: this is
       // the geometry the next scroll event is compared against, and neither the

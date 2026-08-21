@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { SessionDetailResponse, TerminalServerMessage } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
-import { clamp, HEIGHT_KEY, readHeight, readMinimised, writeMinimised } from '../../lib/terminalPrefs.ts';
+import { clamp, HEIGHT_KEY, readHeight } from '../../lib/terminalPrefs.ts';
 import { BlockedBar } from './BlockedBar.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
@@ -101,23 +101,45 @@ export function SessionTerminal({
    * attached — this is a panel getting out of the way of the conversation, not a
    * session being closed, which is the distinction the × button owns.
    *
-   * Remembered PER SESSION ([terminalPrefs]): it says something about the
-   * conversation you are reading, not about this window. One switch for all of
-   * them meant collapsing a terminal here made the next one you started
-   * somewhere else come up collapsed too — a panel that hides itself for a
-   * reason nobody can see, which is what made it unreproducible.
+   * **NOT remembered, anywhere, on purpose.** Opening a conversation is READING
+   * it, so the terminal starts out of the way and the focus decides the rest:
+   * clicking the bar opens it, the focus leaving it puts it away again
+   * ([collapseOnFocusOut]). A remembered flag was answering a question nobody
+   * had asked — "how did you leave this one?" — and the answer only ever showed
+   * up as a panel that came up hiding itself.
+   *
+   * The one exception is a session being STARTED (`autoStart`/`autoFocus`, i.e.
+   * `/new` and the handover that follows it): the folder was the question, the
+   * terminal is the answer, and it comes up open with the cursor in it.
    */
-  const [minimised, setMinimised] = useState(() => readMinimised(sessionId));
-  const toggleMinimised = () => {
-    setMinimised((v) => {
-      writeMinimised(sessionId, !v);
-      return !v;
-    });
-  };
+  const [minimised, setMinimised] = useState(!(autoStart || autoFocus));
+  /**
+   * Held open on purpose: the one way to switch the focus rule off.
+   *
+   * The rule is right for reading and wrong for watching — a turn you want to
+   * see arrive while you scroll back through the conversation is a panel that
+   * must not tuck itself away the moment you click a message. So the pin is an
+   * ANSWER to that rule rather than an exception to it: nothing else changes,
+   * the bar still opens it, the × still closes it, and the focus simply stops
+   * being what puts it away ([collapseOnFocusOut]).
+   *
+   * **Not remembered either**, and for the same reason as the rest of this
+   * panel: a session is opened to be read, so it opens as a title bar, unpinned.
+   * Held open until you leave the conversation, not until you take it back.
+   */
+  const [pinned, setPinned] = useState(false);
   // The route is `/session/:id` for every session, so going from one to another
-  // keeps this component mounted: what is remembered has to be re-read rather
-  // than left where the last session put it.
-  useEffect(() => setMinimised(readMinimised(sessionId)), [sessionId]);
+  // keeps this component mounted: the next session is one being read, whatever
+  // this one was left doing — pin included, since a pin is something done to the
+  // conversation you were in. A session being STARTED is never reached this way:
+  // `/new` is another page, so its handover is a fresh mount.
+  const firstSession = useRef(sessionId);
+  useEffect(() => {
+    if (firstSession.current === sessionId) return;
+    firstSession.current = sessionId;
+    setMinimised(true);
+    setPinned(false);
+  }, [sessionId]);
   const [error, setError] = useState<string | null>(null);
   /**
    * Closing is asked about only when there is something to lose by it — a warm
@@ -372,6 +394,105 @@ export function SessionTerminal({
     observer.observe(host);
     return () => observer.disconnect();
   }, [open, full, refit]);
+  /**
+   * The cursor lands in the terminal only once it has been MEASURED.
+   *
+   * Declared after the refit above so it runs after it in the same commit: the
+   * host was `display: none`, so xterm's idea of the console is a box of zero
+   * until `fit()` has had a look, and a CLI told its real size a moment after
+   * being typed into repaints over what was typed.
+   *
+   * `full` is in here with the other two because filling the window is one of
+   * the three ways a terminal becomes the thing you are using, and it is the one
+   * that changes neither of them: going full screen from an already open panel
+   * moves nothing else this effect could watch.
+   */
+  useEffect(() => {
+    if (minimised || !focusOnOpen.current) return;
+    const term = termRef.current;
+    if (!term) return;
+    focusOnOpen.current = false;
+    term.focus();
+  }, [minimised, open, full]);
+
+  /**
+   * Open it, which is the only thing the title bar does now.
+   *
+   * The focus goes with it, always: the bar is not a switch, it is the way in —
+   * and the way out is the focus leaving ([collapseOnFocusOut]), so a panel
+   * opened without the cursor in it would be a panel that closes on the next
+   * click for no reason anyone could see.
+   */
+  const expand = useCallback(() => {
+    setMinimised(false);
+    // Either there is an xterm to focus — the ordinary case, since the panel is
+    // open — or the effect that builds one takes the focus when it does.
+    focusOnOpen.current = true;
+    if (termRef.current && !minimised) {
+      focusOnOpen.current = false;
+      termRef.current.focus();
+    }
+  }, [minimised]);
+
+  /**
+   * A press anywhere in this panel means the terminal, and keeps the focus in it.
+   *
+   * `preventDefault` is the load-bearing half. None of the title bar, the drag
+   * handle or the padding is focusable, so a press on any of them moves the
+   * focus to `body` — which both puts the panel away mid-gesture and leaves the
+   * focus nowhere, so the next click outside would have no `focusout` to fire
+   * and the panel would stay open instead.
+   *
+   * Two things are left alone: a button, which owns its own click and its own
+   * focus, and the xterm host, where a press is a cursor being placed or a
+   * selection being dragged and the terminal does both itself.
+   *
+   * The LEFT button only. A right-click is asking for a menu and a middle one is
+   * a paste on the platforms that have it; neither is a way into a terminal, and
+   * opening the panel on either would be a click doing two things.
+   */
+  const takeFocus = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0 || confirmClose) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('button')) return;
+      if (hostRef.current?.contains(target)) return;
+      e.preventDefault();
+      expand();
+    },
+    [confirmClose, expand],
+  );
+
+  /**
+   * The focus leaving puts the panel away again, which is the other half of the
+   * bar being the way in — and the whole reason nothing has to be remembered.
+   *
+   * Watched on the ROOT and not on the xterm: the title bar's buttons, the drag
+   * handle and the close dialog are all in here, and taking the focus off the
+   * terminal is not what any of them means.
+   *
+   * Deferred by a tick and then asked of `document.activeElement`, because
+   * `relatedTarget` is null for the commonest move there is — a click on a
+   * paragraph of the conversation, which nothing can focus, so the focus lands
+   * on `body`. `document.hasFocus()` is what tells that apart from alt-tabbing
+   * away: leaving the BROWSER says nothing about this panel, and coming back to
+   * find it collapsed would be an answer to a question nobody asked.
+   *
+   * Full screen is exempt: there is one way out of it and it is its own button,
+   * and a `fixed inset-0` panel with a hidden host is a blank window. So is a
+   * panel somebody has pinned, which is the whole of what the pin does.
+   */
+  const collapseOnFocusOut = useCallback(() => {
+    if (full || minimised || confirmClose || pinned) return;
+    window.setTimeout(() => {
+      const root = rootRef.current;
+      if (!root || !document.hasFocus()) return;
+      const active = document.activeElement;
+      if (active && active !== document.body && root.contains(active)) return;
+      setMinimised(true);
+    }, 0);
+  }, [full, minimised, confirmClose, pinned]);
 
   const start = useMutation({
     mutationFn: async () => {
@@ -385,12 +506,11 @@ export function SessionTerminal({
     },
     onSuccess: () => {
       setError(null);
-      // Starting one is asking to SEE it, whatever this session's panel was left
-      // doing last time: a terminal that comes up as a title bar the moment it
-      // is asked for is the one behaviour nobody could explain, and it is not
-      // what being remembered per session is for.
+      // Starting one is asking to SEE it: a terminal that comes up as a title
+      // bar the moment it was asked for is the one behaviour nobody could
+      // explain. Pressing the button is the same statement `/new` makes by
+      // existing, so it gets the same answer — open, with the cursor in it.
       setMinimised(false);
-      writeMinimised(sessionId, false);
       // Either the xterm is there already — "start again" on a panel keeping a
       // dead process's screen — or it is about to be built, and the effect that
       // builds it takes the focus then.
@@ -499,18 +619,41 @@ export function SessionTerminal({
     return () => observer.disconnect();
   }, [open, full, onLayout]);
 
-  // Escape leaves full screen and stops there: the page's own handler ends in
-  // `navigate(-1)`, so letting it through would leave the session as well.
-  useEffect(() => {
-    if (!full) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setFull(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [full]);
+  /**
+   * Full screen is the one thing about this panel that IS remembered — and only
+   * for as long as it lasts.
+   *
+   * Filling the window has to open the panel (the host is hidden while collapsed,
+   * and a full screen with a hidden host is a blank window), so leaving it has to
+   * put back whatever that opening interrupted: sent full screen from a title bar,
+   * the panel comes back a title bar. It is the same reasoning as everything else
+   * here — going full screen is a look at the terminal, not a statement about what
+   * the conversation should look like afterwards — and a ref rather than state,
+   * because nothing renders differently for it.
+   *
+   * **It takes the focus into the terminal, and NOTHING here answers Escape.** A
+   * terminal filling the window is a terminal being used, so the keys are the
+   * CLI's, all of them: Escape closes its menus and cancels its turn, and a page
+   * that took that one key would be a page reaching into a program somebody is
+   * typing into for the sake of a shortcut its own button already offers. There
+   * was a `keydown` listener here doing exactly that, and it only ever worked
+   * while the cursor was NOT in the terminal — the state that no longer exists.
+   */
+  const collapsedBeforeFull = useRef(false);
+  const enterFull = useCallback(() => {
+    collapsedBeforeFull.current = minimised;
+    setMinimised(false);
+    setFull(true);
+    // The panel may be a hidden host this instant, so the intention waits for
+    // the effect that focuses after the refit rather than being acted on here.
+    focusOnOpen.current = true;
+  }, [minimised]);
+  const leaveFull = useCallback(() => {
+    setFull(false);
+    if (!collapsedBeforeFull.current) return;
+    collapsedBeforeFull.current = false;
+    setMinimised(true);
+  }, []);
 
   // What went WRONG, and nothing else: a `blocked` session takes the place of
   // the start bar instead ([BlockedBar]), because a greyed-out button with a
@@ -525,7 +668,17 @@ export function SessionTerminal({
       data-terminal
       className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg)]"
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)]">
+      {/* The bar IS the way in, so there is no button to press: a click on it
+          opens the panel and puts the cursor in the terminal, and the focus
+          leaving is what puts it away again. `cursor-pointer` only while
+          collapsed — open, the bar is a label and the click is a no-op that
+          merely keeps the focus where it already is. */}
+      <div
+        className={`flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] ${
+          minimised ? 'cursor-pointer hover:text-[var(--text)]' : ''
+        }`}
+        title={minimised ? 'Click to open the terminal' : undefined}
+      >
         <span className="text-[var(--accent)]">❯</span>
         <span className="truncate" title={cwd ?? undefined}>
           {running ? 'claude' : exit ? `claude exited (code ${exit.code ?? 'killed'})` : 'claude'}
@@ -533,39 +686,6 @@ export function SessionTerminal({
         </span>
         {status.data?.pid ? <span className="shrink-0">pid {status.data.pid}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
-          {/* Not offered while the panel is filling the window: Esc is what
-              brings that back, and collapsing from there would leave the
-              conversation behind two undos instead of one. */}
-          {!full && (
-            <button
-              type="button"
-              onClick={toggleMinimised}
-              title={
-                minimised
-                  ? 'Show the terminal again'
-                  : 'Collapse to this line — the CLI keeps running and comes back where you left it'
-              }
-              className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-            >
-              {/* A drawn chevron rather than `⌄`/`⌃`: those two are tiny and sit
-                  at different heights in the font, so the button jumped a pixel
-                  every time it was pressed. This one is centred by the flex row
-                  and is the same shape either way up. */}
-              <svg
-                aria-hidden
-                viewBox="0 0 12 12"
-                className="size-3 shrink-0"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d={minimised ? 'M2.5 7.5 6 4 9.5 7.5' : 'M2.5 4.5 6 8 9.5 4.5'} />
-              </svg>
-              {minimised ? 'expand' : 'minimise'}
-            </button>
-          )}
           {!running && (
             <button
               type="button"
@@ -576,32 +696,83 @@ export function SessionTerminal({
               {start.isPending ? 'starting…' : '❯ start again'}
             </button>
           )}
+          {/* Only on an OPEN panel, and never in full screen: the pin answers
+              the focus rule, and neither a title bar nor a window-filling
+              terminal is subject to it. */}
+          {!full && !minimised && (
+            <button
+              type="button"
+              aria-pressed={pinned}
+              onClick={() => setPinned((v) => !v)}
+              title={
+                pinned
+                  ? 'Pinned open — click to let the focus put it away again'
+                  : 'Keep it open even when the focus goes elsewhere'
+              }
+              // Pressed, it keeps the lit background rather than borrowing the
+              // hover one: a state you have to point at to see is a state that
+              // is invisible from where the panel is being read.
+              className={`flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] ${
+                pinned ? 'bg-[var(--bg-hover)] text-[var(--accent)]' : 'hover:text-[var(--text)]'
+              }`}
+            >
+              {/* A tack: the wide cap a thumb presses, the body under it, and
+                  the needle. The silhouette is what has to survive 12 px, so it
+                  is the shape that carries the icon and the detail inside it is
+                  allowed to close up — a circle on a stick was the first attempt
+                  and read as a balloon, which is a different symbol entirely.
+                  The FILL is the state, pressed in while it is holding the panel
+                  open, and the word beside it never changes: the buttons are
+                  right-aligned, so a label that grew would slide the icon out
+                  from under the pointer that was clicking it. */}
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                className="size-3 shrink-0"
+                fill={pinned ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                <path d="M12 17v5" fill="none" />
+              </svg>
+              pin
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => {
-              // Filling the window is a request to SEE it, so it cannot leave the
-              // panel collapsed: the host is hidden while minimised, and a full
-              // screen with a hidden host is a blank window — the same failure
-              // the portal caused, arrived at from the other side.
-              if (!full && minimised) toggleMinimised();
-              setFull((v) => !v);
-            }}
-            title={full ? 'Back to the conversation (Esc)' : 'Fill the window'}
+            // Opens the panel on the way in, puts it back on the way out, and
+            // takes the focus into the terminal ([enterFull]).
+            onClick={full ? leaveFull : enterFull}
+            // It says *full screen* on the way out too, and never "close": one
+            // word for two different things is how a button that gives the
+            // conversation back gets read as the one that ends a CLI mid-turn.
+            title={full ? 'Leave full screen — the terminal is not closed' : 'Fill the window'}
             className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
           >
-            {full ? '⤡ close' : '⤢ full screen'}
+            {full ? '⤡ exit full screen' : '⤢ full screen'}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (running && closingNeedsAsking(queryClient, sessionId)) setConfirmClose(true);
-              else close.mutate();
-            }}
-            title={running ? 'Stop Claude and close this terminal' : 'Close this terminal'}
-            className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-          >
-            ×
-          </button>
+          {/* Not offered while the panel is filling the window. Ending the CLI
+              is not a way out of a view, and the only × on a screen with nothing
+              else on it is the one that gets pressed to get out of it — beside a
+              button that used to say *close* about something else entirely. Come
+              back first; it is one click either way, and only one of them is
+              irreversible. */}
+          {!full && (
+            <button
+              type="button"
+              onClick={() => {
+                if (running && closingNeedsAsking(queryClient, sessionId)) setConfirmClose(true);
+                else close.mutate();
+              }}
+              title={running ? 'Stop Claude and close this terminal' : 'Close this terminal'}
+              className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
       {/* The xterm host. `min-h-0` so it can be smaller than its content, which
@@ -618,7 +789,17 @@ export function SessionTerminal({
     // The page's own background, so the conversation scrolls UNDER this rather
     // than through it — which it literally does: this is stuck to the bottom of
     // the scroller the turns are in. `relative` is what the fade below hangs on.
-    <div ref={rootRef} className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3">
+    //
+    // The two halves of "the panel is open while you are in it" hang here, on
+    // the whole thing rather than on the terminal: a press anywhere inside means
+    // the terminal ([takeFocus]), and the focus reaching anything outside means
+    // the conversation ([collapseOnFocusOut]).
+    <div
+      ref={rootRef}
+      onMouseDown={takeFocus}
+      onBlur={collapseOnFocusOut}
+      className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3"
+    >
       {confirmClose && (
         <CloseSessionDialog
           // From the cache the page already holds: a dialog is no reason to go
@@ -669,7 +850,7 @@ export function SessionTerminal({
             // exactly as the plan panel does: two live copies of one terminal
             // would be two views fighting over one cursor.
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">
-              The terminal is filling the window. Esc brings it back.
+              The terminal is filling the window. Its own ⤡ exit full screen brings it back.
             </div>
           )}
           {/*
