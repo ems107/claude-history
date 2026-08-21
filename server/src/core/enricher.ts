@@ -352,12 +352,7 @@ export async function enrichSession(
         for (const block of o.message.content) {
           if (!isRec(block)) continue;
           if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-            searchBlocks.push({
-              uuid: str(o.uuid),
-              role: 'assistant',
-              text: block.text,
-              when: str(o.timestamp),
-            });
+            searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.text, when: str(o.timestamp) });
           } else if (block.type === 'tool_use') {
             toolUseCount++;
             // The second exception to "tool calls are never indexed", and the

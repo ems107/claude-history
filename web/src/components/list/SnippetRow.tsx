@@ -82,7 +82,7 @@ export function SnippetRow({
           its title — would otherwise pull the role and the text left and the
           list would lose the shape this is here to give it. */}
       <span
-        className="mr-2 inline-block w-[4.25rem] shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60"
+        className="mr-2 inline-block w-17 shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60"
         title={when ? `${formatDateTimeFull(when)} · ${relativeTime(when)}` : undefined}
       >
         {when ? formatDateTimeShort(when) : ''}
