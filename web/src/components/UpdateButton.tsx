@@ -230,11 +230,17 @@ export function UpdateButton() {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-20"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 sm:p-8"
           onClick={() => !applying && setOpen(false)}
         >
+          {/* As big as the plan panel (`QuestionPanel`), and for the same
+              reason: what is read here is every pending release's notes,
+              stacked, and at 620px they came out as a narrow column of
+              wrapped bullets. `max-h-full` rather than a vh fraction because
+              the overlay's padding is already the margin — a fraction on top
+              of it pushes the buttons past the bottom of a short window. */}
           <div
-            className="flex max-h-[80vh] w-[620px] max-w-[92vw] flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-xl"
+            className="flex max-h-full w-full max-w-5xl flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center gap-2">
