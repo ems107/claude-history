@@ -146,9 +146,21 @@ function adopt(e: StorageEvent): void {
  * this module is imported by the find bar and by the session page, neither of
  * which draws a terminal, and a listener attached at import time would be one
  * every page pays for so that a panel most of them never show can be in step.
+ *
+ * **And the store is read again as it goes on**, which is the half that makes
+ * the lazy listener honest: with no terminal on the page there is nobody
+ * listening, so a size set in another tab meanwhile arrives to a listener that
+ * does not exist yet. Without this the module variable would still say 12 while
+ * `localStorage` said 20 — and since the xterm is built from the variable, the
+ * first terminal of the session would come up at a size no window agreed on.
+ * `useSyncExternalStore` re-reads the snapshot after subscribing, so a value
+ * that moved here is a re-render rather than a stale screen.
  */
 function subscribe(listener: () => void): () => void {
-  if (listeners.size === 0) window.addEventListener('storage', adopt);
+  if (listeners.size === 0) {
+    window.addEventListener('storage', adopt);
+    fontSize = readFontSize();
+  }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
