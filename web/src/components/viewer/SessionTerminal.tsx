@@ -113,17 +113,6 @@ export function SessionTerminal({
    * terminal is the answer, and it comes up open with the cursor in it.
    */
   const [minimised, setMinimised] = useState(!(autoStart || autoFocus));
-  // The route is `/session/:id` for every session, so going from one to another
-  // keeps this component mounted: the next session is one being read, whatever
-  // this one was left doing. A session that is being started is never reached
-  // this way — `/new` is another page, so its handover is a fresh mount.
-  const firstSession = useRef(sessionId);
-  useEffect(() => {
-    if (firstSession.current === sessionId) return;
-    firstSession.current = sessionId;
-    setMinimised(true);
-    setPinned(false);
-  }, [sessionId]);
   /**
    * Held open on purpose: the one way to switch the focus rule off.
    *
@@ -139,6 +128,18 @@ export function SessionTerminal({
    * Held open until you leave the conversation, not until you take it back.
    */
   const [pinned, setPinned] = useState(false);
+  // The route is `/session/:id` for every session, so going from one to another
+  // keeps this component mounted: the next session is one being read, whatever
+  // this one was left doing — pin included, since a pin is something done to the
+  // conversation you were in. A session being STARTED is never reached this way:
+  // `/new` is another page, so its handover is a fresh mount.
+  const firstSession = useRef(sessionId);
+  useEffect(() => {
+    if (firstSession.current === sessionId) return;
+    firstSession.current = sessionId;
+    setMinimised(true);
+    setPinned(false);
+  }, [sessionId]);
   const [error, setError] = useState<string | null>(null);
   /**
    * Closing is asked about only when there is something to lose by it — a warm
@@ -445,10 +446,14 @@ export function SessionTerminal({
    * Two things are left alone: a button, which owns its own click and its own
    * focus, and the xterm host, where a press is a cursor being placed or a
    * selection being dragged and the terminal does both itself.
+   *
+   * The LEFT button only. A right-click is asking for a menu and a middle one is
+   * a paste on the platforms that have it; neither is a way into a terminal, and
+   * opening the panel on either would be a click doing two things.
    */
   const takeFocus = useCallback(
     (e: React.MouseEvent) => {
-      if (confirmClose) return;
+      if (e.button !== 0 || confirmClose) return;
       const target = e.target;
       if (!(target instanceof Element)) return;
       if (target.closest('button')) return;
