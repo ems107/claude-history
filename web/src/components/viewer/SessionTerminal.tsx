@@ -592,6 +592,35 @@ export function SessionTerminal({
     return () => observer.disconnect();
   }, [open, full, onLayout]);
 
+  /**
+   * Full screen is the one thing about this panel that IS remembered — and only
+   * for as long as it lasts.
+   *
+   * Filling the window has to open the panel (the host is hidden while collapsed,
+   * and a full screen with a hidden host is a blank window), so leaving it has to
+   * put back whatever that opening interrupted: sent full screen from a title bar,
+   * the panel comes back a title bar. It is the same reasoning as everything else
+   * here — going full screen is a look at the terminal, not a statement about what
+   * the conversation should look like afterwards — and a ref rather than state,
+   * because nothing renders differently for it.
+   *
+   * **The focus stays on the button either way**, which is what leaves Escape able
+   * to do this at all: xterm answers Escape with `stopPropagation`, so from inside
+   * the terminal the key is the CLI's and this handler never sees it.
+   */
+  const collapsedBeforeFull = useRef(false);
+  const enterFull = useCallback(() => {
+    collapsedBeforeFull.current = minimised;
+    setMinimised(false);
+    setFull(true);
+  }, [minimised]);
+  const leaveFull = useCallback(() => {
+    setFull(false);
+    if (!collapsedBeforeFull.current) return;
+    collapsedBeforeFull.current = false;
+    setMinimised(true);
+  }, []);
+
   // Escape leaves full screen and stops there: the page's own handler ends in
   // `navigate(-1)`, so letting it through would leave the session as well.
   useEffect(() => {
@@ -599,11 +628,11 @@ export function SessionTerminal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
-      setFull(false);
+      leaveFull();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [full]);
+  }, [full, leaveFull]);
 
   // What went WRONG, and nothing else: a `blocked` session takes the place of
   // the start bar instead ([BlockedBar]), because a greyed-out button with a
@@ -648,23 +677,10 @@ export function SessionTerminal({
           )}
           <button
             type="button"
-            onClick={() => {
-              // Filling the window is a request to SEE it, so it cannot leave the
-              // panel collapsed: the host is hidden while minimised, and a full
-              // screen with a hidden host is a blank window — the same failure
-              // the portal caused, arrived at from the other side.
-              //
-              // Opened, but NOT focused — `expand()` would be wrong here, and
-              // measured wrong. The focus stays on this button, which is what
-              // leaves **Escape** able to bring the panel back: xterm answers
-              // Escape with `stopPropagation`, so from inside the terminal the
-              // key is the CLI's and the page's own handler never sees it. Which
-              // is the right answer to "whose key is it" — and it is why filling
-              // the window must not take the focus into it, exactly as it never
-              // did. A click in the terminal, once it is there, still does.
-              if (!full && minimised) setMinimised(false);
-              setFull((v) => !v);
-            }}
+            // Opens the panel on the way in and puts it back on the way out, and
+            // takes the focus into the terminal on neither ([enterFull]). A click
+            // in the terminal, once it is there, still does.
+            onClick={full ? leaveFull : enterFull}
             title={full ? 'Back to the conversation (Esc)' : 'Fill the window'}
             className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
           >
