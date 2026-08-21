@@ -295,13 +295,47 @@ export class SessionTerminalService implements TranscriptWriter {
 
     const c = clamp(cols, TERMINAL_MIN_COLS, TERMINAL_MAX_COLS);
     const r = clamp(rows, TERMINAL_MIN_ROWS, TERMINAL_MAX_ROWS);
-    const child = pty.spawn(cli, args, {
+    const spawnOptions = {
       name: 'xterm-256color',
       cols: c,
       rows: r,
       cwd,
       env: terminalEnv(),
-    });
+    };
+    /**
+     * **The pseudo-console is PINNED, like the Node runtime a release carries.**
+     *
+     * `useConptyDll` makes node-pty load the `conpty.dll` + `OpenConsole.exe`
+     * that ship inside the package instead of asking Windows for its own — and
+     * Windows' own is a component that has changed for years and is different on
+     * every build. Measured, same app and same CLI on two machines: on Windows
+     * 11 26100 the CLI's declarations all arrive, and on Windows 10 19045 the
+     * alternate screen, mouse reporting and win32-input-mode never appear at all
+     * while `ESC[?25l` comes out as `ESC[25l` — and on the way IN, the kitty
+     * encoding for Shift+Enter and the brackets around a paste are eaten, so
+     * Shift+Enter sent the prompt and a multi-line paste submitted every line
+     * but the last. Four bug reports, one component, and nothing in this app
+     * could have corrected for it.
+     *
+     * A real console window is not affected because there is no pseudo-console
+     * in that path at all, and Windows Terminal ships this very OpenConsole
+     * rather than using the system's — which is the whole reason it is safe to
+     * pin: it is what a terminal on Windows already runs.
+     *
+     * The fallback covers a host that cannot be LOADED (a stripped copy, a
+     * blocked file): better this machine's ConPTY than no terminal. It cannot
+     * cover one that loads and then misbehaves, and the log line is there to say
+     * which one answered. See [AI_RUNNING_CLAUDE.md].
+     */
+    let child: IPty;
+    let host = 'the bundled pseudo-console';
+    try {
+      child = pty.spawn(cli, args, { ...spawnOptions, useConptyDll: true });
+    } catch (err) {
+      host = 'the pseudo-console this Windows provides';
+      log.warn(`the bundled pseudo-console could not be used for ${sessionId} — falling back`, err);
+      child = pty.spawn(cli, args, spawnOptions);
+    }
 
     const p: TerminalProcess = {
       sessionId,
@@ -365,7 +399,7 @@ export class SessionTerminalService implements TranscriptWriter {
       setTimeout(() => void this.index.refreshLive(), 300);
     });
 
-    log.info(`terminal started for ${sessionId} (${fresh ? '--session-id' : '--resume'}) in ${cwd}`);
+    log.info(`terminal started for ${sessionId} (${fresh ? '--session-id' : '--resume'}) in ${cwd} via ${host}`);
     this.events.emit('terminal-changed', sessionId);
   }
 

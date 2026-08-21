@@ -23,6 +23,7 @@ The app has two halves and they are not the same kind of thing. **Everything tha
 - **A new session's id is minted here, and which of `sessionId` / `resume` applies is asked of the disk**, never remembered in a flag.
 - **A typed folder is the one path that comes from the request**, and it is validated rather than trusted.
 - **The embedded terminal runs `claude.exe` with no shell around it** — that is what keeps the pid guard honest and a remote browser no more powerful than the composer already makes it.
+- **The pseudo-console is OURS and pinned**, like the Node runtime a release carries: `useConptyDll: true`, never the one the machine's Windows build happens to have.
 - **A pseudo-terminal belongs to the server, not to the tab.** Closing a browser detaches; it never kills anything.
 - **A terminal outlives the CLI inside it**, because the last screen is the only diagnosis a failed start leaves.
 - **Nothing that ends this server or changes how prompts are sent may run while the app is running Claude** — an IDLE session counts, the refusal carries the list of what to close, and the cap is one number across both doors.
@@ -289,6 +290,26 @@ The PTY's direct child is `claude.exe` itself — not `pwsh` with the CLI inside
 - **A signed-in remote browser gains nothing it did not have.** The composer already runs Claude with auto-approved tools in any indexed project ([Remote access](AI_REMOTE_ACCESS.md)); `claude.exe` with no shell around it is that and no more. A shell would have been strictly more, and that is the whole reason this is reachable remotely at all.
 
 **Read `pty.pid` from the live getter, never from a snapshot.** ConPTY reports the child on `ready_datapipe`, about 100 ms after `spawn` returns; until then it is 0. Measured.
+
+### The pseudo-console is ours, and pinning it is the whole point
+
+**`useConptyDll: true`.** node-pty then loads the `conpty.dll` + `OpenConsole.exe` that ship inside the package (`prebuilds/win32-x64/conpty/`, already carried by every release) instead of asking Windows for its own. It is the same reasoning as the pinned `node.exe` — and the same reasoning as the fonts and the Unicode tables above: **the terminal is a thing we ship, so every part of it has to be a thing we ship.**
+
+ConPTY is not a pipe. It runs a VT emulator over the child's output and re-emits its own, and it translates the input we write into console input. It has been rewritten repeatedly, it lives in the OS, and **it is different on every Windows build** — which makes it the one component of this feature that could not be reasoned about from one machine. Measured, same app version and the same CLI (2.1.238) on two machines:
+
+| | Windows 11 26100 | Windows 10 19045 |
+| --- | --- | --- |
+| `?1049h`, `?1000/1002/1003/1006h`, `?9001h` | all arrive | **never appear, in any form** |
+| `ESC[?25l` | correct | 6 times as `ESC[25l`, once correct |
+| `ESC[13;2u` sent in | Shift+Enter | eaten — the CLI reads a plain CR and **sends the prompt** |
+| `ESC[200~ … ESC[201~` around a paste | bracketed paste | eaten — every line but the last **is submitted** |
+| first window title | `claude` | the full path of `claude.exe` |
+
+That is four bug reports out of one component: a screen that reads as corrupt (no alternate screen), a click that cannot move the cursor (no mouse), Shift+Enter sending the prompt (no `?9001h`, so `enhancedKeys` is correctly false and stays false), and Ctrl+V pasting only the last fragment. **Nothing in this app could have corrected for any of it**, and a real console window on that machine is fine because there is no pseudo-console in that path at all — while Windows Terminal ships this very OpenConsole rather than using the system's, which is what makes pinning it safe rather than exotic: it is what a terminal on Windows already runs.
+
+- **It is not a setting.** A switch would mean two behaviours to reason about and a user having to know which one their machine needs, which is the opposite of the goal.
+- **The fallback covers a host that cannot be LOADED** — a stripped copy, a blocked file — because this machine's ConPTY beats no terminal at all. It cannot cover one that loads and then misbehaves, so **the start log names the host** (`via the bundled pseudo-console`), which is the first line to read when a machine behaves oddly.
+- **It costs the release nothing new**: the DLL and OpenConsole were already inside the zip, carried with the native module. What changed is that they are now load-bearing at runtime, so [AI_DISTRIBUTION.md](AI_DISTRIBUTION.md) says so.
 
 ### The terminal declares what it is, because it knows
 
