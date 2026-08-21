@@ -1,13 +1,14 @@
-import type { Turn } from '@claude-history/shared';
+import type { MessageItem, Turn } from '@claude-history/shared';
 
 /**
- * What has landed since the turn in flight began — the two clocks the working
- * indicator counts from beside the turn's own.
+ * What the turn in flight is made of — the readings the working indicator's
+ * clocks are drawn from, and the evidence that says the turn is still the one
+ * being answered.
  *
- * Both are read off the LAST turn of the conversation, which is the one being
- * answered whenever the session is busy, and both are epoch milliseconds taken
- * from the transcript's own timestamps: the figure is exact even though it
- * appears a moment late, because the conversation is refetched on
+ * All of it is read off the LAST turn of the conversation, which is the one
+ * being answered whenever the session is busy, and every stamp is epoch
+ * milliseconds taken from the transcript's own timestamps: the figure is exact
+ * even though it appears a moment late, because the conversation is refetched on
  * `sessions-changed` and a re-parse takes what it takes.
  *
  * Pure, and checkable without a browser.
@@ -17,12 +18,16 @@ export interface TurnActivity {
    * When that turn began (epoch ms): the FIRST item of it, whatever its role —
    * normally the prompt that opened it.
    *
-   * A session does not use this and must not: its turn starts when
-   * `~/.claude/sessions` says so, which is stamped at the instant it happens,
-   * while the transcript's first line of a turn is written later. A SUBAGENT has
-   * no such file — it shares its parent's process — and its first line is its
-   * brief, so this is the only clock it has and it is the right one: an agent
-   * begins when it is sent out.
+   * **This is what `total` counts from once the turn is known to be the one in
+   * flight** (`turnClocks`), and the reason is the whole point of that function:
+   * a turn is not over because the user interrupted it. A prompt typed mid-turn
+   * is delivered INTO this turn, and an `AskUserQuestion` answer is not even an
+   * item — both land inside these very `items`, so the transcript's own boundary
+   * already ignores exactly what the busy flip does not.
+   *
+   * A SUBAGENT has only this: it shares its parent's process, so there is no
+   * `~/.claude/sessions` file to read a start off, and its first line is its
+   * brief. An agent begins when it is sent out.
    */
   startedAt: number | null;
   /**
@@ -43,14 +48,73 @@ export interface TurnActivity {
    * result's own clock would still be saying nothing at all.
    */
   lastToolAt: number | null;
+  /**
+   * The newest line Claude wrote in that turn (epoch ms), whatever it carried —
+   * the two figures above merged, and never drawn. It answers one question and
+   * only one: has this turn been written into since the session went busy? If it
+   * has, the busy flip belongs to THIS turn and not to a prompt whose first line
+   * has yet to reach the disk (`turnClocks`).
+   */
+  lastWriteAt: number | null;
+  /**
+   * The turn's LAST item is something Claude has yet to answer, so the turn
+   * cannot be over whatever the status file says. Three shapes, and each is one
+   * of the two ways a user interrupts a turn:
+   *
+   *  - a prompt typed while the turn ran (`MessageItem.queued`). Claude Code
+   *    delivers one into the turn already open rather than into a turn of its
+   *    own, and the line is appended AT DELIVERY — verified: `15a86025`'s was
+   *    typed at 13:44:06 and sits after an item that ended at 13:44:43 — so
+   *    being the last item is exactly the window between delivery and Claude's
+   *    first word. (Its `timestamp` is when it was typed, so it is a signal and
+   *    never a clock.)
+   *  - an assistant message ending on `AskUserQuestion` or `ExitPlanMode`: the
+   *    calls whose answer comes from a human, and the reason this reads the NAME
+   *    rather than a missing result. The `tool_result` is written the instant
+   *    the question is answered, so gating on a missing result would put the
+   *    signal out one re-parse after it was needed — the very second the answer
+   *    starts being counted, with Claude still 5-20 s from writing anything.
+   *  - an assistant message ending on any other call that has NO result yet: a
+   *    permission prompt on screen, or a tool still running.
+   *
+   * **A call that already came back is not this**, and that is the whole reason
+   * the asking ones are named rather than the rule being "ends on a call": a
+   * turn ends on a returned call all the time, because a `<task-notification>`
+   * opens a turn of its own and cuts the previous one exactly there — 4 of the
+   * 44 turns in `15a86025` + `b343d4ac`, on `ScheduleWakeup`, `Bash`,
+   * `AskUserQuestion` and `ExitPlanMode`. Calling those unfinished would lend a
+   * finished turn's start to whatever opens the next one.
+   */
+  unanswered: boolean;
 }
 
-export const NO_ACTIVITY: TurnActivity = { startedAt: null, lastMessageAt: null, lastToolAt: null };
+export const NO_ACTIVITY: TurnActivity = {
+  startedAt: null,
+  lastMessageAt: null,
+  lastToolAt: null,
+  lastWriteAt: null,
+  unanswered: false,
+};
+
+/** The calls whose result is a human, and the only ones named anywhere here. */
+const ASKS_THE_USER = new Set(['AskUserQuestion', 'ExitPlanMode']);
 
 function stamp(when: string | null): number | null {
   if (!when) return null;
   const ms = Date.parse(when);
   return Number.isNaN(ms) ? null : ms;
+}
+
+/** `TurnActivity.unanswered`, read off the turn's last surviving item. */
+function unansweredAt(items: MessageItem[]): boolean {
+  const kept = items.filter((i) => i.discardedBranch === null);
+  const last = kept[kept.length - 1];
+  if (!last) return false;
+  if (last.queued) return true;
+  if (last.role !== 'assistant') return false;
+  const block = last.blocks[last.blocks.length - 1];
+  if (block?.kind !== 'tool') return false;
+  return ASKS_THE_USER.has(block.toolName) || block.result === null;
 }
 
 export function turnActivity(turns: Turn[]): TurnActivity {
@@ -60,14 +124,15 @@ export function turnActivity(turns: Turn[]): TurnActivity {
   const startedAt = stamp(turn.items[0]?.timestamp ?? null);
   let lastMessageAt: number | null = null;
   let lastToolAt: number | null = null;
+  let lastWriteAt: number | null = null;
 
   for (const item of turn.items) {
+    // A rewound-away branch is history, not this turn's progress.
+    if (item.discardedBranch !== null) continue;
     // Only the model's own output: the prompt that opened the turn is what the
     // turn's own counter measures FROM, and neither a queued prompt nor an
     // injected notice is Claude answering.
     if (item.role !== 'assistant') continue;
-    // A rewound-away branch is history, not this turn's progress.
-    if (item.discardedBranch !== null) continue;
 
     // The two stamps a merged message carries, and each answers a different
     // question. `endTimestamp` is its LAST line, which for a message that
@@ -84,7 +149,69 @@ export function turnActivity(turns: Turn[]): TurnActivity {
     const called = item.blocks.some((b) => b.kind === 'tool');
     if (wrote && started !== null && (lastMessageAt === null || started > lastMessageAt)) lastMessageAt = started;
     if (called && ended !== null && (lastToolAt === null || ended > lastToolAt)) lastToolAt = ended;
+    // Not `lastToolAt`, which is the same stamp read for a different reason: a
+    // message with no call at all still proves the turn was written into.
+    if (ended !== null && (lastWriteAt === null || ended > lastWriteAt)) lastWriteAt = ended;
   }
 
-  return { startedAt, lastMessageAt, lastToolAt };
+  return { startedAt, lastMessageAt, lastToolAt, lastWriteAt, unanswered: unansweredAt(turn.items) };
+}
+
+/**
+ * Below this, the turn's start and the busy flip are one instant written twice
+ * and one of the two figures would be noise. It is not a tolerance on a pause —
+ * the shortest a human can cause is seconds — it is the gap the app's own
+ * composer opens: `turnStartedAt` is stamped on the click, a few hundred
+ * milliseconds before the prompt's first line reaches the disk.
+ */
+const INTERJECTION_MS = 5_000;
+
+/** Where the indicator's first two figures count from. */
+export interface TurnClocks {
+  /** `total`: the whole turn, or the busy flip while that cannot be proved. */
+  total: number | null;
+  /** `last input`: the user's last intervention, or null for a turn nobody interrupted. */
+  input: number | null;
+}
+
+/**
+ * The turn's own clock, and the one that says when the user last put something
+ * into it.
+ *
+ * **A session goes busy when the user gives it something, and only then** — a
+ * prompt, an answer to a question, a permission granted, a queued prompt
+ * delivered. So `since` is not "the turn started": it is "the user last spoke",
+ * and reading it as the former is what restarted `total` from 0 every time a
+ * turn was interrupted, on a turn the transcript never split.
+ *
+ * So `total` counts from the transcript's own boundary — which already holds the
+ * interruptions inside the turn — and `since` becomes the figure it always was:
+ * `last input`, drawn only when it has something of its own to say.
+ *
+ * **The one thing the transcript cannot do is answer immediately.** Between a
+ * prompt and its first line reaching disk the last turn on record is still the
+ * PREVIOUS one, and anchoring there would read `total 3 hr` for a second at the
+ * start of every turn. So the turn is adopted only once it is demonstrably the
+ * one in flight, by either of two signs: something in it was written at or after
+ * the flip, or its last item is one Claude has yet to answer. Until then the
+ * flip is all there is, and it is right.
+ *
+ * The second sign is what covers the seconds an answer is being counted while
+ * Claude has still written nothing, and it is also the one that can be wrong: a
+ * turn that really ended while looking unanswered lends its start to whatever
+ * opens the next one, for as long as the watcher takes to catch up. Measured
+ * over the 30 most recent sessions of this project, that is 2 of 94 ended turns
+ * (2.1 %) — both a turn cut by a `<task-notification>` right after a question
+ * was answered — and it costs a second of an inflated `total`, against a `total`
+ * stuck at 0 for the 5-20 s Claude takes to write its first block after every
+ * question, which is the case this exists for.
+ */
+export function turnClocks(activity: TurnActivity, since: number | null): TurnClocks {
+  if (since === null) return { total: null, input: null };
+  const { startedAt } = activity;
+  // Covers a start NEWER than the flip as well, which is the composer's normal
+  // order — there the flip is the earlier of the two and already the right one.
+  if (startedAt === null || since - startedAt < INTERJECTION_MS) return { total: since, input: null };
+  const inFlight = (activity.lastWriteAt !== null && activity.lastWriteAt >= since) || activity.unanswered;
+  return inFlight ? { total: startedAt, input: since } : { total: since, input: null };
 }
