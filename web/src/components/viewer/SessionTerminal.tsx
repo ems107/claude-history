@@ -122,7 +122,23 @@ export function SessionTerminal({
     if (firstSession.current === sessionId) return;
     firstSession.current = sessionId;
     setMinimised(true);
+    setPinned(false);
   }, [sessionId]);
+  /**
+   * Held open on purpose: the one way to switch the focus rule off.
+   *
+   * The rule is right for reading and wrong for watching — a turn you want to
+   * see arrive while you scroll back through the conversation is a panel that
+   * must not tuck itself away the moment you click a message. So the pin is an
+   * ANSWER to that rule rather than an exception to it: nothing else changes,
+   * the bar still opens it, the × still closes it, and the focus simply stops
+   * being what puts it away ([collapseOnFocusOut]).
+   *
+   * **Not remembered either**, and for the same reason as the rest of this
+   * panel: a session is opened to be read, so it opens as a title bar, unpinned.
+   * Held open until you leave the conversation, not until you take it back.
+   */
+  const [pinned, setPinned] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /**
    * Closing is asked about only when there is something to lose by it — a warm
@@ -459,10 +475,11 @@ export function SessionTerminal({
    * find it collapsed would be an answer to a question nobody asked.
    *
    * Full screen is exempt: there is one way out of it and it is its own button,
-   * and a `fixed inset-0` panel with a hidden host is a blank window.
+   * and a `fixed inset-0` panel with a hidden host is a blank window. So is a
+   * panel somebody has pinned, which is the whole of what the pin does.
    */
   const collapseOnFocusOut = useCallback(() => {
-    if (full || minimised || confirmClose) return;
+    if (full || minimised || confirmClose || pinned) return;
     window.setTimeout(() => {
       const root = rootRef.current;
       if (!root || !document.hasFocus()) return;
@@ -470,7 +487,7 @@ export function SessionTerminal({
       if (active && active !== document.body && root.contains(active)) return;
       setMinimised(true);
     }, 0);
-  }, [full, minimised, confirmClose]);
+  }, [full, minimised, confirmClose, pinned]);
 
   const start = useMutation({
     mutationFn: async () => {
@@ -672,6 +689,51 @@ export function SessionTerminal({
               className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40"
             >
               {start.isPending ? 'starting…' : '❯ start again'}
+            </button>
+          )}
+          {/* Only on an OPEN panel, and never in full screen: the pin answers
+              the focus rule, and neither a title bar nor a window-filling
+              terminal is subject to it. */}
+          {!full && !minimised && (
+            <button
+              type="button"
+              aria-pressed={pinned}
+              onClick={() => setPinned((v) => !v)}
+              title={
+                pinned
+                  ? 'Pinned open — click to let the focus put it away again'
+                  : 'Keep it open even when the focus goes elsewhere'
+              }
+              // Pressed, it keeps the lit background rather than borrowing the
+              // hover one: a state you have to point at to see is a state that
+              // is invisible from where the panel is being read.
+              className={`flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] ${
+                pinned ? 'bg-[var(--bg-hover)] text-[var(--accent)]' : 'hover:text-[var(--text)]'
+              }`}
+            >
+              {/* A tack: the wide cap a thumb presses, the body under it, and
+                  the needle. The silhouette is what has to survive 12 px, so it
+                  is the shape that carries the icon and the detail inside it is
+                  allowed to close up — a circle on a stick was the first attempt
+                  and read as a balloon, which is a different symbol entirely.
+                  The FILL is the state, pressed in while it is holding the panel
+                  open, and the word beside it never changes: the buttons are
+                  right-aligned, so a label that grew would slide the icon out
+                  from under the pointer that was clicking it. */}
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                className="size-3 shrink-0"
+                fill={pinned ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+                <path d="M12 17v5" fill="none" />
+              </svg>
+              pin
             </button>
           )}
           <button
