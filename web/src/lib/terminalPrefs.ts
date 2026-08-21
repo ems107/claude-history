@@ -6,6 +6,21 @@
  * `localStorage` rather than in settings because it is a property of this
  * window — a phone and a 4K monitor want different answers, and neither is the
  * other's business.
+ *
+ * **And it is the ONLY thing remembered about that panel, which is the point.**
+ * Whether it was collapsed used to live here too — first as one switch for every
+ * session, then as a capped list of the collapsed ones. Neither is here any
+ * more, because that stopped being a state anybody sets: a session is opened to
+ * be READ, so the terminal comes up as its own title bar, a click on the bar
+ * opens it, and the focus leaving puts it away again ([SessionTerminal]). There
+ * is nothing left to remember, and a key answering "how did you leave this one?"
+ * was only ever read out as a panel that came up hiding itself. A
+ * `terminalMinimised` may still be sitting in a browser from before; nothing
+ * reads it, and it is not worth a migration.
+ *
+ * The floor below is why collapsing has to exist at all: under
+ * `TERMINAL_HEIGHT_MIN` there is no room for the CLI's status line and a prompt,
+ * so "drag it small" was never the way to get the conversation back.
  */
 
 export const HEIGHT_KEY = 'terminalHeight';
@@ -25,59 +40,6 @@ export function clamp(px: number): number {
 export function readHeight(): number {
   const stored = Number(localStorage.getItem(HEIGHT_KEY));
   return stored ? clamp(stored) : TERMINAL_HEIGHT_DEFAULT;
-}
-
-/**
- * Collapsed to its own title bar, with the CLI still running behind it.
- *
- * The height has a floor (`TERMINAL_HEIGHT_MIN`) because below it there is no
- * room for the CLI's status line and a prompt — so "drag it small" was never the
- * way to get the conversation back, and this is.
- *
- * **Remembered per SESSION, unlike the height**, and the difference is what each
- * one is about: a height is a property of this window, which a phone and a 4K
- * monitor answer differently, while collapsing the panel is something you did to
- * one conversation — to read it without the terminal in the way — and coming
- * back to that conversation should find it as you left it. As one switch for all
- * of them, collapsing here made the next terminal you started anywhere else come
- * up collapsed as well, which is a panel hiding itself for a reason nobody can
- * see.
- *
- * A list of the sessions that are collapsed, most recent first — absence is the
- * default, so nothing accumulates for the ordinary case of a panel left open.
- * The cap is what stops one entry per session ever read: the tail of it is
- * terminals nobody will meet again, and the cost of forgetting one is a panel
- * that comes up expanded.
- */
-export const MINIMISED_KEY = 'terminalMinimised';
-
-/** Beyond this the oldest is forgotten, which costs one expanded panel. */
-const MINIMISED_MAX = 100;
-
-/**
- * Anything that is not our list reads as an empty one — including the plain
- * `true`/`false` this key held while the state was global, which is the very
- * setting whose memory has to go.
- */
-function minimisedList(): string[] {
-  try {
-    const raw = localStorage.getItem(MINIMISED_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-export function readMinimised(sessionId: string): boolean {
-  return minimisedList().includes(sessionId);
-}
-
-export function writeMinimised(sessionId: string, minimised: boolean): void {
-  const rest = minimisedList().filter((id) => id !== sessionId);
-  const next = minimised ? [sessionId, ...rest].slice(0, MINIMISED_MAX) : rest;
-  localStorage.setItem(MINIMISED_KEY, JSON.stringify(next));
 }
 
 /**
