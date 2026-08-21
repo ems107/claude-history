@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { SessionDetailResponse, TerminalServerMessage } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
-import { clamp, HEIGHT_KEY, MINIMISED_KEY, readHeight, readMinimised } from '../../lib/terminalPrefs.ts';
+import { clamp, HEIGHT_KEY, readHeight, readMinimised, writeMinimised } from '../../lib/terminalPrefs.ts';
 import { BlockedBar } from './BlockedBar.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
@@ -100,14 +100,24 @@ export function SessionTerminal({
    * Collapsed to its title bar. The CLI keeps running and the socket stays
    * attached — this is a panel getting out of the way of the conversation, not a
    * session being closed, which is the distinction the × button owns.
+   *
+   * Remembered PER SESSION ([terminalPrefs]): it says something about the
+   * conversation you are reading, not about this window. One switch for all of
+   * them meant collapsing a terminal here made the next one you started
+   * somewhere else come up collapsed too — a panel that hides itself for a
+   * reason nobody can see, which is what made it unreproducible.
    */
-  const [minimised, setMinimised] = useState(readMinimised);
+  const [minimised, setMinimised] = useState(() => readMinimised(sessionId));
   const toggleMinimised = () => {
     setMinimised((v) => {
-      localStorage.setItem(MINIMISED_KEY, String(!v));
+      writeMinimised(sessionId, !v);
       return !v;
     });
   };
+  // The route is `/session/:id` for every session, so going from one to another
+  // keeps this component mounted: what is remembered has to be re-read rather
+  // than left where the last session put it.
+  useEffect(() => setMinimised(readMinimised(sessionId)), [sessionId]);
   const [error, setError] = useState<string | null>(null);
   /**
    * Closing is asked about only when there is something to lose by it — a warm
@@ -375,6 +385,12 @@ export function SessionTerminal({
     },
     onSuccess: () => {
       setError(null);
+      // Starting one is asking to SEE it, whatever this session's panel was left
+      // doing last time: a terminal that comes up as a title bar the moment it
+      // is asked for is the one behaviour nobody could explain, and it is not
+      // what being remembered per session is for.
+      setMinimised(false);
+      writeMinimised(sessionId, false);
       // Either the xterm is there already — "start again" on a panel keeping a
       // dead process's screen — or it is about to be built, and the effect that
       // builds it takes the focus then.

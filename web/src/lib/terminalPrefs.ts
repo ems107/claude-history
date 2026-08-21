@@ -32,14 +32,52 @@ export function readHeight(): number {
  *
  * The height has a floor (`TERMINAL_HEIGHT_MIN`) because below it there is no
  * room for the CLI's status line and a prompt — so "drag it small" was never the
- * way to get the conversation back, and this is. Remembered like the height, and
- * for the same reason: it is a property of this window and of what its owner is
- * doing right now, not of the session.
+ * way to get the conversation back, and this is.
+ *
+ * **Remembered per SESSION, unlike the height**, and the difference is what each
+ * one is about: a height is a property of this window, which a phone and a 4K
+ * monitor answer differently, while collapsing the panel is something you did to
+ * one conversation — to read it without the terminal in the way — and coming
+ * back to that conversation should find it as you left it. As one switch for all
+ * of them, collapsing here made the next terminal you started anywhere else come
+ * up collapsed as well, which is a panel hiding itself for a reason nobody can
+ * see.
+ *
+ * A list of the sessions that are collapsed, most recent first — absence is the
+ * default, so nothing accumulates for the ordinary case of a panel left open.
+ * The cap is what stops one entry per session ever read: the tail of it is
+ * terminals nobody will meet again, and the cost of forgetting one is a panel
+ * that comes up expanded.
  */
 export const MINIMISED_KEY = 'terminalMinimised';
 
-export function readMinimised(): boolean {
-  return localStorage.getItem(MINIMISED_KEY) === 'true';
+/** Beyond this the oldest is forgotten, which costs one expanded panel. */
+const MINIMISED_MAX = 100;
+
+/**
+ * Anything that is not our list reads as an empty one — including the plain
+ * `true`/`false` this key held while the state was global, which is the very
+ * setting whose memory has to go.
+ */
+function minimisedList(): string[] {
+  try {
+    const raw = localStorage.getItem(MINIMISED_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function readMinimised(sessionId: string): boolean {
+  return minimisedList().includes(sessionId);
+}
+
+export function writeMinimised(sessionId: string, minimised: boolean): void {
+  const rest = minimisedList().filter((id) => id !== sessionId);
+  const next = minimised ? [sessionId, ...rest].slice(0, MINIMISED_MAX) : rest;
+  localStorage.setItem(MINIMISED_KEY, JSON.stringify(next));
 }
 
 /**
