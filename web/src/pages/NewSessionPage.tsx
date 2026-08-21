@@ -218,10 +218,14 @@ export function NewSessionPage() {
   // Typing re-decides where the keyboard is, so it can never sit on a row that
   // has left the screen — and it is DROPPED rather than moved along, because
   // moving it would be the page arming a row on its own again.
+  //
+  // Never while a reservation is in flight: the armed row is the one being
+  // started, and filtering it out from under the request would take the
+  // highlight and the `Starting…` off the row it is actually happening on.
   useEffect(() => {
-    if (!choice || choice === OTHER) return;
+    if (creating || !choice || choice === OTHER) return;
     if (!shown.some((p) => p.key === choice)) setChoice('');
-  }, [choice, shown]);
+  }, [creating, choice, shown]);
 
   /** The same query the composer reads — deduped, one request between them. */
   const chat = useQuery({
@@ -381,10 +385,23 @@ export function NewSessionPage() {
     setChoice('');
   };
 
-  /** Up and down the list from the filter box, so a name can be typed and taken. */
+  /**
+   * Up and down the list from the filter box, so a name can be typed and taken.
+   *
+   * From nothing armed, down takes the first row and up takes the last — which
+   * is `Another folder…`, and the shortest way to it there is. Dead while a
+   * reservation is in flight: the rows are disabled, and the keyboard moving the
+   * highlight off the row being started would be the one way left to lie about
+   * where the session is opening.
+   */
   const step = (delta: number) => {
+    if (creating) return;
     const rows = [...shown.map((p) => p.key), OTHER];
     const at = rows.indexOf(choice);
+    if (at === -1) {
+      setChoice(delta > 0 ? rows[0] : rows[rows.length - 1]);
+      return;
+    }
     setChoice(rows[Math.min(rows.length - 1, Math.max(0, at + delta))]);
   };
 
@@ -501,6 +518,12 @@ export function NewSessionPage() {
                     <input
                       autoFocus
                       value={filter}
+                      // Frozen while a reservation is in flight, along with the
+                      // rows: filtering the row being started out of the list
+                      // would take the highlight and its `Starting…` off screen
+                      // with the request still running. `readOnly` rather than
+                      // `disabled`, which would throw the focus to the body.
+                      readOnly={creating}
                       onChange={(e) => setFilter(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -512,6 +535,7 @@ export function NewSessionPage() {
                           // arrows armed and nothing else: with none armed it
                           // does nothing, because a first row is not an answer.
                           e.preventDefault();
+                          if (creating) return;
                           if (choice === OTHER) folderBox.current?.focus();
                           else if (choice) startProject(choice);
                         }
