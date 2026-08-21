@@ -223,10 +223,19 @@ export function QuestionPanel({
         <button
           type="button"
           onClick={() => setFull((v) => !v)}
-          title={full ? 'Back to the composer (Esc)' : 'Read it full screen'}
+          // It says *full screen* on the way out too, and never "close": beside
+          // something waiting to be answered, *close* reads as dismissing it —
+          // and this button only ever changes how much of the window it is being
+          // read in. Same wording as the terminal's, for the same reason
+          // ([SessionTerminal]).
+          title={
+            full
+              ? `Leave full screen (Esc) — the ${isPlan ? 'plan' : 'question'} stays open`
+              : 'Read it full screen'
+          }
           className="rounded px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
         >
-          {full ? '⤡ close' : '⤢ full screen'}
+          {full ? '⤡ exit full screen' : '⤢ full screen'}
         </button>
       </div>
 
