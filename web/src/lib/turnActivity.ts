@@ -71,8 +71,8 @@ export interface TurnActivity {
   lastQueuedAt: number | null;
   /**
    * The turn's LAST item is something Claude has yet to answer, so the turn
-   * cannot be over whatever the status file says. Three shapes, and each is one
-   * of the two ways a user interrupts a turn:
+   * cannot be over whatever the status file says. Three shapes, the first two
+   * being the two ways a user interrupts a turn:
    *
    *  - a prompt typed while the turn ran (`MessageItem.queued`). Claude Code
    *    delivers one into the turn already open rather than into a turn of its
@@ -178,11 +178,14 @@ export function turnActivity(turns: Turn[]): TurnActivity {
 }
 
 /**
- * Below this, the turn's start and the busy flip are one instant written twice
- * and one of the two figures would be noise. It is not a tolerance on a pause —
- * the shortest a human can cause is seconds — it is the gap the app's own
- * composer opens: `turnStartedAt` is stamped on the click, a few hundred
- * milliseconds before the prompt's first line reaches the disk.
+ * How far from the turn's own start a stamp has to be before it is somebody
+ * interrupting rather than somebody starting. Below it the two figures are one
+ * instant written twice: the flip IS the start on every ordinary turn, and a
+ * prompt typed in the first seconds of one is part of asking, not an
+ * interjection. It is not a tolerance on a pause — the shortest a human can
+ * cause is seconds — it is the gap the app's own composer opens by stamping
+ * `turnStartedAt` on the click, a few hundred milliseconds before the prompt's
+ * first line reaches the disk.
  */
 const INTERJECTION_MS = 5_000;
 

@@ -104,7 +104,10 @@ export function WorkingIndicator({
    * `activity` to tell them apart with, this is `total` as it always was.
    */
   since: number | null;
-  /** What has landed since this turn began — see `turnActivity`. */
+  /**
+   * What the turn in flight is made of — see `turnActivity`. Absent, `since` is
+   * drawn as `total` and nothing else can be known about the turn.
+   */
   activity?: TurnActivity;
   /** What the `total` figure's hover says it counts from. */
   startHint?: string;
