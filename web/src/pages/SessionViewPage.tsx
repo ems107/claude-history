@@ -8,7 +8,7 @@ import {
 } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { draftSessionDetail } from '../lib/draftSession.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
@@ -87,6 +87,13 @@ export function SessionViewPage() {
   // Which of the two the app offers at the foot of a session. Meaningless while
   // `chatEnabled` is off, and never read there: nothing is drawn either way.
   const terminalMode = chatEnabled && settings.data?.settings.chatMode === 'terminal';
+  /**
+   * We were handed this session by `/new`, which had a terminal open and being
+   * typed into. The panel below is a fresh mount of that same terminal, so the
+   * focus has to be given back to it — nothing else on this page asks for it,
+   * and a session opened to be read never does.
+   */
+  const handedOver = (useLocation().state as { focusTerminal?: boolean } | null)?.focusTerminal === true;
   /**
    * A terminal has filled the window.
    *
@@ -1032,7 +1039,12 @@ export function SessionViewPage() {
                         changes is how you talk to Claude, not where the
                         conversation ends. */}
                     {terminalMode ? (
-                      <SessionTerminal sessionId={id} columnWidth={columnWidth} onLayout={onTerminalLayout} />
+                      <SessionTerminal
+                        sessionId={id}
+                        columnWidth={columnWidth}
+                        autoFocus={handedOver}
+                        onLayout={onTerminalLayout}
+                      />
                     ) : (
                       <Composer
                         sessionId={id}

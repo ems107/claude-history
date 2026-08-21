@@ -256,8 +256,12 @@ export function NewSessionPage() {
   useEffect(() => {
     // `replace`, so Back goes where the user came from rather than to a picker
     // for a session that has already started.
-    if (bornId) navigate(`/session/${bornId}`, { replace: true });
-  }, [bornId, navigate]);
+    //
+    // `focusTerminal` is the one thing the viewer cannot work out for itself:
+    // the terminal it draws is a fresh mount of the one being typed into here,
+    // and without this the keystroke after the first prompt would go nowhere.
+    if (bornId) navigate(`/session/${bornId}`, { replace: true, state: { focusTerminal: terminalStarted } });
+  }, [bornId, navigate, terminalStarted]);
 
   const canStart = choice === OTHER ? !!folder.trim() : !!selected;
   const start = () => {
@@ -529,6 +533,10 @@ export function NewSessionPage() {
                 {terminalMode ? (
                   <SessionTerminal
                     sessionId={draft.sessionId}
+                    // The folder was the question this page asks, and it has
+                    // been answered — so the terminal comes up running and
+                    // focused rather than behind a button repeating it.
+                    autoStart
                     onStarted={() => setTerminalStarted(true)}
                   />
                 ) : (

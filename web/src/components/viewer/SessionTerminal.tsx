@@ -47,6 +47,27 @@ export function SessionTerminal({
   /** Called once a terminal has really started, so `/new` can begin waiting for a transcript. */
   onStarted,
   /**
+   * Start it without being asked, and put the cursor in it.
+   *
+   * `/new` only, and that is the whole of it: a session being started from the
+   * app has no other reason to exist, so a bar asking whether to start the thing
+   * that was just asked for is a click that means nothing — the folder was the
+   * question, and it has been answered. Everywhere else the button stays,
+   * because opening a conversation to READ it must never spawn a CLI.
+   */
+  autoStart,
+  /**
+   * Take the keys on MOUNT, not only after a start of this component's own.
+   *
+   * One caller, and it is the handover: `/new` navigates to `/session/<id>` as
+   * soon as the transcript appears, which remounts this and rebuilds the xterm
+   * — so somebody who has just typed their first prompt into it would find the
+   * next keystroke going nowhere and the panel needing a click. It is the same
+   * focus they had a second earlier, which is the only case where taking it is
+   * not taking it from somebody who was reading.
+   */
+  autoFocus,
+  /**
    * Full screen is the PAGE's business, not just this component's.
    *
    * The slot this sits in is `position: sticky`, and sticky creates a stacking
@@ -67,6 +88,8 @@ export function SessionTerminal({
   /** A CSS length, not a number — `min(896px, 100vw)` and the like. */
   columnWidth?: string;
   onStarted?: () => void;
+  autoStart?: boolean;
+  autoFocus?: boolean;
   onLayout?: (layout: { full: boolean; open: boolean; height: number; rightGap: number }) => void;
 }) {
   const queryClient = useQueryClient();
@@ -99,6 +122,17 @@ export function SessionTerminal({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  /**
+   * The keys go to the terminal as soon as there is one to type into.
+   *
+   * Set by the start that asked for it — the button, or `autoStart` — and never
+   * by a mount: arriving at a session that already has one running is READING,
+   * and taking the focus there would take Ctrl+F and Escape away from a page
+   * somebody is only looking at ([isFromTerminal]). It cannot be done at the
+   * moment of the click either, because until the panel is open there is no
+   * xterm to focus — so the intention waits here until there is one.
+   */
+  const focusOnOpen = useRef(autoFocus ?? false);
   /**
    * Whether the program inside has asked to be told about modifiers, which is
    * what makes Shift+Enter a key of its own rather than another Enter.
@@ -174,6 +208,10 @@ export function SessionTerminal({
       // The DOM renderer is the fallback and it is the one we started with.
     }
     fit.fit();
+    if (focusOnOpen.current) {
+      focusOnOpen.current = false;
+      term.focus();
+    }
     termRef.current = term;
     fitRef.current = fit;
     return () => {
@@ -337,11 +375,32 @@ export function SessionTerminal({
     },
     onSuccess: () => {
       setError(null);
+      // Either the xterm is there already — "start again" on a panel keeping a
+      // dead process's screen — or it is about to be built, and the effect that
+      // builds it takes the focus then.
+      if (termRef.current) termRef.current.focus();
+      else focusOnOpen.current = true;
       onStarted?.();
       void queryClient.invalidateQueries({ queryKey: ['terminal', sessionId] });
     },
     onError: (err: Error) => setError(err.message),
   });
+
+  /**
+   * `autoStart`: once per session, and only from a state that can be started.
+   *
+   * Guarded by the id and not by a boolean, because this component survives a
+   * navigation from one session to another and "already tried" has to mean this
+   * one. A refusal is never retried — `blocked` is a sentence in the bar, and a
+   * loop of POSTs against it would be a spinner nobody can stop.
+   */
+  const autoStarted = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoStart || !status.data || open || blocked) return;
+    if (autoStarted.current === sessionId) return;
+    autoStarted.current = sessionId;
+    start.mutate();
+  }, [autoStart, status.data, open, blocked, sessionId, start]);
 
   const close = useMutation({
     mutationFn: () => api.terminalStop(sessionId),
