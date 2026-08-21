@@ -677,7 +677,7 @@ to the keyframes.
 
 **It takes its status from the `['live']` query, NOT from `detail.summary.live`**, though both carry the same field. `['session', id]` is invalidated by `sessions-changed` — the transcript grew — while the busy/idle flip is a write under `~/.claude/sessions` and fires only `live-changed`. Read off the detail, the indicator would hang on "working" after the turn's last line was written, and the alternative (re-parsing a multi-MB transcript on every status flip) is absurd next to a query that reads two small files.
 
-**Whether anything is working, and since when, are the CALLER's answers.** The row takes a `since` and draws seconds; it knows nothing about a session. A session reads both off `~/.claude/sessions` — `isWorking` and `workingSince`, kept beside each other because they are one reading — and a subagent has no file there at all, sharing its parent's process, so it reads its own transcript instead. The signature used to be a `LiveInfo`, which the new-session page had to forge with six null fields to hand over one timestamp.
+**Whether anything is working, and since when, are the CALLER's answers.** The row takes a `since` and works the clocks out from it; it knows nothing about a session. A session reads both off `~/.claude/sessions` — `isWorking` and `workingSince`, kept beside each other because they are one reading — and a subagent has no file there at all, sharing its parent's process, so it reads its own transcript instead. The signature used to be a `LiveInfo`, which the new-session page had to forge with six null fields to hand over one timestamp.
 
 **It hangs on the last turn's RAIL, as a `footer`, not after the list.** An answer being written belongs where the answers are: rendered at root level it lined up with the prompt instead of with the replies, reading as a sibling of the question rather than as the response arriving (checked: left 262 px, identical to the assistant bubbles, against the prompt's 236). A turn that has produced nothing yet — the state of every session for the first seconds after a prompt — grows a rail of its own from the same `RAIL` constant.
 
@@ -685,22 +685,59 @@ It is still **NOT an item**: it never enters `turn.items`, so nothing that folds
 
 Why it says "working" rather than "writing", and why the silence it fills is so long, is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#live-sessions-and-streaming).
 
-### Three clocks, and two of them are about the silence
+### Four clocks, and two of them are about the silence
 
 The turn's own figure — `total`, how long it has run — answers "is this slow?"
 and nothing else. What the reader actually wants to know while a turn hangs is
 whether it is going anywhere, so two more sit beside it: **how long since the
 model last wrote** and **how long since the last tool was called**. Both come
-from the conversation (`lib/turnActivity.ts`, pure) rather than from
-`/api/live`, which knows when the turn began and nothing about what has happened
-inside it. All three are labelled, `total` included: bare, it was the only figure
-and could only be the turn.
+from the conversation (`lib/turnActivity.ts`, pure) rather than from `/api/live`,
+which knows when the session last went busy and nothing about what has happened
+inside it. A fourth appears only on a turn somebody interrupted: **how long since
+the user last put something in**. All four are labelled, `total` included: bare,
+it was the only figure and could only be the turn.
 
+- **A session goes busy when the user gives it something, and only then** — a
+  prompt, an answer to a question, a permission granted, a queued prompt
+  delivered. So `statusUpdatedAt` is not "the turn started", it is "you last
+  spoke", and reading it as the former restarted `total` from 0 at every
+  interruption — on a turn the transcript never split, because a queued prompt is
+  delivered INTO the turn already open
+  ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#queued-lines-attachment--queued_command))
+  and an `AskUserQuestion` answer is not an item at all, it is the call's own
+  `result` ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md)). So
+  `total` counts from the transcript's own boundary, which already holds both
+  inside the turn, and the flip is drawn as `last input` instead.
+- **`last input` is second in the row because it re-anchors the two after it.**
+  On a turn that waited on a question, `last message` is OLDER than what `total`
+  counts from and reads as a hang until this figure says the turn was waiting on
+  YOU. It is drawn only when the turn was really interrupted (`turnClocks`
+  returns null otherwise, and under 5 s it would be the same number as `total`
+  written twice — the gap the composer opens by stamping `turnStartedAt` on the
+  click, a moment before the prompt's first line reaches the disk).
+- **The transcript is right about the turn and the flip is immediate, so the rule
+  is which to believe when** — one pure function, `turnClocks`, and nowhere else.
+  Between a prompt and its first line reaching disk the last turn on record is
+  still the PREVIOUS one, and anchoring there would read `total 3 hr` for a second
+  at the start of every turn. So the turn is adopted only once it is demonstrably
+  the one in flight, by either of two signs: something in it was written at or
+  after the flip, or its last item is one Claude has yet to answer — a queued
+  prompt (whose line is appended at DELIVERY, so being last IS that window), a
+  call that asks a human (`AskUserQuestion`, `ExitPlanMode`), or a call with no
+  result. Named rather than "ends on a call" because a turn ends on a call that
+  came back all the time: a `<task-notification>` opens a turn of its own and cuts
+  the previous one exactly there. **Measured exposure of the sign that can be
+  wrong**: 2 of 94 ended turns across the 30 most recent sessions of this project
+  would lend their start to whatever opens the next one, for the second the
+  watcher takes to catch up — against a `total` stuck at 0 for the 5-20 s Claude
+  takes to write its first block after every question.
 - **Every clock on the row belongs to the turn in flight.** A figure is shown
-  only for something stamped AFTER the turn started, and an unknown start hides
-  both — otherwise the previous turn's last word wears this turn's clothes, which
-  is exactly what the echoed-prompt state would show (while a prompt of ours is
-  still pending, the last turn in the transcript is the one BEFORE it).
+  only for something stamped AFTER what `total` counts from, and an unknown start
+  hides both — otherwise the previous turn's last word wears this turn's clothes,
+  which is exactly what the echoed-prompt state would show (while a prompt of ours
+  is still pending, the last turn in the transcript is the one BEFORE it). The
+  gate is the ANCHOR and not the flip: gated on the flip, `last message` would
+  vanish the moment a question was answered, which is when it says the most.
 - **A tool call is not a message, and only the model's output is one.** Count the
   message that made the call and the two figures are the same number for as long
   as a run lasts — two clocks that always agree are one clock and a lie — because
@@ -778,9 +815,9 @@ and could only be the turn.
 
 An agent's transcript is a conversation and gets watched like one, so the drawer hangs the same footer off the same `TurnList` ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md#a-running-agent)). Three readings change their source and none changes its meaning:
 
-- **`total` counts from the agent's own first line** (`turnActivity().startedAt`), and its hover says `Sent out` rather than `Turn started`. Nothing else could say when it began: there is no `<pid>.json` for an agent, and its first line IS its brief.
+- **`total` counts from the agent's own first line** (`turnActivity().startedAt`), and its hover says `Sent out` rather than `Turn started`. Nothing else could say when it began: there is no `<pid>.json` for an agent, and its first line IS its brief. It is also the one caller whose `since` IS that line, so the gap `turnClocks` measures is zero and `last input` never appears here — an agent is not asked anything by the user.
 - **Whether it is working is the page's answer**, not the drawer's — a report that has not come back, a CLI still alive, and a recent write. **Never the parent being mid-turn**: an agent outlives the turn that launched it, and gating on `busy` took the row away from an agent that was still writing. Where the silence says nothing the row is not drawn at all; the rule, its clock and its blind spot live with the panel.
-- **A turn can end with agents still out there**, and the foot of the conversation says so in the same row with a different sentence: `⑂ N subagents still working…`, one clock, counting from when the first of them was sent out. `Claude is working…` there would be false — Claude is idle, and what it sent out is not — and the count is the news. Its two other clocks are deliberately absent: what has landed inside those transcripts is in THEIR drawers, and the parent's `activity` describes the turn that just ended.
+- **A turn can end with agents still out there**, and the foot of the conversation says so in the same row with a different sentence: `⑂ N subagents still working…`, one clock, counting from when the first of them was sent out. `Claude is working…` there would be false — Claude is idle, and what it sent out is not — and the count is the news. Its three other clocks are deliberately absent: what has landed inside those transcripts is in THEIR drawers, and the parent's `activity` describes the turn that just ended — which is also why passing none leaves `total` counting from the flip, exactly as it always did.
 - **The pill's corner is bought with bottom padding** (`pb-14`) instead of the `max()` over `columnWidth`. That arithmetic compares the column with the WINDOW, which only locates the pill for a column centred in it; this one is a 44 rem panel pinned to the right edge. Emptying the band the pill floats in (16 px off the foot plus its own 30) is the same fix with no arithmetic in it — and it is why the drawer's scroller pads the bottom and not the sides.
 
 ## Verify
