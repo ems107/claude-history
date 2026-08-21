@@ -84,6 +84,30 @@ const KEY_MODE_RE = /\u001b\[(?:([<>])[0-9;]*u|\?([0-9;]*)([hl]))/g;
  */
 const MODE_SCAN_TAIL = 64;
 
+/**
+ * The modes a newly attached browser is TOLD, because the backlog cannot be
+ * trusted to carry them.
+ *
+ * Each of these is a session-level statement the program makes once, at
+ * startup, and every one of them is a visible feature when it survives and a
+ * bug report when it does not: **1049** the alternate screen (without it the
+ * CLI's repaint lands on top of the replayed text — two status lines, a screen
+ * that reads as corrupt), **2004** bracketed paste (without it a paste arrives
+ * as typing, so every newline in it submits and only the last fragment is left
+ * in the box, with no `[Pasted text]`), **1000/1002/1003/1006** mouse reporting
+ * (without it a click never reaches the CLI, so it cannot move the cursor),
+ * **1004** focus reporting and **25** the cursor itself. Measured, all four
+ * symptoms at once, by shrinking `SCROLLBACK_BYTES` and reattaching.
+ *
+ * An ALLOW-LIST rather than everything the scanner saw, because a mode is not
+ * always a state worth restating: `?2026` (synchronized output) is a frame
+ * marker, and a chunk that ends between its `h` and its `l` would have us
+ * assert "hold the screen" for ever — a blank panel, arrived at by trying to
+ * be faithful. 1049 goes LAST: it decides which buffer everything else lands
+ * in.
+ */
+const REASSERTED_MODES = [25, 1000, 1002, 1003, 1004, 1006, 2004, 1049];
+
 interface TerminalProcess {
   sessionId: string;
   cwd: string;
@@ -99,6 +123,13 @@ interface TerminalProcess {
   clients: Set<TerminalClient>;
   /** The program inside has asked to be told about modifiers ([KEY_MODE_RE]). */
   enhancedKeys: boolean;
+  /**
+   * Every DEC private mode the program has set or reset, latest value winning.
+   *
+   * The state of the terminal as the program believes it to be, which is the
+   * one thing a bounded backlog cannot carry ([REASSERTED_MODES]).
+   */
+  modes: Map<number, boolean>;
   /** The tail of the last chunk, so a mode sequence split across two survives. */
   modeTail: string;
 }
@@ -284,6 +315,7 @@ export class SessionTerminalService implements TranscriptWriter {
       rows: r,
       clients: new Set(),
       enhancedKeys: false,
+      modes: new Map(),
       modeTail: '',
     };
     this.procs.set(sessionId, p);
@@ -292,7 +324,7 @@ export class SessionTerminalService implements TranscriptWriter {
       const bytes = Buffer.from(data, 'utf8');
       this.append(p, bytes);
       const before = p.enhancedKeys;
-      this.scanKeyModes(p, data);
+      this.scanModes(p, data);
       for (const client of p.clients) client.sendBytes(bytes);
       // Rare enough to be an event rather than a field on the status: the CLI
       // asks once, at startup, and gives it up on the way out.
@@ -355,6 +387,21 @@ export class SessionTerminalService implements TranscriptWriter {
     p.clients.add(client);
     if (p.bufferBytes > 0) {
       client.sendBytes(Buffer.concat([Buffer.from(RESET_BEFORE_REPLAY, 'utf8'), ...p.buffer]));
+    }
+    /**
+     * The modes, AFTER the replay and before the nudge — so the last word on
+     * the state of this terminal is the truth rather than whatever the backlog
+     * happened to still contain.
+     *
+     * Only for a live CLI: a panel keeping a dead process's last screen has
+     * nothing left to repaint, and putting it into the alternate screen would
+     * replace that screen — the diagnosis — with an empty one.
+     */
+    if (p.pty && p.exit === null) {
+      const assertion = REASSERTED_MODES.filter((mode) => p.modes.has(mode))
+        .map((mode) => `\u001b[?${String(mode)}${p.modes.get(mode) === true ? 'h' : 'l'}`)
+        .join('');
+      if (assertion) client.sendBytes(Buffer.from(assertion, 'utf8'));
     }
     client.sendJson({
       t: 'ready',
@@ -447,27 +494,41 @@ export class SessionTerminalService implements TranscriptWriter {
   // ---- internals ----
 
   /**
-   * Follows the program's own key-reporting modes through the output stream.
+   * Follows the program's own modes through the output stream: what it has
+   * switched on, and therefore what a browser attaching later has to be told
+   * ([REASSERTED_MODES]) as well as whether Shift+Enter is a key of its own
+   * ([KEY_MODE_RE]).
    *
-   * In stream order, because these are pushes and pops: the last one wins, and
+   * In stream order, because these are sets and resets: the last one wins, and
    * reading them in any other order would answer with a mode that has already
    * been given up. The tail carried over is what survives a chunk boundary, and
    * it never contains a sequence that has already been counted — it begins at
    * the end of the last complete match, or at the last `MODE_SCAN_TAIL` bytes,
    * whichever is later.
    */
-  private scanKeyModes(p: TerminalProcess, chunk: string): void {
+  private scanModes(p: TerminalProcess, chunk: string): void {
     const s = p.modeTail + chunk;
     let end = 0;
     KEY_MODE_RE.lastIndex = 0;
     for (let m = KEY_MODE_RE.exec(s); m; m = KEY_MODE_RE.exec(s)) {
       end = m.index + m[0].length;
       // `CSI > flags u` pushes the kitty protocol, `CSI < u` pops it.
-      if (m[1]) p.enhancedKeys = m[1] === '>';
-      // win32-input-mode, which is what Claude Code asks for today. Read out of
-      // the parameter list rather than matched whole: modes can be set several
-      // at a time, as `CSI ? 1000;1002;9001 h`.
-      else if (m[2] !== undefined && m[2].split(';').includes('9001')) p.enhancedKeys = m[3] === 'h';
+      if (m[1]) {
+        p.enhancedKeys = m[1] === '>';
+        continue;
+      }
+      if (m[2] === undefined) continue;
+      // One parameter at a time, because modes arrive several at a time
+      // (`CSI ? 1000;1002;9001 h`) and each is its own switch. 9001 is
+      // win32-input-mode, which is what Claude Code asks for today.
+      const on = m[3] === 'h';
+      for (const param of m[2].split(';')) {
+        if (!param) continue;
+        const mode = Number(param);
+        if (!Number.isInteger(mode)) continue;
+        p.modes.set(mode, on);
+        if (mode === 9001) p.enhancedKeys = on;
+      }
     }
     p.modeTail = s.slice(Math.max(end, s.length - MODE_SCAN_TAIL));
   }
