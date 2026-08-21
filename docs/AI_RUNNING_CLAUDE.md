@@ -372,6 +372,8 @@ Starting is a **POST**, never the socket: a refusal has to arrive as `blockedRea
 
 Output goes down as **binary frames** and control messages as JSON text — output is 99% of the traffic, and wrapping it would cost a parse per keystroke echoed back. Input comes up as JSON (`{t:'i'}` / `{t:'r'}`), length-bounded.
 
+**A size is bounded too, and the bound has to be one no real screen can reach.** `cols`/`rows` come off a `{t:'r'}` frame and go straight into `pty.resize`, so there is a cap; but the first one — 500x200 — was below what an honest client asks for, and a cap that bites makes the view and the pty disagree, which is the one thing it exists to prevent. What it looked like was never a crash: the CLI lays out for the console it was given, everything it draws to the full width stops there, and the rest of the panel goes dead — which reads as a design decision, which is why it went unreported for as long as it did. The numbers, and why 2000x500 is where they landed, are with the constants (`shared/src/api.ts`).
+
 The upgrade is an ordinary GET, so the session hook in `app.ts` covers it and a remote browser without a cookie never arrives. **Same-origin is checked in the route itself**, because the global hook exempts GET on purpose — a plain-HTTP page sends neither `Sec-Fetch-Site` nor `Origin` on an ordinary same-origin GET ([Remote access](AI_REMOTE_ACCESS.md)) — while a browser always sends `Origin` on a WebSocket upgrade, so there its absence means something.
 
 ### What the page had to learn

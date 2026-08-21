@@ -1179,9 +1179,31 @@ export interface ChatCreateResponse {
 /** Lower bound on the pseudo-terminal, so a collapsed panel cannot ask for 0x0. */
 export const TERMINAL_MIN_COLS = 20;
 export const TERMINAL_MIN_ROWS = 4;
-/** Upper bound, so a hostile or broken client cannot ask for a million-column console. */
-export const TERMINAL_MAX_COLS = 500;
-export const TERMINAL_MAX_ROWS = 200;
+/**
+ * Upper bound, so a hostile or broken client cannot ask for a million-column
+ * console — and high enough that no real screen can reach it, which is the half
+ * the first numbers got wrong.
+ *
+ * 500x200 was a tope put in passing, and it was BELOW what an honest client
+ * asks for. Measured, terminal filling the window, at the full column width:
+ * 2560x1600 gives 358x103 at 12 px but 501x132 at 10 px and 626x161 at 8 px,
+ * and a 3840-wide window clamps at 12 px already (540x143). What that looks
+ * like is not a crash — the CLI lays out for the console it was given and
+ * everything it draws to the full width stops there, so the right fifth of the
+ * panel goes dead and the status line's right edge sits in the middle of
+ * nowhere. It reads as a design decision, which is why it went unreported.
+ *
+ * 2000x500 leaves an 8K screen at the smallest text (~1900x480) inside the
+ * bound and still refuses the absurd. Nothing the SERVER pays for is at stake
+ * either way: what is behind this is a ConPTY buffer of `cols × rows` cells,
+ * and a million of them is noise. The memory that really grows is the browser's
+ * — xterm's scrollback is 5000 lines times these columns — and a clamp here
+ * cannot govern that, because by the time the frame arrives the client has
+ * already allocated. So a bound that bites is one that makes the view and the
+ * pty disagree, which is the one thing it exists to prevent.
+ */
+export const TERMINAL_MAX_COLS = 2000;
+export const TERMINAL_MAX_ROWS = 500;
 
 /** How the CLI inside a terminal ended. Kept after the process is gone: the last screen is the diagnosis. */
 export interface TerminalExit {

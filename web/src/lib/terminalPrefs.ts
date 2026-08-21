@@ -70,8 +70,13 @@ export const TERMINAL_FONT_MIN = 8;
  * panel dragged to `TERMINAL_HEIGHT_MIN` at 24 px asks for 62x5, and 5 rows is
  * still clear of the `TERMINAL_MIN_ROWS` the server clamps to. Any higher and
  * xterm would ask for fewer rows than the pseudo-terminal is allowed to have,
- * which is the one failure that does not look like one — the view and the pty
- * disagree, and the CLI draws its status line over its own prompt.
+ * and the server would hand back a console one row taller than the panel can
+ * show — which is the failure that does not look like one, because a CLI drawing
+ * its status line on a row nobody can see is a CLI that has simply lost its
+ * status line. The same disagreement at the other end IS measured, and it is
+ * what raised `TERMINAL_MAX_COLS` from 500: the width the pty was given stops
+ * everything the CLI draws to the full width, and the rest of the panel goes
+ * dead ([shared/src/api.ts]).
  */
 export const TERMINAL_FONT_MAX = 24;
 /** xterm's own default, and what every terminal here was before it could be changed. */
