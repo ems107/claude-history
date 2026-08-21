@@ -1232,8 +1232,20 @@ export type TerminalClientMessage =
 /** What the server sends as JSON (text frames). Anything binary is PTY output. */
 export type TerminalServerMessage =
   | { t: 'exit'; code: number | null }
-  /** Sent once, after the scrollback replay, so the client knows the backlog has ended. */
-  | { t: 'ready'; pid: number | null; running: boolean }
+  /**
+   * Sent once, after the scrollback replay, so the client knows the backlog has
+   * ended. `enhancedKeys` is here because a reconnecting browser cannot work it
+   * out for itself: the sequence that asks for modifier-aware keys is sent once,
+   * at startup, and the replayed backlog is bounded — so a long-lived terminal
+   * has long since trimmed it away.
+   */
+  | { t: 'ready'; pid: number | null; running: boolean; enhancedKeys: boolean }
+  /**
+   * The program inside has turned modifier-aware key reporting on or off — the
+   * one thing that decides whether Shift+Enter may be encoded as a key of its
+   * own rather than as the bare CR every terminal sends for Enter.
+   */
+  | { t: 'keys'; enhanced: boolean }
   | { t: 'error'; message: string };
 
 // ---- What the app is running, and what may not happen while it is ----

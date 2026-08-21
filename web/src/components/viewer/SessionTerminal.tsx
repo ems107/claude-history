@@ -5,7 +5,7 @@ import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { SessionDetailResponse } from '@claude-history/shared';
+import type { SessionDetailResponse, TerminalServerMessage } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
 import { clamp, HEIGHT_KEY, MINIMISED_KEY, readHeight, readMinimised } from '../../lib/terminalPrefs.ts';
@@ -100,14 +100,17 @@ export function SessionTerminal({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   /**
-   * Whether the program inside has asked for the kitty keyboard protocol.
+   * Whether the program inside has asked to be told about modifiers, which is
+   * what makes Shift+Enter a key of its own rather than another Enter.
    *
-   * Read off the output stream rather than assumed, so a key is only ever
-   * encoded the enhanced way while something is listening for it. Claude Code
-   * pushes it at startup (verified in the raw stream), which is what makes
-   * Shift+Enter a distinguishable key at all.
+   * Told to us by the SERVER, on attach and whenever it changes: the sequence
+   * that asks for it is sent once at startup and the replayed backlog is
+   * bounded, so the browser can only read it off the stream on a terminal young
+   * enough still to have it — which is a fix that works until the first reload.
+   * The reasoning, and the two protocols involved, live where the reading is
+   * done ([server/src/core/sessionTerminal.ts]).
    */
-  const kittyRef = useRef(false);
+  const enhancedKeysRef = useRef(false);
 
   const open = status.data?.open ?? false;
   const running = status.data?.running ?? false;
@@ -200,19 +203,18 @@ export function SessionTerminal({
         // PTY output. Binary because it is 99% of the traffic and wrapping it
         // in JSON would cost a parse per keystroke echoed back.
         const text = decoder.decode(event.data as ArrayBuffer, { stream: true });
-        // `CSI > <flags> u` pushes the kitty keyboard protocol, `CSI < u` pops
-        // it. xterm.js implements neither, so this is the only way to know
-        // whether an enhanced key encoding would be understood or would land in
-        // the prompt as rubbish.
-        if (/\u001b\[>\d*u/.test(text)) kittyRef.current = true;
-        else if (text.includes('\u001b[<u')) kittyRef.current = false;
         term.write(text);
         return;
       }
       try {
-        const message = JSON.parse(event.data) as { t: string; message?: string };
-        if (message.t === 'error') setError(message.message ?? 'The terminal reported an error.');
+        const message = JSON.parse(event.data) as TerminalServerMessage;
+        if (message.t === 'error') setError(message.message);
         else if (message.t === 'exit') void queryClient.invalidateQueries({ queryKey: ['terminal', sessionId] });
+        // Both frames carry the same fact, from the two moments it can arrive:
+        // `ready` is what the terminal was already doing before this browser
+        // attached, `keys` is it changing while we watch.
+        else if (message.t === 'ready') enhancedKeysRef.current = message.enhancedKeys;
+        else if (message.t === 'keys') enhancedKeysRef.current = message.enhanced;
       } catch {
         // A control frame we cannot read is a control frame we ignore.
       }
@@ -238,15 +240,17 @@ export function SessionTerminal({
      * Shift+Enter, which is a newline in the CLI and was sending the prompt.
      *
      * A terminal sends a bare CR for Enter and, historically, the same bare CR
-     * for Shift+Enter — the modifier has nowhere to go. The kitty keyboard
-     * protocol is what gives it one, and Claude Code enables it at startup;
-     * xterm.js does not implement it, so the shift was being dropped on the
-     * floor and the CLI saw two identical keys.
+     * for Shift+Enter — the modifier has nowhere to go. An enhanced encoding is
+     * what gives it one; xterm.js implements none of them, so without this the
+     * shift is dropped on the floor and the CLI sees two identical keys.
      *
-     * `13;2u` is Enter with shift in that encoding. Only sent while the program
-     * has actually asked for the protocol — otherwise the sequence would be
-     * typed into the prompt as text, which is a worse bug than the one being
-     * fixed.
+     * `13;2u` is Enter with shift in the kitty encoding, and the CLI still reads
+     * it as a newline even now that it asks for win32-input-mode instead —
+     * measured on v2.1.238, against the win32 record for the same key, which it
+     * takes for a plain Enter and submits. So the ENCODING is settled by what the
+     * program understands and the GATE by what it asked for: sent only while it
+     * has asked to hear about modifiers, because otherwise the sequence lands in
+     * the prompt as text, which is a worse bug than the one being fixed.
      */
     term.attachCustomKeyEventHandler((e) => {
       /**
@@ -267,7 +271,7 @@ export function SessionTerminal({
       if ((e.key === 'v' || e.key === 'V') && e.ctrlKey && !e.altKey && !e.metaKey) return false;
 
       const shiftEnter = e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
-      if (!shiftEnter || !kittyRef.current) return true;
+      if (!shiftEnter || !enhancedKeysRef.current) return true;
       if (e.type === 'keydown') {
         e.preventDefault();
         if (socket.readyState === WebSocket.OPEN) {

@@ -56,6 +56,34 @@ const STARTUP_GRACE_MS = 3_000;
 const RESET_BEFORE_REPLAY =
   '\u001b[?1049l\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l\u001b[?25h\u001b[0m';
 
+/**
+ * The sequences by which the program inside says whether it wants to hear about
+ * modifiers — the one fact that decides whether Shift+Enter can be sent as a key
+ * of its own instead of the bare CR every terminal sends for Enter.
+ *
+ * Two protocols, because two are in use: `CSI > <flags> u` / `CSI < u` push and
+ * pop the **kitty keyboard protocol**, and `CSI ? 9001 h` / `l` turn
+ * **win32-input-mode** on and off. Claude Code used to push the first and now
+ * asks for the second — measured on v2.1.238: `?9001h`, `?1004h`, `?2004h`,
+ * `?2031h`, and no kitty push anywhere in the stream. That is how a fix verified
+ * once came to fail again with nothing in this repo having changed.
+ *
+ * Read HERE rather than in the browser, and that is the point: the sequence is
+ * sent once, at startup, and the scrollback a reconnecting browser is replayed
+ * is bounded — so on a terminal that has been up for a while it has been trimmed
+ * away, and a client that learns this from the stream alone is right only until
+ * the first reload. The server sees every byte, so it is the only place that can
+ * still answer afterwards.
+ */
+const KEY_MODE_RE = /\u001b\[(?:([<>])[0-9;]*u|\?([0-9;]*)([hl]))/g;
+
+/**
+ * How much of a chunk's tail is carried into the next scan. PTY output arrives
+ * in arbitrary pieces, and one of them can end halfway through
+ * `ESC [ ? 1000;1002;1003;1006;2004;9001 h`.
+ */
+const MODE_SCAN_TAIL = 64;
+
 interface TerminalProcess {
   sessionId: string;
   cwd: string;
@@ -69,6 +97,10 @@ interface TerminalProcess {
   cols: number;
   rows: number;
   clients: Set<TerminalClient>;
+  /** The program inside has asked to be told about modifiers ([KEY_MODE_RE]). */
+  enhancedKeys: boolean;
+  /** The tail of the last chunk, so a mode sequence split across two survives. */
+  modeTail: string;
 }
 
 /** What the route hands us: one browser attached to one terminal. */
@@ -251,13 +283,23 @@ export class SessionTerminalService implements TranscriptWriter {
       cols: c,
       rows: r,
       clients: new Set(),
+      enhancedKeys: false,
+      modeTail: '',
     };
     this.procs.set(sessionId, p);
 
     child.onData((data) => {
       const bytes = Buffer.from(data, 'utf8');
       this.append(p, bytes);
+      const before = p.enhancedKeys;
+      this.scanKeyModes(p, data);
       for (const client of p.clients) client.sendBytes(bytes);
+      // Rare enough to be an event rather than a field on the status: the CLI
+      // asks once, at startup, and gives it up on the way out.
+      if (p.enhancedKeys !== before) {
+        log.info(`terminal for ${sessionId}: modifier-aware keys ${p.enhancedKeys ? 'on' : 'off'}`);
+        for (const client of p.clients) client.sendJson({ t: 'keys', enhanced: p.enhancedKeys });
+      }
     });
 
     child.onExit(({ exitCode }) => {
@@ -318,6 +360,9 @@ export class SessionTerminalService implements TranscriptWriter {
       t: 'ready',
       pid: p.pty && p.pty.pid > 0 ? p.pty.pid : null,
       running: p.pty !== null && p.exit === null,
+      // The one thing the replay cannot carry: the sequence that asks for it is
+      // sent once, at startup, and this backlog is bounded ([KEY_MODE_RE]).
+      enhancedKeys: p.enhancedKeys,
     });
     if (p.pty && p.exit === null) {
       const { cols, rows } = p;
@@ -400,6 +445,32 @@ export class SessionTerminalService implements TranscriptWriter {
   }
 
   // ---- internals ----
+
+  /**
+   * Follows the program's own key-reporting modes through the output stream.
+   *
+   * In stream order, because these are pushes and pops: the last one wins, and
+   * reading them in any other order would answer with a mode that has already
+   * been given up. The tail carried over is what survives a chunk boundary, and
+   * it never contains a sequence that has already been counted — it begins at
+   * the end of the last complete match, or at the last `MODE_SCAN_TAIL` bytes,
+   * whichever is later.
+   */
+  private scanKeyModes(p: TerminalProcess, chunk: string): void {
+    const s = p.modeTail + chunk;
+    let end = 0;
+    KEY_MODE_RE.lastIndex = 0;
+    for (let m = KEY_MODE_RE.exec(s); m; m = KEY_MODE_RE.exec(s)) {
+      end = m.index + m[0].length;
+      // `CSI > flags u` pushes the kitty protocol, `CSI < u` pops it.
+      if (m[1]) p.enhancedKeys = m[1] === '>';
+      // win32-input-mode, which is what Claude Code asks for today. Read out of
+      // the parameter list rather than matched whole: modes can be set several
+      // at a time, as `CSI ? 1000;1002;9001 h`.
+      else if (m[2] !== undefined && m[2].split(';').includes('9001')) p.enhancedKeys = m[3] === 'h';
+    }
+    p.modeTail = s.slice(Math.max(end, s.length - MODE_SCAN_TAIL));
+  }
 
   private append(p: TerminalProcess, bytes: Buffer): void {
     p.buffer.push(bytes);
