@@ -384,6 +384,11 @@ export function SessionTerminal({
    * host was `display: none`, so xterm's idea of the console is a box of zero
    * until `fit()` has had a look, and a CLI told its real size a moment after
    * being typed into repaints over what was typed.
+   *
+   * `full` is in here with the other two because filling the window is one of
+   * the three ways a terminal becomes the thing you are using, and it is the one
+   * that changes neither of them: going full screen from an already open panel
+   * moves nothing else this effect could watch.
    */
   useEffect(() => {
     if (minimised || !focusOnOpen.current) return;
@@ -391,7 +396,7 @@ export function SessionTerminal({
     if (!term) return;
     focusOnOpen.current = false;
     term.focus();
-  }, [minimised, open]);
+  }, [minimised, open, full]);
 
   /**
    * Open it, which is the only thing the title bar does now.
@@ -453,8 +458,8 @@ export function SessionTerminal({
    * away: leaving the BROWSER says nothing about this panel, and coming back to
    * find it collapsed would be an answer to a question nobody asked.
    *
-   * Full screen is exempt — Esc is what brings that back, and a `fixed inset-0`
-   * panel with a hidden host is a blank window.
+   * Full screen is exempt: there is one way out of it and it is its own button,
+   * and a `fixed inset-0` panel with a hidden host is a blank window.
    */
   const collapseOnFocusOut = useCallback(() => {
     if (full || minimised || confirmClose) return;
@@ -604,15 +609,22 @@ export function SessionTerminal({
    * the conversation should look like afterwards — and a ref rather than state,
    * because nothing renders differently for it.
    *
-   * **The focus stays on the button either way**, which is what leaves Escape able
-   * to do this at all: xterm answers Escape with `stopPropagation`, so from inside
-   * the terminal the key is the CLI's and this handler never sees it.
+   * **It takes the focus into the terminal, and NOTHING here answers Escape.** A
+   * terminal filling the window is a terminal being used, so the keys are the
+   * CLI's, all of them: Escape closes its menus and cancels its turn, and a page
+   * that took that one key would be a page reaching into a program somebody is
+   * typing into for the sake of a shortcut its own button already offers. There
+   * was a `keydown` listener here doing exactly that, and it only ever worked
+   * while the cursor was NOT in the terminal — the state that no longer exists.
    */
   const collapsedBeforeFull = useRef(false);
   const enterFull = useCallback(() => {
     collapsedBeforeFull.current = minimised;
     setMinimised(false);
     setFull(true);
+    // The panel may be a hidden host this instant, so the intention waits for
+    // the effect that focuses after the refit rather than being acted on here.
+    focusOnOpen.current = true;
   }, [minimised]);
   const leaveFull = useCallback(() => {
     setFull(false);
@@ -620,19 +632,6 @@ export function SessionTerminal({
     collapsedBeforeFull.current = false;
     setMinimised(true);
   }, []);
-
-  // Escape leaves full screen and stops there: the page's own handler ends in
-  // `navigate(-1)`, so letting it through would leave the session as well.
-  useEffect(() => {
-    if (!full) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      leaveFull();
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [full, leaveFull]);
 
   // What went WRONG, and nothing else: a `blocked` session takes the place of
   // the start bar instead ([BlockedBar]), because a greyed-out button with a
@@ -677,26 +676,36 @@ export function SessionTerminal({
           )}
           <button
             type="button"
-            // Opens the panel on the way in and puts it back on the way out, and
-            // takes the focus into the terminal on neither ([enterFull]). A click
-            // in the terminal, once it is there, still does.
+            // Opens the panel on the way in, puts it back on the way out, and
+            // takes the focus into the terminal ([enterFull]).
             onClick={full ? leaveFull : enterFull}
-            title={full ? 'Back to the conversation (Esc)' : 'Fill the window'}
+            // It says *full screen* on the way out too, and never "close": one
+            // word for two different things is how a button that gives the
+            // conversation back gets read as the one that ends a CLI mid-turn.
+            title={full ? 'Leave full screen — the terminal is not closed' : 'Fill the window'}
             className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
           >
-            {full ? '⤡ close' : '⤢ full screen'}
+            {full ? '⤡ exit full screen' : '⤢ full screen'}
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (running && closingNeedsAsking(queryClient, sessionId)) setConfirmClose(true);
-              else close.mutate();
-            }}
-            title={running ? 'Stop Claude and close this terminal' : 'Close this terminal'}
-            className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-          >
-            ×
-          </button>
+          {/* Not offered while the panel is filling the window. Ending the CLI
+              is not a way out of a view, and the only × on a screen with nothing
+              else on it is the one that gets pressed to get out of it — beside a
+              button that used to say *close* about something else entirely. Come
+              back first; it is one click either way, and only one of them is
+              irreversible. */}
+          {!full && (
+            <button
+              type="button"
+              onClick={() => {
+                if (running && closingNeedsAsking(queryClient, sessionId)) setConfirmClose(true);
+                else close.mutate();
+              }}
+              title={running ? 'Stop Claude and close this terminal' : 'Close this terminal'}
+              className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
       {/* The xterm host. `min-h-0` so it can be smaller than its content, which
@@ -774,7 +783,7 @@ export function SessionTerminal({
             // exactly as the plan panel does: two live copies of one terminal
             // would be two views fighting over one cursor.
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 text-[11px] text-[var(--text-dim)]">
-              The terminal is filling the window. Esc brings it back.
+              The terminal is filling the window. Its own ⤡ exit full screen brings it back.
             </div>
           )}
           {/*
