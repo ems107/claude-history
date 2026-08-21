@@ -19,9 +19,10 @@ import { createLogger } from './logger.ts';
  * (`away_summary`), the first `system` line any search could reach. 15: a recap
  * stopped being cut at `SYSTEM_CHARS` — it is drawn whole, so it is indexed whole.
  * 16: version 9 again, for the shape it missed — a queued prompt with an image
- * pasted into it, whose payload is an array and not a string.
+ * pasted into it, whose payload is an array and not a string. 17: every indexed
+ * block says WHEN it was written, so a match row can carry its own clock.
  */
-export const CACHE_VERSION = 16;
+export const CACHE_VERSION = 17;
 
 const cacheLog = createLogger('cache');
 

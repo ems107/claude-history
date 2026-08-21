@@ -378,6 +378,7 @@ export class DeepSearchService {
         if (!o) continue;
         if (isReplay(o)) continue;
         const uuid = str(o.uuid);
+        const when = str(o.timestamp);
         const message = isRec(o.message) ? o.message : null;
         // The tool this line's output belongs to, so an offloaded chunk (which
         // arrives from `toolUseResult`, outside the content array) can be
@@ -389,7 +390,7 @@ export class DeepSearchService {
             if (block.type === 'tool_use') {
               const callId = str(block.id);
               if (callId && str(block.name) === 'ExitPlanMode') planCalls.add(callId);
-              yield { uuid, role: 'call', text: toolCallText(block, true), toolUseId: callId };
+              yield { uuid, role: 'call', text: toolCallText(block, true), toolUseId: callId, when };
             } else if (block.type === 'tool_result') {
               const callId = str(block.tool_use_id);
               resultOf ??= callId;
@@ -400,7 +401,7 @@ export class DeepSearchService {
               // names the file the plan was saved to.
               const raw = toolResultText(block.content);
               const text = callId && planCalls.has(callId) ? raw.split(APPROVED_PLAN_MARKER)[0] : raw;
-              if (text.trim()) yield { uuid, role: 'tool', text, toolUseId: callId };
+              if (text.trim()) yield { uuid, role: 'tool', text, toolUseId: callId, when };
             }
           }
         }
@@ -408,7 +409,7 @@ export class DeepSearchService {
         const persisted = result ? str(result.persistedOutputPath) : null;
         if (persisted) {
           const text = await this.readPersisted(persisted, scan);
-          if (text) yield { uuid, role: 'tool', text, toolUseId: resultOf };
+          if (text) yield { uuid, role: 'tool', text, toolUseId: resultOf, when };
         }
       }
     } catch (err) {
@@ -433,23 +434,26 @@ export class DeepSearchService {
           if (!o) continue;
           const message = isRec(o.message) ? o.message : null;
           if (!message) continue;
+          const when = str(o.timestamp);
           // A subagent line's uuid means nothing to the viewer, which knows only
           // the parent transcript -- so the snippet links to the session with no
           // anchor rather than to an anchor that resolves nowhere. Its tool ids
           // are in the same position: they exist only inside this transcript, and
-          // the parent's parse holds no block carrying one.
+          // the parent's parse holds no block carrying one. Its CLOCK is not:
+          // these are the rows with nothing to click, so the hour is all that
+          // puts them anywhere at all.
           if (typeof message.content === 'string') {
-            if (message.content.trim()) yield { uuid: null, role: 'agent', text: message.content };
+            if (message.content.trim()) yield { uuid: null, role: 'agent', text: message.content, when };
           } else if (Array.isArray(message.content)) {
             for (const block of message.content) {
               if (!isRec(block)) continue;
               if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-                yield { uuid: null, role: 'agent', text: block.text };
+                yield { uuid: null, role: 'agent', text: block.text, when };
               } else if (block.type === 'tool_use') {
-                yield { uuid: null, role: 'agent', text: toolCallText(block, false) };
+                yield { uuid: null, role: 'agent', text: toolCallText(block, false), when };
               } else if (block.type === 'tool_result') {
                 const text = toolResultText(block.content);
-                if (text.trim()) yield { uuid: null, role: 'agent', text };
+                if (text.trim()) yield { uuid: null, role: 'agent', text, when };
               }
             }
           }

@@ -76,6 +76,12 @@ export class SearchService {
     }
     // The (possibly locally-renamed) title is always searchable.
     if (s && s.titleSource !== 'uuid') blocks.push({ uuid: null, role: 'title', text: s.title });
+    // Nothing this method makes up itself carries a `when` — not the ids, not
+    // the title, not the previews below — and that is the point of the field
+    // being optional: an id is not something written at an hour, and a title is
+    // not either. Those rows keep the clock's column and leave it empty rather
+    // than dating a session's name by the last thing that happened in it. Every
+    // block that IS a line of transcript brings its own, from the enricher.
     const entry = await this.index.loadTextBlocks(id);
     if (entry) {
       blocks.push(...entry.blocks);

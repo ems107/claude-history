@@ -72,6 +72,13 @@ export interface SearchBlock {
   toolUseId?: string | null;
   /** Only on the block that holds a subagent's id: which agent it names. */
   agentId?: string | null;
+  /**
+   * When the line this text came from was written (ISO-8601), so a row can say
+   * it. Optional because some blocks are not a moment at all: a session's own
+   * id, its agents' ids and its title have no clock to give, and inventing one
+   * for them would put a date on a row that is not a thing anybody wrote.
+   */
+  when?: string | null;
 }
 
 /** Snippets are rendered on one line, so the text shown must fold like the text searched. */
@@ -126,5 +133,6 @@ export function buildSnippet(
     parts,
     toolUseId: block.toolUseId ?? null,
     agentId: block.agentId ?? null,
+    when: block.when ?? null,
   };
 }

@@ -280,6 +280,14 @@ export interface SearchSnippet {
    * string with nothing behind it, which is exactly why it is indexed.
    */
   agentId: string | null;
+  /**
+   * When the text this row shows was written (ISO-8601), or null on a row that
+   * is not a moment — a session's id, its agents' ids, its title. A row is a
+   * line lifted out of a conversation, and the clock is what puts it back: a
+   * hundred of them all reading TOOL are otherwise the same row a hundred
+   * times.
+   */
+  when: string | null;
 }
 
 export interface SearchHit {
