@@ -275,6 +275,16 @@ export function NewSessionPage() {
    * it survives the navigation and comes back attached.
    */
   const sent = pending.length > 0 || terminalStarted;
+  /**
+   * Nothing has been ASKED of Claude yet, which is not the same as nothing
+   * having been started. A terminal coming up is the folder being answered, not
+   * the conversation beginning — the CLI sits there waiting to be typed into —
+   * so the way back out of a folder picked by mistake stays open until a turn
+   * actually runs, and in terminal mode a turn takes the page with it: the
+   * transcript appears and the handover happens. In composer mode this is the
+   * first prompt, exactly as before.
+   */
+  const notAsked = pending.length === 0;
   const born = useQuery({
     queryKey: ['session', draft?.sessionId ?? ''],
     queryFn: () => api.session(draft?.sessionId ?? ''),
@@ -349,11 +359,26 @@ export function NewSessionPage() {
       .finally(() => setBrowsing(false));
   };
 
-  /** Back to the picker, and take the process with us — it was opened for this folder. */
+  /**
+   * Back to the picker, and take with us whatever was opened for this folder.
+   *
+   * Both doors are asked, because neither knows about the other and only
+   * `writerGuard` does: a composer process may have been opened to read the
+   * model list, and in terminal mode the terminal started itself. A refusal from
+   * the one that was never running is nothing to report.
+   */
   const changeFolder = () => {
-    if (draft) void api.chatStop(draft.sessionId).catch(() => undefined);
+    if (draft) {
+      void api.chatStop(draft.sessionId).catch(() => undefined);
+      void api.terminalStop(draft.sessionId).catch(() => undefined);
+    }
     asked.current = false;
+    setTerminalStarted(false);
     setDraft(null);
+    // The picker is never shown with a row armed, and coming BACK to it is no
+    // exception: the row that was just walked away from is the last one Enter
+    // should be able to reach.
+    setChoice('');
   };
 
   /** Up and down the list from the filter box, so a name can be typed and taken. */
@@ -412,8 +437,17 @@ export function NewSessionPage() {
           <span className="flex shrink-0 items-center gap-1.5">
             {draft && (
               <>
-                {!sent && (
-                  <button type="button" onClick={changeFolder} className={btn} title="Choose a different folder">
+                {notAsked && (
+                  <button
+                    type="button"
+                    onClick={changeFolder}
+                    className={btn}
+                    title={
+                      terminalMode
+                        ? 'Close this terminal and choose a different folder'
+                        : 'Choose a different folder'
+                    }
+                  >
                     ← Change folder
                   </button>
                 )}
