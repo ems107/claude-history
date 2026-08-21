@@ -2,8 +2,6 @@ import type { LiveInfo } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
 import { elapsed, formatDateTime } from '../../lib/format.ts';
 import { NO_ACTIVITY, type TurnActivity, turnClocks } from '../../lib/turnActivity.ts';
-import { Bubble } from './Bubble.tsx';
-import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
 /**
  * Claude Code stamps `status` on ~/.claude/sessions/<pid>.json the moment a turn
@@ -13,6 +11,18 @@ import { PILL_CORNER_PX } from './FollowBottom.tsx';
  * debounce — this indicator is as immediate as the CLI's own spinner.
  */
 const BUSY = 'busy';
+
+/**
+ * What the row SAYS, for the reader who cannot see it turning. The spinner is
+ * the whole visible statement now, and a spinner announces nothing at all — so
+ * this is drawn `sr-only` and the live region has something to read out.
+ *
+ * Hidden from the eye and not from `textContent`, which is deliberate: the
+ * status region still reads `Claude is working… total …` for the checks in
+ * AI_TESTING, and the sentence that named this row for as long as it had one is
+ * still the sentence.
+ */
+const WORKING = 'Claude is working…';
 
 /**
  * Whether this session is mid-turn. Exported because the caller has to know
@@ -45,10 +55,12 @@ export function workingSince(live: LiveInfo | null | undefined): number | null {
  *
  * **The number is brighter than its caption**, and both are readable. Three
  * figures written in one flat grey were a single grey string the eye had to
- * parse word by word, and the whole row sat at `/70` of `--text-dim`: 3.6:1 on
- * the bubble, under AA for 12 px text. Now the captions carry the full dim
- * (5.9:1) and the seconds — the only part that changes — carry `--text` (9.5:1),
- * so the row is scanned as three numbers with quiet labels rather than read.
+ * parse word by word, and the whole row sat at `/70` of `--text-dim`. Now the
+ * captions carry the full dim and the seconds — the only part that changes —
+ * carry `--text`, so the row is scanned as three numbers with quiet labels
+ * rather than read. Both readings improved when the bubble went: against the
+ * page's own background the captions are 6.3:1 and the figures 13.8:1, where on
+ * the assistant bubble they were 5.8 and 9.5.
  * Not `font-mono`: the tabular figures are already aligned, and mono spaced
  * "3 min 25 s" out into something wider and clumsier than the sans.
  */
@@ -62,7 +74,8 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
 }
 
 /**
- * "Claude is working" at the foot of a live conversation.
+ * The turn in flight, at the foot of a live conversation: a spinner and its
+ * clocks, floating under the last thing that landed.
  *
  * This is the closest an on-disk reader can get to the CLI's streaming answer,
  * and the gap is not ours to close: the transcript is written one CLOSED content
@@ -71,10 +84,19 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
  * nothing new to draw for a median of 4.5 s, and a long final answer lands whole
  * after ~20 s of silence. That silence is what this fills.
  *
- * It is presentation only: no turn, no item, no cost. It hangs BELOW TurnList
- * rather than inside it, so nothing that folds, counts or prices a message can
- * ever see it — and, being inside the followed content box, the "To the end"
- * pill keeps it in view as the answer grows.
+ * **It is not a message, and no longer dressed as one.** It was a `Bubble` for a
+ * while, which gave it a border, a fill and a TAIL — and a tail points at a
+ * speaker. Nobody is speaking here: this is telemetry about a turn, it never
+ * enters `turn.items`, nothing folds, counts or prices it, and there is nothing
+ * in it to copy. Being a bubble also made it a marking box
+ * (`data-bubble-body`), so a find for `total` or `last` painted marks over words
+ * the transcript never held and the find bar could not step to — the same drift
+ * `data-chrome` exists to stop, one component too late. A bare row has none of
+ * that, and the bubbles are left saying the one thing they are for.
+ *
+ * It hangs BELOW TurnList's last turn rather than inside it, on that turn's own
+ * rail, and being inside the followed content box the "To the end" pill keeps it
+ * in view as the answer grows.
  *
  * Four clocks at most, and the three after the first are the ones that say
  * whether the silence is going anywhere: the turn's `total`, how long since the
@@ -93,9 +115,8 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
 export function WorkingIndicator({
   since,
   activity = NO_ACTIVITY,
-  columnWidth,
   startHint = 'Turn started',
-  label = 'Claude is working…',
+  news,
 }: {
   /**
    * When the wait last started counting (epoch ms); null draws no clocks. For a
@@ -112,33 +133,19 @@ export function WorkingIndicator({
   /** What the `total` figure's hover says it counts from. */
   startHint?: string;
   /**
-   * The sentence itself, for a wait that is not Claude's. A turn can END with
-   * agents still running — they are launched asynchronously and the report is
-   * what wakes the session back up — and there "Claude is working" would be
-   * plainly false: Claude is idle, and something it sent out is not.
-   */
-  label?: string;
-  /**
-   * The width of the conversation's column, as a CSS length — the same string
-   * the composer takes, for the same corner. The clocks sit at the far right of
-   * the bubble, and the follow pill floats in the scroller's bottom-right: where
-   * the column reaches the window's edge (`Full` width) the two share that band
-   * and the pill covers `last tool` outright (measured: the figure at x 1380-1447
-   * under the pill's 1375-1470). So the row gives up exactly the difference, as
-   * one `max()` over the column — the same arithmetic that moves `Send` aside,
-   * with the floor at 0 because the flush edge is what right alignment is for.
+   * A sentence worth DRAWING, for a wait the spinner cannot describe on its own.
    *
-   * **Passed only when nothing stands between this row and the pill**, which
-   * means a foot with no composer — and the caller decides, because only the
-   * caller knows what the foot holds. The pill's band is the bottom 16-46 px of
-   * the scroller (`bottom-4` plus its own 30 px) and the sticky composer is stuck
-   * across it, never shorter than ~70 px of box plus its 24 px gap (measured:
-   * 119 px). So with a composer the pill floats over THAT and these clocks are
-   * clear of it by construction; giving up the corner anyway was 120 px of gutter
-   * at `Full` width, dragging the figures off the very edge this row is anchored
-   * to. Absent, nothing is given up.
+   * Passing one is what makes it visible, and that is the whole rule: the
+   * ordinary case has nothing to add — a turning ring beside a running clock is
+   * already "Claude is working", and the words spent a line of the reader's
+   * eyeline repeating it for every second of every turn. What cannot be inferred
+   * is a COUNT: a turn can END with agents still running (they are launched
+   * asynchronously and the report is what wakes the session back up), and there
+   * both halves are news — Claude is idle, and three things it sent out are not.
+   *
+   * Absent, `WORKING` is announced and nothing is drawn.
    */
-  columnWidth?: string;
+  news?: string;
 }) {
   // The counter is re-rendered, not recomputed from a stored value: `elapsed`
   // reads the clock, so a tick a second is all it takes to keep it truthful.
@@ -171,86 +178,71 @@ export function WorkingIndicator({
   const toolAt = during(activity.lastToolAt);
 
   // No margin of its own: it is spaced by whatever holds it — the turn's rail,
-  // or the list itself when there is no turn to hang it on.
+  // or the list itself when there is no turn to hang it on. It wraps rather than
+  // overflows: a narrow column or a 150 % zoom must break the line instead of
+  // pushing the seconds off the row.
   return (
-    <div role="status">
-      <Bubble side="assistant">
-        {/* py-1.5 is headroom, not padding: the dots rise 5 px out of their line
-            and a tight row would clip the top of the wave. It wraps rather than
-            overflows: three figures are still a short row at the default width,
-            and a narrow column or a 150 % zoom must break the line instead of
-            pushing the seconds out of the bubble. */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm text-[var(--text-dim)]">
-          <span aria-hidden="true" className="flex items-center gap-1.5">
-            {/* One keyframe, three delays: the stagger is what reads as motion. */}
-            {[0, 150, 300].map((delay) => (
-              <span
-                key={delay}
-                className="working-dot size-[7px] rounded-full bg-[var(--accent)]"
-                style={{ animationDelay: `${delay}ms` }}
-              />
-            ))}
-          </span>
-          {/* Deliberately not "writing a response": `busy` covers the whole turn,
-              tool calls included, and most of a turn is not prose being written.
-              Claiming otherwise would be wrong for most of the time it shows. */}
-          <span className="working-label">{label}</span>
-          {total !== null && (
-            // Out of the announced text: a screen reader repeating the seconds
-            // every second would drown the one thing worth saying.
-            // `ml-auto` puts them at the far end of the bubble, which is what
-            // makes the row a status line instead of a sentence with telemetry
-            // glued to it: the sentence owns the left, the clocks own the right,
-            // and the empty half between them is the separation. It also anchors
-            // the RIGHT edge, so `total` growing from "59 s" to "1 min 0 s"
-            // pushes leftwards and the figure being watched — `last tool`, the
-            // one that moves every second — never shifts under the eye.
-            <span
-              aria-hidden="true"
-              className="ml-auto tabular-nums text-xs text-[var(--text-dim)]"
-              style={
-                columnWidth
-                  ? { paddingRight: `max(0px, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }
-                  : undefined
-              }
-            >
-              {/* Labelled like the two beside it: bare, it was the only figure
-                  and could only be the turn, but next to "last message" a naked
-                  number is one of three and says nothing about which. */}
-              <Figure label="total" at={total} hint={startHint} />
-              {/* No figure can appear without the turn's own (all three are gated
-                  on a known start), so a separator never opens the row. Inline
-                  text with `nowrap` on each figure: the line breaks at a dot and
-                  never inside "1 min 4 s". */}
-              {input !== null && (
-                <>
-                  {' · '}
-                  {/* Second because it re-anchors the reading of the two after
-                      it: a `last message` older than `total`'s own start reads
-                      as a hang until this says the turn was waiting on YOU.
-                      The hover names the act, because the two stamps behind this
-                      one figure are not the same thing: a queued prompt is timed
-                      from when it was TYPED (nothing records the delivery), an
-                      answer from the moment it woke the session back up. */}
-                  <Figure label="last input" at={input} hint={inputTyped ? 'You typed this' : 'You answered'} />
-                </>
-              )}
-              {messageAt !== null && (
-                <>
-                  {' · '}
-                  <Figure label="last message" at={messageAt} hint="Last message landed" />
-                </>
-              )}
-              {toolAt !== null && (
-                <>
-                  {' · '}
-                  <Figure label="last tool" at={toolAt} hint="Last tool called" />
-                </>
-              )}
-            </span>
+    <div role="status" className="flex flex-wrap items-center gap-x-2 gap-y-1 py-0.5 text-[var(--text-dim)]">
+      {/* The ring the whole app turns — the follow pill, the update button,
+          twice in Remote access — in the accent the three dots wore and in the
+          pill's own 12 px box. It replaced a wave of dots that read as a chat's
+          "someone is typing", which is exactly what this is not. */}
+      <span
+        aria-hidden="true"
+        className="size-3 shrink-0 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent"
+      />
+      {/* Deliberately never "writing a response": `busy` covers the whole turn,
+          tool calls included, and most of a turn is not prose being written.
+          Claiming otherwise would be wrong for most of the time it shows. */}
+      {news ? <span className="working-label text-sm">{news}</span> : <span className="sr-only">{WORKING}</span>}
+      {total !== null && (
+        // Out of the announced text: a screen reader repeating the seconds
+        // every second would drown the one thing worth saying.
+        //
+        // Right where the spinner leaves off, and no longer anchored to the far
+        // side of a bubble that no longer exists. That anchor bought one thing —
+        // `total` growing from "59 s" to "1 min 0 s" pushed leftwards, so the
+        // figure being watched never shifted under the eye — and it cost the row
+        // an empty half and a `max()` against the follow pill's corner that
+        // every call site had to know about. Held here, the width jump lands
+        // once a minute on figures that are already `tabular-nums`, and the
+        // pill's corner is nowhere near a row that starts at the left margin.
+        <span aria-hidden="true" className="tabular-nums text-xs">
+          {/* Labelled like the two beside it: bare, it was the only figure
+              and could only be the turn, but next to "last message" a naked
+              number is one of three and says nothing about which. */}
+          <Figure label="total" at={total} hint={startHint} />
+          {/* No figure can appear without the turn's own (all three are gated
+              on a known start), so a separator never opens the row. Inline
+              text with `nowrap` on each figure: the line breaks at a dot and
+              never inside "1 min 4 s". */}
+          {input !== null && (
+            <>
+              {' · '}
+              {/* Second because it re-anchors the reading of the two after
+                  it: a `last message` older than `total`'s own start reads
+                  as a hang until this says the turn was waiting on YOU.
+                  The hover names the act, because the two stamps behind this
+                  one figure are not the same thing: a queued prompt is timed
+                  from when it was TYPED (nothing records the delivery), an
+                  answer from the moment it woke the session back up. */}
+              <Figure label="last input" at={input} hint={inputTyped ? 'You typed this' : 'You answered'} />
+            </>
           )}
-        </div>
-      </Bubble>
+          {messageAt !== null && (
+            <>
+              {' · '}
+              <Figure label="last message" at={messageAt} hint="Last message landed" />
+            </>
+          )}
+          {toolAt !== null && (
+            <>
+              {' · '}
+              <Figure label="last tool" at={toolAt} hint="Last tool called" />
+            </>
+          )}
+        </span>
+      )}
     </div>
   );
 }

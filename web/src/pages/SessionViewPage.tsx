@@ -698,23 +698,18 @@ export function SessionViewPage() {
 
   /**
    * The column's real width, which is the limit OR the window when the window is
-   * the smaller of the two. Two things do arithmetic with it against the follow
-   * pill's corner — the composer's action row and the working indicator's clocks
-   * — so it is written once here rather than twice at the two call sites.
+   * the smaller of the two. What does arithmetic with it is whatever the FOOT
+   * puts in the follow pill's corner — the composer (its action row and its
+   * blocked bar) or the terminal's start bar — so it is written once here rather
+   * than at each of them.
+   *
+   * The working indicator's clocks were the one consumer that was not in the
+   * foot, and they stopped being a consumer at all when they moved to the left of
+   * their own row: the pill floats in the scroller's bottom-RIGHT, so a row that
+   * starts at the left margin has nothing to dodge and nothing to be told about
+   * the column.
    */
   const columnWidth = view.width === WIDTH_FULL ? '100vw' : `min(${view.width}px, 100vw)`;
-  /**
-   * And what the CLOCKS get, which is the same length or nothing at all. The pill
-   * floats over the bottom 16-46 px of the scroller; the composer is stuck across
-   * exactly that band and is never remotely that short, so where there is one the
-   * pill covers IT and the clocks clear it without paying anything. Paying anyway
-   * is what put them 120 px inside their own right edge at `Full` width in every
-   * session with the chat on — a gutter for a pill that could not reach them. Only
-   * a foot with no composer leaves this row in the pill's band.
-   *
-   * The composer's own `max()` is untouched: `Send` really is in that corner.
-   */
-  const clockColumnWidth = chatEnabled ? undefined : columnWidth;
 
   /**
    * Hung off the last turn's rail rather than after the list: an answer being
@@ -725,7 +720,7 @@ export function SessionViewPage() {
   const workingFooter = useMemo(
     () =>
       pending.length === 0 && isWorking(liveInfo) ? (
-        <WorkingIndicator since={workingSince(liveInfo)} activity={activity} columnWidth={clockColumnWidth} />
+        <WorkingIndicator since={workingSince(liveInfo)} activity={activity} />
       ) : /**
        * The turn is over and something it sent out is not, which is a state the
        * foot of the conversation said nothing about: an agent is launched
@@ -733,21 +728,18 @@ export function SessionViewPage() {
        * wakes the session up again — so the last thing on screen was a finished
        * answer while three agents were still going.
        *
-       * A different sentence, not this row with the old one: `Claude is working`
-       * would be false here, and the count is the news. One clock only — since
-       * the first of them was sent out — because what has landed inside their
-       * transcripts is in THEIR drawers, and `activity` describes the parent's
-       * last turn, which is precisely the turn that already ended.
+       * A sentence, where the ordinary row has none: this is the one wait the
+       * spinner cannot describe on its own, because the COUNT is the news and
+       * `Claude is working` would be false — Claude is idle, and what it sent
+       * out is not. One clock only — since the first of them was sent out —
+       * because what has landed inside their transcripts is in THEIR drawers,
+       * and `activity` describes the parent's last turn, which is precisely the
+       * turn that already ended.
        */
       pending.length === 0 && agentsWorking !== null ? (
-        <WorkingIndicator
-          since={running.since}
-          columnWidth={clockColumnWidth}
-          startHint="Sent out"
-          label={`${agentsWorking}…`}
-        />
+        <WorkingIndicator since={running.since} startHint="Sent out" news={`${agentsWorking}…`} />
       ) : undefined,
-    [pending.length, liveInfo, activity, clockColumnWidth, agentsWorking, running.since],
+    [pending.length, liveInfo, activity, agentsWorking, running.since],
   );
   /**
    * The follow-the-end pill. Keyed on the session id, so opening another one
@@ -772,11 +764,11 @@ export function SessionViewPage() {
               messages are all older than this turn's start and are filtered out
               by exactly the test that keeps the figures inside their own turn. */}
           {i === pending.length - 1 && isWorking(liveInfo) ? (
-            <WorkingIndicator since={workingSince(liveInfo)} activity={activity} columnWidth={clockColumnWidth} />
+            <WorkingIndicator since={workingSince(liveInfo)} activity={activity} />
           ) : null}
         </PendingTurn>
       )),
-    [pending, liveInfo, activity, clockColumnWidth],
+    [pending, liveInfo, activity],
   );
 
   if (!session && (detail.isLoading || chat.isLoading)) {

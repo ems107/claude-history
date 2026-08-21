@@ -170,10 +170,11 @@ export function SubagentDrawer({
       {/* The pill is a SIBLING of the scroller and never a child of it: inside,
           it would scroll away with the transcript. And the scroller gives up the
           band the pill floats in (16 px off the foot plus its own 30) as bottom
-          padding, so nothing can end up underneath it — the conversation buys
-          that corner with arithmetic over its column width instead, which only
-          works for a column centred in the window, and this one is a panel
-          pinned to the right edge. */}
+          padding, so nothing — the last bubble's corner, the working row, a fold
+          strip — can end up underneath it. The conversation's foot buys the same
+          corner with arithmetic over its column width, which only works for a
+          column centred in the window; this one is a panel pinned to the right
+          edge, and emptying the band is the same fix with no arithmetic in it. */}
       <div className="relative min-h-0 flex-1">
         <div ref={follow.scrollRef} className="h-full overflow-y-auto px-4 pt-4 pb-14">
           <div ref={follow.contentRef}>

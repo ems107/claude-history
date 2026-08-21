@@ -144,39 +144,18 @@ body {
   animation: match-flash-tail 2.5s ease-out;
 }
 
-/* The three dots of the "Claude is working" bubble: a wave, the way every chat
-   draws someone typing. It rides on `transform` as well as opacity, which is
-   safe HERE and nowhere else nearby — a transformed element becomes the
-   containing block for its position:fixed descendants, and these dots are
-   leaves with nothing inside, unlike the bubbles carrying the cost and context
-   popovers. It replaced an opacity-only fade that was measurably running and
-   still read as "three static dots": 6 px going from 0.25 to 1 is simply not
-   movement. The stagger is a delay per dot, so one keyframe serves all three. */
-@keyframes working-dot {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0) scale(0.85);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-5px) scale(1.15);
-  }
-  60% {
-    opacity: 0.4;
-    transform: translateY(0) scale(0.9);
-  }
-}
-
-.working-dot {
-  animation: working-dot 1.2s ease-in-out infinite;
-}
-
-/* A light travelling across the label. Pure background-position — no transform,
-   no filter — so it cannot affect layout or containing blocks at all. Gated on
+/* A light travelling across the working row's sentence — the one it draws, which
+   is the subagent count, since the ordinary turn now says everything it has to
+   say with the spinner alone. Pure background-position — no transform, no filter
+   — so it cannot affect layout or containing blocks at all. Gated on
    background-clip support because the text is painted by the gradient through
    it: without the gate, a browser that lacks it would render `transparent` text
-   and the label would vanish. */
+   and the sentence would vanish.
+
+   (Where three dots used to wave beside it there is now the app's own spinner,
+   drawn from utilities like every other ring in the UI: `animate-spin` on a
+   bordered circle, no keyframes of our own. The dots read as a chat's "someone
+   is typing", which is the one thing that row is not.) */
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
   .working-label {
     background: linear-gradient(
@@ -206,18 +185,19 @@ body {
 
 /* None of this answers `prefers-reduced-motion`, and that is the decision, not
    an oversight: here the movement IS the information. A ring that does not turn
-   and three dots that do not travel say "this has finished" — the exact opposite
-   of what they exist to say — so honouring the preference would cost the state
-   its only channel, and the user who set it would be the one left unable to tell
-   a live turn from a dead one. The preference guards against decoration and
-   against vestibular risk from large travel; a 5 px rise and a 12 px ring are
-   neither. It WAS answered once, with the travel stripped and a breath of opacity
-   left in its place, and on a machine that really asks for it that read as
-   "stopped" — the same failure, to the very person it was meant to serve. So the
-   app now holds no rule on the matter at all: nothing anywhere reads that media
-   query, and every spinner in the UI turns the same way, which is the other half
-   of why this is right — the update button and the Remote access ring never
-   answered it either, so the one that did was simply the odd one out. */
+   says "this has finished" — the exact opposite of what it exists to say — so
+   honouring the preference would cost the state its only channel, and the user
+   who set it would be the one left unable to tell a live turn from a dead one.
+   The preference guards against decoration and against vestibular risk from
+   large travel; a shimmer and a 12 px ring are neither. It WAS answered once,
+   with the travel stripped and a breath of opacity left in its place, and on a
+   machine that really asks for it that read as "stopped" — the same failure, to
+   the very person it was meant to serve. So the app now holds no rule on the
+   matter at all: nothing anywhere reads that media query, and every spinner in
+   the UI turns the same way — the update button, the Remote access rings, the
+   follow pill and now the working row itself, which is the other half of why
+   this is right: the one animation that did answer it was simply the odd one
+   out. */
 
 /* The words themselves, marked through the CSS Custom Highlight API — the
    ranges are handed to the browser, so nothing in React's DOM is rewritten.
