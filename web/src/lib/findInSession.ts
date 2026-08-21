@@ -421,7 +421,7 @@ export function hitSnippet(units: FindUnit[], hit: FindHit, hl: MatchHighlight):
   const unit = units[hit.unit];
   const { folded, map } = foldWithMap(unit.raw);
   return buildSnippet(
-    { uuid: unit.uuid, role: hit.role, text: unit.raw, toolUseId: unit.toolUseId },
+    { uuid: unit.uuid, role: hit.role, text: unit.raw, toolUseId: unit.toolUseId, when: unit.timestamp },
     folded,
     map,
     Math.max(0, hit.offset - SNIPPET_BEFORE),

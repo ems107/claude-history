@@ -67,7 +67,6 @@ export interface FindBarProps {
   rows: {
     key: string;
     snippet: ReturnType<typeof hitSnippet>;
-    when: string | null;
     active: boolean;
     select: () => void;
   }[];
@@ -331,7 +330,6 @@ export function useFindBar(
     return hits.slice(0, rowLimit).map((hit, i) => ({
       key: `${hit.unit}:${hit.ordinal}`,
       snippet: hitSnippet(units, hit, highlight),
-      when: units[hit.unit].timestamp,
       active: i === at,
       select: () => stepTo(i),
     }));
@@ -547,7 +545,6 @@ export function FindBar(p: FindBarProps) {
                   query={{ terms: [], mode: 'phrase', scope: 'message', wholeWord: false }}
                   onSelect={row.select}
                   active={row.active}
-                  when={row.when}
                 />
               ))}
               {p.moreRows > 0 && (
