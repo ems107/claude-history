@@ -34,10 +34,13 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
 - **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
 - **A `Bubble` is for somebody speaking** — it has a tail, and a tail points at a speaker. Status, telemetry and chrome are drawn as rows.
+- **A row drawn outside a bubble carries its own `relative`** if anything in it is `position: absolute` — `sr-only` included. Escaping the scroller grows the PAGE.
 
-## Two layout rules that keep breaking
+## Three layout rules that keep breaking
 
 **No ancestor of a message may carry a `filter`** — a `hover:brightness`, an opacity animation, anything. `HoverCard` (the cost and context popovers) is `position: fixed`, and a filtered element becomes the containing block for its fixed descendants, so the card anchors to the bubble instead of the viewport. Hover feedback goes through a ring or a border.
+
+**Anything `position: absolute` inside the conversation needs a positioned ancestor inside it.** The same fact read from the other end, and the one that bites hardest, because what escapes is not a popover but the PAGE. The scroller's own wrapper (`relative min-h-0 flex-1`) is positioned and sits OUTSIDE the scroller, so an absolute element with nothing nearer becomes its child: it is then laid out at its flow position **plus the scroll offset**, lands hundreds or thousands of pixels below the window, and the document grows to contain it — a second scrollbar into an empty screen, worse the further down the conversation you are. Measured on the working indicator's `sr-only` sentence (Tailwind's `sr-only` is `position: absolute`, which is easy to forget it is): 4,263 px down an 802 px window, 3,462 px of page scroll that should not exist, gone the moment its row was made `relative`. **`Bubble` is why this had never happened before** — it is positioned for its tail, so everything drawn inside a message has always had a containing block a few pixels away. Anything NOT in a bubble has to bring its own, and the way to check is one CDP scan: every `position: absolute` under `[data-conversation-scroller]` whose `offsetParent` the scroller does not contain (check 18).
 
 **Nothing that folds may be a `<button>`.** No browser lets a button's text be selected, and a fold header is where the viewer writes the figures worth copying: the tool name with its arguments, file paths, the dates and cost of a compacted stretch, token counts. They all go through `FoldHeader` — a div with `role="button"`, `tabIndex`, Enter/Space and `select-text` — and everything that folds on a click (an injected notice, the log rows) first asks `hasSelection()`, or a drag ending inside it collapses what the user was about to copy.
 
@@ -690,6 +693,12 @@ half: passing a sentence is what makes one visible, and the only caller that doe
 is the subagents-outstanding footer, where the COUNT cannot be inferred from a
 spinner. That prop is the whole rule — if you are passing a sentence, it is
 because the spinner cannot say it.
+
+**Which is why the row itself is `relative`, and it is load-bearing.** An
+`sr-only` span is `position: absolute`, and the bubble this row used to be was
+positioned for its tail; a bare row is not, so the sentence escaped the scroller
+and grew the PAGE by thousands of pixels — the third layout rule above, in the
+one place that found it.
 
 **The pill spins while a turn is in flight.** The indicator row says it far
 better, but it says it at the END of the conversation: scroll up, or fold the turn

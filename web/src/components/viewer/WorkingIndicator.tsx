@@ -181,8 +181,22 @@ export function WorkingIndicator({
   // or the list itself when there is no turn to hang it on. It wraps rather than
   // overflows: a narrow column or a 150 % zoom must break the line instead of
   // pushing the seconds off the row.
+  //
+  // **`relative` is load-bearing**, and it is the one thing `Bubble` was giving
+  // this row for free (a bubble is positioned for its tail). The sentence below
+  // is `sr-only`, which means `position: absolute` — and with no positioned
+  // ancestor inside the scroller its containing block became the conversation's
+  // own wrapper, OUTSIDE it. From there the span is laid out at its flow
+  // position PLUS the scroll offset, so at the foot of a long session it sat
+  // 4,263 px down an 802 px window and the PAGE grew to hold it: a second
+  // scrollbar into 3,462 px of empty screen, worse the further down you were.
+  // Measured over CDP, where the same scan says nothing else in the scroller
+  // escapes its way.
   return (
-    <div role="status" className="flex flex-wrap items-center gap-x-2 gap-y-1 py-0.5 text-[var(--text-dim)]">
+    <div
+      role="status"
+      className="relative flex flex-wrap items-center gap-x-2 gap-y-1 py-0.5 text-[var(--text-dim)]"
+    >
       {/* The ring the whole app turns — the follow pill, the update button,
           twice in Remote access — in the accent the three dots wore and in the
           pill's own 12 px box. It replaced a wave of dots that read as a chat's
