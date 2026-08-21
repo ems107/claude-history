@@ -277,7 +277,7 @@ export function FollowBottomButton({
    */
   workingWhat?: string;
   /**
-   * A turn is in flight. The `Claude is working…` bubble says so far better, but
+   * A turn is in flight. The working row says so far better, with its clocks, but
    * it says it at the END of the conversation — scroll up, or fold the turn away,
    * and the one question left is whether anything more is coming. This pill is on
    * screen whatever the scroll is doing, so it answers that: spinning means the

@@ -33,10 +33,14 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
 - **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
+- **A `Bubble` is for somebody speaking** — it has a tail, and a tail points at a speaker. Status, telemetry and chrome are drawn as rows.
+- **A row drawn outside a bubble carries its own `relative`** if anything in it is `position: absolute` — `sr-only` included. Escaping the scroller grows the PAGE.
 
-## Two layout rules that keep breaking
+## Three layout rules that keep breaking
 
 **No ancestor of a message may carry a `filter`** — a `hover:brightness`, an opacity animation, anything. `HoverCard` (the cost and context popovers) is `position: fixed`, and a filtered element becomes the containing block for its fixed descendants, so the card anchors to the bubble instead of the viewport. Hover feedback goes through a ring or a border.
+
+**Anything `position: absolute` inside the conversation needs a positioned ancestor inside it.** The same fact read from the other end, and the one that bites hardest, because what escapes is not a popover but the PAGE. The scroller's own wrapper (`relative min-h-0 flex-1`) is positioned and sits OUTSIDE the scroller, so an absolute element with nothing nearer becomes its child: it is then laid out at its flow position **plus the scroll offset**, lands hundreds or thousands of pixels below the window, and the document grows to contain it — a second scrollbar into an empty screen, worse the further down the conversation you are. Measured on the working indicator's `sr-only` sentence (Tailwind's `sr-only` is `position: absolute`, which is easy to forget it is): 4,263 px down an 802 px window, 3,462 px of page scroll that should not exist, gone the moment its row was made `relative`. **`Bubble` is why this had never happened before** — it is positioned for its tail, so everything drawn inside a message has always had a containing block a few pixels away. Anything NOT in a bubble has to bring its own, and the way to check is one CDP scan: every `position: absolute` under `[data-conversation-scroller]` whose `offsetParent` the scroller does not contain (check 18).
 
 **Nothing that folds may be a `<button>`.** No browser lets a button's text be selected, and a fold header is where the viewer writes the figures worth copying: the tool name with its arguments, file paths, the dates and cost of a compacted stretch, token counts. They all go through `FoldHeader` — a div with `role="button"`, `tabIndex`, Enter/Space and `select-text` — and everything that folds on a click (an injected notice, the log rows) first asks `hasSelection()`, or a drag ending inside it collapses what the user was about to copy.
 
@@ -662,7 +666,41 @@ end.
 
 ## The working indicator
 
-**The pill spins while a turn is in flight.** The indicator bubble says it far
+**A spinner and its clocks, and no box around them.** The row is telemetry about
+a turn in flight — what it says is "still going, and here is how long" — so what
+it is made of is the app's own ring (`animate-spin` on a 12 px bordered circle,
+in the accent) with the figures held against it, floating under the last thing
+that landed.
+
+**It wore a `Bubble` for a while, and that was the error worth naming.** A bubble
+has a border, a fill and a TAIL, and a tail points at a speaker; nobody is
+speaking here. The row is not an item, nothing folds, counts or prices it, there
+is nothing in it to copy — and being a bubble made it a **marking box**
+(`data-bubble-body`), so a find for `total`, `last` or `working` painted marks
+over words the transcript never held, in a box `boxKeyOf` cannot name and the
+find bar therefore cannot step to. That is exactly the drift `data-chrome` exists
+to stop, one component too late; `InterruptMarker` had already been through the
+same correction from the other direction ([What cuts a tool run](#what-cuts-a-tool-run)).
+Bubbles are left saying the one thing they are for.
+
+**The sentence is drawn only when it is news.** `Claude is working…` is what a
+turning ring beside a running clock already says, and written out it repeated
+itself in the reader's eyeline for every second of every turn — so it lives in
+`WORKING`, rendered `sr-only`, which is what a live region needs to have anything
+to announce (and which keeps `[role="status"]`'s `textContent` exactly what the
+checks in [AI_TESTING.md](AI_TESTING.md) read). The `news` prop is the other
+half: passing a sentence is what makes one visible, and the only caller that does
+is the subagents-outstanding footer, where the COUNT cannot be inferred from a
+spinner. That prop is the whole rule — if you are passing a sentence, it is
+because the spinner cannot say it.
+
+**Which is why the row itself is `relative`, and it is load-bearing.** An
+`sr-only` span is `position: absolute`, and the bubble this row used to be was
+positioned for its tail; a bare row is not, so the sentence escaped the scroller
+and grew the PAGE by thousands of pixels — the third layout rule above, in the
+one place that found it.
+
+**The pill spins while a turn is in flight.** The indicator row says it far
 better, but it says it at the END of the conversation: scroll up, or fold the turn
 away, and the one thing left to know is whether anything more is coming. The pill
 is on screen whatever the scroll is doing, so it carries the answer — the ring the
@@ -679,7 +717,7 @@ to the keyframes.
 
 **Whether anything is working, and since when, are the CALLER's answers.** The row takes a `since` and works the clocks out from it; it knows nothing about a session. A session reads both off `~/.claude/sessions` — `isWorking` and `workingSince`, kept beside each other because they are one reading — and a subagent has no file there at all, sharing its parent's process, so it reads its own transcript instead. The signature used to be a `LiveInfo`, which the new-session page had to forge with six null fields to hand over one timestamp.
 
-**It hangs on the last turn's RAIL, as a `footer`, not after the list.** An answer being written belongs where the answers are: rendered at root level it lined up with the prompt instead of with the replies, reading as a sibling of the question rather than as the response arriving (checked: left 262 px, identical to the assistant bubbles, against the prompt's 236). A turn that has produced nothing yet — the state of every session for the first seconds after a prompt — grows a rail of its own from the same `RAIL` constant.
+**It hangs on the last turn's RAIL, as a `footer`, not after the list.** An answer being written belongs where the answers are: rendered at root level it lined up with the prompt instead of with the replies, reading as a sibling of the question rather than as the response arriving (checked: left 262 px, identical to the assistant bubbles, against the prompt's 236). A turn that has produced nothing yet — the state of every session for the first seconds after a prompt — grows a rail of its own from the same `RAIL` constant. **With the box gone the rail is the only thing left that says which turn this belongs to**, which is why it was kept when the bubble was not.
 
 It is still **NOT an item**: it never enters `turn.items`, so nothing that folds, counts or prices a message can see it. It is passed only while there is something to draw (`isWorking`), or the rail would be a stray green line down the page, and a folded turn shows it anyway — live news must not be hidden by a collapsed turn. `TurnList` picks the turn: the last group of the live segment, and only when that group is `live`, because hanging it off a rewound-away branch would say the abandoned exchange is the one being answered.
 
@@ -773,55 +811,46 @@ it was the only figure and could only be the turn.
   late, but the value is read off the transcript's own timestamps rather than off
   a clock we started — never drifting, never invented.
 - The absolute clock is on the hover, per figure. The row wraps rather than
-  overflowing (measured: it still fits on one line inside a 417 px bubble at a
-  520 px window, where the app's own layout is already the wider problem).
+  overflowing — a narrow column or a 150 % zoom breaks the line at a `·`, never
+  inside `1 min 4 s`, which is what the `nowrap` on each figure is for. It used to
+  fit on one line inside a 417 px bubble at a 520 px window; without the bubble it
+  has that box plus its padding, and the app's own layout is the wider problem
+  there either way.
 - **The number is brighter than its caption, and both pass AA.** One figure could
   be a bare number at `/70` of `--text-dim`; three of them written that way were
-  one flat grey string to be read word by word, at 3.6:1 on the bubble — under AA
-  for 12 px. The captions now carry the full dim (5.9:1) and the seconds carry
-  `--text` (9.5:1), so the row is scanned rather than read. Not `font-mono`: the
-  figures are already tabular, and mono spaced `3 min 25 s` out into something
-  wider and clumsier than the sans.
-- **The clocks sit at the far right of the bubble**, which is what makes the row
-  a status line rather than a sentence with telemetry glued to it: the sentence
-  owns the left, the clocks own the right, and the empty half between them is the
-  separation. It also anchors the RIGHT edge, so `total` growing from `59 s` to
-  `1 min 0 s` pushes leftwards and `last tool` — the figure that moves every
-  second, the one being watched — never shifts under the eye.
-- **Which means giving up the pill's corner, exactly as `Send` does.** The follow
-  pill floats over the scroller's bottom-right, so where the column reaches the
-  window's edge the two share that band: at `Full` width with no composer between
+  one flat grey string to be read word by word, at 3.6:1 — under AA for 12 px. The
+  captions carry the full dim and the seconds carry `--text`, so the row is
+  scanned rather than read. **Both readings went UP when the box went**: against
+  the page's own `--bg` they are 6.3:1 and 13.8:1, where on the assistant bubble
+  they were 5.8 and 9.5. Not `font-mono`: the figures are already tabular, and
+  mono spaced `3 min 25 s` out into something wider and clumsier than the sans.
+- **The clocks are held against the spinner, at the left**, one compact group
+  rather than a status line stretched across a box. What that gave up is named
+  here because it was real and measured: anchored to the far right, `total`
+  growing from `59 s` to `1 min 0 s` pushed leftwards and `last tool` — the figure
+  that moves every second, the one being watched — never shifted under the eye.
+  Held left, that jump travels rightwards instead; it lands once a minute, on
+  figures that are already `tabular-nums`, and it is the price of a row that has
+  no empty half in the middle of it.
+- **And it is what deleted the pill's corner from this row.** The follow pill
+  floats over the scroller's bottom-RIGHT, so a right-anchored figure shared that
+  band and had to be moved out of it: at `Full` width with no composer between
   them the pill covered `last tool` outright (measured: the figure at x 1380-1447
-  under the pill's 1375-1470). The row gives up the difference with the same
-  `max()` over `columnWidth` the composer uses — `PILL_CORNER_PX` lives in
-  `FollowBottom.tsx` now, because it is a fact about the pill and two places
-  spend it — and the floor is 0 rather than the composer's `0.5rem`: a flush edge
-  is the point of aligning right. Checked at both widths, with the composer
-  hidden: 48 px of clearance at `Full`, and at the default width the figures end
-  1 px inside the bubble's own padding — no gutter where the pill cannot reach.
-- **"With no composer" is the condition, not just the state it was measured in.**
-  For a while it was only the latter: `columnWidth` went to the indicator whatever
-  the foot held, and since the `max()` compares the column with the WINDOW and
-  nothing else, at `Full` width the clocks always shed the full 120 px — in every
-  session with the chat on, where the pill cannot reach them, dragging the figures
-  off the very edge the row is anchored to. The pill's band is the bottom 16-46 px
-  of the scroller (`bottom-4` plus its own 30 px); the sticky composer is stuck
-  across that band and is never shorter than ~70 px of box plus its 24 px gap
-  (measured: 119 px). So with a composer the pill floats over THAT, the clocks are
-  clear of it by construction, and `SessionViewPage` hands them no width at all
-  (`clockColumnWidth`, one `chatEnabled` away from `columnWidth`). Measured with
-  the chat on at `Full`, 1500 px window: padding 0, the figures ending 13 px inside
-  the bubble's right edge — its own padding — and the pill 126 px BELOW the row,
-  over a composer 155 px tall. Still no measuring and no render on resize: the
-  arithmetic is the same, it just has the switch it was always described with. The
-  composer's own `max()` is untouched: `Send` really is in that corner.
-- **And the composer takes the width on the same terms**, which is the same rule
-  read from the other end: `columnWidth` is optional there too, and the caller
-  passes it only where a pill exists to be dodged. `SessionViewPage` always does;
-  the new-session page ([AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md#starting-one-that-does-not-exist-yet))
-  has no conversation to follow and so no pill, and passing a width there would
-  have bought a gutter against nothing — the mistake this bullet is about, one
-  component along.
+  under the pill's 1375-1470), which bought a `max()` over `columnWidth`, a
+  `clockColumnWidth` gated on `chatEnabled` to stop that `max()` opening a 120 px
+  gutter where the composer already covered the pill, and two paragraphs
+  explaining both. **A row that starts at the left margin has nothing to dodge**,
+  so the prop, the switch and the arithmetic are gone from the indicator and from
+  `SessionViewPage` with it.
+- **`columnWidth` itself stays, for the foot.** What genuinely stands in the
+  pill's corner still pays for it with the same `max()` and the same
+  `PILL_CORNER_PX` (which lives in `FollowBottom.tsx`, because it is a fact about
+  the pill): the composer's action row, where `Send` really is under there, its
+  `BlockedBar`, and the terminal's start bar. It is optional at each of them for
+  the reason it was optional here — the caller passes it only where a pill exists
+  to be dodged, and the new-session page
+  ([AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md#starting-one-that-does-not-exist-yet))
+  has no conversation to follow and so no pill.
 
 ### The same row inside a subagent's drawer
 
@@ -829,8 +858,8 @@ An agent's transcript is a conversation and gets watched like one, so the drawer
 
 - **`total` counts from the agent's own first line** (`turnActivity().startedAt`), and its hover says `Sent out` rather than `Turn started`. Nothing else could say when it began: there is no `<pid>.json` for an agent, and its first line IS its brief. It is also the one caller whose `since` IS that line, so the gap `turnClocks` measures is zero and `last input` never appears here — an agent is not asked anything by the user.
 - **Whether it is working is the page's answer**, not the drawer's — a report that has not come back, a CLI still alive, and a recent write. **Never the parent being mid-turn**: an agent outlives the turn that launched it, and gating on `busy` took the row away from an agent that was still writing. Where the silence says nothing the row is not drawn at all; the rule, its clock and its blind spot live with the panel.
-- **A turn can end with agents still out there**, and the foot of the conversation says so in the same row with a different sentence: `⑂ N subagents still working…`, one clock, counting from when the first of them was sent out. `Claude is working…` there would be false — Claude is idle, and what it sent out is not — and the count is the news. Its three other clocks are deliberately absent: what has landed inside those transcripts is in THEIR drawers, and the parent's `activity` describes the turn that just ended — which is also why passing none leaves `total` counting from the flip, exactly as it always did.
-- **The pill's corner is bought with bottom padding** (`pb-14`) instead of the `max()` over `columnWidth`. That arithmetic compares the column with the WINDOW, which only locates the pill for a column centred in it; this one is a 44 rem panel pinned to the right edge. Emptying the band the pill floats in (16 px off the foot plus its own 30) is the same fix with no arithmetic in it — and it is why the drawer's scroller pads the bottom and not the sides.
+- **A turn can end with agents still out there**, and the foot of the conversation says so in the same row — as the one variant that draws a sentence at all: `⑂ N subagents still working…` through `news`, one clock, counting from when the first of them was sent out. It has to be written because it cannot be inferred: the count is the news, and `Claude is working…` there would be false — Claude is idle, and what it sent out is not. Its three other clocks are deliberately absent: what has landed inside those transcripts is in THEIR drawers, and the parent's `activity` describes the turn that just ended — which is also why passing none leaves `total` counting from the flip, exactly as it always did.
+- **The pill's corner is bought with bottom padding** (`pb-14`), and it still is now that the clocks no longer sit in it: the band the pill floats in (16 px off the foot plus its own 30) is emptied for whatever the transcript ends with — a bubble's corner, the working row, a fold strip. The conversation's foot buys the same corner with the `max()` over its column width, which only locates the pill for a column centred in the window; this one is a 44 rem panel pinned to the right edge, so it pads the bottom and not the sides.
 
 ## Verify
 
