@@ -16,6 +16,7 @@ import { cleanEnv, findClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
 import { createLogger } from './logger.ts';
+import { managedSettingsPath } from './retention.ts';
 import type { SessionChatService } from './sessionChat.ts';
 import {
   appHolderOf,
@@ -300,7 +301,7 @@ export class SessionTerminalService implements TranscriptWriter {
       cols: c,
       rows: r,
       cwd,
-      env: terminalEnv(),
+      env: terminalEnv(this.config, cwd),
     };
     /**
      * **The pseudo-console is PINNED, like the Node runtime a release carries.**
@@ -605,11 +606,45 @@ export class SessionTerminalService implements TranscriptWriter {
 }
 
 /**
+ * The renderer Claude Code's own settings ask for, read the way IT reads them.
+ *
+ * The same chain as the retention number, in the same order — managed policy,
+ * then the project's two files, then the user's — because a preference we are
+ * about to enforce with an environment variable has to be the one the CLI would
+ * have chosen for itself. Only the terminal's own folder is looked at, as in
+ * `retention.ts`: a `tui` set in a parent directory of the cwd is not followed.
+ *
+ * `null` is a third answer and not the same as `'default'`: nothing said
+ * anything, so the choice is Claude Code's (a fresh install, an experiment) and
+ * not ours to freeze — see [terminalEnv].
+ */
+function settingsTui(cwd: string, dataRoot: string): 'default' | 'fullscreen' | null {
+  const files = [
+    managedSettingsPath(),
+    path.join(cwd, '.claude', 'settings.local.json'),
+    path.join(cwd, '.claude', 'settings.json'),
+    path.join(dataRoot, 'settings.json'),
+  ];
+  for (const file of files) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch {
+      continue; // absent for almost every project, and a half-written one is not an answer
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) continue;
+    const value = (parsed as Record<string, unknown>).tui;
+    if (value === 'default' || value === 'fullscreen') return value;
+  }
+  return null;
+}
+
+/**
  * The environment for a CLI whose display we drew ourselves.
  *
  * `cleanEnv()` first, for the reason every spawn here uses it: inheriting our
  * own `CLAUDE_CODE_*` markers makes the child treat itself as a nested session
- * and stop persisting its transcript. Then three lines that exist only for a
+ * and stop persisting its transcript. Then the lines that exist only for a
  * terminal, because only a terminal has a screen to be wrong about.
  *
  * **`NO_COLOR` has to go, and it is not hypothetical.** It is not persisted
@@ -626,12 +661,54 @@ export class SessionTerminalService implements TranscriptWriter {
  * Windows takes a `name` and stores it on the terminal object, but **never puts
  * it in the child's environment** (`windowsTerminal.js` reads it and keeps it),
  * so without this the CLI is told nothing at all about what it is talking to.
+ *
+ * **`CLAUDE_CODE_NO_FLICKER` is here because `killPty` is what it is**, and this
+ * one is a bug of OURS being paid for rather than an inherited fact corrected.
+ * Claude Code guards the start of its fullscreen renderer with a boot canary: at
+ * REPL mount it writes `fullscreenBootPending[<pid>]` into `~/.claude.json`, and
+ * removes it either on a clean exit (a hook on `process.on('exit')`) or **ten
+ * seconds after the first frame**, which is also what resets the strike counter.
+ * A later launch that finds a pending entry whose pid is gone calls it a failed
+ * start: one strike drops that launch to the classic renderer with a notice
+ * about the last one not having finished starting, and **two** — on the same CLI
+ * version — record `fullscreenAutoDisabled`, which outranks the user's setting
+ * until `/tui fullscreen` is run or the CLI is updated.
+ *
+ * We end a terminal with `taskkill /T /F` ([killPty]), and a `TerminateProcess`
+ * runs no exit hook. So every terminal closed — or killed with the server —
+ * inside that ten-second window leaves a pending entry behind, and the user's
+ * `"tui": "fullscreen"` quietly becomes the classic renderer in a real terminal
+ * window too, because that bookkeeping is global to the machine. Verified on
+ * this one: two orphaned `~/.claude.json.tmp.<pid>` files (an atomic write
+ * interrupted mid-flight, which is what a `/F` at arm time looks like), one
+ * holding a pending entry for its own pid and the other that plus
+ * `fullscreenBootStrikes {count: 1}`, against a terminal log full of
+ * `exited (code 1) after 5s` and `after 2s` the same hour.
+ *
+ * The variable is the only lever that reaches it: read from the binary (2.1.239),
+ * `CLAUDE_CODE_NO_FLICKER=1` is checked BEFORE the auto-disable, and the entry
+ * path it produces (`env_on`) is not in the set the canary arms for
+ * (`settings_on`, `upsell_trial_on`, `ant_default`, `fresh_install_on`,
+ * `downsell_on`, `gb_on`) — so it does not merely override the penalty, it stops
+ * us earning one. A CLI flag would not do: there is no `--tui`, and
+ * `--settings '{"tui":"fullscreen"}'` lands at settings precedence, which is
+ * below the auto-disable it has to survive.
+ *
+ * **Set only for `fullscreen`, and only when a settings file actually says so.**
+ * The off direction needs nothing — with `"tui": "default"` the classic renderer
+ * is what the setting already chooses and the canary never arms — and a user who
+ * has expressed no preference at all is left to Claude Code's own gates rather
+ * than having ours frozen in for them. `/tui` inside the terminal still works:
+ * its relaunch drops both `CLAUDE_CODE_NO_FLICKER` and
+ * `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` from the child on purpose, and the next
+ * terminal opened here reads the file it just wrote. See [AI_RUNNING_CLAUDE.md].
  */
-function terminalEnv(): Record<string, string> {
+function terminalEnv(config: AppConfig, cwd: string): Record<string, string> {
   const env = { ...(cleanEnv() as Record<string, string>) };
   env.TERM = 'xterm-256color';
   env.COLORTERM = 'truecolor';
   delete env.NO_COLOR;
+  if (settingsTui(cwd, config.dataRoot) === 'fullscreen') env.CLAUDE_CODE_NO_FLICKER = '1';
   return env;
 }
 

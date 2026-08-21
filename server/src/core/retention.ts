@@ -26,8 +26,14 @@ const log = createLogger('retention');
  *    > project `.claude/settings.json` > `~/.claude/settings.json`
  */
 
-/** Where a managed policy file lives, per the docs, when nothing overrides it. */
-function policyPath(): string {
+/**
+ * Where a managed policy file lives, per the docs, when nothing overrides it.
+ *
+ * Exported because it is the FIRST file in every one of Claude Code's settings
+ * chains, not only the retention one — `sessionTerminal.ts` reads `tui` through
+ * the same order.
+ */
+export function managedSettingsPath(): string {
   // Set by an enterprise deployment; it wins over the documented location.
   const fromEnv = process.env.CLAUDE_CODE_MANAGED_SETTINGS_PATH;
   if (fromEnv) return path.resolve(fromEnv);
@@ -120,7 +126,7 @@ export async function readRetention(
   sessions: SessionSummary[],
 ): Promise<RetentionResponse> {
   const [policy, user] = await Promise.all([
-    readSource('policy', policyPath()),
+    readSource('policy', managedSettingsPath()),
     readSource('user', path.join(config.dataRoot, 'settings.json')),
   ]);
 

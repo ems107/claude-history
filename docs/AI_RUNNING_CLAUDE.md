@@ -26,6 +26,7 @@ The app has two halves and they are not the same kind of thing. **Everything tha
 - **The pseudo-console is OURS and pinned**, like the Node runtime a release carries: `useConptyDll: true`, never the one the machine's Windows build happens to have.
 - **A pseudo-terminal belongs to the server, not to the tab.** Closing a browser detaches; it never kills anything.
 - **A terminal outlives the CLI inside it**, because the last screen is the only diagnosis a failed start leaves.
+- **We kill the CLI, so we owe it its renderer**: an explicit `"tui": "fullscreen"` is passed on as `CLAUDE_CODE_NO_FLICKER=1`, because `taskkill /F` leaves Claude Code's boot canary looking like a crash.
 - **Nothing that ends this server or changes how prompts are sent may run while the app is running Claude** — an IDLE session counts, the refusal carries the list of what to close, and the cap is one number across both doors.
 
 ## Subscription usage (read-only)
@@ -314,12 +315,37 @@ That is four bug reports out of one component: a screen that reads as corrupt (n
 
 ### The terminal declares what it is, because it knows
 
-Everywhere else this app spawns `claude` it passes `cleanEnv()` and nothing more. A terminal is the one case where the environment describes a *screen*, and we drew that screen — so `terminalEnv()` corrects three variables on the way in, and each one is load-bearing:
+Everywhere else this app spawns `claude` it passes `cleanEnv()` and nothing more. A terminal is the one case where the environment describes a *screen*, and we drew that screen — so `terminalEnv()` corrects four variables on the way in, and each one is load-bearing:
 
 - **`NO_COLOR` is deleted.** Not hypothetical: it is persisted nowhere on this machine, and **Claude Code injects it into the environment of the subprocesses it runs**. So a dev server started from inside a Claude Code session inherits it, hands it to the CLI, and the embedded terminal comes up monochrome — no colour, and no grey bar behind the user's own prompts. Measured on the socket: **ONE SGR sequence, against 62 for the same CLI spawned by hand**, and 19 truecolor sequences afterwards. The variable is a statement about the device that launched the server; the device the CLI is drawing on is an xterm.js panel that renders 24-bit colour. Same shape as the `CLAUDE_CODE_*` strip — an inherited fact about somebody else's terminal, corrected rather than passed on.
 - **`TERM` and `COLORTERM` are set.** node-pty on Windows takes a `name` and keeps it on the terminal object but **never writes it into the child's environment** (`windowsTerminal.js` reads `opt.name` and stores it), so without this the CLI is told nothing at all about what it is talking to.
+- **`CLAUDE_CODE_NO_FLICKER=1` is set when the settings ask for the fullscreen renderer**, and this one is not an inherited fact corrected — it is a bug of ours being paid for. See below.
 
 This is deliberately NOT in `cleanEnv()`, which the composer and the auto-reload also use: neither of them renders ANSI, so for them `NO_COLOR` is at worst harmless.
+
+### The renderer, and the debt `taskkill /F` leaves behind
+
+**`/tui fullscreen` is not a mode Claude Code remembers, it is a setting it writes** — `"tui": "fullscreen"` in `~/.claude/settings.json` — and the embedded terminal used to turn it off behind the user's back, on the whole machine, for real terminal windows too. The cause is entirely ours.
+
+Claude Code guards the start of that renderer with a **boot canary**, all of it in `~/.claude.json` and all of it per CLI version:
+
+- at REPL mount it writes `fullscreenBootPending[<pid>] = {startedAt, version, host, platform}`;
+- it removes that entry on a clean exit (a hook on `process.on('exit')`) or **ten seconds after the first frame**, and reaching that "healthy" point also **zeroes the strike counter**;
+- a later launch that finds a pending entry whose pid is gone counts a **strike**. One drops that launch to the classic renderer with *"…didn't finish starting last time on this machine, so this launch is using the classic renderer"*; **two** write `fullscreenAutoDisabled`, which **outranks the user's setting** until `/tui fullscreen` (which clears both fields) or a CLI update.
+
+We end a terminal with `taskkill /T /F` (`killPty`, for the children the pseudo-console does not take down), and a `TerminateProcess` runs no exit hook. So a terminal **closed, or killed with the server, inside that ten-second window** leaves a pending entry behind and earns a strike it never deserved — and because a strike sends the next launch to the classic renderer, that launch arms no canary, so the counter is not reset either and the second quick kill trips the sticky one. Which is exactly the intermittent report: *sometimes* the embedded terminal comes up in the classic renderer saying the last session did not finish starting.
+
+Measured on this machine before the fix: two orphaned `~/.claude.json.tmp.<pid>` files, each an atomic write interrupted mid-flight — which is what a `/F` at arm time leaves — one holding a `fullscreenBootPending` entry for its own pid, the other that plus `fullscreenBootStrikes {count: 1, version: "2.1.237"}`, against a terminal log carrying `exited (code 1) after 5s` and `after 2s` in the same hour.
+
+**The environment variable is the only lever that reaches it**, and it is a better one than it looks. Read out of the binary (2.1.239), the renderer decision goes: background session → screen-reader mode → `CLAUDE_CODE_NO_FLICKER` → the auto-disable and strikes → Windows-over-SSH and tmux `-CC` → `settings.tui` → the A/B gates. So `=1` wins over the penalty; and the entry path it produces (`env_on`) is **not in the set the canary arms for** (`settings_on`, `upsell_trial_on`, `ant_default`, `fresh_install_on`, `downsell_on`, `gb_on`), so we stop earning strikes rather than merely ignoring them. Nothing else does: there is no `--tui` flag, and `--settings '{"tui":"fullscreen"}'` enters at settings precedence, below the auto-disable it would have to survive.
+
+Three decisions in how it is applied, each the reason the fix is not a bigger one:
+
+- **The value is read the way Claude Code reads it** — managed policy, the project's `settings.local.json` and `settings.json`, then `~/.claude/settings.json` (`settingsTui`, sharing `managedSettingsPath()` with the retention reader). A variable we are about to force has to carry the answer the CLI would have reached for itself; taking only the user-level file would override a project that had asked for the classic renderer.
+- **Only the ON direction is ever set.** With `"tui": "default"` the setting already chooses the classic renderer and the canary never arms, so there is nothing to protect; and a user who has expressed **no** preference is left to Claude Code's own gates rather than having ours frozen in for them. That last case is the one this does not fix, and it is the honest place to leave it.
+- **`/tui` inside the terminal still works.** Its relaunch drops `CLAUDE_CODE_NO_FLICKER` and `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` from the child on purpose, and the next terminal opened here reads the file that `/tui` has just written.
+
+**We cannot repair the state we already left**, and must not try: `~/.claude` is read-only for this app ([Architecture](AI_ARCHITECTURE.md)), pending entries and strikes included. `/tui fullscreen` in any terminal clears them in one go, which is the thing to tell a user who is stuck in the classic renderer.
 
 ### Looking like a terminal, and behaving like one
 
