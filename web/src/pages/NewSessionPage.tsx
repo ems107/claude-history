@@ -1,4 +1,4 @@
-import type { ChatPermissionMode } from '@claude-history/shared';
+import type { ChatCreateRequest, ChatPermissionMode } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -14,8 +14,13 @@ import { listUrl } from '../lib/listState.ts';
 import { sortProjectsByName } from '../lib/projects.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 
-/** The folder this page opened on last time — a project key, or `folder:<path>`. */
-const REMEMBERED = 'ch:newSessionProject';
+/**
+ * The folder someone TYPED last time, and only that one. A project is a row away
+ * and needs no memory; a path that was typed out is work, and losing it to a
+ * reload is the one thing this page may be careless about. It fills the box
+ * behind `Another folder…` and never chooses a row — nothing here arrives chosen.
+ */
+const REMEMBERED_FOLDER = 'ch:newSessionFolder';
 /**
  * How the LAST new session was started. Not a configured default and not read
  * for anything else: continuing a conversation still takes its model from that
@@ -73,13 +78,21 @@ function readRemembered(): StartedWith | null {
  * them was the argument — the options came out in the operating system's own
  * palette, a blue highlight and a white sheet, with no colour and no counts,
  * which is a different list of the same things.
+ *
+ * **The row is a door rather than a choice**: clicking it starts the session
+ * there, so the name reads at full brightness on every row instead of only on
+ * the chosen one — there is no chosen one — and the folder it would run in is
+ * beside it. A list that acts on a single click has to say what each click does,
+ * and here the folder is the whole of it.
  */
 function ProjectRow({
   color,
   name,
   count,
   path,
-  selected,
+  armed,
+  busy,
+  disabled,
   onSelect,
 }: {
   /** The project's tag colour, or null for the row that is not a project yet. */
@@ -87,24 +100,35 @@ function ProjectRow({
   name: string;
   count?: number;
   path?: string;
-  selected: boolean;
+  /** Where the keyboard is. A highlight and not a decision — the click is that. */
+  armed: boolean;
+  /** The row a session is being reserved on right now. */
+  busy?: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 }) {
+  // Kept on screen while the arrows walk the list, because Enter starts what is
+  // armed: a highlight below the fold would be a session opening in a folder
+  // nobody could see. `nearest` is what makes it the list that scrolls and not
+  // the page.
+  const row = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (armed) row.current?.scrollIntoView({ block: 'nearest' });
+  }, [armed]);
+
   // The accent edge is on every row, transparent until it is wanted, so the
-  // selection cannot shift the names by two pixels as it moves. A tint on its own
-  // read as a hover — and this row decides where the session will run, so it has
-  // to be unmistakable rather than merely visible.
+  // keyboard cannot shift the names by two pixels as it moves.
   return (
     <button
+      ref={row}
       type="button"
       role="option"
-      aria-selected={selected}
+      aria-selected={armed}
       title={path}
+      disabled={disabled}
       onClick={onSelect}
-      className={`flex w-full items-center gap-2 border-l-2 py-1 pr-3 pl-2.5 text-left text-sm ${
-        selected
-          ? 'border-[var(--accent)] bg-[var(--bg-hover)] text-[var(--text)]'
-          : 'border-transparent text-[var(--text-dim)] hover:bg-[var(--bg-hover)]'
+      className={`flex w-full items-center gap-2 border-l-2 py-1 pr-3 pl-2.5 text-left text-sm disabled:opacity-50 ${
+        armed ? 'border-[var(--accent)] bg-[var(--bg-hover)]' : 'border-transparent hover:bg-[var(--bg-hover)]'
       }`}
     >
       {/* The dot keeps its column either way, so the names line up: a project
@@ -113,8 +137,16 @@ function ProjectRow({
         className={`size-2 shrink-0 rounded-full ${color ? '' : 'border border-dashed border-[var(--text-dim)]'}`}
         style={color ? { backgroundColor: color } : undefined}
       />
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      {count !== undefined && <span className="shrink-0 text-xs text-[var(--text-dim)]">{count}</span>}
+      <span className="max-w-[45%] shrink-0 truncate text-[var(--text)]">{name}</span>
+      {/* The other half of the answer, and it takes the room that is left: two
+          projects can carry the same name, and then this is all there is to tell
+          them apart. Dim and monospaced, so the names still read as the list. */}
+      {path && <span className="min-w-0 flex-1 truncate font-mono text-xs text-[var(--text-dim)]">{path}</span>}
+      {busy ? (
+        <span className="ml-auto shrink-0 text-xs text-[var(--text-dim)]">Starting…</span>
+      ) : (
+        count !== undefined && <span className="ml-auto shrink-0 text-xs text-[var(--text-dim)]">{count}</span>
+      )}
     </button>
   );
 }
@@ -152,12 +184,16 @@ export function NewSessionPage() {
   const view = useViewPrefs();
   const browse = useLocalOnly('pickFolder');
 
-  const remembered = useMemo(() => localStorage.getItem(REMEMBERED) ?? '', []);
   const started = useMemo(readRemembered, []);
-  const [choice, setChoice] = useState(() => (remembered.startsWith('folder:') ? OTHER : remembered));
-  const [folder, setFolder] = useState(() =>
-    remembered.startsWith('folder:') ? remembered.slice('folder:'.length) : '',
-  );
+  /**
+   * Where the keyboard is, and nothing else. It opens on NOTHING: a click starts
+   * the session on the row it lands on, so a row that arrived already armed
+   * would be a session nobody picked — one Enter away, and the first row of a
+   * list is a guess. `OTHER` is the one value that is a real choice, because
+   * that row asks a question instead of answering one.
+   */
+  const [choice, setChoice] = useState('');
+  const [folder, setFolder] = useState(() => localStorage.getItem(REMEMBERED_FOLDER) ?? '');
   const [filter, setFilter] = useState('');
   /** The reserved id and the folder behind it, or null while the picker is up. */
   const [draft, setDraft] = useState<{ sessionId: string; cwd: string } | null>(null);
@@ -179,18 +215,13 @@ export function NewSessionPage() {
   }, [sorted, filter]);
 
   const selected = sorted.find((p) => p.key === choice) ?? null;
-  // Nothing is chosen on a machine with no memory, and the first row is a better
-  // guess than a dead button. Filtering re-decides it, so typing never leaves the
-  // selection on a row that is no longer on screen.
-  //
-  // Gated on the projects having ARRIVED, not merely on the list being empty:
-  // before they do, every remembered key is "not in the list" and this would
-  // throw the last choice away a tick before it could be honoured.
-  const projectsReady = projects.isSuccess;
+  // Typing re-decides where the keyboard is, so it can never sit on a row that
+  // has left the screen — and it is DROPPED rather than moved along, because
+  // moving it would be the page arming a row on its own again.
   useEffect(() => {
-    if (!projectsReady || choice === OTHER) return;
-    if (!shown.some((p) => p.key === choice)) setChoice(shown[0]?.key ?? OTHER);
-  }, [projectsReady, choice, shown]);
+    if (!choice || choice === OTHER) return;
+    if (!shown.some((p) => p.key === choice)) setChoice('');
+  }, [choice, shown]);
 
   /** The same query the composer reads — deduped, one request between them. */
   const chat = useQuery({
@@ -263,20 +294,45 @@ export function NewSessionPage() {
     if (bornId) navigate(`/session/${bornId}`, { replace: true, state: { focusTerminal: terminalStarted } });
   }, [bornId, navigate, terminalStarted]);
 
-  const canStart = choice === OTHER ? !!folder.trim() : !!selected;
-  const start = () => {
-    if (!canStart || creating) return;
+  /**
+   * Reserve an id and hand the page over to the draft.
+   *
+   * The body arrives built instead of being derived from `choice`: the click
+   * that calls this IS the decision, and reading it back out of state would be
+   * one render away from reserving a session in the wrong folder. The ref is the
+   * other half of that — the rows go disabled on the same tick, but a click is
+   * cheap enough now that nothing here should depend on a re-render to be safe.
+   */
+  const startingRef = useRef(false);
+  const start = (body: ChatCreateRequest, rememberFolder: boolean) => {
+    if (startingRef.current) return;
+    startingRef.current = true;
     setCreating(true);
     setError(null);
-    const body = choice === OTHER ? { cwd: folder } : { projectKey: choice };
     api
       .chatCreate(body)
       .then((d) => {
         setDraft(d);
-        localStorage.setItem(REMEMBERED, choice === OTHER ? `folder:${d.cwd}` : choice);
+        if (rememberFolder) localStorage.setItem(REMEMBERED_FOLDER, d.cwd);
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setCreating(false));
+      .finally(() => {
+        startingRef.current = false;
+        setCreating(false);
+      });
+  };
+
+  /** A click on a row is the whole gesture: there is no button to reach for. */
+  const startProject = (key: string) => {
+    // The header's tag reads its colour off `choice`, so the highlight follows
+    // the row being started rather than staying where the keyboard left it.
+    setChoice(key);
+    start({ projectKey: key }, false);
+  };
+  /** The one answer that cannot be clicked, so the one that keeps its button. */
+  const startFolder = () => {
+    if (!folder.trim()) return;
+    start({ cwd: folder }, true);
   };
 
   /** The Windows folder browser, on the server's own desktop. */
@@ -397,12 +453,15 @@ export function NewSessionPage() {
                 <form
                   className="space-y-3"
                   onSubmit={(e) => {
+                    // Only ever the typed folder: nothing else on this form can
+                    // submit it, and Enter in the filter box never reaches here.
                     e.preventDefault();
-                    start();
+                    startFolder();
                   }}
                 >
                   <p className="text-sm text-[var(--text-dim)]">
-                    Claude Code runs in a folder, and everything it reads or writes is relative to that folder.
+                    Claude Code runs in a folder, and everything it reads or writes is relative to that folder. Pick
+                    one and the session starts there.
                   </p>
                   <div>
                     <input
@@ -413,6 +472,14 @@ export function NewSessionPage() {
                         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                           e.preventDefault();
                           step(e.key === 'ArrowDown' ? 1 : -1);
+                        } else if (e.key === 'Enter') {
+                          // Never the form's submit — what that would send is a
+                          // folder nobody is typing. Enter takes the row the
+                          // arrows armed and nothing else: with none armed it
+                          // does nothing, because a first row is not an answer.
+                          e.preventDefault();
+                          if (choice === OTHER) folderBox.current?.focus();
+                          else if (choice) startProject(choice);
                         }
                       }}
                       placeholder="Filter projects…"
@@ -431,8 +498,10 @@ export function NewSessionPage() {
                           name={p.name}
                           count={p.sessionCount}
                           path={p.path}
-                          selected={choice === p.key}
-                          onSelect={() => setChoice(p.key)}
+                          armed={choice === p.key}
+                          busy={creating && choice === p.key}
+                          disabled={creating}
+                          onSelect={() => startProject(p.key)}
                         />
                       ))}
                       {shown.length === 0 && (
@@ -445,7 +514,8 @@ export function NewSessionPage() {
                       <ProjectRow
                         color={null}
                         name="Another folder…"
-                        selected={choice === OTHER}
+                        armed={choice === OTHER}
+                        disabled={creating}
                         onSelect={() => {
                           setChoice(OTHER);
                           // The box appears with this click, so focus it next frame.
@@ -454,11 +524,9 @@ export function NewSessionPage() {
                       />
                     </div>
                   </div>
-                  {/* Under the list rather than in it: the paths are long enough
-                      to swamp the names, and only the chosen one has to be
-                      readable — which is also what tells two projects with the
-                      same name apart. */}
-                  {choice === OTHER ? (
+                  {/* The one row that answers with something other than itself,
+                      so the only one with anything under the list. */}
+                  {choice === OTHER && (
                     <div className="flex items-center gap-1.5">
                       <input
                         ref={folderBox}
@@ -481,23 +549,24 @@ export function NewSessionPage() {
                         {browsing ? 'Browsing…' : '📁 Browse…'}
                       </button>
                     </div>
-                  ) : (
-                    <div className="truncate px-1 font-mono text-xs text-[var(--text-dim)]" title={selected?.path}>
-                      {selected?.path ?? ''}
-                    </div>
                   )}
                   {error && (
                     <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
                       {error}
                     </div>
                   )}
-                  <button
-                    type="submit"
-                    disabled={creating || !canStart}
-                    className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[#1b1512] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100"
-                  >
-                    {creating ? 'Starting…' : 'Start here'}
-                  </button>
+                  {/* The one button left on the page, and only ever beside the
+                      box: every other answer here is a row, and a row starts
+                      itself. A path being typed has no such moment. */}
+                  {choice === OTHER && (
+                    <button
+                      type="submit"
+                      disabled={creating || !folder.trim()}
+                      className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[#1b1512] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100"
+                    >
+                      {creating ? 'Starting…' : 'Start here'}
+                    </button>
+                  )}
                 </form>
               ) : (
                 <>
