@@ -8,7 +8,17 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { SessionDetailResponse, TerminalServerMessage } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
-import { clamp, HEIGHT_KEY, readHeight } from '../../lib/terminalPrefs.ts';
+import {
+  clamp,
+  getTerminalFontSize,
+  HEIGHT_KEY,
+  readHeight,
+  stepTerminalFontSize,
+  TERMINAL_FONT_DEFAULT,
+  TERMINAL_FONT_MAX,
+  TERMINAL_FONT_MIN,
+  useTerminalFontSize,
+} from '../../lib/terminalPrefs.ts';
 import { BlockedBar } from './BlockedBar.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
 
@@ -95,6 +105,15 @@ export function SessionTerminal({
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ['terminal', sessionId], queryFn: () => api.terminalStatus(sessionId) });
   const [height, setHeight] = useState(readHeight);
+  /**
+   * The size of the type, which is NOT this panel's to keep.
+   *
+   * Subscribed rather than held: it is one answer for every terminal in the
+   * browser, so the button that changes it is here but the value lives in
+   * [terminalPrefs] and every terminal there is redraws off the same store —
+   * this tab's, the next tab's, and the one opened tomorrow.
+   */
+  const fontSize = useTerminalFontSize();
   const [full, setFull] = useState(false);
   /**
    * Collapsed to its title bar. The CLI keeps running and the socket stays
@@ -201,7 +220,13 @@ export function SessionTerminal({
       // glyphs were cut for. `customGlyphs` (on by default) draws the box rules
       // geometrically whatever the font does, which is the other half of it.
       fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', monospace",
-      fontSize: 12,
+      // The GETTER, not the subscribed value, and that is load-bearing: this
+      // effect's cleanup disposes the terminal, so a size in its dependency
+      // list would tear the whole thing down and build it again on every press
+      // — losing the screen this component exists to keep, and leaving the
+      // socket, whose dependencies are different, writing into a dead terminal.
+      // A live change is applied by the effect below instead.
+      fontSize: getTerminalFontSize(),
       // Exactly 1, and this is the logo. The CLI draws it out of half-block
       // characters that are meant to tile edge to edge; any leading at all puts
       // a stripe of background through every row of it. 1.2 reads better for
@@ -387,6 +412,45 @@ export function SessionTerminal({
   // `minimised` among them: coming back from a hidden host means xterm has been
   // measuring a box of zero, and nothing else would tell it otherwise.
   useEffect(refit, [height, full, minimised, refit]);
+  /**
+   * The text got bigger or smaller, which to the CLI is a smaller or bigger
+   * CONSOLE: the panel is the same box, so the cells change size and the number
+   * of them changes with it. `fit()` is what works that out, and the `onResize`
+   * it provokes is what tells the pseudo-terminal — nothing new goes on the wire
+   * for this feature.
+   *
+   * Guarded on the option itself so the mount is a no-op: the constructor above
+   * already read the store, and re-setting `fontSize` to what it is would throw
+   * away xterm's glyph atlas for nothing.
+   *
+   * The second `fit()` on the next frame is the belt to that braces. xterm
+   * remeasures the cell when the option is set, but if it ever published that a
+   * frame late the first `fit()` would have measured with the old cell and
+   * NOTHING would come back for it: the host's box has not changed, so the
+   * `ResizeObserver` below never fires. A wasted measurement is cheaper than a
+   * panel that needs a drag to come right.
+   */
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || term.options.fontSize === fontSize) return;
+    term.options.fontSize = fontSize;
+    refit();
+    const frame = requestAnimationFrame(refit);
+    return () => cancelAnimationFrame(frame);
+  }, [fontSize, refit]);
+  /**
+   * A step up or down, and the keys go back to the CLI.
+   *
+   * The press itself moved the focus to the button — nothing collapses for that,
+   * since the button is inside the root and that is what [collapseOnFocusOut]
+   * asks about — but the next thing anybody does after making the text readable
+   * is type into it, and a terminal you have to click back into first is one
+   * that took the keyboard for a decoration.
+   */
+  const zoomBy = useCallback((dir: 1 | -1) => {
+    stepTerminalFontSize(dir);
+    termRef.current?.focus();
+  }, []);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -695,6 +759,48 @@ export function SessionTerminal({
             >
               {start.isPending ? 'starting…' : '❯ start again'}
             </button>
+          )}
+          {/* The text size — two buttons, and the number lives in the tooltip.
+              A reading on the bar would be a third control on a row that is
+              right-aligned, so every press would slide the buttons beside it
+              out from under the pointer doing the pressing.
+
+              On an OPEN panel, full screen INCLUDED, which is where it differs
+              from the pin: a title bar has no text to size, and a terminal
+              filling the window is the one most worth sizing. The pin is absent
+              there because it answers a focus rule full screen is not subject
+              to; this answers nothing but the eyes.
+
+              And it is not this panel's setting: it is every terminal's
+              ([terminalPrefs]), which is why the button holds no state of its
+              own and the tooltip says so.
+
+              The tooltip carries the default beside the size, because there is
+              no Reset here and a bare number cannot tell you how far from
+              ordinary you have got — 8 px means nothing until you know it
+              started at 12. Two presses back is the reset, and knowing which
+              way is all it takes. */}
+          {!minimised && (
+            <>
+              <button
+                type="button"
+                onClick={() => zoomBy(-1)}
+                disabled={fontSize <= TERMINAL_FONT_MIN}
+                title={`Smaller text, in every terminal (now ${String(fontSize)} px, default ${String(TERMINAL_FONT_DEFAULT)})`}
+                className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40"
+              >
+                A−
+              </button>
+              <button
+                type="button"
+                onClick={() => zoomBy(1)}
+                disabled={fontSize >= TERMINAL_FONT_MAX}
+                title={`Bigger text, in every terminal (now ${String(fontSize)} px, default ${String(TERMINAL_FONT_DEFAULT)})`}
+                className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40"
+              >
+                A+
+              </button>
+            </>
           )}
           {/* Only on an OPEN panel, and never in full screen: the pin answers
               the focus rule, and neither a title bar nor a window-filling
