@@ -697,24 +697,34 @@ inside it. A fourth appears only on a turn somebody interrupted: **how long sinc
 the user last put something in**. All four are labelled, `total` included: bare,
 it was the only figure and could only be the turn.
 
-- **A session goes busy when the user gives it something, and only then** — a
-  prompt, an answer to a question, a permission granted, a queued prompt
-  delivered. So `statusUpdatedAt` is not "the turn started", it is "you last
-  spoke", and reading it as the former restarted `total` from 0 at every
-  interruption — on a turn the transcript never split, because a queued prompt is
-  delivered INTO the turn already open
+- **A session goes busy when the user gives it something BACK** — the prompt that
+  opened the turn, an answer to a question, a permission granted. So
+  `statusUpdatedAt` is not "the turn started", it is "you last unblocked it", and
+  reading it as the former restarted `total` from 0 at every interruption — on a
+  turn the transcript never split, because a queued prompt is delivered INTO the
+  turn already open
   ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#queued-lines-attachment--queued_command))
   and an `AskUserQuestion` answer is not an item at all, it is the call's own
   `result` ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md)). So
   `total` counts from the transcript's own boundary, which already holds both
-  inside the turn, and the flip is drawn as `last input` instead.
+  inside the turn.
+- **The flip is only HALF of your last word, and it is the half about waking a
+  session up.** A prompt typed while Claude works wakes nothing: the session was
+  never asleep, `status` stays `busy` right across the delivery, and
+  `statusUpdatedAt` goes on naming the turn's own start — measured on `06b1f9ec`,
+  where a queued prompt had been delivered and answered and the flip had not
+  moved. Its own line is the only record of it, so `last input` takes whichever
+  of the two stamps is the more recent, and the hover names the act because they
+  are not the same one: `You typed this` (and that stamp is when it was TYPED,
+  never when it was handed over — nothing records that) or `You answered`.
 - **`last input` is second in the row because it re-anchors the two after it.**
   On a turn that waited on a question, `last message` is OLDER than what `total`
   counts from and reads as a hang until this figure says the turn was waiting on
   YOU. It is drawn only when the turn was really interrupted (`turnClocks`
-  returns null otherwise, and under 5 s it would be the same number as `total`
-  written twice — the gap the composer opens by stamping `turnStartedAt` on the
-  click, a moment before the prompt's first line reaches the disk).
+  returns null otherwise, and under 5 s from the turn's start it would be the same
+  number as `total` written twice — which is every ordinary turn, plus the gap the
+  composer opens by stamping `turnStartedAt` on the click, a moment before the
+  prompt's first line reaches the disk).
 - **The transcript is right about the turn and the flip is immediate, so the rule
   is which to believe when** — one pure function, `turnClocks`, and nowhere else.
   Between a prompt and its first line reaching disk the last turn on record is
@@ -724,7 +734,9 @@ it was the only figure and could only be the turn.
   after the flip, or its last item is one Claude has yet to answer — a queued
   prompt (whose line is appended at DELIVERY, so being last IS that window), a
   call that asks a human (`AskUserQuestion`, `ExitPlanMode`), or a call with no
-  result. Named rather than "ends on a call" because a turn ends on a call that
+  result. **Nothing else in the turn is read until one of the two holds**, the
+  queued stamp included: a clock taken off a turn that may be the previous one is
+  the very thing this guards against. Named rather than "ends on a call" because a turn ends on a call that
   came back all the time: a `<task-notification>` opens a turn of its own and cuts
   the previous one exactly there. **Measured exposure of the sign that can be
   wrong**: 2 of 94 ended turns across the 30 most recent sessions of this project

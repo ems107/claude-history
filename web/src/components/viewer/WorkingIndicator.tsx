@@ -151,7 +151,7 @@ export function WorkingIndicator({
    * Where `total` counts from, and whether the turn was interrupted at all. The
    * whole rule lives in `turnClocks`, pure and beside the readings it weighs.
    */
-  const { total, input } = turnClocks(activity, since);
+  const { total, input, inputTyped } = turnClocks(activity, since);
 
   /**
    * Only what landed AFTER the turn began. With no turn start there is nothing
@@ -224,8 +224,12 @@ export function WorkingIndicator({
                   {' · '}
                   {/* Second because it re-anchors the reading of the two after
                       it: a `last message` older than `total`'s own start reads
-                      as a hang until this says the turn was waiting on YOU. */}
-                  <Figure label="last input" at={input} hint="You last answered" />
+                      as a hang until this says the turn was waiting on YOU.
+                      The hover names the act, because the two stamps behind this
+                      one figure are not the same thing: a queued prompt is timed
+                      from when it was TYPED (nothing records the delivery), an
+                      answer from the moment it woke the session back up. */}
+                  <Figure label="last input" at={input} hint={inputTyped ? 'You typed this' : 'You answered'} />
                 </>
               )}
               {messageAt !== null && (

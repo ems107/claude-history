@@ -57,6 +57,19 @@ export interface TurnActivity {
    */
   lastWriteAt: number | null;
   /**
+   * The newest prompt typed while the turn ran (`MessageItem.queued`), as its
+   * own stamp — **when it was TYPED, not when it was delivered**, which is the
+   * only clock the transcript keeps for it (39 s apart in `15a86025`).
+   *
+   * It has to be read here because the busy flip cannot stand in for it: a queued
+   * prompt does not wake a session that never stopped. Claude Code holds it and
+   * hands it over when the turn's current stretch of work ends, with `status`
+   * `busy` throughout — verified on `06b1f9ec`, where `statusUpdatedAt` still
+   * named the turn's own start after one had been delivered and answered. So the
+   * flip knows about an answered question and knows nothing about this.
+   */
+  lastQueuedAt: number | null;
+  /**
    * The turn's LAST item is something Claude has yet to answer, so the turn
    * cannot be over whatever the status file says. Three shapes, and each is one
    * of the two ways a user interrupts a turn:
@@ -93,6 +106,7 @@ export const NO_ACTIVITY: TurnActivity = {
   lastMessageAt: null,
   lastToolAt: null,
   lastWriteAt: null,
+  lastQueuedAt: null,
   unanswered: false,
 };
 
@@ -125,14 +139,20 @@ export function turnActivity(turns: Turn[]): TurnActivity {
   let lastMessageAt: number | null = null;
   let lastToolAt: number | null = null;
   let lastWriteAt: number | null = null;
+  let lastQueuedAt: number | null = null;
 
   for (const item of turn.items) {
     // A rewound-away branch is history, not this turn's progress.
     if (item.discardedBranch !== null) continue;
     // Only the model's own output: the prompt that opened the turn is what the
     // turn's own counter measures FROM, and neither a queued prompt nor an
-    // injected notice is Claude answering.
-    if (item.role !== 'assistant') continue;
+    // injected notice is Claude answering. One of them is still a clock, just
+    // not one of Claude's — it is the reader's own last word.
+    if (item.role !== 'assistant') {
+      const typed = item.queued ? stamp(item.timestamp) : null;
+      if (typed !== null && (lastQueuedAt === null || typed > lastQueuedAt)) lastQueuedAt = typed;
+      continue;
+    }
 
     // The two stamps a merged message carries, and each answers a different
     // question. `endTimestamp` is its LAST line, which for a message that
@@ -154,7 +174,7 @@ export function turnActivity(turns: Turn[]): TurnActivity {
     if (ended !== null && (lastWriteAt === null || ended > lastWriteAt)) lastWriteAt = ended;
   }
 
-  return { startedAt, lastMessageAt, lastToolAt, lastWriteAt, unanswered: unansweredAt(turn.items) };
+  return { startedAt, lastMessageAt, lastToolAt, lastWriteAt, lastQueuedAt, unanswered: unansweredAt(turn.items) };
 }
 
 /**
@@ -170,23 +190,38 @@ const INTERJECTION_MS = 5_000;
 export interface TurnClocks {
   /** `total`: the whole turn, or the busy flip while that cannot be proved. */
   total: number | null;
-  /** `last input`: the user's last intervention, or null for a turn nobody interrupted. */
+  /** `last input`: the user's last word in this turn, or null for a turn nobody interrupted. */
   input: number | null;
+  /**
+   * Which of the two things `input` is, because they are not the same act and
+   * the hover says so: a prompt typed over a turn still running, or an answer
+   * that woke a session waiting on one.
+   */
+  inputTyped: boolean;
 }
 
 /**
  * The turn's own clock, and the one that says when the user last put something
  * into it.
  *
- * **A session goes busy when the user gives it something, and only then** — a
- * prompt, an answer to a question, a permission granted, a queued prompt
- * delivered. So `since` is not "the turn started": it is "the user last spoke",
- * and reading it as the former is what restarted `total` from 0 every time a
- * turn was interrupted, on a turn the transcript never split.
+ * **A session goes busy when the user gives it something back** — the prompt
+ * that opened the turn, an answer to a question, a permission granted. So
+ * `since` is not "the turn started": it is "the user last unblocked it", and
+ * reading it as the former is what restarted `total` from 0 every time a turn
+ * was interrupted, on a turn the transcript never split.
  *
  * So `total` counts from the transcript's own boundary — which already holds the
  * interruptions inside the turn — and `since` becomes the figure it always was:
  * `last input`, drawn only when it has something of its own to say.
+ *
+ * **The flip is only half of the reader's last word, and the transcript holds
+ * the other half.** A prompt typed while Claude works never wakes anything: the
+ * session was never asleep, `status` stays `busy` across the delivery, and the
+ * flip goes on naming the turn's own start (measured on `06b1f9ec`). So the
+ * queued prompt's own stamp is the only record of it, and `last input` takes
+ * whichever of the two is the more recent — with `inputTyped` saying which, since
+ * a stamp that means "when you typed it" and one that means "when you answered"
+ * cannot share a hover.
  *
  * **The one thing the transcript cannot do is answer immediately.** Between a
  * prompt and its first line reaching disk the last turn on record is still the
@@ -207,11 +242,24 @@ export interface TurnClocks {
  * question, which is the case this exists for.
  */
 export function turnClocks(activity: TurnActivity, since: number | null): TurnClocks {
-  if (since === null) return { total: null, input: null };
-  const { startedAt } = activity;
-  // Covers a start NEWER than the flip as well, which is the composer's normal
-  // order — there the flip is the earlier of the two and already the right one.
-  if (startedAt === null || since - startedAt < INTERJECTION_MS) return { total: since, input: null };
+  const flip = { total: since, input: null, inputTyped: false };
+  const { startedAt, lastQueuedAt } = activity;
+  if (since === null || startedAt === null) return flip;
   const inFlight = (activity.lastWriteAt !== null && activity.lastWriteAt >= since) || activity.unanswered;
-  return inFlight ? { total: startedAt, input: since } : { total: since, input: null };
+  if (!inFlight) return flip;
+
+  // The earlier of the two, which is the flip only where the composer stamped it
+  // on the click, a moment before the prompt's first line reached the disk.
+  const total = Math.min(startedAt, since);
+  // Under the floor the two figures would be one number written twice: on an
+  // ordinary turn the flip IS the start, and a prompt typed in the first seconds
+  // of one is not an interruption anybody needs a clock for.
+  const answered = since - total >= INTERJECTION_MS ? since : null;
+  const typed = lastQueuedAt !== null && lastQueuedAt - total >= INTERJECTION_MS ? lastQueuedAt : null;
+  if (answered === null && typed === null) return { total, input: null, inputTyped: false };
+  return {
+    total,
+    input: Math.max(answered ?? 0, typed ?? 0),
+    inputTyped: (typed ?? 0) >= (answered ?? 0),
+  };
 }
