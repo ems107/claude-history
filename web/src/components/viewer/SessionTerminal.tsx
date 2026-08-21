@@ -14,6 +14,7 @@ import {
   HEIGHT_KEY,
   readHeight,
   stepTerminalFontSize,
+  TERMINAL_FONT_DEFAULT,
   TERMINAL_FONT_MAX,
   TERMINAL_FONT_MIN,
   useTerminalFontSize,
@@ -772,14 +773,20 @@ export function SessionTerminal({
 
               And it is not this panel's setting: it is every terminal's
               ([terminalPrefs]), which is why the button holds no state of its
-              own and the tooltip says so. */}
+              own and the tooltip says so.
+
+              The tooltip carries the default beside the size, because there is
+              no Reset here and a bare number cannot tell you how far from
+              ordinary you have got — 8 px means nothing until you know it
+              started at 12. Two presses back is the reset, and knowing which
+              way is all it takes. */}
           {!minimised && (
             <>
               <button
                 type="button"
                 onClick={() => zoomBy(-1)}
                 disabled={fontSize <= TERMINAL_FONT_MIN}
-                title={`Smaller text, in every terminal (now ${String(fontSize)} px)`}
+                title={`Smaller text, in every terminal (now ${String(fontSize)} px, default ${String(TERMINAL_FONT_DEFAULT)})`}
                 className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40"
               >
                 A−
@@ -788,7 +795,7 @@ export function SessionTerminal({
                 type="button"
                 onClick={() => zoomBy(1)}
                 disabled={fontSize >= TERMINAL_FONT_MAX}
-                title={`Bigger text, in every terminal (now ${String(fontSize)} px)`}
+                title={`Bigger text, in every terminal (now ${String(fontSize)} px, default ${String(TERMINAL_FONT_DEFAULT)})`}
                 className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40"
               >
                 A+
