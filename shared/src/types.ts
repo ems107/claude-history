@@ -214,9 +214,40 @@ export interface SessionEnrichment {
   runIds: string[];
 }
 
+/**
+ * What a Claude Code CLI is doing, as it writes it to
+ * `~/.claude/sessions/<pid>.json`. **The whole set is four values** — read out
+ * of the 2.1.239 binary (`["busy","shell","idle","waiting"]`) rather than
+ * guessed from what this machine happened to have written, and verified live.
+ *
+ * Kept as loose strings rather than a union: a later CLI may add a fifth, and an
+ * unknown value has to degrade to "cannot say" instead of failing to typecheck.
+ * The whole reading is in [AI_TRANSCRIPTS.md](../../docs/AI_TRANSCRIPTS.md).
+ */
+export const LIVE_BUSY = 'busy';
+/** A dialog is on screen — see `LiveInfo.waitingFor` for which. */
+export const LIVE_WAITING = 'waiting';
+/**
+ * The turn is over. Two values, because `shell` is `idle` with a shell open on
+ * top of it (the CLI writes `idle && shellOpen ? 'shell' : status`) — nothing
+ * about the conversation differs, so nothing here tells the two apart.
+ */
+export const LIVE_STOPPED: readonly string[] = ['idle', 'shell'];
+
 export interface LiveInfo {
   pid: number;
-  status: string; // "idle" | "busy" | ...
+  /** `LIVE_BUSY` | `LIVE_WAITING` | one of `LIVE_STOPPED`, or `"unknown"`. */
+  status: string;
+  /**
+   * What the session is waiting FOR, written only alongside `LIVE_WAITING`:
+   * `"permission prompt"` (the CLI's default for any dialog it has no name for,
+   * so by far the commonest), `"input needed"`, `"dialog open"`,
+   * `"goal proposal"`, `"sandbox request"`, `"worker request"`.
+   *
+   * Its own field rather than folded into `status`, because it is the sentence
+   * a UI can show where `status` is the state a UI can branch on.
+   */
+  waitingFor: string | null;
   name: string | null;
   startedAt: number | null; // epoch ms
   updatedAt: number | null; // epoch ms

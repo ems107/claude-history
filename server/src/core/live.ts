@@ -43,6 +43,9 @@ export async function readLiveSessions(sessionsDir: string): Promise<LiveSession
         sessionId,
         cwd: str(raw.cwd) ?? '',
         status: str(raw.status) ?? 'unknown',
+        // Written only while a dialog is up, which is exactly when it is worth
+        // having: it is the only thing on disk that says WHY a session stopped.
+        waitingFor: str(raw.waitingFor),
         name: str(raw.name),
         startedAt: num(raw.startedAt),
         updatedAt: num(raw.updatedAt),

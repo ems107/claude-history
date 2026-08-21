@@ -334,6 +334,7 @@ export class SessionIndex {
         ? {
             pid: l.pid,
             status: l.status,
+            waitingFor: l.waitingFor,
             name: l.name,
             startedAt: l.startedAt,
             updatedAt: l.updatedAt,

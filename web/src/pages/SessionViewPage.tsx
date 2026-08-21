@@ -638,7 +638,15 @@ export function SessionViewPage() {
     const busySince =
       chat.data?.turnStartedAt != null ? Date.parse(chat.data.turnStartedAt) : (pending[0]?.at ?? null);
     if (busySince !== null) {
-      return { pid: 0, status: 'busy', name: null, startedAt: null, updatedAt: null, statusUpdatedAt: busySince };
+      return {
+        pid: 0,
+        status: 'busy',
+        waitingFor: null,
+        name: null,
+        startedAt: null,
+        updatedAt: null,
+        statusUpdatedAt: busySince,
+      };
     }
     return live.data?.find((l) => l.sessionId === id) ?? null;
   }, [chat.data?.turnStartedAt, pending, live.data, id]);
