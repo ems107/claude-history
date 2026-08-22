@@ -2,7 +2,7 @@ import type { LiveInfo, SessionSummary } from '@claude-history/shared';
 import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 
-function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
+export function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
   return (
     <span
       title={title}

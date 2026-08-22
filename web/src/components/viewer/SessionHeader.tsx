@@ -7,7 +7,7 @@ import { copyPlain } from '../../lib/clipboard.ts';
 import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
 import { entrypointLabel, formatDateTimeFull, shortModel } from '../../lib/format.ts';
 import { listUrl } from '../../lib/listState.ts';
-import { SessionBadges } from '../list/Badges.tsx';
+import { Badge, SessionBadges } from '../list/Badges.tsx';
 import { ProjectTag } from '../list/ProjectTag.tsx';
 import { SessionMenu } from './SessionActions.tsx';
 
@@ -227,24 +227,30 @@ export function SessionHeader({
             truncate` on it and `shrink-0` here mean together.
             Two are drawn elsewhere and would otherwise be said twice: the ⑂
             count is in the rail, and the PR is one press away under `more`. */}
-        {/* Renamed, said the way the list says it: one glyph beside the name,
-            with what Claude Code still calls it on the hover. It is a STATE, so
-            it sits with the other states rather than in the menu that changes
-            it — and the full original title is under `more`, where a string
-            that long can have a line of its own. */}
-        {s.titleSource === 'local' && (
-          <span
-            className="shrink-0 text-xs text-amber-400"
-            title={`Renamed locally — original title: “${s.originalTitle ?? ''}”`}
-          >
-            ✎
-          </span>
-        )}
-        {/* `flex`, not a bare span: the badges are an `inline-flex`, and inside a
+{/* `flex`, not a bare span: the badges are an `inline-flex`, and inside a
             block wrapper they are baseline-aligned in the row's 24 px line box
             rather than centred in it — 2.5 px low against the title, which at
-            this size is exactly enough to look wrong. */}
-        <span className="flex shrink-0 items-center">
+            this size is exactly enough to look wrong. `gap-1` is the gap
+            `SessionBadges` uses inside itself, so the mark below joins that row
+            rather than sitting slightly apart from it. */}
+        <span className="flex shrink-0 items-center gap-1">
+          {/* Renamed: a STATE, so it belongs with the other states rather than in
+              the menu that changes it — and wearing the same `Badge` the pin
+              does, because the two are the same kind of thing and one component
+              is what keeps them looking like it. The full original title is
+              under `more`, where a string that long can have a line of its own;
+              this says there IS one, and its hover says what it was.
+              (U+270E and not U+270F: this one's default presentation is TEXT, so
+              it takes the amber from the CSS instead of arriving as a colour
+              emoji. Checked at 8×, with and without a variation selector —
+              identical, so there is nothing to ask for.) */}
+          {s.titleSource === 'local' && (
+            <Badge
+              label="✎"
+              title={`Renamed locally — original title: “${s.originalTitle ?? ''}”`}
+              className="bg-amber-500/15 text-amber-400"
+            />
+          )}
           <SessionBadges session={s} omitPr omitAgents live={live} />
         </span>
         <span className="flex-1" />
