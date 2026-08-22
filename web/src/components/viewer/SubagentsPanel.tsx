@@ -1,12 +1,11 @@
 import type { PriceTable, SubagentDetail, SubagentMeta } from '@claude-history/shared';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { type ReactNode, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { type CostEntry, costEntries, formatTokens, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
 import { durationBetween, formatDateTime, formatDateTimeFull } from '../../lib/format.ts';
 import { promptOf, rowStatus, subagentStatus, type SubagentRow } from '../../lib/subagents.ts';
 import { CostPill } from './CostPill.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { Fold } from './Fold.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useSubagents } from './SubagentContext.ts';
 
@@ -166,24 +165,6 @@ function StatusChip({
     >
       no report
     </span>
-  );
-}
-
-function Fold({ label, children }: { label: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <FoldHeader
-        open={open}
-        onToggle={() => setOpen((v) => !v)}
-        className="rounded px-1 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-      >
-        {open ? '▾' : '▸'} {label}
-      </FoldHeader>
-      {open && (
-        <div className="mt-1 mb-1 ml-4 rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">{children}</div>
-      )}
-    </>
   );
 }
 

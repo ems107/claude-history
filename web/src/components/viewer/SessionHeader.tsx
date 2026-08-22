@@ -8,9 +8,15 @@ import { listUrl } from '../../lib/listState.ts';
 import { SessionBadges } from '../list/Badges.tsx';
 import { ProjectTag } from '../list/ProjectTag.tsx';
 
-/** The look of every control in the session header, wherever it is rendered. */
+/**
+ * The look of every control in the session header, wherever it is rendered.
+ *
+ * `inline-flex` because most of them now carry a 14 px icon beside their label:
+ * the menus, the rail's counterparts and the resume button all draw one, and a
+ * text-only control looks the same either way.
+ */
 export function toggleClass(active: boolean, disabled = false): string {
-  return `rounded border px-2 py-0.5 text-xs ${
+  return `inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs ${
     disabled
       ? 'cursor-default border-[var(--border)] text-[var(--text-dim)]/50'
       : active
@@ -98,19 +104,6 @@ export function SessionHeader({
   detail,
   draft,
   color,
-  showThinking,
-  onToggleThinking,
-  thinkingCount,
-  expandTools,
-  onToggleTools,
-  toolCount,
-  canHideResponses,
-  onHideResponses,
-  canShowResponses,
-  onShowResponses,
-  expandSegments,
-  onToggleSegments,
-  compactionCount,
   showTokens,
   onToggleTokens,
   showLineage,
@@ -143,19 +136,6 @@ export function SessionHeader({
   color: string;
   /** Live state from the page, which tracks it far more closely than the summary. */
   live?: import('@claude-history/shared').LiveInfo | null;
-  showThinking: boolean;
-  onToggleThinking: () => void;
-  thinkingCount: number;
-  expandTools: boolean;
-  onToggleTools: () => void;
-  toolCount: number;
-  canHideResponses: boolean;
-  onHideResponses: () => void;
-  canShowResponses: boolean;
-  onShowResponses: () => void;
-  expandSegments: boolean;
-  onToggleSegments: () => void;
-  compactionCount: number;
   showTokens: boolean;
   onToggleTokens: () => void;
   showLineage: boolean;
@@ -265,66 +245,10 @@ export function SessionHeader({
             </button>
           </span>
         )}
-        <button
-          type="button"
-          onClick={thinkingCount > 0 ? onToggleThinking : undefined}
-          disabled={thinkingCount === 0}
-          className={toggleClass(showThinking, thinkingCount === 0)}
-          title={
-            thinkingCount > 0
-              ? 'Show/hide the model’s thinking blocks'
-              : 'No visible thinking in this conversation (recent Claude Code versions store thinking encrypted)'
-          }
-        >
-          Thinking{thinkingCount > 0 ? ` (${thinkingCount})` : ''}
-        </button>
-        <button
-          type="button"
-          onClick={toolCount > 0 ? onToggleTools : undefined}
-          disabled={toolCount === 0}
-          className={toggleClass(expandTools, toolCount === 0)}
-          title={
-            toolCount > 0
-              ? 'Expand or collapse every group of tool calls (they start collapsed so prompts and answers read cleanly)'
-              : 'This conversation has no tool calls'
-          }
-        >
-          Tools{toolCount > 0 ? ` (${toolCount})` : ''}
-        </button>
-        {/* Actions, not modes: each one is spent once and then has nothing
-            left to do, which is exactly when it greys out. */}
-        <button
-          type="button"
-          onClick={canHideResponses ? onHideResponses : undefined}
-          disabled={!canHideResponses}
-          className={toggleClass(false, !canHideResponses)}
-          title={
-            canHideResponses
-              ? 'Fold every answer away and leave the prompts — click any prompt to bring its own back'
-              : 'Every answer is already folded'
-          }
-        >
-          Hide responses
-        </button>
-        <button
-          type="button"
-          onClick={canShowResponses ? onShowResponses : undefined}
-          disabled={!canShowResponses}
-          className={toggleClass(false, !canShowResponses)}
-          title={canShowResponses ? 'Unfold every answer' : 'Nothing is folded'}
-        >
-          Show responses
-        </button>
-        {compactionCount > 0 && (
-          <button
-            type="button"
-            onClick={onToggleSegments}
-            className={toggleClass(expandSegments)}
-            title="Unfold every stretch of conversation that was compacted away (they start folded — only the current context is open)"
-          >
-            Compactions ({compactionCount})
-          </button>
-        )}
+        {/* Thinking, tool calls, compacted stretches and the two folding
+            actions used to be five buttons in this row. They are the same
+            question zoom and width answer — how the conversation is drawn — so
+            they live in `ViewMenu` now, which the page passes in as an action. */}
         <button type="button" onClick={onToggleTokens} className={toggleClass(showTokens)}>
           Tokens
         </button>

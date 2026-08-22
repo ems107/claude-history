@@ -8,7 +8,7 @@ import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
-import { ViewButton } from '../components/viewer/ViewButton.tsx';
+import { ViewMenu } from '../components/viewer/ViewMenu.tsx';
 import { WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
 import { listUrl } from '../lib/listState.ts';
 import { sortProjectsByName } from '../lib/projects.ts';
@@ -486,7 +486,7 @@ export function NewSessionPage() {
                 </button>
               </>
             )}
-            <ViewButton view={view} />
+            <ViewMenu view={view} />
           </span>
         </div>
       </div>

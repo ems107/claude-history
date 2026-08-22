@@ -21,9 +21,9 @@ import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
+import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
-import { ExportButton } from '../components/viewer/ExportButton.tsx';
 import { FindBar, useFindBar } from '../components/viewer/FindBar.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
 import { MentionedFilesPanel } from '../components/viewer/MentionedFilesPanel.tsx';
@@ -33,7 +33,7 @@ import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
 import { FollowBottomButton, PILL_CORNER_PX, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
-import { ResumeButtons } from '../components/viewer/ResumeButtons.tsx';
+import { ResumeButton, SessionMenu } from '../components/viewer/SessionActions.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
@@ -42,7 +42,7 @@ import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
 import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
-import { ViewButton } from '../components/viewer/ViewButton.tsx';
+import { ViewMenu } from '../components/viewer/ViewMenu.tsx';
 import { isWorking, WorkingIndicator, workingSince } from '../components/viewer/WorkingIndicator.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
@@ -181,11 +181,8 @@ export function SessionViewPage() {
   const session = detail.data ?? draft;
   /** Drawing a session that has no transcript yet: a few things must say less. */
   const isDraft = !detail.data && !!draft;
-  const [showThinking, setShowThinking] = useState(() => localStorage.getItem('showThinking') === 'true');
-  const [expandTools, setExpandTools] = useState(() => localStorage.getItem('expandTools') === 'true');
-  // Not persisted: folded is the point of the feature, and a session opened
-  // tomorrow should still open on the context that is alive.
-  const [expandSegments, setExpandSegments] = useState(false);
+  const reading = useReadingPrefs();
+  const { showThinking, expandTools, expandSegments } = reading;
   const view = useViewPrefs();
   const [showTokens, setShowTokens] = useState(false);
   const [showLineage, setShowLineage] = useState(false);
@@ -858,29 +855,6 @@ export function SessionViewPage() {
             // grows, so the badge would still read "live" through a turn the app
             // itself is running.
             live={liveInfo}
-            showThinking={showThinking}
-            onToggleThinking={() => {
-              setShowThinking((v) => {
-                localStorage.setItem('showThinking', String(!v));
-                return !v;
-              });
-            }}
-            thinkingCount={thinkingCount}
-            expandTools={expandTools}
-            onToggleTools={() => {
-              setExpandTools((v) => {
-                localStorage.setItem('expandTools', String(!v));
-                return !v;
-              });
-            }}
-            toolCount={toolCount}
-            canHideResponses={fold.canHide}
-            onHideResponses={fold.hideAll}
-            canShowResponses={fold.canShow}
-            onShowResponses={fold.showAll}
-            expandSegments={expandSegments}
-            onToggleSegments={() => setExpandSegments((v) => !v)}
-            compactionCount={compactionCount}
             showTokens={showTokens}
             onToggleTokens={() => setShowTokens((v) => !v)}
             showLineage={showLineage}
@@ -900,13 +874,18 @@ export function SessionViewPage() {
             onToggleFind={() => (finder.isOpen ? finder.close() : finder.openBar())}
             actions={
               <>
-                <ViewButton view={view} />
-                <ExportButton detail={session} />
-                {/* Both of them resume a transcript, and a draft has none: the
-                    endpoints resolve the folder from the index and would answer
-                    404 for this id. The app's own foot below is how you pick a
-                    session up at this stage. */}
-                {!isDraft && <ResumeButtons session={session.summary} />}
+                {/* It resumes a transcript, and a draft has none: the endpoint
+                    resolves the folder from the index and would answer 404 for
+                    this id. The app's own foot below is how you pick a session
+                    up at this stage. */}
+                {!isDraft && <ResumeButton session={session.summary} />}
+                <ViewMenu
+                  view={view}
+                  reading={reading}
+                  fold={fold}
+                  counts={{ thinking: thinkingCount, tools: toolCount, compactions: compactionCount }}
+                />
+                <SessionMenu detail={session} draft={isDraft} />
               </>
             }
           />
