@@ -75,6 +75,9 @@ const ICONS: Record<PanelKey, () => import('react').ReactElement> = {
 export function InspectorRail({ inspector }: { inspector: InspectorState }) {
   return (
     <div
+      // Measured from checks, like the scroller and the sticky footer are: the
+      // rail is where "which panels does this session have" is answered.
+      data-inspector-rail
       style={{ width: RAIL_PX }}
       className="flex shrink-0 flex-col gap-0.5 border-l border-[var(--border)] py-2"
     >

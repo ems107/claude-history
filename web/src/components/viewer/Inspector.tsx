@@ -28,6 +28,7 @@ export function Inspector({ inspector, children }: { inspector: InspectorState; 
         title="Drag to resize"
       />
       <div
+        data-inspector
         style={{ width: inspector.width }}
         className="flex min-w-0 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-raised)]/50"
       >

@@ -1,6 +1,7 @@
-import type { ModelPrices, SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
+import type { SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
 import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
@@ -8,23 +9,92 @@ import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
 import { computeCost, computeMessageCost, formatUsd, summariseRecache } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
+import { Fold } from './Fold.tsx';
 
 function fmt(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);
 }
 
-function Row({ label, usage, prices }: { label: string; usage: UsageTotals; prices?: ModelPrices }) {
+/**
+ * The four figures of one usage total, two by two.
+ *
+ * This is what the six-column table became. The table read beautifully across
+ * the whole window and could not be made to fit the 400 px column the panels
+ * live in now: `cache read` and `cache write` alone wanted 140 px of heading,
+ * and every label was repeated once per row for the sake of a comparison
+ * between rows that mean different things anyway — a model, a subset of one of
+ * its cells, a separate conversation, and a total that excludes one of them.
+ * Stacked, each figure carries its own name and the ledger reads downwards.
+ */
+function Figures({ usage, className = '' }: { usage: UsageTotals; className?: string }) {
   return (
-    <tr className="border-t border-[var(--border)]">
-      <td className="py-1 pr-4 font-mono">{label}</td>
-      <td className="px-2 text-right">{fmt(usage.input)}</td>
-      <td className="px-2 text-right">{fmt(usage.output)}</td>
-      <td className="px-2 text-right">{fmt(usage.cacheRead)}</td>
-      <td className="px-2 text-right">{fmt(usage.cacheCreate)}</td>
-      <td className="px-2 text-right" title="API-equivalent value at the configured prices (see Stats)">
-        {formatUsd(computeCost(usage, prices))}
-      </td>
-    </tr>
+    <div className={`mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] tabular-nums ${className}`}>
+      <span>
+        <span className="opacity-60">in</span> {fmt(usage.input)}
+      </span>
+      <span>
+        <span className="opacity-60">out</span> {fmt(usage.output)}
+      </span>
+      <span>
+        <span className="opacity-60">cache read</span> {fmt(usage.cacheRead)}
+      </span>
+      <span>
+        <span className="opacity-60">cache write</span> {fmt(usage.cacheCreate)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * One line of the ledger: what it is on the left, what it cost on the right.
+ *
+ * `tone` is the whole grammar of this panel, and it carries what the table said
+ * with indentation, dots and border weights: `plain` is a model, `total` adds
+ * up the ones above it, `add` is money spent OUTSIDE this transcript and says
+ * so with a `+`, and `outside` is money this session did not spend at all.
+ */
+function Card({
+  label,
+  cost,
+  usage,
+  tone = 'plain',
+  title,
+  children,
+}: {
+  label: ReactNode;
+  cost: string;
+  usage?: UsageTotals;
+  tone?: 'plain' | 'total' | 'add' | 'outside';
+  title?: string;
+  children?: ReactNode;
+}) {
+  const shell =
+    tone === 'add'
+      ? 'border-sky-500/30 text-sky-400/90'
+      : tone === 'outside'
+        ? 'border-dashed border-amber-500/40 text-amber-300/80'
+        : tone === 'total'
+          ? 'border-[var(--text-dim)]/40 text-[var(--text)]'
+          : 'border-[var(--border)]';
+  return (
+    <div className={`mb-1.5 rounded border px-2 py-1.5 ${shell}`}>
+      <div className="flex items-baseline gap-2">
+        <span
+          className={`min-w-0 flex-1 font-mono ${tone === 'plain' ? 'text-[var(--text)]' : ''} ${
+            tone === 'total' ? 'font-semibold' : ''
+          }`}
+          title={title}
+        >
+          {tone === 'add' && <span className="opacity-70">+ </span>}
+          {label}
+        </span>
+        <span className={`shrink-0 tabular-nums ${tone === 'plain' || tone === 'total' ? 'font-semibold' : ''}`}>
+          {cost}
+        </span>
+      </div>
+      {usage && <Figures usage={usage} />}
+      {children}
+    </div>
   );
 }
 
@@ -53,7 +123,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
   );
   // What the agents this session sent out spent, in their own conversations.
   // Their requests are not in this transcript, so this is an addition to the
-  // rows above and not a part of them — the opposite of "of which re-cached".
+  // figures above and not a part of them — the opposite of "of which re-cached".
   const sub = e.subagentUsage;
   const subTokens = sub ? sub.input + sub.output + sub.cacheRead + sub.cacheCreate : 0;
   const subCost = Object.entries(e.subagentUsageByModel ?? {}).reduce(
@@ -66,9 +136,38 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
       ? Math.round((Date.parse(summary.lastActivityAt) - Date.parse(summary.createdAt)) / 60_000)
       : null;
 
+  /**
+   * A SUBSET of the cache-write figure it sits under, already inside the total
+   * — unlike `carried over`, which sits outside every total. In the table the
+   * dots in the other columns were what kept it from reading as a row that
+   * adds; here it is drawn INSIDE the card whose figure it is part of, which
+   * says the same thing without needing four dots to say it.
+   */
+  const recacheNote = recache ? (
+    <div className="mt-1 border-t border-dashed border-amber-500/30 pt-1 text-[11px] text-amber-300/80">
+      <div className="flex items-baseline gap-2">
+        <span className="min-w-0 flex-1 font-mono" title="Context that was cached, expired, and had to be written again">
+          ↳ of which re-cached
+        </span>
+        <span className="shrink-0 tabular-nums">
+          {fmt(recache.cost.tokens)} · {formatUsd(recache.cost.billed)}
+        </span>
+      </div>
+      <Fold label="why it was written twice" className="text-amber-300/70 hover:text-amber-200">
+        <span className="text-[11px] text-amber-300/80">
+          {fmt(recache.cost.tokens)} tokens of the cache write above had already been cached and had to be written
+          again, over {contextIndex.recaches.length} request
+          {contextIndex.recaches.length !== 1 ? 's' : ''}
+          {recache.cost.extra !== null && <> — {formatUsd(recache.cost.extra)} more than reading them would have cost</>}
+          . {recacheCauseText(recache.cause, recache.gapMs)}
+        </span>
+      </Fold>
+    </div>
+  ) : null;
+
   return (
-    <div className="px-4 py-3 text-xs">
-      <div className="mb-2 flex gap-4 text-[var(--text-dim)]">
+    <div className="px-4 py-3 text-xs text-[var(--text-dim)]">
+      <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
         <span>
           <b className="text-[var(--text)]">{e.userMessageCount}</b> prompts
         </span>
@@ -91,138 +190,113 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           </span>
         )}
       </div>
-      <table className="text-[var(--text-dim)]">
-        <thead>
-          <tr className="text-[10px] tracking-wider uppercase">
-            <th className="pr-4 text-left">model</th>
-            <th className="px-2 text-right">input</th>
-            <th className="px-2 text-right">output</th>
-            <th className="px-2 text-right">cache read</th>
-            <th className="px-2 text-right">cache write</th>
-            <th className="px-2 text-right">≈ cost</th>
-          </tr>
-        </thead>
-        <tbody>
-          {models.map(([model, usage]) => (
-            <Row key={model} label={shortModel(model) ?? model} usage={usage} prices={resolvePrices(model, priceTable)} />
-          ))}
-          {/* With one model its row IS the conversation, and repeating it under
-              another name would only pad the ledger. */}
-          {models.length > 1 && (
-            <tr className="border-t border-[var(--border)] font-semibold">
-              <td
-                className="py-1 pr-4 font-mono"
-                title="The requests in this transcript — what the per-message pills in the conversation add up to"
-              >
-                {subTokens > 0 ? 'this conversation' : 'total'}
-              </td>
-              <td className="px-2 text-right">{fmt(e.usage.input)}</td>
-              <td className="px-2 text-right">{fmt(e.usage.output)}</td>
-              <td className="px-2 text-right">{fmt(e.usage.cacheRead)}</td>
-              <td className="px-2 text-right">{fmt(e.usage.cacheCreate)}</td>
-              <td className="px-2 text-right">{formatUsd(totalCost)}</td>
-            </tr>
-          )}
-          {/* A SUBSET of the cache-write cell above, already inside the total —
-              unlike `carried over`, which sits outside every total. The dots in
-              the other columns are what keeps it from reading as a row that
-              adds: there is nothing to add, only part of one figure named. */}
-          {recache && (
-            <tr className="text-amber-300/80">
-              <td className="py-1 pr-4 pl-3 font-mono" title="Context that was cached, expired, and had to be written again">
-                ↳ of which re-cached
-              </td>
-              <td className="px-2 text-right opacity-40">·</td>
-              <td className="px-2 text-right opacity-40">·</td>
-              <td className="px-2 text-right opacity-40">·</td>
-              <td className="px-2 text-right">{fmt(recache.cost.tokens)}</td>
-              <td className="px-2 text-right">{formatUsd(recache.cost.billed)}</td>
-            </tr>
-          )}
-          {subTokens > 0 && (
-            <>
-              <tr className="text-sky-400/90">
-                <td
-                  className="py-1 pr-4 font-mono"
-                  title="Separate API conversations, in their own transcripts — nothing of this is in the file above"
-                >
-                  <Link to={`?agents=1`} className="hover:underline">
-                    ⑂ {summary.subagentCount} subagent{summary.subagentCount === 1 ? '' : 's'}
-                  </Link>
-                </td>
-                <td className="px-2 text-right">{fmt(sub.input)}</td>
-                <td className="px-2 text-right">{fmt(sub.output)}</td>
-                <td className="px-2 text-right">{fmt(sub.cacheRead)}</td>
-                <td className="px-2 text-right">{fmt(sub.cacheCreate)}</td>
-                <td className="px-2 text-right">{formatUsd(subCost)}</td>
-              </tr>
-              <tr className="border-t-2 border-[var(--border)] font-semibold text-[var(--text)]">
-                <td className="py-1 pr-4 font-mono">session total</td>
-                <td className="px-2 text-right">{fmt(e.usage.input + sub.input)}</td>
-                <td className="px-2 text-right">{fmt(e.usage.output + sub.output)}</td>
-                <td className="px-2 text-right">{fmt(e.usage.cacheRead + sub.cacheRead)}</td>
-                <td className="px-2 text-right">{fmt(e.usage.cacheCreate + sub.cacheCreate)}</td>
-                <td className="px-2 text-right">{formatUsd(totalCost + subCost)}</td>
-              </tr>
-            </>
-          )}
-          {carriedTokens > 0 && (
-            <tr className="border-t border-dashed border-amber-500/40 text-amber-300/80">
-              <td className="py-1 pr-4 font-mono" title="Copied in by /branch — billed in the parent session, not here">
-                carried over
-              </td>
-              <td className="px-2 text-right">{fmt(carried.input)}</td>
-              <td className="px-2 text-right">{fmt(carried.output)}</td>
-              <td className="px-2 text-right">{fmt(carried.cacheRead)}</td>
-              <td className="px-2 text-right">{fmt(carried.cacheCreate)}</td>
-              <td className="px-2 text-right">{formatUsd(carriedCost)}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      {recache && (
-        <div className="mt-1 text-[10px] text-amber-300/70">
-          {fmt(recache.cost.tokens)} tokens of the cache write above had already been cached and had to be written
-          again, over {contextIndex.recaches.length} request
-          {contextIndex.recaches.length !== 1 ? 's' : ''}
-          {recache.cost.extra !== null && <> — {formatUsd(recache.cost.extra)} more than reading them would have cost</>}
-          . {recacheCauseText(recache.cause, recache.gapMs)}
-        </div>
+
+      {models.map(([model, usage], i) => (
+        <Card
+          key={model}
+          label={shortModel(model) ?? model}
+          cost={formatUsd(computeCost(usage, resolvePrices(model, priceTable)))}
+          usage={usage}
+        >
+          {models.length === 1 && i === 0 ? recacheNote : null}
+        </Card>
+      ))}
+
+      {/* With one model its card IS the conversation, and repeating it under
+          another name would only pad the ledger. */}
+      {models.length > 1 && (
+        <Card
+          label={subTokens > 0 ? 'this conversation' : 'total'}
+          title="The requests in this transcript — what the per-message pills in the conversation add up to"
+          cost={formatUsd(totalCost)}
+          usage={e.usage}
+          tone="total"
+        >
+          {recacheNote}
+        </Card>
       )}
-      {carriedTokens > 0 && (
-        <div className="mt-1 text-[10px] text-amber-300/70">
-          The rows above are what this session spent. “Carried over” is the context <code>/branch</code> copied from
-          {e.forkedFrom ? (
-            <>
-              {' '}
-              <Link to={`/session/${e.forkedFrom}`} className="font-mono underline hover:text-amber-200">
-                {e.forkedFrom.slice(0, 8)}
+
+      {subTokens > 0 && sub && (
+        <>
+          <Card
+            label={
+              <Link to={`?agents=1`} className="hover:underline">
+                ⑂ {summary.subagentCount} subagent{summary.subagentCount === 1 ? '' : 's'}
               </Link>
-            </>
-          ) : (
-            ' the parent session'
-          )}
-          : those messages are shown here and cost that much, but they were billed there, so they are left out of every
-          total.
-        </div>
+            }
+            title="Separate API conversations, in their own transcripts — nothing of this is in the file above"
+            cost={formatUsd(subCost)}
+            usage={sub}
+            tone="add"
+          >
+            <Fold label="why they are added and not included" className="text-sky-400/70 hover:text-sky-300">
+              <span className="text-[11px] text-sky-400/80">
+                The subagents ran as their own API conversations, in their own transcripts: none of those tokens is in
+                this file, and none of them is in the per-message pills — which is why they are added here rather than
+                found among the figures above. Cache writes there are mostly 5-minute ones and are priced as such.
+              </span>
+            </Fold>
+          </Card>
+          <div className="mt-2 mb-1.5 border-t-2 border-[var(--border)] pt-1.5 text-[var(--text)]">
+            <div className="flex items-baseline gap-2">
+              <span className="min-w-0 flex-1 font-mono font-semibold">session total</span>
+              <span className="shrink-0 font-semibold tabular-nums">{formatUsd(totalCost + subCost)}</span>
+            </div>
+            <Figures
+              usage={{
+                input: e.usage.input + sub.input,
+                output: e.usage.output + sub.output,
+                cacheRead: e.usage.cacheRead + sub.cacheRead,
+                cacheCreate: e.usage.cacheCreate + sub.cacheCreate,
+              }}
+            />
+          </div>
+        </>
       )}
-      {subTokens > 0 && (
-        <div className="mt-1 text-[10px] text-sky-400/70">
-          The subagents ran as their own API conversations, in their own transcripts: none of those tokens is in this
-          file, and none of them is in the per-message pills — which is why they are added here rather than found among
-          the rows above. Cache writes there are mostly 5-minute ones and are priced as such.
-        </div>
+
+      {carriedTokens > 0 && (
+        <Card
+          label="carried over"
+          title="Copied in by /branch — billed in the parent session, not here"
+          cost={formatUsd(carriedCost)}
+          usage={carried}
+          tone="outside"
+        >
+          <Fold label="why it is in no total" className="text-amber-300/70 hover:text-amber-200">
+            <span className="text-[11px] text-amber-300/80">
+              The figures above are what this session spent. “Carried over” is the context <code>/branch</code> copied
+              from
+              {e.forkedFrom ? (
+                <>
+                  {' '}
+                  <Link to={`/session/${e.forkedFrom}`} className="font-mono underline hover:text-amber-200">
+                    {e.forkedFrom.slice(0, 8)}
+                  </Link>
+                </>
+              ) : (
+                ' the parent session'
+              )}
+              : those messages are shown here and cost that much, but they were billed there, so they are left out of
+              every total.
+            </span>
+          </Fold>
+        </Card>
       )}
+
       {e.compactionCount > 0 && (
-        <div className="mt-1 text-[10px] text-[var(--text-dim)] opacity-70">
-          Not in any of these figures: the {e.compactionCount} compaction{e.compactionCount === 1 ? '' : 's'} of this
-          session. Claude Code writes no <code>usage</code> at all for the call that produces the summary, so what it
-          cost is not recorded anywhere and cannot be recovered.
-        </div>
+        <Fold label={`why the ${e.compactionCount} compaction${e.compactionCount === 1 ? '' : 's'} cost nothing here`}>
+          <span className="text-[11px] text-[var(--text-dim)]">
+            Not in any of these figures: the {e.compactionCount} compaction{e.compactionCount === 1 ? '' : 's'} of this
+            session. Claude Code writes no <code>usage</code> at all for the call that produces the summary, so what it
+            cost is not recorded anywhere and cannot be recovered.
+          </span>
+        </Fold>
       )}
-      <div className="mt-1 text-[10px] text-[var(--text-dim)] opacity-70">
+
+      <div className="mt-1 text-[10px] opacity-70">
         ≈ cost is API-equivalent value at the prices configured in Stats — not actual subscription spend.
       </div>
+
       <div className="mt-3 border-t border-[var(--border)] pt-2">
         <ContextCurve index={contextIndex} prices={priceTable} />
       </div>
