@@ -412,6 +412,9 @@ function RadioGroup<T extends string>({
   );
 }
 
+/** The catalogue's own word for a tone — what the "general tone" option shows. */
+const toneLabel = (id: ToneId): string => NOTIFICATION_TONES.find((t) => t.id === id)?.label ?? id;
+
 /** The class the page's other dropdowns already wear. */
 const selectClass = 'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
 
@@ -425,8 +428,10 @@ const selectClass = 'cursor-pointer rounded border border-[var(--border)] bg-[va
  * page has been clicked, and a session stopping is not a click — so this is also
  * the gesture that unlocks the audio for the whole page (see `primeAudio`).
  *
- * `inherit` is offered only where a kind can defer to the general tone. The
- * general tone has nothing above it to defer to.
+ * `inherit` is offered only where a kind can defer to the general tone, and it
+ * names the tone it currently resolves to rather than a position on the page.
+ * "Same as above" was both unclear and a lie the moment anything moved between
+ * the two — and the general tone has nothing above it to defer to anyway.
  */
 function ToneSelect({
   label,
@@ -435,6 +440,7 @@ function ToneSelect({
   volume,
   disabled,
   inherit,
+  hint,
   onChange,
 }: {
   label: string;
@@ -444,42 +450,46 @@ function ToneSelect({
   volume: number;
   disabled?: boolean;
   inherit?: boolean;
+  hint?: string;
   onChange: (v: ToneChoice) => void;
 }) {
   const resolved = resolveTone(value, general);
   const silent = resolved === 'none' || volume <= 0;
   return (
-    <div className={`flex items-center gap-2 ${disabled ? 'opacity-40' : ''}`}>
-      <label className="flex items-center gap-2">
-        <span>{label}</span>
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value as ToneChoice)}
-          className={selectClass}
+    <div className={disabled ? 'opacity-40' : ''}>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span>{label}</span>
+          <select
+            value={value}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value as ToneChoice)}
+            className={selectClass}
+          >
+            {inherit && <option value={TONE_INHERIT}>General tone ({toneLabel(general)})</option>}
+            {NOTIFICATION_TONES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={disabled || silent}
+          onClick={() => {
+            primeAudio();
+            playTone(resolved, volume);
+          }}
+          // A disabled button that does not say why is a button that looks broken.
+          title={volume <= 0 ? 'The volume is 0' : silent ? 'Silent — there is nothing to play' : 'Play it'}
+          aria-label="Play the tone"
+          className={btn}
         >
-          {inherit && <option value={TONE_INHERIT}>Same as above</option>}
-          {NOTIFICATION_TONES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        type="button"
-        disabled={disabled || silent}
-        onClick={() => {
-          primeAudio();
-          playTone(resolved, volume);
-        }}
-        // A disabled button that does not say why is a button that looks broken.
-        title={volume <= 0 ? 'The volume is 0' : silent ? 'Silent — there is nothing to play' : 'Play it'}
-        aria-label="Play the tone"
-        className={btn}
-      >
-        ▶
-      </button>
+          ▶
+        </button>
+      </div>
+      {hint && <p className="mt-0.5 text-[11px] text-[var(--text-dim)]">{hint}</p>}
     </div>
   );
 }
@@ -715,53 +725,30 @@ export function SettingsPage() {
           </div>
         </Section>
 
-<Section title="When a session stops">
+        <Section title="Notifications">
           <Row badge={<DefaultBadge field="notifyEnabled" value={s.notifyEnabled} save={save} />}>
             <Toggle
               checked={s.notifyEnabled}
               onChange={(v) => save({ notifyEnabled: v })}
-              label="Announce it"
+              label="Announce when a session stops"
               hint="The card that floats in under the header, and the sound. The bell keeps its list either way — this switch is about being interrupted, not about being told."
             />
           </Row>
 
-          {/* Which stops are worth announcing is the question you answer once;
-              what they sound like is the one you come back to. So the kinds go
-              first, and everything below them is about the noise. */}
-          <div className="space-y-2 border-t border-[var(--border)] pt-3">
-            <p className="text-[var(--text)]">Announce:</p>
-
-            <Row badge={<DefaultBadge field="notifyOnNeedsYou" value={s.notifyOnNeedsYou} save={save} />}>
-              <Toggle
-                checked={s.notifyOnNeedsYou}
-                onChange={(v) => save({ notifyOnNeedsYou: v })}
-                disabled={notifyOff}
-                label="Sessions waiting for your decision"
-                hint="A permission prompt, a question, a plan to approve — whatever the CLI put on screen and is now sitting on."
-              />
-            </Row>
-
-            <Row badge={<DefaultBadge field="notifyOnFinished" value={s.notifyOnFinished} save={save} />}>
-              <Toggle
-                checked={s.notifyOnFinished}
-                onChange={(v) => save({ notifyOnFinished: v })}
-                disabled={notifyOff}
-                label="Sessions that finished answering"
-                hint="The turn is over — whether it ended well or with an error."
-              />
-            </Row>
-          </div>
-
+          {/* The general tone comes FIRST, because everything under it refers to
+              it by name: a per-kind tone reading "General tone (Chime)" only
+              means anything once you have met the thing it defers to. */}
           <div className="space-y-2 border-t border-[var(--border)] pt-3">
             <p className="text-[var(--text)]">Sound:</p>
 
             <Row badge={<DefaultBadge field="notifyTone" value={s.notifyTone} save={save} />}>
               <ToneSelect
-                label="Tone"
+                label="General tone"
                 value={s.notifyTone}
                 general={s.notifyTone}
                 volume={s.notifyVolume}
                 disabled={notifyOff}
+                hint="What a notification rings with unless it is given a tone of its own below."
                 onChange={(v) => save({ notifyTone: v as ToneId })}
               />
             </Row>
@@ -785,33 +772,58 @@ export function SettingsPage() {
             </Row>
           </div>
 
-          {/* Two tones nobody had to configure are two tones you learn, which is
-              why "waiting for you" arrives with one of its own. */}
-          <div className="space-y-2 border-t border-[var(--border)] pt-3">
-            <p className="text-[var(--text)]">Or a tone of its own, per kind:</p>
+          {/* A kind's tone belongs UNDER that kind's own switch. As two separate
+              lists — which stops, then a list of tones — no row of the second one
+              owned anything, and the reader had to hold both orders in their head
+              to see that they matched. */}
+          <div className="space-y-3 border-t border-[var(--border)] pt-3">
+            <p className="text-[var(--text)]">Which stops, and what each one sounds like:</p>
 
-            <Row badge={<DefaultBadge field="notifyToneNeedsYou" value={s.notifyToneNeedsYou} save={save} />}>
-              <ToneSelect
-                label="Waiting for you"
-                inherit
-                value={s.notifyToneNeedsYou}
-                general={s.notifyTone}
-                volume={s.notifyVolume}
-                disabled={notifyOff || !s.notifyOnNeedsYou}
-                onChange={(v) => save({ notifyToneNeedsYou: v })}
+            <Row badge={<DefaultBadge field="notifyOnNeedsYou" value={s.notifyOnNeedsYou} save={save} />}>
+              <Toggle
+                checked={s.notifyOnNeedsYou}
+                onChange={(v) => save({ notifyOnNeedsYou: v })}
+                disabled={notifyOff}
+                label="Sessions waiting for your decision"
+                hint="A permission prompt, a question, a plan to approve — whatever the CLI put on screen and is now sitting on."
               />
+              {/* Outside the Toggle's own <label>, and indented to where its text
+                  starts: a control inside a label has its clicks taken by the
+                  label's checkbox. Same reason the badge sits out here. */}
+              <div className="mt-1 ml-6 flex items-start gap-2">
+                <ToneSelect
+                  label="Tone"
+                  inherit
+                  value={s.notifyToneNeedsYou}
+                  general={s.notifyTone}
+                  volume={s.notifyVolume}
+                  disabled={notifyOff || !s.notifyOnNeedsYou}
+                  onChange={(v) => save({ notifyToneNeedsYou: v })}
+                />
+                <DefaultBadge field="notifyToneNeedsYou" value={s.notifyToneNeedsYou} save={save} />
+              </div>
             </Row>
 
-            <Row badge={<DefaultBadge field="notifyToneFinished" value={s.notifyToneFinished} save={save} />}>
-              <ToneSelect
-                label="Finished"
-                inherit
-                value={s.notifyToneFinished}
-                general={s.notifyTone}
-                volume={s.notifyVolume}
-                disabled={notifyOff || !s.notifyOnFinished}
-                onChange={(v) => save({ notifyToneFinished: v })}
+            <Row badge={<DefaultBadge field="notifyOnFinished" value={s.notifyOnFinished} save={save} />}>
+              <Toggle
+                checked={s.notifyOnFinished}
+                onChange={(v) => save({ notifyOnFinished: v })}
+                disabled={notifyOff}
+                label="Sessions that finished answering"
+                hint="The turn is over — whether it ended well or with an error."
               />
+              <div className="mt-1 ml-6 flex items-start gap-2">
+                <ToneSelect
+                  label="Tone"
+                  inherit
+                  value={s.notifyToneFinished}
+                  general={s.notifyTone}
+                  volume={s.notifyVolume}
+                  disabled={notifyOff || !s.notifyOnFinished}
+                  onChange={(v) => save({ notifyToneFinished: v })}
+                />
+                <DefaultBadge field="notifyToneFinished" value={s.notifyToneFinished} save={save} />
+              </div>
             </Row>
           </div>
 
@@ -828,12 +840,14 @@ export function SettingsPage() {
             {/* No default marker on the voice, for the reason autoReloadCwd has
                 none: its default is "whichever the browser picks", and a click
                 that quietly un-chooses your voice is not a restore. */}
-            <VoiceSelect
-              value={s.notifyVoiceName}
-              volume={s.notifyVolume}
-              disabled={notifyOff || !s.notifyVoice}
-              onChange={(v) => save({ notifyVoiceName: v })}
-            />
+            <div className="ml-6">
+              <VoiceSelect
+                value={s.notifyVoiceName}
+                volume={s.notifyVolume}
+                disabled={notifyOff || !s.notifyVoice}
+                onChange={(v) => save({ notifyVoiceName: v })}
+              />
+            </div>
           </div>
         </Section>
 
