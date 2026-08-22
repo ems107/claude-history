@@ -447,11 +447,20 @@ const selectClass = 'cursor-pointer rounded border border-[var(--border)] bg-[va
  * the two — and the general tone has nothing above it to defer to anyway.
  *
  * **`Silent` is drawn apart from the sounds**, because it is not one and a list
- * of seven names says it is. It gets an `<optgroup>` of its own — a real visual
- * break with a word explaining it, and the one way of separating an entry that
- * every browser draws, unlike anything CSS can ask of a native `<option>` — and
- * the dashes in its label so the closed select says it too, which is the state
- * the group heading cannot reach.
+ * of seven names says it is. It says so in words — `No tone (Silent)`, which
+ * reads the same open or closed — and in italics, the typographic convention for
+ * an entry that is an annotation rather than one of the things being listed.
+ *
+ * **Two styles inside one line is not on the table**: an `<option>`'s content
+ * model is text, so no `<strong>` or `<em>` survives inside it, and a bold "No
+ * tone" beside a light "(Silent)" would mean replacing the native `<select>`
+ * with a listbox of our own — keyboard, focus, escape and ARIA included — and
+ * this one dropdown then looking unlike the page's other two. The italic is what
+ * a native option will actually honour; where a browser will not, the words are
+ * still the words, which is why they carry the meaning and the style only
+ * underlines it. An `<optgroup>` was tried here first and read worse: a lone
+ * group heading under six bare options is a break in the list rather than a mark
+ * on one entry, and it is invisible in the closed select anyway.
  */
 function ToneSelect({
   label,
@@ -492,9 +501,9 @@ function ToneSelect({
                 {t.label}
               </option>
             ))}
-            <optgroup label="No tone">
-              <option value={TONE_NONE}>— Silent —</option>
-            </optgroup>
+            <option value={TONE_NONE} className="italic">
+              No tone (Silent)
+            </option>
           </select>
         </label>
         <button
