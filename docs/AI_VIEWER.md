@@ -137,10 +137,25 @@ arriving, now true of a panel opening too.
   `file → agent → inspector → find bar → back`, and the inspector is one branch
   for all six panels — see [the three file panels](#the-three-file-panels) for
   the objection this answers.
-- **`?agents=1` stays in the URL** because the session list links straight onto
-  it; the other five are the hook's own state. Opening any of them clears the
-  parameter, which is why `closeAgents` exists beside `toggleAgents`: asking a
-  toggle to close something already closed would open it.
+- **What is open is ONE value, and `?agents=1` is a mirror of it** — not half of
+  the answer. The parameter has to stay, because the session list links straight
+  onto it and the link can be copied, but it is written when the value changes
+  and adopted when it changes from outside (a deep link, the ⑂ badge in the list,
+  the token panel's own link, the back button). `closeAgents` exists beside
+  `toggleAgents` for the writing half: asking a toggle to close something already
+  closed would open it.
+- **A router navigation and a `setState` do not land in the same commit, and
+  deriving one thing from both is how you get a flicker.** This is worth the
+  paragraph because nothing about the code looked wrong. With the agent list
+  living only in the URL and the open panel derived as
+  `agents.open ? 'agents' : local`, every switch into or out of it changed one
+  half synchronously and the other through the router — which wraps navigation in
+  a transition — so for one commit neither said anything and the inspector
+  vanished and came back. Sampled every frame with `requestAnimationFrame`: **22
+  frames (~360 ms) of nothing going in, 12 coming out**, while the other four
+  panels switched cleanly. Holding the value in one place fixed the hole; reading
+  ONLY that place (rather than preferring the URL) also took ~15 frames of lag
+  off leaving the list, and left the six transitions identical at 13-14 frames.
 - **One width for every panel**, dragged from the seam and remembered
   (`inspectorWidth` — the session list's `sidebarWidth` pattern, mirrored,
   because this one grows leftwards). One width is what keeps the panels honest:

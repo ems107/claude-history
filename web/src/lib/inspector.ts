@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { WIDTH_MIN } from './viewPrefs.ts';
 
 /**
@@ -89,19 +89,59 @@ export function useInspector({
    */
   agents: { open: boolean; toggle: () => void; close: () => void };
 }): InspectorState {
-  const [local, setLocal] = useState<PanelKey | null>(null);
+  /**
+   * Which panel is open — INCLUDING `agents`, which is also in the URL.
+   *
+   * Holding `agents` here as well is not redundancy, it is what removes a hole.
+   * The two halves do not land in the same commit: a `setState` is synchronous
+   * and `setSearchParams` goes through the router, which wraps navigation in a
+   * transition. So with `agents` living ONLY in the URL, every switch into or
+   * out of it left one value already changed and the other not yet — and since
+   * the panel is derived from both, that reads as the inspector vanishing and
+   * coming back. Measured before the fix, sampling every frame: 22 frames
+   * (~360 ms) of nothing going in, 12 coming out.
+   *
+   * With the panel named here the synchronous half always says something true,
+   * and the URL catching up a few frames later changes nothing on screen.
+   */
+  const [local, setLocal] = useState<PanelKey | null>(agents.open ? 'agents' : null);
   const [width, setWidth] = useState(readWidth);
 
-  const open: PanelKey | null = agents.open ? 'agents' : local;
+  /**
+   * What is open is what this says, full stop — and `?agents=1` is a mirror of
+   * it rather than half of the answer.
+   *
+   * Deriving it from both (`agents.open ? 'agents' : local`) removed the hole in
+   * three of the four directions but left the fourth slow: leaving the agent
+   * list had to wait for the parameter to go before the value could change, so
+   * the old panel sat there ~15 frames longer than any other switch. Reading one
+   * value makes every click instant, and costs one thing: the URL changing from
+   * OUTSIDE has to be adopted rather than simply read.
+   */
+  const open: PanelKey | null = local;
+
+  /**
+   * Which is this, and it is the whole of the URL→state direction: the parameter
+   * arriving means open the list (a deep link, the ⑂ badge in the session list,
+   * the token panel's own link to it), and the parameter going means close it
+   * (the back button). Keyed on the parameter alone, so it never fires on the
+   * commit where a rail click has already said the answer.
+   */
+  useEffect(() => {
+    setLocal((prev) => (agents.open ? 'agents' : prev === 'agents' ? null : prev));
+  }, [agents.open]);
 
   const toggle = useCallback(
     (key: PanelKey) => {
       if (key === 'agents') {
-        // Whichever way it goes, nothing else may stay open behind it.
-        setLocal(null);
+        const willOpen = !agents.open;
+        setLocal(willOpen ? 'agents' : null);
         agents.toggle();
         return;
       }
+      // Nothing else may stay open behind it, and the parameter is only touched
+      // when it is actually set — asking a toggle to close what is already
+      // closed would open it.
       if (agents.open) agents.close();
       setLocal((prev) => (prev === key ? null : key));
     },
