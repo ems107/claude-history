@@ -1,5 +1,5 @@
 import type { AppSettings, StopKind, ToneChoice, ToneId } from '@claude-history/shared';
-import { TONE_INHERIT } from '@claude-history/shared';
+import { TONE_INHERIT, TONE_NONE } from '@claude-history/shared';
 
 /**
  * The noise a stop makes: a synthesised tone, and optionally a voice saying which
@@ -53,7 +53,7 @@ interface Step {
  * 220 Hz is most of what a small speaker cannot reproduce — `triangle` keeps the
  * harmonics that make it audible at all on a laptop.
  */
-const RECIPES: Record<Exclude<ToneId, 'none'>, readonly Step[]> = {
+const RECIPES: Record<Exclude<ToneId, typeof TONE_NONE>, readonly Step[]> = {
   // E5 -> B5. Gentle, and the default.
   chime: [
     { freq: 659.25, at: 0, dur: 0.18, peak: 0.5 },
@@ -157,7 +157,7 @@ export function primeAudio(): void {
 
 /** How long a tone lasts, in ms — what the narrator waits for. */
 function toneLength(id: ToneId): number {
-  if (id === 'none') return 0;
+  if (id === TONE_NONE) return 0;
   return Math.max(...RECIPES[id].map((s) => s.at + s.dur)) * 1000;
 }
 
@@ -173,7 +173,7 @@ function toneLength(id: ToneId): number {
  * target of zero at all.
  */
 export function playTone(id: ToneId, volume: number): number {
-  if (id === 'none' || volume <= 0) return 0;
+  if (id === TONE_NONE || volume <= 0) return 0;
   const c = context();
   if (!c) return 0;
   resume(c);

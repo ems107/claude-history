@@ -13,6 +13,7 @@ import {
   NOTIFY_VOLUME_MAX,
   NOTIFY_VOLUME_MIN,
   TONE_INHERIT,
+  TONE_NONE,
   type ToneChoice,
   type ToneId,
 } from '@claude-history/shared';
@@ -444,6 +445,13 @@ const selectClass = 'cursor-pointer rounded border border-[var(--border)] bg-[va
  * names the tone it currently resolves to rather than a position on the page.
  * "Same as above" was both unclear and a lie the moment anything moved between
  * the two — and the general tone has nothing above it to defer to anyway.
+ *
+ * **`Silent` is drawn apart from the sounds**, because it is not one and a list
+ * of seven names says it is. It gets an `<optgroup>` of its own — a real visual
+ * break with a word explaining it, and the one way of separating an entry that
+ * every browser draws, unlike anything CSS can ask of a native `<option>` — and
+ * the dashes in its label so the closed select says it too, which is the state
+ * the group heading cannot reach.
  */
 function ToneSelect({
   label,
@@ -466,7 +474,7 @@ function ToneSelect({
   onChange: (v: ToneChoice) => void;
 }) {
   const resolved = resolveTone(value, general);
-  const silent = resolved === 'none' || volume <= 0;
+  const silent = resolved === TONE_NONE || volume <= 0;
   return (
     <div className={disabled ? 'opacity-40' : ''}>
       <div className="flex items-center gap-2">
@@ -479,11 +487,14 @@ function ToneSelect({
             className={selectClass}
           >
             {inherit && <option value={TONE_INHERIT}>General tone ({toneLabel(general)})</option>}
-            {NOTIFICATION_TONES.map((t) => (
+            {NOTIFICATION_TONES.filter((t) => t.id !== TONE_NONE).map((t) => (
               <option key={t.id} value={t.id}>
                 {t.label}
               </option>
             ))}
+            <optgroup label="No tone">
+              <option value={TONE_NONE}>— Silent —</option>
+            </optgroup>
           </select>
         </label>
         <button

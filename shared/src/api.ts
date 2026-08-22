@@ -627,8 +627,9 @@ export type ChatUiMode = (typeof CHAT_UI_MODES)[number];
  * setting against them and the dropdown reads them, and neither of those two has
  * any business knowing a waveform.
  *
- * `none` is a tone like the others, so the general one can be silenced while the
- * narrator goes on talking.
+ * `none` is in the list rather than beside it, so the general tone can be
+ * silenced while the narrator goes on talking — but it is the one entry that is
+ * not a sound, and `TONE_NONE` is what lets everything that cares say so.
  */
 export const NOTIFICATION_TONES = [
   { id: 'chime', label: 'Chime' },
@@ -640,6 +641,13 @@ export const NOTIFICATION_TONES = [
   { id: 'none', label: 'Silent' },
 ] as const;
 export type ToneId = (typeof NOTIFICATION_TONES)[number]['id'];
+
+/**
+ * The entry that is not a tone. Named because three places have to treat it
+ * apart: the engine has no recipe for it, the play button has nothing to play,
+ * and the dropdown draws it away from the sounds.
+ */
+export const TONE_NONE = 'none';
 
 /** Just the ids, derived, for the validators that only need to say yes or no. */
 export const NOTIFICATION_TONE_IDS: readonly ToneId[] = NOTIFICATION_TONES.map((t) => t.id);
