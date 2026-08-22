@@ -227,7 +227,24 @@ export function SessionHeader({
             truncate` on it and `shrink-0` here mean together.
             Two are drawn elsewhere and would otherwise be said twice: the ⑂
             count is in the rail, and the PR is one press away under `more`. */}
-        <span className="shrink-0">
+        {/* Renamed, said the way the list says it: one glyph beside the name,
+            with what Claude Code still calls it on the hover. It is a STATE, so
+            it sits with the other states rather than in the menu that changes
+            it — and the full original title is under `more`, where a string
+            that long can have a line of its own. */}
+        {s.titleSource === 'local' && (
+          <span
+            className="shrink-0 text-xs text-amber-400"
+            title={`Renamed locally — original title: “${s.originalTitle ?? ''}”`}
+          >
+            ✎
+          </span>
+        )}
+        {/* `flex`, not a bare span: the badges are an `inline-flex`, and inside a
+            block wrapper they are baseline-aligned in the row's 24 px line box
+            rather than centred in it — 2.5 px low against the title, which at
+            this size is exactly enough to look wrong. */}
+        <span className="flex shrink-0 items-center">
           <SessionBadges session={s} omitPr omitAgents live={live} />
         </span>
         <span className="flex-1" />
@@ -236,20 +253,6 @@ export function SessionHeader({
           <SessionMenu detail={detail} draft={draft} onRename={() => setEditing(true)} />
         </span>
       </div>
-
-      {/* What Claude Code still calls this session, which a local rename may
-          never hide. Amber, like every local override in this app, and directly
-          under the name it replaced — present exactly when the rename is, so it
-          is static and cannot shake anything. */}
-      {s.titleSource === 'local' && s.originalTitle && (
-        <div className="mt-1 flex items-baseline gap-1.5 text-xs">
-          <span className="shrink-0 font-semibold text-amber-400/90">✎ renamed here</span>
-          <span className="shrink-0 text-[var(--text-dim)]">— Claude Code still calls it</span>
-          <span className="min-w-0 truncate text-[var(--text)] italic" title={s.originalTitle}>
-            “{s.originalTitle}”
-          </span>
-        </div>
-      )}
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)]">
         {s.gitBranch && <span>⎇ {s.gitBranch}</span>}
@@ -325,6 +328,18 @@ export function SessionHeader({
           away, instead of spending a line of the row above on every session. */}
       {details && (
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-dashed border-[var(--border)] pt-1.5 text-xs text-[var(--text-dim)]">
+          {/* A local rename may never hide what Claude Code still calls this
+              session. The ✎ beside the title says there IS one; this is the
+              string, which is far too long to spend a row of the header on. */}
+          {s.titleSource === 'local' && s.originalTitle && (
+            <span className="inline-flex min-w-0 items-baseline gap-1.5">
+              <span className="shrink-0 text-amber-400/80">✎</span>
+              <span className="shrink-0 opacity-60">original title</span>
+              <span className="min-w-0 truncate text-[var(--text)] italic" title={s.originalTitle}>
+                “{s.originalTitle}”
+              </span>
+            </span>
+          )}
           {s.slug && <span className="font-mono opacity-70">{s.slug}</span>}
           {s.claudeVersion && <span className="opacity-70">cc {s.claudeVersion}</span>}
           {s.messageCount !== null && (

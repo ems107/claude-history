@@ -91,15 +91,24 @@ their own name at the top of a column whose title bar already said it.
 
 **Rename and pin are in `⋯`, not glyphs that appear on hover beside the title.**
 What appears on hover is invisible until the pointer happens to be in the right
-place, and both of them are things you go looking for. The pinned STATE is still
-visible without hovering anything — it is the `★` badge beside the title, which
-is where a state belongs, and the difference between the two is the whole reason
-the badge stayed and the button went.
+place, and both of them are things you go looking for.
 
-**`originalTitle` is a row of its own** whenever a local rename exists, in amber
-like every local override, directly under the name it replaced: `✎ renamed here
-— Claude Code still calls it “…”`. It is a hard rule and not a detail of layout,
-so it says so at a glance rather than in a tooltip.
+**The line between a state and an action is what decides where each goes.** The
+two STATES stay in the title row, where they can be read without hovering or
+opening anything: the `★` badge for a pin, and a `✎` for a local rename — the
+same glyph, colour and tooltip the list uses, so the two places cannot drift.
+The ACTIONS that set them are in the menu. `originalTitle` itself is under
+`more`, because the string is as long as the title it replaced and a whole row of
+the header is too much to spend on something read once; the `✎` says there is
+one, and its hover says what it is.
+
+**A badge in that row must be CENTRED against the title, and by default it is
+not.** `SessionBadges` is an `inline-flex`, so inside a block wrapper it is
+baseline-aligned in the row's 24 px line box rather than centred in it — measured
+2.5 px low against the title, which at this size is exactly enough to look
+broken. The wrapper is `flex items-center`, which collapses it to the badge's own
+17 px and lets the row do the centring: title, `✎`, `★` and `live` all report the
+same vertical middle.
 
 **Escape closes a menu instead of leaving the page.** `usePopover` listens on the
 `document` in the CAPTURE phase and stops the key there, so the page's own
