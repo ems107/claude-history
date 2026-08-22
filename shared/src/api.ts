@@ -613,11 +613,105 @@ export interface UpdateStatusResponse {
 export const CHAT_UI_MODES = ['terminal', 'composer'] as const;
 export type ChatUiMode = (typeof CHAT_UI_MODES)[number];
 
+// ---- Notifications: what a stop rings with ----
+
+/**
+ * The tones a notification can ring with, and the whole catalogue there is.
+ *
+ * **Synthesised, not files.** Nothing is embedded in a browser to draw on — the
+ * `Notification` API's `sound` option was drafted, never implemented and then
+ * dropped from the spec — so a tone is either a file this app ships or a shape it
+ * draws itself, and this is the second: six recipes of oscillators and envelopes
+ * in `web/src/lib/notificationSound.ts`, which is the one place a frequency is
+ * ever written. The ids and the labels are HERE because the server validates the
+ * setting against them and the dropdown reads them, and neither of those two has
+ * any business knowing a waveform.
+ *
+ * `none` is a tone like the others, so the general one can be silenced while the
+ * narrator goes on talking.
+ */
+export const NOTIFICATION_TONES = [
+  { id: 'chime', label: 'Chime' },
+  { id: 'blip', label: 'Blip' },
+  { id: 'ping', label: 'Ping' },
+  { id: 'arp', label: 'Arpeggio' },
+  { id: 'knock', label: 'Knock' },
+  { id: 'alert', label: 'Alert' },
+  { id: 'none', label: 'Silent' },
+] as const;
+export type ToneId = (typeof NOTIFICATION_TONES)[number]['id'];
+
+/** Just the ids, derived, for the validators that only need to say yes or no. */
+export const NOTIFICATION_TONE_IDS: readonly ToneId[] = NOTIFICATION_TONES.map((t) => t.id);
+
+/**
+ * What a per-kind tone says when it has nothing of its own to say: ring whatever
+ * `notifyTone` is.
+ *
+ * Deliberately NOT one of `NOTIFICATION_TONES`: the general tone cannot inherit
+ * from itself, and a list that offered it there would be offering a loop.
+ */
+export const TONE_INHERIT = 'inherit';
+export type ToneChoice = ToneId | typeof TONE_INHERIT;
+
+/** Both ends of the one volume, which the tone and the narrator share. */
+export const NOTIFY_VOLUME_MIN = 0;
+export const NOTIFY_VOLUME_MAX = 100;
+
+/** A voice name is a name Windows gave a voice, not a sentence. */
+export const NOTIFY_VOICE_NAME_MAX = 120;
+
 export interface AppSettings {
   /** Poll GitHub for new releases in the background. */
   updateAutoCheck: boolean;
   /** Minutes between automatic update checks (minimum 5). */
   updateIntervalMinutes: number;
+  /**
+   * Announce a stop: the card that floats in under the header, and the sound.
+   *
+   * **The bell is not this.** It goes on counting and listing whatever stopped
+   * either way, because a list you have to go and look at costs nothing to have
+   * been kept — off here means "do not interrupt me", not "do not write it
+   * down". Nothing on the server reads this at all: `core/notifications.ts`
+   * raises its rows regardless, and this decides only what a page does with
+   * them.
+   */
+  notifyEnabled: boolean;
+  /** Announce the sessions with a dialog on screen, waiting for a decision. */
+  notifyOnNeedsYou: boolean;
+  /** Announce the sessions that finished answering — an error being one of those. */
+  notifyOnFinished: boolean;
+  /** The tone every stop rings with, unless its own kind overrides it below. */
+  notifyTone: ToneId;
+  /**
+   * The tone for a `needs-you` stop, overridden by default rather than
+   * inherited. That asymmetry with the field below is the whole point: two tones
+   * nobody had to configure are two tones you learn, and `needs-you` is the kind
+   * that wants something from you — the same fact the bell states by listing it
+   * first and the card by drawing it in amber.
+   */
+  notifyToneNeedsYou: ToneChoice;
+  /** The tone for a `finished` stop. Inherits, so `notifyTone` is the common one. */
+  notifyToneFinished: ToneChoice;
+  /** 0-100, for the tone and the narrator alike. 0 is silence, which is not off. */
+  notifyVolume: number;
+  /**
+   * Say which of the two kinds it was, out loud, once the tone has finished.
+   *
+   * OFF by default, unlike `notifyEnabled`, and the difference is what each does
+   * to a room: a machine that dings at you unasked is a notification, and one
+   * that talks at you unasked is a fright.
+   */
+  notifyVoice: boolean;
+  /**
+   * Which installed voice speaks. Empty means whichever the browser picks.
+   *
+   * Only LOCAL voices are ever offered (`SpeechSynthesisVoice.localService`), and
+   * that is a network rule rather than a taste: Edge's "Natural" voices are
+   * synthesised on Microsoft's servers, so speaking with one would be a third
+   * automatic network call — see the rule in CLAUDE.md.
+   */
+  notifyVoiceName: string;
   /**
    * Show the Claude subscription usage widget. It reads the OAuth token from
    * ~/.claude/.credentials.json (read-only, never refreshed) and calls
@@ -745,6 +839,15 @@ export interface AppSettings {
 export const DEFAULT_SETTINGS: AppSettings = {
   updateAutoCheck: true,
   updateIntervalMinutes: 10,
+  notifyEnabled: true,
+  notifyOnNeedsYou: true,
+  notifyOnFinished: true,
+  notifyTone: 'chime',
+  notifyToneNeedsYou: 'alert',
+  notifyToneFinished: TONE_INHERIT,
+  notifyVolume: 70,
+  notifyVoice: false,
+  notifyVoiceName: '',
   usageWidget: true,
   usageIntervalSeconds: 300,
   usageMinIntervalSeconds: 60,

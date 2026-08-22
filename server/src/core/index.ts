@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type {
   AppSettings,
+  ToneChoice,
   IndexState,
   LiveSessionEntry,
   PriceTable,
@@ -23,6 +24,11 @@ import {
   MIN_LOG_RETENTION_DAYS,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
+  NOTIFICATION_TONE_IDS,
+  NOTIFY_VOICE_NAME_MAX,
+  NOTIFY_VOLUME_MAX,
+  NOTIFY_VOLUME_MIN,
+  TONE_INHERIT,
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { CACHE_VERSION, DiskCache, readJsonFileOrQuarantine, writeJsonAtomic, type CacheKey } from './cache.ts';
@@ -54,6 +60,18 @@ function clampInt(patched: number | undefined, current: number, min: number): nu
   const value = Math.round(patched ?? current);
   if (!Number.isFinite(value)) return Math.max(min, Number.isFinite(current) ? current : min);
   return Math.max(min, value);
+}
+
+/**
+ * A per-kind notification tone, which may legitimately be `inherit`.
+ *
+ * Anything the catalogue does not know falls back to the field's DEFAULT rather
+ * than to `none`: an id we cannot read is a bug or a retired tone, and neither
+ * of those is somebody asking for silence.
+ */
+function toneChoice(value: ToneChoice, fallback: ToneChoice): ToneChoice {
+  if (value === TONE_INHERIT) return value;
+  return (NOTIFICATION_TONE_IDS as readonly string[]).includes(value) ? value : fallback;
 }
 
 /**
@@ -577,6 +595,26 @@ export class SessionIndex {
         5,
         Math.round(patch.updateIntervalMinutes ?? this.settings.updateIntervalMinutes),
       ),
+      // The tones, against the catalogue. The general one cannot inherit — there
+      // is nothing above it to inherit from — so it is the one checked against
+      // the ids alone.
+      notifyTone: (NOTIFICATION_TONE_IDS as readonly string[]).includes(patch.notifyTone ?? this.settings.notifyTone)
+        ? (patch.notifyTone ?? this.settings.notifyTone)
+        : DEFAULT_SETTINGS.notifyTone,
+      notifyToneNeedsYou: toneChoice(
+        patch.notifyToneNeedsYou ?? this.settings.notifyToneNeedsYou,
+        DEFAULT_SETTINGS.notifyToneNeedsYou,
+      ),
+      notifyToneFinished: toneChoice(
+        patch.notifyToneFinished ?? this.settings.notifyToneFinished,
+        DEFAULT_SETTINGS.notifyToneFinished,
+      ),
+      // Both ends, and 0 is meaningful: silence with the feature still on.
+      notifyVolume: Math.min(
+        NOTIFY_VOLUME_MAX,
+        clampInt(patch.notifyVolume, this.settings.notifyVolume, NOTIFY_VOLUME_MIN),
+      ),
+      notifyVoiceName: (patch.notifyVoiceName ?? this.settings.notifyVoiceName).trim().slice(0, NOTIFY_VOICE_NAME_MAX),
       usageIntervalSeconds: clampInt(patch.usageIntervalSeconds, this.settings.usageIntervalSeconds, MIN_USAGE_INTERVAL_SECONDS),
       // The floor between real reads. Never below the hard one: this is the
       // only thing standing between a burst of triggers and a 429.
