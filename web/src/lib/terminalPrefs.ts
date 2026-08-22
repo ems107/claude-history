@@ -30,14 +30,47 @@ export const HEIGHT_KEY = 'terminalHeight';
 
 /** Below this there is no room for the CLI's own status line plus a prompt. */
 export const TERMINAL_HEIGHT_MIN = 180;
-/** Above this the conversation it is supposed to be part of has gone. */
-export const TERMINAL_HEIGHT_MAX = 900;
+
+/**
+ * The ceiling is the ROOM THERE IS, and it is measured rather than written down.
+ *
+ * It used to be a flat 900 px — "above this the conversation it is supposed to
+ * be part of has gone" — which is an opinion about somebody else's screen, and on
+ * a tall one the drag stopped a long way before the window did. What actually
+ * limits this panel is where it lives: it is stuck to the bottom of the
+ * conversation's scroller, so one taller than that scroller has its own top
+ * clipped out of the view — title bar, buttons and the drag handle with it, and
+ * then no way left to give the height back. So the cap is whatever the scroller
+ * measures at the time, less this strip — and the strip is the panel's own,
+ * every pixel of it: 20 px of chrome (its padding, plus the drag handle
+ * straddling its top edge) and the 24 px fade it draws ABOVE itself, which is
+ * how the conversation stops at the panel instead of running under it. At the
+ * ceiling the panel is therefore exactly as tall as it can be while still being
+ * a panel in a conversation. Wanting more than that is wanting `⤢ full screen`,
+ * which is a different thing and does not have to fit inside the scroller to do
+ * it.
+ */
+export const TERMINAL_HEIGHT_HEADROOM = 44;
 
 export const TERMINAL_HEIGHT_DEFAULT = 380;
 
-export function clamp(px: number): number {
+/** The tallest a panel may be with `room` px of scroller to sit in. */
+export function maxHeight(room: number): number {
+  return Math.max(TERMINAL_HEIGHT_MIN, Math.round(room - TERMINAL_HEIGHT_HEADROOM));
+}
+
+/**
+ * `room` is the scroller's height when the caller has measured it and nothing at
+ * all when it has not — the stored height is read before anything is mounted, and
+ * at that point the floor is the only limit there is to apply. The panel
+ * re-clamps against the real measurement as soon as it has one, which is also
+ * what lets the preference outlive a small window: `localStorage` keeps the
+ * number that was dragged to, so a window made tall again gets it back instead of
+ * the height it had been squeezed to.
+ */
+export function clamp(px: number, room = Infinity): number {
   if (!Number.isFinite(px)) return TERMINAL_HEIGHT_DEFAULT;
-  return Math.min(TERMINAL_HEIGHT_MAX, Math.max(TERMINAL_HEIGHT_MIN, Math.round(px)));
+  return Math.min(maxHeight(room), Math.max(TERMINAL_HEIGHT_MIN, Math.round(px)));
 }
 
 export function readHeight(): number {

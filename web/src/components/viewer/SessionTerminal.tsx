@@ -613,27 +613,54 @@ export function SessionTerminal({
     onError: (err: Error) => setError(err.message),
   });
 
-  // Dragging the TOP edge, because the bottom one is the window. Same shape as
-  // the session list's sidebar handle, turned on its side.
-  const startResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const from = readHeight();
-    const onMove = (ev: MouseEvent) => {
-      const next = clamp(from + startY - ev.clientY);
-      setHeight(next);
-      localStorage.setItem(HEIGHT_KEY, String(next));
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+  /**
+   * The room this panel has to be tall IN: the scroller it is stuck to the
+   * bottom of, or the window if it is not in one. That is the only ceiling the
+   * height has — [terminalPrefs] holds why it is a measurement rather than a
+   * number — and it is measured on demand rather than kept, because it changes
+   * with the window alone and both callers ask at a moment they can measure at.
+   */
+  const roomFor = useCallback((root: HTMLElement | null): number => {
+    const scroller = root?.closest('[data-conversation-scroller]');
+    return scroller instanceof HTMLElement ? scroller.clientHeight : window.innerHeight;
   }, []);
 
+  // Dragging the TOP edge, because the bottom one is the window. Same shape as
+  // the session list's sidebar handle, turned on its side.
+  const startResize = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      // Once, here: nobody resizes the window in the middle of a drag, and a
+      // ceiling that moved under the pointer would make the panel fight it.
+      const room = roomFor(rootRef.current);
+      const from = clamp(readHeight(), room);
+      const onMove = (ev: MouseEvent) => {
+        const next = clamp(from + startY - ev.clientY, room);
+        setHeight(next);
+        localStorage.setItem(HEIGHT_KEY, String(next));
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    },
+    [roomFor],
+  );
+
   /**
-   * One measurement, two answers, because both are about where this panel ends.
+   * One measurement, three answers, because all of them are about where this
+   * panel ends.
+   *
+   * The height comes first because it is the one that can go wrong on its own:
+   * the stored number was dragged to in whatever window it was dragged in, and a
+   * panel taller than the scroller loses its own title bar off the top. So it is
+   * re-clamped against the room there is now, every time that room changes —
+   * from `readHeight()` rather than from the state, so the number that was
+   * dragged to survives a small window and comes back with a tall one. Only the
+   * drag writes `localStorage`; being squeezed by a window is not a preference.
    *
    * `bleed` stretches the drag handle across the whole scroller instead of the
    * column: a resize bar the width of the panel reads as part of the panel, and
@@ -654,6 +681,7 @@ export function SessionTerminal({
     if (!root) return;
     const scroller = root.closest('[data-conversation-scroller]');
     const measure = (): void => {
+      setHeight(clamp(readHeight(), roomFor(root)));
       const rootBox = root.getBoundingClientRect();
       if (!(scroller instanceof HTMLElement)) {
         setBleed(null);
@@ -681,7 +709,7 @@ export function SessionTerminal({
     if (scroller instanceof HTMLElement) observer.observe(scroller);
     observer.observe(root);
     return () => observer.disconnect();
-  }, [open, full, onLayout]);
+  }, [open, full, onLayout, roomFor]);
 
   /**
    * Full screen is the one thing about this panel that IS remembered — and only
