@@ -67,7 +67,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
       : null;
 
   return (
-    <div className="border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3 text-xs">
+    <div className="px-4 py-3 text-xs">
       <div className="mb-2 flex gap-4 text-[var(--text-dim)]">
         <span>
           <b className="text-[var(--text)]">{e.userMessageCount}</b> prompts

@@ -266,17 +266,11 @@ export function SessionFilesPanel({
   const stats = new Map((statsQ.data?.files ?? []).map((f) => [normalisePath(f.ref), f]));
 
   return (
-    <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
-      <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        Files this session sent or published — {files.total}
-        <span className="ml-2 font-normal normal-case opacity-70">
-          (sizes are as sent; the state on the right is the disk right now)
-        </span>
-        {statsQ.isError && (
-          <span className="ml-2 font-normal normal-case text-red-400">
-            could not read the disk: {String(statsQ.error)}
-          </span>
-        )}
+    <div className="px-4 py-3">
+      {/* The name and the count are the inspector's title bar now. */}
+      <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">
+        sizes are as sent; the state on the right is the disk right now
+        {statsQ.isError && <span className="ml-2 text-red-400">could not read the disk: {String(statsQ.error)}</span>}
       </div>
       <Section
         title="Delivered to you"

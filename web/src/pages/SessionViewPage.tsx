@@ -21,16 +21,19 @@ import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
+import { GRIP_PX, RAIL_PX, useInspector } from '../lib/inspector.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
-import { FindBar, useFindBar } from '../components/viewer/FindBar.tsx';
+import { FindBar, FindButton, useFindBar } from '../components/viewer/FindBar.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
 import { MentionedFilesPanel } from '../components/viewer/MentionedFilesPanel.tsx';
 import { SessionFilesPanel } from '../components/viewer/SessionFilesPanel.tsx';
 import { FileRefContext, type FileRefContextValue } from '../components/viewer/FileRefContext.ts';
 import { FileViewerPanel } from '../components/viewer/FileViewerPanel.tsx';
 import { FollowBottomButton, PILL_CORNER_PX, useFollowBottom } from '../components/viewer/FollowBottom.tsx';
+import { Inspector } from '../components/viewer/Inspector.tsx';
+import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { ResumeButton, SessionMenu } from '../components/viewer/SessionActions.tsx';
@@ -184,11 +187,6 @@ export function SessionViewPage() {
   const reading = useReadingPrefs();
   const { showThinking, expandTools, expandSegments } = reading;
   const view = useViewPrefs();
-  const [showTokens, setShowTokens] = useState(false);
-  const [showLineage, setShowLineage] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
-  const [showSentFiles, setShowSentFiles] = useState(false);
-  const [showMentions, setShowMentions] = useState(false);
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
@@ -253,6 +251,22 @@ export function SessionViewPage() {
         const sp = new URLSearchParams(prev);
         if (sp.get(AGENTS_PARAM) === '1') sp.delete(AGENTS_PARAM);
         else sp.set(AGENTS_PARAM, '1');
+        return sp;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  /**
+   * Unconditionally, which a toggle cannot do: opening any other panel has to
+   * take this one out of the URL, and asking a toggle to close something that
+   * may already be closed would open it.
+   */
+  const closeAgents = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete(AGENTS_PARAM);
         return sp;
       },
       { replace: true },
@@ -417,34 +431,6 @@ export function SessionViewPage() {
   const spent = restoreSpent.current === id;
   const anchorUuid = msg ?? (spent ? null : restored.uuid);
   const anchorTool = tool ?? (spent ? null : restored.toolUseId);
-
-  const navigate = useNavigate();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-      // Escape inside an embedded terminal is the CLI's — it closes ITS menus.
-      // (The textarea check above already covers where xterm usually puts the
-      // focus; this is the one that stays true when it moves.)
-      if (isFromTerminal(e.target)) return;
-      // Innermost first: the file sits on top of the subagent drawer, which sits
-      // on top of the list that opened it — a path is often clicked from inside a
-      // subagent report, and that whole stack has to unwind in order.
-      //
-      // The find bar comes after all three and before going back: those are
-      // layers drawn OVER the conversation, while the bar sits beside it. Its
-      // own input handles Escape itself and stops it here, so this branch is for
-      // an Escape pressed while reading, with the bar still open behind you.
-      if (fileRef) closeFile();
-      else if (agentId) closeAgent();
-      else if (agentsOpen) toggleAgents();
-      else if (finder.isOpen) finder.close();
-      else navigate(-1);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [fileRef, closeFile, agentId, closeAgent, agentsOpen, toggleAgents, finder.isOpen, finder.close, navigate]);
 
   /**
    * Drop an echoed prompt as soon as the real one arrives, matched on its text
@@ -613,6 +599,53 @@ export function SessionViewPage() {
     [mentionStats.data, mentionCandidates, mentionRefs.length, changedPaths, sentPaths],
   );
 
+  /**
+   * Which panel is open beside the conversation. Declared here because the
+   * counts it needs are the last of them to be worked out, and read by the
+   * Escape unwind just below.
+   */
+  const inspector = useInspector({
+    changed: session?.fileChanges.length ?? 0,
+    sent: sessionFiles.total,
+    mentionCandidates: mentionCandidates.length,
+    mentionCount: mentioned ? mentioned.rows.length : null,
+    agentCount: session?.subagents.length ?? 0,
+    hasLineage: !!session && (session.ancestry.forkedFrom !== null || session.ancestry.descendants.length > 0),
+    agents: { open: agentsOpen, toggle: toggleAgents, close: closeAgents },
+  });
+
+  const navigate = useNavigate();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      // Escape inside an embedded terminal is the CLI's — it closes ITS menus.
+      // (The textarea check above already covers where xterm usually puts the
+      // focus; this is the one that stays true when it moves.)
+      if (isFromTerminal(e.target)) return;
+      // Innermost first: the file sits on top of the subagent drawer, which sits
+      // on top of the panel that opened it — a path is often clicked from inside
+      // a subagent report, and that whole stack has to unwind in order.
+      //
+      // The inspector is one branch for all six panels now, which is what makes
+      // this list honest: only the subagent list was ever in it, because putting
+      // one file panel in and not the other would have been worse than neither.
+      //
+      // The find bar comes after all three and before going back: those are
+      // layers drawn OVER the conversation, while the bar sits beside it. Its
+      // own input handles Escape itself and stops it here, so this branch is for
+      // an Escape pressed while reading, with the bar still open behind you.
+      if (fileRef) closeFile();
+      else if (agentId) closeAgent();
+      else if (inspector.open !== null) inspector.close();
+      else if (finder.isOpen) finder.close();
+      else navigate(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fileRef, closeFile, agentId, closeAgent, inspector, finder.isOpen, finder.close, navigate]);
+
   const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const items = (session?.turns ?? []).flatMap((t) => t.items);
     const blocks = items.flatMap((i) => i.blocks);
@@ -734,7 +767,11 @@ export function SessionViewPage() {
    * starts at the left margin has nothing to dodge and nothing to be told about
    * the column.
    */
-  const columnWidth = view.width === WIDTH_FULL ? '100vw' : `min(${view.width}px, 100vw)`;
+  // `--conv-box` and not `100vw`: the conversation is centred in what the rail
+  // and the open panel leave behind, and everything that measures the column has
+  // to be told in the same words. It falls back to the viewport, so a thread
+  // drawn outside that subtree is unaffected.
+  const columnWidth = view.width === WIDTH_FULL ? 'var(--conv-box, 100vw)' : `min(${view.width}px, var(--conv-box, 100vw))`;
 
   /**
    * Hung off the last turn's rail rather than after the list: an answer being
@@ -841,6 +878,66 @@ export function SessionViewPage() {
     return null;
   })();
 
+  /** How much of the window the conversation does NOT get. */
+  const convGutter = RAIL_PX + (inspector.open === null ? 0 : inspector.width + GRIP_PX);
+
+  /**
+   * Whichever panel the rail has open. One node rather than six conditionals,
+   * because there is one place it can go now — and a panel with nothing to show
+   * cannot be reached at all: the rail only offers the ones this session has.
+   */
+  const panel = (() => {
+    switch (inspector.open) {
+      case 'tokens':
+        return <TokenPanel summary={session.summary} turns={session.turns} />;
+      case 'changed':
+        return <FileChangesPanel fileChanges={session.fileChanges} />;
+      case 'sent':
+        return (
+          <SessionFilesPanel
+            sessionId={id}
+            files={sessionFiles}
+            onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
+            onGoToMessage={(uuid) => jumpTo('msg', uuid)}
+          />
+        );
+      case 'mentioned':
+        return (
+          <MentionedFilesPanel
+            data={mentioned}
+            pending={mentionStats.isPending && mentionRefs.length > 0}
+            error={mentionStats.isError ? String(mentionStats.error) : null}
+            /**
+             * The anchor and the words to underline there, and nothing else.
+             *
+             * It opened the find bar for a while, to reach the OTHER namings of
+             * the same file, and the numbers were what killed it: the bar counts
+             * every occurrence in the transcript, so `AI_VIEWER.md` opened on 168
+             * matches — 143 of them inside tool calls — against the four messages
+             * whose prose actually names it. Walking four namings through 168
+             * stops is not a way in. The panel knows exactly which four they are,
+             * so the row steps through them itself.
+             */
+            onGoToMessage={(uuid, marks) => jumpTo('msg', uuid, marks)}
+          />
+        );
+      case 'agents':
+        return (
+          <SubagentsPanel
+            sessionId={id}
+            rows={subagentIndex.rows}
+            openAgentId={agentId}
+            sessionAlive={sessionAlive}
+            now={now}
+          />
+        );
+      case 'lineage':
+        return <LineagePanel sessionId={id} />;
+      default:
+        return null;
+    }
+  })();
+
   return (
     // Wraps the drawer as well as the conversation: a path written in a
     // subagent's report is a path in this session too.
@@ -855,25 +952,12 @@ export function SessionViewPage() {
             // grows, so the badge would still read "live" through a turn the app
             // itself is running.
             live={liveInfo}
-            showTokens={showTokens}
-            onToggleTokens={() => setShowTokens((v) => !v)}
-            showLineage={showLineage}
-            onToggleLineage={() => setShowLineage((v) => !v)}
-            showFiles={showFiles}
-            onToggleFiles={() => setShowFiles((v) => !v)}
-            showSentFiles={showSentFiles}
-            onToggleSentFiles={() => setShowSentFiles((v) => !v)}
-            sentFileCount={sessionFiles.total}
-            showMentions={showMentions}
-            onToggleMentions={() => setShowMentions((v) => !v)}
-            mentionCount={mentioned ? mentioned.rows.length : null}
-            mentionCandidates={mentionCandidates.length}
-            showAgents={agentsOpen}
-            onToggleAgents={toggleAgents}
-            findOpen={finder.isOpen}
-            onToggleFind={() => (finder.isOpen ? finder.close() : finder.openBar())}
             actions={
               <>
+                <FindButton
+                  open={finder.isOpen}
+                  onToggle={() => (finder.isOpen ? finder.close() : finder.openBar())}
+                />
                 {/* It resumes a transcript, and a draft has none: the endpoint
                     resolves the folder from the index and would answer 404 for
                     this id. The app's own foot below is how you pick a session
@@ -889,47 +973,25 @@ export function SessionViewPage() {
               </>
             }
           />
-          <FindBar {...finder.bar} />
-          {showTokens && <TokenPanel summary={session.summary} turns={session.turns} />}
-          {showLineage && <LineagePanel sessionId={id} />}
-          {showFiles && <FileChangesPanel fileChanges={session.fileChanges} />}
-          {showSentFiles && (
-            <SessionFilesPanel
-              sessionId={id}
-              files={sessionFiles}
-              onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
-              onGoToMessage={(uuid) => jumpTo('msg', uuid)}
-            />
-          )}
-          {showMentions && (
-            <MentionedFilesPanel
-              data={mentioned}
-              pending={mentionStats.isPending && mentionRefs.length > 0}
-              error={mentionStats.isError ? String(mentionStats.error) : null}
-              /**
-               * The anchor and the words to underline there, and nothing else.
-               *
-               * It opened the find bar for a while, to reach the OTHER namings of
-               * the same file, and the numbers were what killed it: the bar counts
-               * every occurrence in the transcript, so `AI_VIEWER.md` opened on 168
-               * matches — 143 of them inside tool calls — against the four messages
-               * whose prose actually names it. Walking four namings through 168
-               * stops is not a way in. The panel knows exactly which four they are,
-               * so the row steps through them itself.
-               */
-              onGoToMessage={(uuid, marks) => jumpTo('msg', uuid, marks)}
-            />
-          )}
-          {agentsOpen && (
-            <SubagentsPanel
-              sessionId={id}
-              rows={subagentIndex.rows}
-              openAgentId={agentId}
-              sessionAlive={sessionAlive}
-              now={now}
-            />
-          )}
-          {/* The scroller reaches the foot of the window, and the composer rides
+          {/* Header above, and below it a ROW: the conversation, then whichever
+              panel is open, then the rail. Every panel used to be stacked here,
+              between the header and the scroller, which is why opening one
+              pushed the conversation down — the thing the rail exists to stop. */}
+          <div
+            className="flex min-h-0 flex-1"
+            // What is left of the window once the rail and the open panel have
+            // taken theirs. The composer and the terminal give up the follow
+            // pill's corner wherever the column reaches the edge of the box it
+            // is centred in, and that box is no longer the viewport; inherited
+            // as a variable rather than passed down, so the two of them and the
+            // width below cannot disagree about it.
+            style={{ '--conv-box': `calc(100vw - ${convGutter}px)` } as React.CSSProperties}
+          >
+            <div className="flex min-w-0 flex-1 flex-col">
+              {/* Inside the column, not above it: at full width it would run
+                  under the inspector, and what it searches is the conversation. */}
+              <FindBar {...finder.bar} />
+              {/* The scroller reaches the foot of the window, and the composer rides
               INSIDE it, stuck to the bottom. Nothing is cut off half way down any
               more: the scrollbar runs the full height, the conversation slides
               under the box instead of stopping short of it, and the pill has a
@@ -1072,8 +1134,12 @@ export function SessionViewPage() {
               unseen={follow.unseen}
               working={isWorking(liveInfo) || agentsWorking !== null}
               workingWhat={isWorking(liveInfo) ? undefined : (agentsWorking ?? undefined)}
-              liftPx={pillLift}
-            />
+                  liftPx={pillLift}
+                />
+              </div>
+            </div>
+            <Inspector inspector={inspector}>{panel}</Inspector>
+            <InspectorRail inspector={inspector} />
           </div>
           {agentId && (
             <SubagentDrawer

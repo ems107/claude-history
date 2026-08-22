@@ -229,14 +229,12 @@ export function MentionedFilesPanel({
   onGoToMessage: (uuid: string, marks: string[]) => void;
 }) {
   return (
-    <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
-      <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        Files this session only mentioned{data ? ` — ${String(data.rows.length)}` : ''}
-        <span className="ml-2 font-normal normal-case opacity-70">
-          (paths its own answers named as a link or in backticks — a click opens the file, ↑ goes to the sentence with
-          the path underlined in it)
-        </span>
-        {error && <span className="ml-2 font-normal normal-case text-red-400">could not read the disk: {error}</span>}
+    <div className="px-4 py-3">
+      {/* The name and the count are the inspector's title bar now. */}
+      <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">
+        paths its own answers named as a link or in backticks — a click opens the file, ↑ goes to the sentence with the
+        path underlined in it
+        {error && <span className="ml-2 text-red-400">could not read the disk: {error}</span>}
       </div>
       {pending && <div className="px-2 py-1 text-xs text-[var(--text-dim)]">Asking the disk…</div>}
       {data?.rows.map((row) => (

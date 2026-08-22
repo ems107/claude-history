@@ -11,6 +11,7 @@ import { FollowBottomButton, useFollowBottom } from './FollowBottom.tsx';
 import { useSubagents } from './SubagentContext.ts';
 import { TurnList } from './TurnList.tsx';
 import { WorkingIndicator } from './WorkingIndicator.tsx';
+import { RAIL_PX } from '../../lib/inspector.ts';
 
 const NO_PRICES: PriceTable = {};
 /** Stable identity while the transcript loads. */
@@ -110,7 +111,10 @@ export function SubagentDrawer({
   const call = subagents?.byId.get(agentId)?.toolUseId;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-20 flex w-[44rem] max-w-[90vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl">
+    <div
+      style={{ right: RAIL_PX }}
+      className="fixed inset-y-0 z-20 flex w-[44rem] max-w-[90vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl"
+    >
       <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-2">
         <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-xs font-semibold text-sky-400">
           ⑂ {query.data?.meta.agentType ?? 'subagent'}

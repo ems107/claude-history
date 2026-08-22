@@ -7,6 +7,7 @@ import { type FileRef, isImagePath, languageForPath, refBasename } from '../../l
 import { formatBytes, formatDateTime } from '../../lib/format.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { ZoomableImage } from './ZoomableImage.tsx';
+import { RAIL_PX } from '../../lib/inspector.ts';
 
 /**
  * One constant for the gutter rows, the code and the target stripe. The three
@@ -180,7 +181,10 @@ export function FileViewerPanel({
     // Above the subagent drawer (z-20): a path is often clicked from inside a
     // subagent report, and closing that to read the file would lose the reader's
     // place in it. They overlap; closing this reveals the transcript untouched.
-    <div className="fixed inset-y-0 right-0 z-30 flex w-[52rem] max-w-[92vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl">
+    <div
+      style={{ right: RAIL_PX }}
+      className="fixed inset-y-0 z-30 flex w-[52rem] max-w-[92vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl"
+    >
       <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-2">
         <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-300">
           {isImagePath(fileRef.path) ? '🖼' : '📄'} {refBasename(fileRef.path)}

@@ -439,17 +439,15 @@ export function SubagentsPanel({
   const tokens = usage.input + usage.output + usage.cacheRead + usage.cacheCreate;
 
   return (
-    <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
-      <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        Subagents — {rows.length}
+    <div className="px-4 py-3">
+      {/* The name and the count are the inspector's title bar now. */}
+      <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">
         {tokens > 0 && (
-          <span className="ml-2 font-normal normal-case">
-            {formatTokens(tokens)} tokens · {formatUsd(total)}
+          <span className="text-[var(--text-dim)]">
+            {formatTokens(tokens)} tokens · {formatUsd(total)} ·{' '}
           </span>
         )}
-        <span className="ml-2 font-normal normal-case opacity-70">
-          (each one its own conversation — counted in the session total, and in none of its messages)
-        </span>
+        each one its own conversation — counted in the session total, and in none of its messages
       </div>
       {ordered.map(({ row, depth }) => {
         const i = rows.indexOf(row);
