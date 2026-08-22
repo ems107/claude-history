@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
-import { useAnyTabVisible } from '../lib/tabVisibility.ts';
+import { useAnyTabVisible } from '../lib/tabs.ts';
 import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow.tsx';
 
 /**
@@ -76,7 +76,7 @@ export function NotificationToasts() {
    * **The ten seconds are ten seconds of somebody looking.** Read once here and
    * handed down, so every card on the stack answers to one reading of it rather
    * than to a subscription each — and so the OTHER tabs' answer is in it, which
-   * is the whole of `tabVisibility.ts`.
+   * is the whole of `tabs.ts`.
    */
   const watching = useAnyTabVisible();
   /** The newest `at` seen per session. `null` until the first answer seeds it. */

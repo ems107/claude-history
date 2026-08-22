@@ -25,7 +25,7 @@ import { TONE_INHERIT } from '@claude-history/shared';
  * `Notification` is secure-context only in Chrome, so it works on
  * `http://127.0.0.1` and NOT on `http://<lan-ip>:7433` — precisely the path
  * remote access exists to support (`docs/AI_REMOTE_ACCESS.md`). It is the same
- * trap `lib/tabVisibility.ts` records for `crypto.randomUUID()`. `AudioContext` and
+ * trap `lib/tabs.ts` records for `crypto.randomUUID()`. `AudioContext` and
  * `speechSynthesis` carry no such gate: both work over plain HTTP, which is the
  * whole reason this feature is a sound rather than a toast.
  */
