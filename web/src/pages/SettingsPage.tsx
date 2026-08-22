@@ -473,7 +473,9 @@ function ToneSelect({
           primeAudio();
           playTone(resolved, volume);
         }}
-        title={volume <= 0 ? 'The volume is 0' : 'Play it'}
+        // A disabled button that does not say why is a button that looks broken.
+        title={volume <= 0 ? 'The volume is 0' : silent ? 'Silent — there is nothing to play' : 'Play it'}
+        aria-label="Play the tone"
         className={btn}
       >
         ▶
