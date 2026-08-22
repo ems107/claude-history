@@ -52,7 +52,7 @@ export function FileChangesPanel({ fileChanges }: { fileChanges: FileChange[] })
                     return next;
                   })
                 }
-                className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
+                className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
               >
                 <span className="text-[var(--text-dim)]">{isOpen ? '▾' : '▸'}</span>
                 <span className="min-w-0 flex-1 truncate font-mono" title={fc.path}>

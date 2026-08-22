@@ -72,7 +72,7 @@ function MentionRowView({
    */
   const asWritten = parseFileRef(row.ref)?.kind === 'relative' && row.ref !== row.name ? row.ref : null;
   return (
-    <div className="flex items-baseline gap-2 rounded px-2 py-1 text-xs hover:bg-[var(--bg-hover)]">
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-2 py-1 text-xs hover:bg-[var(--bg-hover)]">
       <span aria-hidden className="shrink-0 opacity-70">
         {isImagePath(row.path) ? '🖼' : '📄'}
       </span>
