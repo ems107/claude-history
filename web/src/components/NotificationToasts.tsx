@@ -10,7 +10,7 @@ import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow
  * `styles.css`. **The bar is what actually ends the card** — see `Toast` — so
  * this figure exists to be read beside that one and to size the backstop below.
  */
-export const TOAST_MS = 10_000;
+const TOAST_MS = 10_000;
 
 /**
  * The card cannot be immortal, whatever happens to its animation. Nothing in

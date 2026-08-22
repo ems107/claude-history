@@ -175,7 +175,8 @@ export function useEvents(): void {
           void queryClient.invalidateQueries({ queryKey: ['activeSessions'] });
           break;
         // A session stopped, came back, or was cleared. One key, and only this
-        // one: the bell is the whole consumer.
+        // one — the bell and the toast stack both read it, and neither needs
+        // anything else re-asked.
         case 'notifications-changed':
           void queryClient.invalidateQueries({ queryKey: ['notifications'] });
           break;

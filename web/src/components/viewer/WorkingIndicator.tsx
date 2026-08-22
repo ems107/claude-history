@@ -1,16 +1,8 @@
 import type { LiveInfo } from '@claude-history/shared';
+import { LIVE_BUSY } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
 import { elapsed, formatDateTime } from '../../lib/format.ts';
 import { NO_ACTIVITY, type TurnActivity, turnClocks } from '../../lib/turnActivity.ts';
-
-/**
- * Claude Code stamps `status` on ~/.claude/sessions/<pid>.json the moment a turn
- * starts and again when it ends. There is no heartbeat in between (measured:
- * `updatedAt` frozen for 3 minutes into a busy turn), so the transition is
- * written exactly when it happens and the file watcher sees it within its 300 ms
- * debounce — this indicator is as immediate as the CLI's own spinner.
- */
-const BUSY = 'busy';
 
 /**
  * What the row SAYS, for the reader who cannot see it turning. The spinner is
@@ -28,9 +20,21 @@ const WORKING = 'Claude is working…';
  * Whether this session is mid-turn. Exported because the caller has to know
  * BEFORE rendering: the indicator hangs on the turn's rail, and a rail built
  * around a component that renders nothing is a stray green line down the page.
+ *
+ * Claude Code stamps `status` on ~/.claude/sessions/<pid>.json the moment a turn
+ * starts and again when it ends. There is no heartbeat in between (measured:
+ * `updatedAt` frozen for 3 minutes into a busy turn), so the transition is
+ * written exactly when it happens and the watcher sees it within its 300 ms
+ * debounce — this indicator is as immediate as the CLI's own spinner.
+ *
+ * **`LIVE_BUSY` is one of four values that field can hold**, and the other three
+ * all mean stopped — see [AI_TRANSCRIPTS.md](../../../../docs/AI_TRANSCRIPTS.md).
+ * `waiting` is the one worth naming here: a session with a dialog on screen has
+ * a turn open and nothing moving in it, so this must stay false for it. Spinning
+ * for a session blocked on a person would be the one lie this row could tell.
  */
 export function isWorking(live: LiveInfo | null | undefined): boolean {
-  return live?.status === BUSY;
+  return live?.status === LIVE_BUSY;
 }
 
 /**
