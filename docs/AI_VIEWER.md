@@ -32,6 +32,10 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 - **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
+- **A panel opens BESIDE the conversation, never above it**, and only one is open at a time.
+- **The rail is furniture**: it is always drawn, and nothing — drawer, file viewer — may cover it.
+- **The find bar belongs to the conversation's column**, not to the page.
+- **Anything that measures the column measures `--conv-box`**, never `100vw`.
 - **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
 - **A `Bubble` is for somebody speaking** — it has a tail, and a tail points at a speaker. Status, telemetry and chrome are drawn as rows.
 - **A row drawn outside a bubble carries its own `relative`** if anything in it is `position: absolute` — `sr-only` included. Escaping the scroller grows the PAGE.
@@ -48,6 +52,95 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A message bubble is not one of them.** A prompt used to fold its own turn in prompts-only mode, and an accidental click there hid the answer being read, so `Bubble` takes no `onClick` at all: a turn folds only from its fold strip.
 - Two consequences: **nothing interactive may be nested inside a `FoldHeader`** (copy buttons, cost pills and the subagent link are siblings in the header row), and a shrink-wrapped header needs `w-fit`, which the `<button>` gave for free.
 - Real buttons stay real: the header's mode toggles are controls with nothing to copy.
+
+## The header, and where the panels went
+
+The header carried **eighteen controls in one row** — twelve toggles, `View`,
+`Export .md` and the four resume buttons — which at 1440 px is about 2,030 px of
+content in the 1,408 available: the title truncated to `Redise…` and the row ran
+off the screen. The count was the symptom. What made it unreadable is that those
+eighteen mixed **four unrelated kinds of thing at one visual weight**: how the
+conversation is drawn, which panel is open, what can be done with the session,
+and find.
+
+Each kind has one home now, and the header is two rows — 65 px measured, against
+95:
+
+| Kind | Where it lives |
+| --- | --- |
+| How the conversation is drawn | `ViewMenu` — thinking, tool calls, compacted stretches, the two folding actions, zoom and width. Lit when **anything** in it is off its default, which is the rule `ViewButton` applied to two values and now covers five. |
+| What can be done with the session | `SessionActions` — `❯ Resume` as a button of its own, and `⋯` for export, the project folder, VS Code and the resume command. |
+| Which panel is open | The rail down the right-hand edge (`lib/inspector.ts`, `InspectorRail`, `Inspector`). |
+| Find | `FindButton`, which lives beside the bar it opens. |
+
+Row two is the facts — branch, model, entrypoint, both dates and the four counts
+— ending in `more`, which holds what you look UP rather than read: the slug, the
+`cc` version, the context entries, `resumed ×N`, the fork chain, the PR links and
+the id with its copy button. Remembered in `localStorage`, like the reading
+preferences.
+
+The dates are `formatDateTimeShort` with the full stamp on the hover, which is
+what that helper was written for: a clock beside other facts, not the fact
+itself.
+
+Three duplications went with the rewrite. The pin was the `★` badge AND the star
+button; the subagent count was the `⑂ N` badge AND a button; and five panels
+wrote their own name at the top of a column whose title bar already said it.
+`SessionBadges` takes `omitPinned` / `omitAgents` for the first two.
+
+**Rename and pin stay as the `✎` and `★` beside the title, on hover**, exactly as
+in the list, and are deliberately absent from `⋯`: a second way in is a second
+thing to keep in step. `originalTitle` keeps its own row whenever a local rename
+exists — a hard rule, not a detail of layout.
+
+**Escape closes a menu instead of leaving the page.** `usePopover` listens on the
+`document` in the CAPTURE phase and stops the key there, so the page's own
+listener on the `window` never sees it. Neither of the popovers it replaces did
+this, which was harmless with a pair of checkboxes in them and would not be with
+the session's actions.
+
+### The rail and the inspector
+
+**Panels are not stacked above the conversation any more.** Every one of them used
+to be inserted between the header and the scroller, so opening one pushed down
+exactly what you were reading, and having two open pushed it down twice.
+Measured on `f3384d17`: opening a panel leaves the scroller's `clientHeight`
+unchanged, which is the assertion [check 27](AI_TESTING.md) makes about a message
+arriving, now true of a panel opening too.
+
+- **72 px, and every item carries its label.** Not the 44 an icon needs: six
+  unlabelled glyphs down the side of a window is six things to learn and a
+  tooltip to wait for.
+- **An item exists only when its panel has something in it** — the rule the six
+  buttons already followed. `Tokens` is the only one always there. A panel that
+  stops existing cannot stay open (`useInspector` re-checks on every render), or
+  a session whose last agent row went away with a re-parse would leave the
+  inspector holding a title with nothing under it.
+- **One at a time, which is what gives Escape one meaning.** The unwind is
+  `file → agent → inspector → find bar → back`, and the inspector is one branch
+  for all six panels — see [the three file panels](#the-three-file-panels) for
+  the objection this answers.
+- **`?agents=1` stays in the URL** because the session list links straight onto
+  it; the other five are the hook's own state. Opening any of them clears the
+  parameter, which is why `closeAgents` exists beside `toggleAgents`: asking a
+  toggle to close something already closed would open it.
+- **One width for every panel**, dragged from the seam and remembered
+  (`inspectorWidth` — the session list's `sidebarWidth` pattern, mirrored,
+  because this one grows leftwards). One width is what keeps the panels honest:
+  each has to read at 320 px, which is the work that turned the token table into
+  a stack of cards and made every file row wrap.
+- **The host owns the background, the border and the scroll.** Every panel lost
+  its own `border-b`, its `bg-[var(--bg-raised)]/50` and — the one that mattered
+  — its `max-h-[45vh] overflow-y-auto`, which inside a scrolling column would be
+  a scroller inside a scroller.
+- **`--conv-box` is what the column measures itself against.** The composer and
+  the terminal give up the follow pill's corner wherever the column reaches the
+  edge of the box it is centred in, and that box is no longer the viewport. It is
+  set once, on the row that holds the three columns, and inherited — so the two
+  of them and the width calculation cannot disagree. It falls back to `100vw`,
+  which is what makes the new-session page's thread work unchanged.
+- **`data-inspector` and `data-inspector-rail`** are measurement hooks, like
+  `data-conversation-scroller` and `data-sticky-bottom`.
 
 ## The star on a message
 
@@ -179,7 +272,7 @@ Four things are lifted out from between the tool calls, because each is a turn o
 
 `SubagentsPanel` is the index of the call, the report and the transcript (see [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md) for what joins them): the call is a `ToolBlock` with a chip named after the agent type, the report an `InjectedNotice`, the transcript a `SubagentDrawer`.
 
-- Opened by the ⑂ badge from either the list or the header. Its `?agents=1` lives in the URL because the session list opens a session straight onto it; the drawer's `?agent=` is a different parameter for a different thing.
+- Opened by the ⑂ badge in the LIST, and by the rail on the session page — where the badge is omitted, because the rail already carries the count ([the header](#the-header-and-where-the-panels-went)). Its `?agents=1` lives in the URL because the session list opens a session straight onto it; the drawer's `?agent=` is a different parameter for a different thing.
 - The panel reads each agent's transcript under the **same query key the drawer uses**, so nothing is fetched twice and opening one afterwards is instant — 350-500 KB and ~20 ms each, measured.
 - **The reports fold inside a notice that itself folds the turn on a click**, so that whole region must stop the event — otherwise reading a report collapses the conversation around it.
 - **The list is a tree** (`asTree`): an agent an agent spawned is drawn under it, indented, in the order it was sent out. A flat list left four rows at the top level explaining their parentage in prose, which the reader then had to reassemble. A row whose parent is somehow not in the list is appended rather than dropped — out of place beats invisible.
@@ -530,7 +623,8 @@ The third is the weakest of them by nature and says so on every row that needs i
 - **The answer is joined on the `ref` the server echoed back**, normalised — never on the resolved path, which is the server's answer and not the key any row was built with, and never positionally.
 - **One state column, one meaning: `on disk` / `changed since` / `no longer on disk`.** The raw `modifiedAt` was in that column for one draft and had to come out: beside the row's own timestamp it was a second unlabelled date, and two dates that mean different things read as neither. What is interesting about it is computed instead — `changed since` is earned by a size that differs from what was sent OR, for a row that records no size, by an mtime later than the line that named it, which is the one thing worth knowing about a file holding only the LATEST plan for its slug.
 - **The jump names what it lands on**: `↑ the call` for a delivery or a publish, `↑ the line` for a plan file, which no call handed over. Both go through the page's `jumpTo`, so they clear the other anchor and bump `jumpNonce` — pressing the same row twice must jump twice.
-- Local `useState`, not the URL, like `Tokens`, `Lineage` and `Changed Files`; `?agents=1` is in the URL only because the session list links straight onto it. Neither file panel is in the Escape unwind, and adding one without the other would be worse than leaving both out.
+- **All six panels are one value now** (`useInspector`), which answers the objection that kept these two out of the Escape unwind — putting one in and not the other would have been worse than neither. There is one thing open and one thing to close. `?agents=1` is still the only one in the URL, because the session list links straight onto it.
+- **Their rows wrap.** Each is a flex line of `shrink-0` columns — a name, a type, a size, a state chip, a date, a folder tail, a jump — and six of those do not fit the 320 px the inspector can be dragged to, however small the type: `Sent files` wanted 789 px and scrolled sideways. `flex-wrap` with a row gap leaves them unchanged wherever there is room.
 
 ## The end of the conversation
 
@@ -658,7 +752,11 @@ whole line.
 
 The rule generalises past this one row: **anything above the conversation that
 appears and disappears is a shake**, because the scroller is the flexible one and
-takes the difference. And the follow's `ResizeObserver` watches the scroller
+takes the difference. Which is the other half of why the panels moved to the side
+([the rail](#the-rail-and-the-inspector)): every one of them was a row above the
+conversation that appeared and disappeared, 300 px of it rather than 22. What is
+left up there is the header, and the two things in it that can change height do
+so because they were clicked — `more` and the find bar. And the follow's `ResizeObserver` watches the scroller
 itself as well as the content, so if the end does leave the view that way — a
 window being resized is the honest case — being pinned still means being at the
 end.

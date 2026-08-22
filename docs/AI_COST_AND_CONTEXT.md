@@ -15,6 +15,7 @@ The line format itself is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md); subagent tr
 - **Never persist a cost, only tokens** — the price table is user-editable.
 - **No percentage of the context window anywhere**, except quoted inside a `/context` panel.
 - **A compaction is not a re-cache**, and `postTokens` is not "the context afterwards".
+- **In the token panel, a figure's PLACE says how it relates to the others** — inside, beside with a `+`, or below the rule.
 
 ## Reading usage off a line
 
@@ -79,6 +80,39 @@ There is **no grey zone**: of the 60 pairs here that lost anything, none lost un
 - **The hour is real, and it runs from the last USE.** Measured over this corpus, by the gap between a request and the one before it: **under 5 min 0.2%** of requests re-cache (26 of 12,012), **5-30 min 4.6%**, **30-60 min 10.7%**, **60-70 min 100% (4 of 4)**, over 70 min 89.2% (33 of 37). Of the four exceptions past 70 minutes, three are requests that cached nothing either side so the formula has nothing to score, and one is a genuine read after 192 minutes that has no explanation — best-effort in the other direction, for once. And the clock is refreshed by use rather than running from the write: `6196e625` read the same ~39k prefix from 17:16 to 20:03, nearly three hours, because no gap between its requests ever reached the hour (the longest was 51 min). **The guarantee is one-directional**: past the hour it is gone, under the hour it is likely but never promised.
 - **Cause is inferable, never certain, and the honest ranking is TTL first.** Past an hour the cache was gone whatever else happened, so naming a model switch there would blame the wrong thing; below the hour a changed `session_id` (a fresh CLI re-sent everything) or a model switch become the answer. **A compaction is not a re-cache** and must be excluded outright — `postTokens` is a new, smaller context written once, so counting it bills the user for a saving. And 11 events have **no local explanation at all**: in `797db462` a cache written 16 seconds earlier is simply not reused, twice in a row. Anthropic's cache is best-effort; say "the cached prefix was invalidated" and stop, because a plausible wrong cause is worse than an admitted unknown.
 - **Never persist the cost, only the tokens.** `DailyUsage.recachedByModel` holds tokens per model and the pages price them at read time.
+
+## The ledger the token panel draws
+
+It was a six-column table (model · input · output · cache read · cache write ·
+≈ cost) and it is a stack of cards, because the panel lives in a 400 px column
+that can be dragged to 320 ([AI_VIEWER.md](AI_VIEWER.md#the-rail-and-the-inspector)).
+The table wanted 140 px of heading for `cache read` and `cache write` alone, and
+repeated every label once per row for the sake of comparing rows that mean
+different things anyway — a model, a subset of one of its own cells, a separate
+conversation, and a total that leaves one of them out.
+
+**The arithmetic did not change.** `buildContextIndex`, `summariseRecache`,
+`computeCost`, `computeMessageCost` and `resolvePrices` are the same calls in the
+same order, so what check 20 verifies is exactly what it was. What had to be
+re-drawn is what the table said with indentation, dots and border weights,
+because that was load-bearing and none of it survives a re-flow:
+
+- **A card per model**: name left, cost right, the four figures two by two.
+- **`↳ of which re-cached` is a SUBSET of the cache-write figure above it**, not a
+  row that adds — the four dots in the other columns were what said so. It is
+  drawn INSIDE the card whose figure it is part of: the total's where there is
+  more than one model, the single model's where there is not.
+- **`+ ⑂ N subagents` is money spent outside this transcript**, so it is a
+  sibling card wearing a `+`. Its link still goes to `?agents=1`, which now
+  swings the inspector over to the agent list.
+- **`session total` sits under a double rule**, and **`carried over` sits below
+  THAT**: amber, dashed, and saying in words that it is in no total at all.
+- **The four explanations fold** (`Fold`). Re-cache, subagents, carried over and
+  compactions are paragraphs, and four paragraphs in a narrow column is a wall —
+  each is one line you can open, with every word still inside it.
+
+`ContextCurve` needed nothing: its `viewBox` with `preserveAspectRatio="none"`
+stretches to any width it is given.
 
 ## `/context` snapshots
 
