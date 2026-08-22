@@ -86,8 +86,6 @@ function useSessionActions(session: SessionSummary) {
     command,
     copied,
     copy,
-    state,
-    error,
     folder: {
       disabled: folder.disabled,
       reason: folder.reason ?? `Open ${session.projectPath} in Explorer`,

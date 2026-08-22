@@ -26,9 +26,9 @@ function fmt(n: number): string {
  * its cells, a separate conversation, and a total that excludes one of them.
  * Stacked, each figure carries its own name and the ledger reads downwards.
  */
-function Figures({ usage, className = '' }: { usage: UsageTotals; className?: string }) {
+function Figures({ usage }: { usage: UsageTotals }) {
   return (
-    <div className={`mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] tabular-nums ${className}`}>
+    <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] tabular-nums">
       <span>
         <span className="opacity-60">in</span> {fmt(usage.input)}
       </span>

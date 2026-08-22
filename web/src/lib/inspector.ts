@@ -32,9 +32,9 @@ export const RAIL_PX = 72;
 export const GRIP_PX = 4;
 
 const WIDTH_KEY = 'inspectorWidth';
-export const INSPECTOR_DEFAULT = 400;
-export const INSPECTOR_MIN = 320;
-export const INSPECTOR_MAX = 900;
+const INSPECTOR_DEFAULT = 400;
+const INSPECTOR_MIN = 320;
+const INSPECTOR_MAX = 900;
 
 export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'agents' | 'lineage';
 
