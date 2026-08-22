@@ -1,16 +1,11 @@
 import type { StoppedSessionEntry } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
 import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
-import { formatDateTime, relativeTime } from '../lib/format.ts';
 import { CountBadge } from './CountBadge.tsx';
 import { BellIcon } from './icons.tsx';
-import { ProjectTag } from './list/ProjectTag.tsx';
-
-/** A project with no colour of its own yet — same grey as the other lists use. */
-const FALLBACK_COLOR = 'hsl(0 0% 55%)';
+import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow.tsx';
 
 /**
  * The bell: sessions that have stopped, and what they stopped for.
@@ -217,57 +212,13 @@ function Row({
   onDismiss: (sessionId: string) => void;
   onOpen: () => void;
 }) {
+  // Everything inside is shared with the toast — see `NotificationRow` for why
+  // the whole area is the link and the cross is its sibling. What is local to
+  // the panel is the chrome: a hover fill, and no border of its own.
   return (
     <div className="group flex items-stretch gap-1 rounded hover:bg-[var(--bg-hover)]">
-      {/* **The whole row is the link, not just the title.** A row is one thing
-          that goes to one place, and a 12 px line of text was a target you had
-          to aim at — the project tag and the clock beside it read as part of the
-          same item and now behave like it. The one exception is the cross, which
-          is a sibling rather than a child: a `button` inside an `a` is invalid
-          HTML, and nesting it would also make dismissing a row navigate to it.
-
-          Closing the panel is part of going: the invisible click-catcher is gone
-          the moment the route changes, but the panel itself would otherwise be
-          left open over the new page. */}
-      <Link
-        to={`/session/${stop.sessionId}`}
-        onClick={onOpen}
-        className="min-w-0 flex-1 cursor-pointer px-1.5 py-1"
-        title={stop.title ?? stop.sessionId}
-      >
-        {/* The line worth reading first, and now dressed like it: `text-sm` and
-            semibold against the `10px` dim row under it, so a glance at the
-            panel lands on WHICH session before anything else. It was `text-xs`
-            at normal weight, which made the title and its metadata one grey
-            block the eye had to parse a word at a time. */}
-        <div className="truncate text-sm font-semibold text-[var(--text)] group-hover:text-[var(--accent)]">
-          {stop.title ?? stop.sessionId}
-        </div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-dim)]">
-          {stop.projectName && <ProjectTag name={stop.projectName} path={stop.cwd ?? ''} color={color} />}
-          {/* The CLI's own words. Nothing is translated: "permission prompt" is
-              what the process wrote about itself, and inventing a friendlier
-              phrase would be this app claiming to know which dialog it was. */}
-          {stop.waitingFor && <span className="text-amber-400/90">{stop.waitingFor}</span>}
-          <span title={formatDateTime(stop.at)}>{relativeTime(stop.at)}</span>
-          {/* Only ever false for a composer row: a CLI's own notification goes
-              when the CLI does. Worth saying, because "resume" is not on offer. */}
-          {!stop.stillOpen && <span title="No Claude Code process has this session open any more">closed</span>}
-        </div>
-      </Link>
-      {/* Always in the layout, so a row does not shift when the pointer lands on
-          it; only the ink appears. Full height and outside the link, which is
-          what keeps the one part of the row that is NOT a way in from being one:
-          the pointer never crosses the link to reach it. */}
-      <button
-        type="button"
-        onClick={() => onDismiss(stop.sessionId)}
-        title="Dismiss"
-        aria-label={`Dismiss ${stop.title ?? stop.sessionId}`}
-        className="shrink-0 cursor-pointer rounded px-1.5 text-[11px] text-transparent group-hover:text-[var(--text-dim)] hover:!text-[var(--text)] focus-visible:text-[var(--text-dim)]"
-      >
-        ✕
-      </button>
+      <NotificationRow stop={stop} color={color} onNavigate={onOpen} />
+      <DismissCross label={stop.title ?? stop.sessionId} onClick={() => onDismiss(stop.sessionId)} />
     </div>
   );
 }
