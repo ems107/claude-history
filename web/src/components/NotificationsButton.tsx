@@ -218,19 +218,31 @@ function Row({
   onOpen: () => void;
 }) {
   return (
-    <div className="group flex items-start gap-2 rounded px-1.5 py-1 hover:bg-[var(--bg-hover)]">
-      <div className="min-w-0 flex-1">
-        {/* The title is the way in, and closing the panel is part of going: the
-            invisible click-catcher is gone the moment the route changes, but the
-            panel itself would otherwise still be open over the new page. */}
-        <Link
-          to={`/session/${stop.sessionId}`}
-          onClick={onOpen}
-          className="block truncate text-xs text-[var(--text)] hover:text-[var(--accent)]"
-          title={stop.title ?? stop.sessionId}
-        >
+    <div className="group flex items-stretch gap-1 rounded hover:bg-[var(--bg-hover)]">
+      {/* **The whole row is the link, not just the title.** A row is one thing
+          that goes to one place, and a 12 px line of text was a target you had
+          to aim at — the project tag and the clock beside it read as part of the
+          same item and now behave like it. The one exception is the cross, which
+          is a sibling rather than a child: a `button` inside an `a` is invalid
+          HTML, and nesting it would also make dismissing a row navigate to it.
+
+          Closing the panel is part of going: the invisible click-catcher is gone
+          the moment the route changes, but the panel itself would otherwise be
+          left open over the new page. */}
+      <Link
+        to={`/session/${stop.sessionId}`}
+        onClick={onOpen}
+        className="min-w-0 flex-1 cursor-pointer px-1.5 py-1"
+        title={stop.title ?? stop.sessionId}
+      >
+        {/* The line worth reading first, and now dressed like it: `text-sm` and
+            semibold against the `10px` dim row under it, so a glance at the
+            panel lands on WHICH session before anything else. It was `text-xs`
+            at normal weight, which made the title and its metadata one grey
+            block the eye had to parse a word at a time. */}
+        <div className="truncate text-sm font-semibold text-[var(--text)] group-hover:text-[var(--accent)]">
           {stop.title ?? stop.sessionId}
-        </Link>
+        </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-dim)]">
           {stop.projectName && <ProjectTag name={stop.projectName} path={stop.cwd ?? ''} color={color} />}
           {/* The CLI's own words. Nothing is translated: "permission prompt" is
@@ -242,15 +254,17 @@ function Row({
               when the CLI does. Worth saying, because "resume" is not on offer. */}
           {!stop.stillOpen && <span title="No Claude Code process has this session open any more">closed</span>}
         </div>
-      </div>
+      </Link>
       {/* Always in the layout, so a row does not shift when the pointer lands on
-          it; only the ink appears. */}
+          it; only the ink appears. Full height and outside the link, which is
+          what keeps the one part of the row that is NOT a way in from being one:
+          the pointer never crosses the link to reach it. */}
       <button
         type="button"
         onClick={() => onDismiss(stop.sessionId)}
         title="Dismiss"
         aria-label={`Dismiss ${stop.title ?? stop.sessionId}`}
-        className="shrink-0 cursor-pointer rounded px-1 text-[11px] text-transparent group-hover:text-[var(--text-dim)] hover:!text-[var(--text)] focus-visible:text-[var(--text-dim)]"
+        className="shrink-0 cursor-pointer rounded px-1.5 text-[11px] text-transparent group-hover:text-[var(--text-dim)] hover:!text-[var(--text)] focus-visible:text-[var(--text-dim)]"
       >
         ✕
       </button>
