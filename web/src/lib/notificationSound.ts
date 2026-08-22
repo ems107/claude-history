@@ -131,27 +131,32 @@ function resume(c: AudioContext): void {
  * be done from inside a gesture, earlier.
  *
  * So it is called from two directions: by the announcer when it learns the sound
- * is on, which arms the one-shot listener below, and by the play buttons in
- * Settings, which are a real click and therefore unlock it outright. Idempotent,
- * and free after the first time.
+ * is on, and by the play buttons in Settings — which are themselves a click, so
+ * they go on to make the context in `playTone` and it is born running.
+ * Idempotent, and free after the first time.
+ *
+ * **It touches no context of its own, and that is the point.** Making one here
+ * would make it `suspended` (no gesture has happened yet, by construction) and
+ * the `resume()` that followed would be refused — which Chrome reports as a
+ * console warning, on every page load, for an audio thread nobody had asked for.
+ * Made inside the gesture instead, a context is born `running` and there is
+ * nothing to resume.
  */
 export function primeAudio(): void {
-  const c = context();
-  if (c) resume(c);
   if (unlockArmed) return;
   unlockArmed = true;
   const unlock = () => {
     window.removeEventListener('pointerdown', unlock, true);
     window.removeEventListener('keydown', unlock, true);
-    const inner = context();
-    if (inner) resume(inner);
+    const c = context();
+    if (c) resume(c);
   };
   window.addEventListener('pointerdown', unlock, true);
   window.addEventListener('keydown', unlock, true);
 }
 
 /** How long a tone lasts, in ms — what the narrator waits for. */
-export function toneLength(id: ToneId): number {
+function toneLength(id: ToneId): number {
   if (id === 'none') return 0;
   return Math.max(...RECIPES[id].map((s) => s.at + s.dur)) * 1000;
 }

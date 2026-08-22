@@ -170,22 +170,31 @@ function DefaultBadge<K extends keyof AppSettings>({
   field,
   value,
   save,
+  format,
 }: {
   field: K;
   value: AppSettings[K];
   save: (patch: Partial<AppSettings>) => void;
+  /**
+   * For a field whose STORED value is not what the UI calls it. `asText` spells
+   * the default out, which is the whole job of this badge — but `inherit` is a
+   * word the settings page shows nowhere else, and "default inherit" would be
+   * the same jargon that had to come out of the tone dropdown.
+   */
+  format?: (v: AppSettings[K]) => string;
 }) {
   const fallback = useDefaults()[field];
   if (value === fallback) return null;
+  const shown = format ? format(fallback) : asText(fallback);
   return (
     <button
       type="button"
       onClick={() => save({ [field]: fallback } as Partial<AppSettings>)}
-      title={`Changed from the default. Click to restore it (${asText(fallback)}).`}
+      title={`Changed from the default. Click to restore it (${shown}).`}
       className="flex shrink-0 cursor-pointer items-center gap-1.5 self-start rounded border border-transparent px-1.5 py-px text-[10px] text-[var(--text-dim)] hover:border-[var(--border)] hover:text-[var(--text)]"
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
-      default {asText(fallback)}
+      default {shown}
     </button>
   );
 }
@@ -414,6 +423,9 @@ function RadioGroup<T extends string>({
 
 /** The catalogue's own word for a tone — what the "general tone" option shows. */
 const toneLabel = (id: ToneId): string => NOTIFICATION_TONES.find((t) => t.id === id)?.label ?? id;
+
+/** The same, for a value that may be the deferral rather than a tone. */
+const toneChoiceText = (v: ToneChoice): string => (v === TONE_INHERIT ? 'general tone' : v);
 
 /** The class the page's other dropdowns already wear. */
 const selectClass = 'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
@@ -800,7 +812,12 @@ export function SettingsPage() {
                   disabled={notifyOff || !s.notifyOnNeedsYou}
                   onChange={(v) => save({ notifyToneNeedsYou: v })}
                 />
-                <DefaultBadge field="notifyToneNeedsYou" value={s.notifyToneNeedsYou} save={save} />
+                <DefaultBadge
+                  field="notifyToneNeedsYou"
+                  value={s.notifyToneNeedsYou}
+                  save={save}
+                  format={toneChoiceText}
+                />
               </div>
             </Row>
 
@@ -822,7 +839,12 @@ export function SettingsPage() {
                   disabled={notifyOff || !s.notifyOnFinished}
                   onChange={(v) => save({ notifyToneFinished: v })}
                 />
-                <DefaultBadge field="notifyToneFinished" value={s.notifyToneFinished} save={save} />
+                <DefaultBadge
+                  field="notifyToneFinished"
+                  value={s.notifyToneFinished}
+                  save={save}
+                  format={toneChoiceText}
+                />
               </div>
             </Row>
           </div>

@@ -113,9 +113,10 @@ export function NotificationToasts() {
 
   /**
    * Arm the audio unlock the moment a tone becomes possible, and not a moment
-   * later: an `AudioContext` only starts running from inside a gesture, and a
-   * session stopping is not one (see `primeAudio`). Volume 0 is somebody asking
-   * for silence, and silence needs no audio thread.
+   * later: an `AudioContext` can only be made running from inside a gesture, and
+   * a session stopping is not one (see `primeAudio`, which for that reason arms a
+   * listener and makes nothing). Volume 0 is somebody asking for silence, and
+   * silence needs no listener either.
    */
   const mayRing = announce && (settings?.notifyVolume ?? 0) > 0;
   useEffect(() => {
