@@ -7,6 +7,8 @@ import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RemoteDisabledPage } from './pages/RemoteDisabledPage.tsx';
+import { NotificationsButton } from './components/NotificationsButton.tsx';
+import { NotificationToasts } from './components/NotificationToasts.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
@@ -184,6 +186,7 @@ export function App() {
         </nav>
         <span className="ml-auto flex items-center gap-2">
           <UsageWidget />
+          <NotificationsButton />
           <UpdateButton />
           <NavLink
             to="/settings"
@@ -199,6 +202,9 @@ export function App() {
           </NavLink>
         </span>
       </header>
+      {/* Above the routes and outside `main`: the cards are `fixed`, they
+          outlive any one page, and nothing in the layout may shift for them. */}
+      <NotificationToasts />
       <main className="min-h-0 flex-1">
         <Routes>
           <Route path="/" element={<SessionListPage />} />

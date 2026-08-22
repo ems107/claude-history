@@ -41,6 +41,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     // the browser asks. `/api/settings` is a local read and answers in ~3 ms.
     const onSettings = () => send({ type: 'settings-changed' });
     const onPrices = () => send({ type: 'prices-changed' });
+    const onNotifications = () => send({ type: 'notifications-changed' });
     let logsTimer: NodeJS.Timeout | null = null;
     const onLogAppended = () => {
       if (logsTimer) return;
@@ -60,6 +61,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.updates.events.on('update-status', onUpdateStatus);
     ctx.chat.events.on('chat-changed', onChat);
     ctx.terminals.events.on('terminal-changed', onTerminal);
+    ctx.notifications.events.on('notifications-changed', onNotifications);
     logEvents.on('appended', onLogAppended);
 
     const heartbeat = setInterval(() => reply.raw.write(': hb\n\n'), HEARTBEAT_MS);
@@ -78,6 +80,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.updates.events.off('update-status', onUpdateStatus);
       ctx.chat.events.off('chat-changed', onChat);
       ctx.terminals.events.off('terminal-changed', onTerminal);
+      ctx.notifications.events.off('notifications-changed', onNotifications);
     });
   });
 }

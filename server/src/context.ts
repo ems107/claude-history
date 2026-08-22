@@ -3,6 +3,7 @@ import type { BindDecision } from './core/bind.ts';
 import type { AutoReloadService } from './core/autoReload.ts';
 import type { DeepSearchService } from './core/deepSearch.ts';
 import type { SessionIndex } from './core/index.ts';
+import type { NotificationsService } from './core/notifications.ts';
 import type { SearchService } from './core/search.ts';
 import type { SessionChatService } from './core/sessionChat.ts';
 import type { SessionTerminalService } from './core/sessionTerminal.ts';
@@ -24,6 +25,8 @@ export interface AppContext {
   usage: UsageService;
   autoReload: AutoReloadService;
   chat: SessionChatService;
+  /** Which sessions have stopped, and why — the header's bell. */
+  notifications: NotificationsService;
   /** The embedded terminals — the other half of `chatMode`. */
   terminals: SessionTerminalService;
 }

@@ -55,6 +55,8 @@ The rest, each documented where it belongs: `updates` (self-update lifecycle —
 
 **An event that fires often has to say what moved.** `sessions-changed` is the busiest one — every write of every live session — and it carries two classifications so the browser can refetch narrowly: `assistantIds`, the sessions where Claude actually answered (the only ones worth a subscription read), and `agents`, the subagent transcripts that grew, each with its session. `ScannedSession.subagentSizes` is what answers the second, because the total above can only say *some* agent wrote, and a session with eleven of them is eleven separate conversations of 350-500 KB behind their own query keys ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md#a-running-agent)). Neither field is a payload: they name what to ask for.
 
+**A service that watches another service subscribes; it does not get called.** `NotificationsService` needs the previous status of every live session, which no event carries — `live-changed`'s `ids` are the membership difference, deliberately, because a busy/idle flip changes nobody's `blockedReason`. So it listens to `live-changed` and `chat-changed`, re-reads `index.liveSessions` itself and keeps its own memory of what each session was doing. `refreshLive()` is untouched and that event goes on meaning exactly what it meant: the alternative was widening a payload six readers depend on, for one of them.
+
 ### `server/src/routes/`
 
 REST endpoints; the response shapes are in `shared/src/api.ts` and are not restated here.
@@ -83,6 +85,9 @@ The scripts shipped inside the release zip, and the packaging/release tooling �
 | Dated copies of that file | `backups\`, beside it | yes — but they are the only way back to a lost `userdata.json` |
 | Logs | `logs\`, beside the cache dir | yes (pruned by `logRetentionDays`) |
 | Filters, scroll position, view toggles | browser `localStorage` / `sessionStorage`, and the URL | yes |
+| Which sessions have stopped (the bell) | in memory, `core/notifications.ts` | **no — and deliberately** |
+
+**The bell is the one row of that table that could have been persisted and must not be.** A notification is raised by a TRANSITION — a session seen to leave `busy` — and a restart loses the transitions along with the rows, so a saved row would outlive its own evidence and claim to have watched something happen that nobody watched. Emptying on restart is the honest behaviour, and it also keeps this out of the five places in `index.ts` that a new kind of user data has to be added to at once.
 
 The index itself is in memory and rebuilt on every start. Every path in that table is relative to the instance's data folder, so a dev instance has its own set of all four — none of it is shared, and a dev run cannot corrupt or lose what the release holds.
 

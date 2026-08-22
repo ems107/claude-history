@@ -20,6 +20,8 @@ export function markBusy(live: LiveInfo | null, turnStartedAt: number): LiveInfo
     startedAt: live?.startedAt ?? null,
     updatedAt: live?.updatedAt ?? null,
     status: 'busy',
+    // Nothing is being waited on: this is a turn in flight, by definition.
+    waitingFor: null,
     statusUpdatedAt: turnStartedAt,
   };
 }

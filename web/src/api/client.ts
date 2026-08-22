@@ -22,6 +22,7 @@ import type {
   LogDayResponse,
   LogsResponse,
   MetaResponse,
+  NotificationsResponse,
   PlansResponse,
   PriceTable,
   ProjectsResponse,
@@ -503,6 +504,29 @@ export const api = {
   closeActiveSessions: async () => {
     const res = await fetch('/api/active-sessions/close', { method: 'POST' });
     const body = (await res.json().catch(() => ({}))) as ActiveSessionsResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** Which sessions have stopped — what the header's bell counts. */
+  notifications: () => getJson<NotificationsResponse>('/api/notifications'),
+  /**
+   * Drop one row. Both the panel's cross and the session view opening a session
+   * that had one, because they mean the same thing. The new list comes back, so
+   * the badge is right before the SSE round trip lands.
+   */
+  dismissNotification: async (sessionId: string) => {
+    const res = await fetch('/api/notifications/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId }),
+    });
+    const body = (await res.json().catch(() => ({}))) as NotificationsResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  clearNotifications: async () => {
+    const res = await fetch('/api/notifications/clear', { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as NotificationsResponse & { error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
