@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
-import { useAnyTabVisible } from '../lib/tabs.ts';
+import { announceStop, primeAudio } from '../lib/notificationSound.ts';
+import { claimAnnouncement, useAnyTabVisible } from '../lib/tabs.ts';
 import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow.tsx';
 
 /**
@@ -68,10 +69,28 @@ const keyOf = (s: StoppedSessionEntry): string => `${s.sessionId}:${s.at}`;
  * **It sits BELOW the popovers on purpose** (`z-[35]`, under the bell's own
  * click-catcher at 40 and its panel at 50). Opening the bell covers the cards,
  * which is right: you are looking at the list they were announcing.
+ *
+ * **And it is where the SOUND comes from**, for the one reason that matters: the
+ * `lastAt` map below is the only thing in the app that knows a stop is news, and
+ * a second copy of that reasoning somewhere else would be the duplication
+ * `NotificationRow` was extracted to prevent. A card and a tone announce exactly
+ * the same set, so they are decided in the same place — the tone's mechanics are
+ * `lib/notificationSound.ts` and whose turn it is to make it is `lib/tabs.ts`.
  */
 export function NotificationToasts() {
   const { data } = useNotifications();
   const [toasts, setToasts] = useState<StoppedSessionEntry[]>([]);
+  const { data: settingsData } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const settings = settingsData?.settings;
+  /**
+   * Whether a stop gets announced at all.
+   *
+   * Undefined settings mean "not yet", not "yes": there is nothing to guess with
+   * and one silent stop is a smaller wrong than a card somebody switched off.
+   * The window barely exists — the first answer to `['notifications']` seeds in
+   * silence anyway, so a stop would have to arrive between two local requests.
+   */
+  const announce = settings?.notifyEnabled === true;
   /**
    * **The ten seconds are ten seconds of somebody looking.** Read once here and
    * handed down, so every card on the stack answers to one reading of it rather
@@ -92,6 +111,23 @@ export function NotificationToasts() {
 
   const stopped = data?.stopped;
 
+  /**
+   * Arm the audio unlock the moment a tone becomes possible, and not a moment
+   * later: an `AudioContext` only starts running from inside a gesture, and a
+   * session stopping is not one (see `primeAudio`). Volume 0 is somebody asking
+   * for silence, and silence needs no audio thread.
+   */
+  const mayRing = announce && (settings?.notifyVolume ?? 0) > 0;
+  useEffect(() => {
+    if (mayRing) primeAudio();
+  }, [mayRing]);
+
+  // Switching it off is felt now rather than in ten seconds' time. Through the
+  // setter, so the common case — nothing up, nothing to clear — is not a render.
+  useEffect(() => {
+    if (!announce) setToasts((current) => (current.length === 0 ? current : []));
+  }, [announce]);
+
   useEffect(() => {
     if (!stopped) return;
     const seen = lastAt.current;
@@ -99,8 +135,20 @@ export function NotificationToasts() {
       lastAt.current = new Map(stopped.map((s) => [s.sessionId, s.at]));
       return;
     }
-    const fresh = stopped.filter((s) => s.at > (seen.get(s.sessionId) ?? -1));
+    const news = stopped.filter((s) => s.at > (seen.get(s.sessionId) ?? -1));
     for (const s of stopped) seen.set(s.sessionId, Math.max(s.at, seen.get(s.sessionId) ?? -1));
+    /**
+     * **The two checks govern the ANNOUNCEMENT, never the bell.** A kind switched
+     * off is a kind you go and look up, not one that stopped happening — the
+     * panel lists both all day, with the count on the badge, exactly as before.
+     *
+     * The seeding above happens either way, switched off included, or turning it
+     * back on would bring in everything that stopped while it was off, all at
+     * once, as though it had just happened.
+     */
+    const fresh = announce
+      ? news.filter((s) => (s.kind === 'needs-you' ? settings.notifyOnNeedsYou : settings.notifyOnFinished))
+      : [];
     // A card whose row has gone is announcing something that is no longer true —
     // the session went back to work, or it was cleared, or it was read in the
     // panel. Dropping it keeps the two halves saying the same thing.
@@ -111,7 +159,26 @@ export function NotificationToasts() {
       // Newest first, nearest the bell.
       return [...fresh, ...kept.filter((t) => !fresh.some((f) => keyOf(f) === keyOf(t)))].slice(0, MAX_VISIBLE);
     });
-  }, [stopped]);
+
+    /**
+     * **One tone for the batch, not one per card.** Six stops arriving together
+     * are six cards and a single ding: six dings inside a second is a noise with
+     * no information in it, and the cards are already the part that says how
+     * many. `needs-you` leads a mixed batch — it is the kind that wants
+     * something from you — and it is therefore also what the narrator says.
+     *
+     * The claim is keyed on the stop the tone is FOR, so two tabs comparing
+     * notes are comparing the same thing.
+     */
+    const lead = fresh.find((s) => s.kind === 'needs-you') ?? fresh[0];
+    if (!settings || !lead) return;
+    void claimAnnouncement(keyOf(lead)).then((mine) => {
+      if (mine) announceStop(lead.kind, settings);
+    });
+    // Re-running on a settings change is harmless and deliberately not guarded
+    // against: `seen` has already been advanced, so there is no news left to
+    // announce and the card list comes back identical.
+  }, [stopped, announce, settings]);
 
   const close = (key: string) => setToasts((current) => current.filter((t) => keyOf(t) !== key));
 
