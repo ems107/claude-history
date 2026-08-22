@@ -24,6 +24,7 @@ import { turnActivity } from '../lib/turnActivity.ts';
 import { GRIP_PX, RAIL_PX, useInspector } from '../lib/inspector.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
+import { useWindowFocused } from '../lib/windowFocus.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { FindBar, FindButton, useFindBar } from '../components/viewer/FindBar.tsx';
 import { FileChangesPanel } from '../components/viewer/FileChangesPanel.tsx';
@@ -92,18 +93,31 @@ export function SessionViewPage() {
    * rather than posting blind: the query is already mounted for the life of the
    * page by the bell in the header, so the common case — a session nothing was
    * waiting on — costs a lookup and sends nothing at all.
+   *
+   * **And gated on somebody being AT the window**, which is the other half of
+   * the same sentence and was missing: a page is mounted whether or not anybody
+   * is in front of it, so a session view sitting in a background tab, or behind
+   * an editor while you work in it, used to withdraw its own row within
+   * milliseconds of the row being raised — taking the card and the badge with it
+   * and leaving nothing at all to come back to. That is the one case where the
+   * bell has something to say and it was the one case it said nothing.
+   *
+   * So the row now WAITS, and the effect re-runs the moment the focus arrives,
+   * which is the instant the session really was seen. `lib/windowFocus.ts` holds
+   * why the test is this one and not the softer one the cards use.
    */
   const notifications = useNotifications();
   const notified = !!id && (notifications.data?.stopped.some((s) => s.sessionId === id) ?? false);
+  const atWindow = useWindowFocused();
   useEffect(() => {
-    if (!id || !notified) return;
+    if (!id || !notified || !atWindow) return;
     void api
       .dismissNotification(id)
       .then((body) => queryClient.setQueryData(['notifications'], body))
       // Nothing to report: the row is a convenience, and the SSE that follows
       // any real change will put the list right anyway.
       .catch(() => undefined);
-  }, [id, notified, queryClient]);
+  }, [id, notified, atWindow, queryClient]);
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
   // Which of the two the app offers at the foot of a session. Meaningless while

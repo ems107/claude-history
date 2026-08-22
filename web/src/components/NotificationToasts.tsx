@@ -1,10 +1,12 @@
 import type { StoppedSessionEntry } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import { useMatch } from 'react-router';
 import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
 import { announceStop, primeAudio } from '../lib/notificationSound.ts';
 import { claimAnnouncement, useAnyTabVisible } from '../lib/tabs.ts';
+import { useWindowFocused } from '../lib/windowFocus.ts';
 import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow.tsx';
 
 /**
@@ -98,8 +100,40 @@ export function NotificationToasts() {
    * is the whole of `tabs.ts`.
    */
   const watching = useAnyTabVisible();
+  /**
+   * **The session you are looking at needs no announcing.** A card and a tone
+   * for a stop you are watching happen is an interruption that carries nothing:
+   * the page is already saying it, in the indicator, in the turn arriving and in
+   * the dialog waiting to be answered.
+   *
+   * Which is only true while somebody is really in front of it — the same
+   * question the row's withdrawal asks, and for the same reason
+   * (`lib/windowFocus.ts`). A session view in a background tab, or behind an
+   * editor, announces exactly like any other session, because that is a stop
+   * nobody has seen.
+   *
+   * Decided HERE and not in the session view, because this is where a stop is
+   * known to be news at all, and the switches next to it are decided in one
+   * place for the same reason.
+   */
+  const viewed = useMatch('/session/:id')?.params.id ?? null;
+  const inFront = useWindowFocused() ? viewed : null;
   /** The newest `at` seen per session. `null` until the first answer seeds it. */
   const lastAt = useRef<Map<string, number> | null>(null);
+  /**
+   * The keys listed as of the last answer, for the tone to look at again when its
+   * claim comes back — the cards have the same test applied to them by `live`
+   * below, but the tone is decided a quarter of a second later than they are.
+   *
+   * What it catches is the one gap `inFront` cannot close: the session in front
+   * of somebody is a fact about THIS tab, so a second tab of the app — the list
+   * page, say, in a window nobody is in — hears the same stop and knows nothing
+   * about where you are looking. Its row is withdrawn by the tab that owns the
+   * view within milliseconds, and this is what makes that withdrawal silence the
+   * ding as well as the card. A stop that has stopped being true is not
+   * announced, whichever tab happens to hold the claim.
+   */
+  const listed = useRef<Set<string>>(new Set());
   // Only once there is something to draw: a colour for the project tags is worth
   // a read when a card is up, and nothing at all the rest of the time. Deduped
   // with the list page's copy and with the bell's.
@@ -148,12 +182,15 @@ export function NotificationToasts() {
      * once, as though it had just happened.
      */
     const fresh = announce
-      ? news.filter((s) => (s.kind === 'needs-you' ? settings.notifyOnNeedsYou : settings.notifyOnFinished))
+      ? news
+          .filter((s) => s.sessionId !== inFront)
+          .filter((s) => (s.kind === 'needs-you' ? settings.notifyOnNeedsYou : settings.notifyOnFinished))
       : [];
     // A card whose row has gone is announcing something that is no longer true —
     // the session went back to work, or it was cleared, or it was read in the
     // panel. Dropping it keeps the two halves saying the same thing.
     const live = new Set(stopped.map(keyOf));
+    listed.current = live;
     setToasts((current) => {
       const kept = current.filter((t) => live.has(keyOf(t)));
       if (fresh.length === 0) return kept.length === current.length ? current : kept;
@@ -174,12 +211,13 @@ export function NotificationToasts() {
     const lead = fresh.find((s) => s.kind === 'needs-you') ?? fresh[0];
     if (!settings || !lead) return;
     void claimAnnouncement(keyOf(lead)).then((mine) => {
-      if (mine) announceStop(lead.kind, settings);
+      if (mine && listed.current.has(keyOf(lead))) announceStop(lead.kind, settings);
     });
-    // Re-running on a settings change is harmless and deliberately not guarded
-    // against: `seen` has already been advanced, so there is no news left to
-    // announce and the card list comes back identical.
-  }, [stopped, announce, settings]);
+    // Re-running on a settings change — or on the focus moving, or on a
+    // navigation — is harmless and deliberately not guarded against: `seen` has
+    // already been advanced, so there is no news left to announce and the card
+    // list comes back identical.
+  }, [stopped, announce, settings, inFront]);
 
   const close = (key: string) => setToasts((current) => current.filter((t) => keyOf(t) !== key));
 
