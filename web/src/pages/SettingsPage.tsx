@@ -9,6 +9,12 @@ import {
   CHAT_IDLE_TIMEOUT_MINUTES,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
+  NOTIFICATION_TONES,
+  NOTIFY_VOLUME_MAX,
+  NOTIFY_VOLUME_MIN,
+  TONE_INHERIT,
+  type ToneChoice,
+  type ToneId,
 } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -22,6 +28,7 @@ import { BackupsPanel } from '../components/BackupsPanel.tsx';
 import { RemoteAccessPanel } from '../components/RemoteAccessPanel.tsx';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
+import { localVoices, playTone, primeAudio, resolveTone, speak } from '../lib/notificationSound.ts';
 
 function Section({
   title,
@@ -405,6 +412,152 @@ function RadioGroup<T extends string>({
   );
 }
 
+/** The class the page's other dropdowns already wear. */
+const selectClass = 'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
+
+/**
+ * A notification tone, with something that plays it.
+ *
+ * **The play button is not decoration.** A list of names for sounds nobody has
+ * heard is not a choice, and these are drawn by an oscillator rather than taken
+ * from a folder, so there is nowhere else to go and listen to them. It earns its
+ * place twice over: a browser refuses to make a noise until something on the
+ * page has been clicked, and a session stopping is not a click — so this is also
+ * the gesture that unlocks the audio for the whole page (see `primeAudio`).
+ *
+ * `inherit` is offered only where a kind can defer to the general tone. The
+ * general tone has nothing above it to defer to.
+ */
+function ToneSelect({
+  label,
+  value,
+  general,
+  volume,
+  disabled,
+  inherit,
+  onChange,
+}: {
+  label: string;
+  value: ToneChoice;
+  /** The general tone, which is what `inherit` resolves to — and plays as. */
+  general: ToneId;
+  volume: number;
+  disabled?: boolean;
+  inherit?: boolean;
+  onChange: (v: ToneChoice) => void;
+}) {
+  const resolved = resolveTone(value, general);
+  const silent = resolved === 'none' || volume <= 0;
+  return (
+    <div className={`flex items-center gap-2 ${disabled ? 'opacity-40' : ''}`}>
+      <label className="flex items-center gap-2">
+        <span>{label}</span>
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value as ToneChoice)}
+          className={selectClass}
+        >
+          {inherit && <option value={TONE_INHERIT}>Same as above</option>}
+          {NOTIFICATION_TONES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        disabled={disabled || silent}
+        onClick={() => {
+          primeAudio();
+          playTone(resolved, volume);
+        }}
+        title={volume <= 0 ? 'The volume is 0' : 'Play it'}
+        className={btn}
+      >
+        ▶
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Which installed voice speaks, and a button to hear it.
+ *
+ * **Only local voices are listed, and that is a network rule rather than a
+ * taste**: Edge offers "Natural" voices that are synthesised on Microsoft's
+ * servers, so speaking with one would be a third automatic network call. The
+ * filter itself lives in `localVoices`; this only draws what it answers.
+ *
+ * The list is asked for once, on the way in, because `getVoices()` comes back
+ * empty on the first call and fills asynchronously — so an empty dropdown here
+ * would be the normal case rather than the broken one. A saved voice that is no
+ * longer installed is still listed, said so: it is what the setting holds, and
+ * hiding it would leave the field looking empty and the sound unexplained.
+ */
+function VoiceSelect({
+  value,
+  volume,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  volume: number;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void localVoices().then((list) => {
+      if (alive) setVoices(list);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const missing = value !== '' && voices !== null && !voices.some((v) => v.name === value);
+  return (
+    <div className={`space-y-1 ${disabled ? 'opacity-40' : ''}`}>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span>Voice</span>
+          <select
+            value={value}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">System default</option>
+            {missing && <option value={value}>{value} (not installed)</option>}
+            {(voices ?? []).map((v) => (
+              <option key={v.name} value={v.name}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={disabled || volume <= 0}
+          onClick={() => speak('Claude needs you', value, volume)}
+          title={volume <= 0 ? 'The volume is 0' : 'Say it'}
+          className={btn}
+        >
+          Test
+        </button>
+      </div>
+      {voices !== null && voices.length === 0 && (
+        <p className="text-[11px] text-[var(--text-dim)]">
+          No voices are installed on this machine, so nothing here can speak. Windows adds them under Time &amp;
+          language → Speech.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** A setting and its "changed from default" marker, aligned on the first line. */
 function Row({ children, badge }: { children: React.ReactNode; badge: React.ReactNode }) {
   return (
@@ -514,6 +667,7 @@ export function SettingsPage() {
   // With the feature off, none of its settings do anything — including the
   // hidden-folder one, which the server also ignores. Grey them all out rather
   // than leave controls that look live and are not.
+  const notifyOff = !s.notifyEnabled;
   const autoReloadOff = !s.autoReloadEnabled;
   const dimmed = autoReloadOff ? 'opacity-40' : '';
 
@@ -556,6 +710,128 @@ export function SettingsPage() {
                 {update.data.available.length} new version{update.data.available.length !== 1 ? 's' : ''} available
               </span>
             )}
+          </div>
+        </Section>
+
+<Section title="When a session stops">
+          <Row badge={<DefaultBadge field="notifyEnabled" value={s.notifyEnabled} save={save} />}>
+            <Toggle
+              checked={s.notifyEnabled}
+              onChange={(v) => save({ notifyEnabled: v })}
+              label="Announce it"
+              hint="The card that floats in under the header, and the sound. The bell keeps its list either way — this switch is about being interrupted, not about being told."
+            />
+          </Row>
+
+          {/* Which stops are worth announcing is the question you answer once;
+              what they sound like is the one you come back to. So the kinds go
+              first, and everything below them is about the noise. */}
+          <div className="space-y-2 border-t border-[var(--border)] pt-3">
+            <p className="text-[var(--text)]">Announce:</p>
+
+            <Row badge={<DefaultBadge field="notifyOnNeedsYou" value={s.notifyOnNeedsYou} save={save} />}>
+              <Toggle
+                checked={s.notifyOnNeedsYou}
+                onChange={(v) => save({ notifyOnNeedsYou: v })}
+                disabled={notifyOff}
+                label="Sessions waiting for your decision"
+                hint="A permission prompt, a question, a plan to approve — whatever the CLI put on screen and is now sitting on."
+              />
+            </Row>
+
+            <Row badge={<DefaultBadge field="notifyOnFinished" value={s.notifyOnFinished} save={save} />}>
+              <Toggle
+                checked={s.notifyOnFinished}
+                onChange={(v) => save({ notifyOnFinished: v })}
+                disabled={notifyOff}
+                label="Sessions that finished answering"
+                hint="The turn is over — whether it ended well or with an error."
+              />
+            </Row>
+          </div>
+
+          <div className="space-y-2 border-t border-[var(--border)] pt-3">
+            <p className="text-[var(--text)]">Sound:</p>
+
+            <Row badge={<DefaultBadge field="notifyTone" value={s.notifyTone} save={save} />}>
+              <ToneSelect
+                label="Tone"
+                value={s.notifyTone}
+                general={s.notifyTone}
+                volume={s.notifyVolume}
+                disabled={notifyOff}
+                onChange={(v) => save({ notifyTone: v as ToneId })}
+              />
+            </Row>
+
+            <Row badge={<DefaultBadge field="notifyVolume" value={s.notifyVolume} save={save} />}>
+              <label className={`flex items-center gap-2 ${notifyOff ? 'opacity-40' : ''}`}>
+                <span>Volume</span>
+                <input
+                  type="number"
+                  min={NOTIFY_VOLUME_MIN}
+                  max={NOTIFY_VOLUME_MAX}
+                  step={5}
+                  value={s.notifyVolume}
+                  disabled={notifyOff}
+                  onChange={(e) => save({ notifyVolume: Number(e.target.value) })}
+                  className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+                />
+                <span>%</span>
+                <span className="text-[var(--text-dim)]">0 is silence, and it silences the voice with it</span>
+              </label>
+            </Row>
+          </div>
+
+          {/* Two tones nobody had to configure are two tones you learn, which is
+              why "waiting for you" arrives with one of its own. */}
+          <div className="space-y-2 border-t border-[var(--border)] pt-3">
+            <p className="text-[var(--text)]">Or a tone of its own, per kind:</p>
+
+            <Row badge={<DefaultBadge field="notifyToneNeedsYou" value={s.notifyToneNeedsYou} save={save} />}>
+              <ToneSelect
+                label="Waiting for you"
+                inherit
+                value={s.notifyToneNeedsYou}
+                general={s.notifyTone}
+                volume={s.notifyVolume}
+                disabled={notifyOff || !s.notifyOnNeedsYou}
+                onChange={(v) => save({ notifyToneNeedsYou: v })}
+              />
+            </Row>
+
+            <Row badge={<DefaultBadge field="notifyToneFinished" value={s.notifyToneFinished} save={save} />}>
+              <ToneSelect
+                label="Finished"
+                inherit
+                value={s.notifyToneFinished}
+                general={s.notifyTone}
+                volume={s.notifyVolume}
+                disabled={notifyOff || !s.notifyOnFinished}
+                onChange={(v) => save({ notifyToneFinished: v })}
+              />
+            </Row>
+          </div>
+
+          <div className="space-y-2 border-t border-[var(--border)] pt-3">
+            <Row badge={<DefaultBadge field="notifyVoice" value={s.notifyVoice} save={save} />}>
+              <Toggle
+                checked={s.notifyVoice}
+                onChange={(v) => save({ notifyVoice: v })}
+                disabled={notifyOff}
+                label="Say what it was, out loud"
+                hint="Once the tone has finished, a voice says which of the two it was. Only voices installed on this machine are offered: the “Natural” ones Edge lists are synthesised on Microsoft's servers, and this app makes no network call it was not asked to."
+              />
+            </Row>
+            {/* No default marker on the voice, for the reason autoReloadCwd has
+                none: its default is "whichever the browser picks", and a click
+                that quietly un-chooses your voice is not a restore. */}
+            <VoiceSelect
+              value={s.notifyVoiceName}
+              volume={s.notifyVolume}
+              disabled={notifyOff || !s.notifyVoice}
+              onChange={(v) => save({ notifyVoiceName: v })}
+            />
           </div>
         </Section>
 
