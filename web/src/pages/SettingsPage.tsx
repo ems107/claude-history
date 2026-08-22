@@ -9,6 +9,13 @@ import {
   CHAT_IDLE_TIMEOUT_MINUTES,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
+  NOTIFICATION_TONES,
+  NOTIFY_VOLUME_MAX,
+  NOTIFY_VOLUME_MIN,
+  TONE_INHERIT,
+  TONE_NONE,
+  type ToneChoice,
+  type ToneId,
 } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -22,6 +29,7 @@ import { BackupsPanel } from '../components/BackupsPanel.tsx';
 import { RemoteAccessPanel } from '../components/RemoteAccessPanel.tsx';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
+import { localVoices, playTone, primeAudio, resolveTone, speak } from '../lib/notificationSound.ts';
 
 function Section({
   title,
@@ -163,22 +171,31 @@ function DefaultBadge<K extends keyof AppSettings>({
   field,
   value,
   save,
+  format,
 }: {
   field: K;
   value: AppSettings[K];
   save: (patch: Partial<AppSettings>) => void;
+  /**
+   * For a field whose STORED value is not what the UI calls it. `asText` spells
+   * the default out, which is the whole job of this badge — but `inherit` is a
+   * word the settings page shows nowhere else, and "default inherit" would be
+   * the same jargon that had to come out of the tone dropdown.
+   */
+  format?: (v: AppSettings[K]) => string;
 }) {
   const fallback = useDefaults()[field];
   if (value === fallback) return null;
+  const shown = format ? format(fallback) : asText(fallback);
   return (
     <button
       type="button"
       onClick={() => save({ [field]: fallback } as Partial<AppSettings>)}
-      title={`Changed from the default. Click to restore it (${asText(fallback)}).`}
+      title={`Changed from the default. Click to restore it (${shown}).`}
       className="flex shrink-0 cursor-pointer items-center gap-1.5 self-start rounded border border-transparent px-1.5 py-px text-[10px] text-[var(--text-dim)] hover:border-[var(--border)] hover:text-[var(--text)]"
     >
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]" aria-hidden="true" />
-      default {asText(fallback)}
+      default {shown}
     </button>
   );
 }
@@ -405,6 +422,186 @@ function RadioGroup<T extends string>({
   );
 }
 
+/** The catalogue's own word for a tone — what the "general tone" option shows. */
+const toneLabel = (id: ToneId): string => NOTIFICATION_TONES.find((t) => t.id === id)?.label ?? id;
+
+/** The same, for a value that may be the deferral rather than a tone. */
+const toneChoiceText = (v: ToneChoice): string => (v === TONE_INHERIT ? 'general tone' : v);
+
+/** The class the page's other dropdowns already wear. */
+const selectClass = 'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
+
+/**
+ * A notification tone, with something that plays it.
+ *
+ * **The play button is not decoration.** A list of names for sounds nobody has
+ * heard is not a choice, and these are drawn by an oscillator rather than taken
+ * from a folder, so there is nowhere else to go and listen to them. It earns its
+ * place twice over: a browser refuses to make a noise until something on the
+ * page has been clicked, and a session stopping is not a click — so this is also
+ * the gesture that unlocks the audio for the whole page (see `primeAudio`).
+ *
+ * `inherit` is offered only where a kind can defer to the general tone, and it
+ * names the tone it currently resolves to rather than a position on the page.
+ * "Same as above" was both unclear and a lie the moment anything moved between
+ * the two — and the general tone has nothing above it to defer to anyway.
+ *
+ * **`Silent` is drawn apart from the sounds**, because it is not one and a list
+ * of seven names says it is. It says so in words — `No tone (Silent)`, which
+ * reads the same open or closed — and in italics, the typographic convention for
+ * an entry that is an annotation rather than one of the things being listed.
+ *
+ * **Two styles inside one line is not on the table**: an `<option>`'s content
+ * model is text, so no `<strong>` or `<em>` survives inside it, and a bold "No
+ * tone" beside a light "(Silent)" would mean replacing the native `<select>`
+ * with a listbox of our own — keyboard, focus, escape and ARIA included — and
+ * this one dropdown then looking unlike the page's other two. The italic is what
+ * a native option will actually honour; where a browser will not, the words are
+ * still the words, which is why they carry the meaning and the style only
+ * underlines it. An `<optgroup>` was tried here first and read worse: a lone
+ * group heading under six bare options is a break in the list rather than a mark
+ * on one entry, and it is invisible in the closed select anyway.
+ */
+function ToneSelect({
+  label,
+  value,
+  general,
+  volume,
+  disabled,
+  inherit,
+  hint,
+  onChange,
+}: {
+  label: string;
+  value: ToneChoice;
+  /** The general tone, which is what `inherit` resolves to — and plays as. */
+  general: ToneId;
+  volume: number;
+  disabled?: boolean;
+  inherit?: boolean;
+  hint?: string;
+  onChange: (v: ToneChoice) => void;
+}) {
+  const resolved = resolveTone(value, general);
+  const silent = resolved === TONE_NONE || volume <= 0;
+  return (
+    <div className={disabled ? 'opacity-40' : ''}>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span>{label}</span>
+          <select
+            value={value}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value as ToneChoice)}
+            className={selectClass}
+          >
+            {inherit && <option value={TONE_INHERIT}>General tone ({toneLabel(general)})</option>}
+            {NOTIFICATION_TONES.filter((t) => t.id !== TONE_NONE).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+            <option value={TONE_NONE} className="italic">
+              No tone (Silent)
+            </option>
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={disabled || silent}
+          onClick={() => {
+            primeAudio();
+            playTone(resolved, volume);
+          }}
+          // A disabled button that does not say why is a button that looks broken.
+          title={volume <= 0 ? 'The volume is 0' : silent ? 'Silent — there is nothing to play' : 'Play it'}
+          aria-label="Play the tone"
+          className={btn}
+        >
+          ▶
+        </button>
+      </div>
+      {hint && <p className="mt-0.5 text-[11px] text-[var(--text-dim)]">{hint}</p>}
+    </div>
+  );
+}
+
+/**
+ * Which installed voice speaks, and a button to hear it.
+ *
+ * **Only local voices are listed, and that is a network rule rather than a
+ * taste**: Edge offers "Natural" voices that are synthesised on Microsoft's
+ * servers, so speaking with one would be a third automatic network call. The
+ * filter itself lives in `localVoices`; this only draws what it answers.
+ *
+ * The list is asked for once, on the way in, because `getVoices()` comes back
+ * empty on the first call and fills asynchronously — so an empty dropdown here
+ * would be the normal case rather than the broken one. A saved voice that is no
+ * longer installed is still listed, said so: it is what the setting holds, and
+ * hiding it would leave the field looking empty and the sound unexplained.
+ */
+function VoiceSelect({
+  value,
+  volume,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  volume: number;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void localVoices().then((list) => {
+      if (alive) setVoices(list);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const missing = value !== '' && voices !== null && !voices.some((v) => v.name === value);
+  return (
+    <div className={`space-y-1 ${disabled ? 'opacity-40' : ''}`}>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span>Voice</span>
+          <select
+            value={value}
+            disabled={disabled}
+            onChange={(e) => onChange(e.target.value)}
+            className={selectClass}
+          >
+            <option value="">System default</option>
+            {missing && <option value={value}>{value} (not installed)</option>}
+            {(voices ?? []).map((v) => (
+              <option key={v.name} value={v.name}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={disabled || volume <= 0}
+          onClick={() => speak('Claude needs you', value, volume)}
+          title={volume <= 0 ? 'The volume is 0' : 'Say it'}
+          className={btn}
+        >
+          Test
+        </button>
+      </div>
+      {voices !== null && voices.length === 0 && (
+        <p className="text-[11px] text-[var(--text-dim)]">
+          No voices are installed on this machine, so nothing here can speak. Windows adds them under Time &amp;
+          language → Speech.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** A setting and its "changed from default" marker, aligned on the first line. */
 function Row({ children, badge }: { children: React.ReactNode; badge: React.ReactNode }) {
   return (
@@ -514,6 +711,7 @@ export function SettingsPage() {
   // With the feature off, none of its settings do anything — including the
   // hidden-folder one, which the server also ignores. Grey them all out rather
   // than leave controls that look live and are not.
+  const notifyOff = !s.notifyEnabled;
   const autoReloadOff = !s.autoReloadEnabled;
   const dimmed = autoReloadOff ? 'opacity-40' : '';
 
@@ -556,6 +754,142 @@ export function SettingsPage() {
                 {update.data.available.length} new version{update.data.available.length !== 1 ? 's' : ''} available
               </span>
             )}
+          </div>
+        </Section>
+
+        <Section title="Notifications">
+          <Row badge={<DefaultBadge field="notifyEnabled" value={s.notifyEnabled} save={save} />}>
+            <Toggle
+              checked={s.notifyEnabled}
+              onChange={(v) => save({ notifyEnabled: v })}
+              label="Announce when a session stops"
+              hint="The card that floats in under the header, and the sound. The bell keeps its list either way — this switch is about being interrupted, not about being told."
+            />
+          </Row>
+
+          {/* The general tone comes FIRST, because everything under it refers to
+              it by name: a per-kind tone reading "General tone (Chime)" only
+              means anything once you have met the thing it defers to. */}
+          <div className="space-y-2 border-t border-[var(--border)] pt-3">
+            <p className="text-[var(--text)]">Sound:</p>
+
+            <Row badge={<DefaultBadge field="notifyTone" value={s.notifyTone} save={save} />}>
+              <ToneSelect
+                label="General tone"
+                value={s.notifyTone}
+                general={s.notifyTone}
+                volume={s.notifyVolume}
+                disabled={notifyOff}
+                hint="What a notification rings with unless it is given a tone of its own below."
+                onChange={(v) => save({ notifyTone: v as ToneId })}
+              />
+            </Row>
+
+            <Row badge={<DefaultBadge field="notifyVolume" value={s.notifyVolume} save={save} />}>
+              <label className={`flex items-center gap-2 ${notifyOff ? 'opacity-40' : ''}`}>
+                <span>Volume</span>
+                <input
+                  type="number"
+                  min={NOTIFY_VOLUME_MIN}
+                  max={NOTIFY_VOLUME_MAX}
+                  step={5}
+                  value={s.notifyVolume}
+                  disabled={notifyOff}
+                  onChange={(e) => save({ notifyVolume: Number(e.target.value) })}
+                  className="w-20 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 text-right disabled:opacity-40"
+                />
+                <span>%</span>
+                <span className="text-[var(--text-dim)]">0 is silence, and it silences the voice with it</span>
+              </label>
+            </Row>
+          </div>
+
+          {/* A kind's tone belongs UNDER that kind's own switch. As two separate
+              lists — which stops, then a list of tones — no row of the second one
+              owned anything, and the reader had to hold both orders in their head
+              to see that they matched. */}
+          <div className="space-y-3 border-t border-[var(--border)] pt-3">
+            <p className="text-[var(--text)]">Which stops, and what each one sounds like:</p>
+
+            <Row badge={<DefaultBadge field="notifyOnNeedsYou" value={s.notifyOnNeedsYou} save={save} />}>
+              <Toggle
+                checked={s.notifyOnNeedsYou}
+                onChange={(v) => save({ notifyOnNeedsYou: v })}
+                disabled={notifyOff}
+                label="Sessions waiting for your decision"
+                hint="A permission prompt, a question, a plan to approve — whatever the CLI put on screen and is now sitting on."
+              />
+              {/* Outside the Toggle's own <label>, and indented to where its text
+                  starts: a control inside a label has its clicks taken by the
+                  label's checkbox. Same reason the badge sits out here. */}
+              <div className="mt-1 ml-6 flex items-start gap-2">
+                <ToneSelect
+                  label="Tone"
+                  inherit
+                  value={s.notifyToneNeedsYou}
+                  general={s.notifyTone}
+                  volume={s.notifyVolume}
+                  disabled={notifyOff || !s.notifyOnNeedsYou}
+                  onChange={(v) => save({ notifyToneNeedsYou: v })}
+                />
+                <DefaultBadge
+                  field="notifyToneNeedsYou"
+                  value={s.notifyToneNeedsYou}
+                  save={save}
+                  format={toneChoiceText}
+                />
+              </div>
+            </Row>
+
+            <Row badge={<DefaultBadge field="notifyOnFinished" value={s.notifyOnFinished} save={save} />}>
+              <Toggle
+                checked={s.notifyOnFinished}
+                onChange={(v) => save({ notifyOnFinished: v })}
+                disabled={notifyOff}
+                label="Sessions that finished answering"
+                hint="The turn is over — whether it ended well or with an error."
+              />
+              <div className="mt-1 ml-6 flex items-start gap-2">
+                <ToneSelect
+                  label="Tone"
+                  inherit
+                  value={s.notifyToneFinished}
+                  general={s.notifyTone}
+                  volume={s.notifyVolume}
+                  disabled={notifyOff || !s.notifyOnFinished}
+                  onChange={(v) => save({ notifyToneFinished: v })}
+                />
+                <DefaultBadge
+                  field="notifyToneFinished"
+                  value={s.notifyToneFinished}
+                  save={save}
+                  format={toneChoiceText}
+                />
+              </div>
+            </Row>
+          </div>
+
+          <div className="space-y-2 border-t border-[var(--border)] pt-3">
+            <Row badge={<DefaultBadge field="notifyVoice" value={s.notifyVoice} save={save} />}>
+              <Toggle
+                checked={s.notifyVoice}
+                onChange={(v) => save({ notifyVoice: v })}
+                disabled={notifyOff}
+                label="Say what it was, out loud"
+                hint="Once the tone has finished, a voice says which of the two it was. Only voices installed on this machine are offered: the “Natural” ones Edge lists are synthesised on Microsoft's servers, and this app makes no network call it was not asked to."
+              />
+            </Row>
+            {/* No default marker on the voice, for the reason autoReloadCwd has
+                none: its default is "whichever the browser picks", and a click
+                that quietly un-chooses your voice is not a restore. */}
+            <div className="ml-6">
+              <VoiceSelect
+                value={s.notifyVoiceName}
+                volume={s.notifyVolume}
+                disabled={notifyOff || !s.notifyVoice}
+                onChange={(v) => save({ notifyVoiceName: v })}
+              />
+            </div>
           </div>
         </Section>
 
