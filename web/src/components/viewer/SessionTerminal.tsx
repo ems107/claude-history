@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { SessionDetailResponse, TerminalServerMessage } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
+import { selectionText } from '../../lib/selection.ts';
 import {
   clamp,
   getTerminalFontSize,
@@ -503,9 +504,11 @@ export function SessionTerminal({
    *
    * `preventDefault` is the load-bearing half. None of the title bar, the drag
    * handle or the padding is focusable, so a press on any of them moves the
-   * focus to `body` — which both puts the panel away mid-gesture and leaves the
-   * focus nowhere, so the next click outside would have no `focusout` to fire
-   * and the panel would stay open instead.
+   * focus to `body` — which puts the panel away mid-gesture, in the middle of
+   * the very drag that was resizing it. (It also used to leave the focus
+   * nowhere, so the next click outside had no `focusout` to fire and the panel
+   * stayed open for good; the presses are watched directly now
+   * ([collapseOnRelease]), so that half is answered twice over.)
    *
    * Two things are left alone: a button, which owns its own click and its own
    * focus, and the xterm host, where a press is a cursor being placed or a
@@ -529,6 +532,36 @@ export function SessionTerminal({
   );
 
   /**
+   * The collapse itself, once whatever took the focus away has finished.
+   *
+   * `document.hasFocus()` is what tells a click on the conversation apart from
+   * alt-tabbing away: leaving the BROWSER says nothing about this panel, and
+   * coming back to find it collapsed would be an answer to a question nobody
+   * asked. `body` counts as outside, because the commonest move of all — a click
+   * on a paragraph — lands the focus exactly nowhere.
+   */
+  const collapseIfOutside = useCallback(() => {
+    const root = rootRef.current;
+    if (!root || !document.hasFocus()) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && root.contains(active)) return;
+    setMinimised(true);
+  }, []);
+  /**
+   * A press outside the panel whose meaning is not settled yet: it is a click if
+   * it is let go of where it went down, and a selection if it is dragged
+   * ([collapseOnRelease]). Cleared by the decision itself rather than by the
+   * release, so the `focusout`'s own tick — always the earlier of the two, since
+   * it is queued at the press — finds it still up and stands aside.
+   */
+  const pendingRelease = useRef(false);
+  /**
+   * What was highlighted when that press went down, so the release can be asked
+   * whether the gesture selected anything or merely happened while something was.
+   */
+  const selectionAtPress = useRef('');
+
+  /**
    * The focus leaving puts the panel away again, which is the other half of the
    * bar being the way in — and the whole reason nothing has to be remembered.
    *
@@ -536,27 +569,101 @@ export function SessionTerminal({
    * handle and the close dialog are all in here, and taking the focus off the
    * terminal is not what any of them means.
    *
-   * Deferred by a tick and then asked of `document.activeElement`, because
-   * `relatedTarget` is null for the commonest move there is — a click on a
-   * paragraph of the conversation, which nothing can focus, so the focus lands
-   * on `body`. `document.hasFocus()` is what tells that apart from alt-tabbing
-   * away: leaving the BROWSER says nothing about this panel, and coming back to
-   * find it collapsed would be an answer to a question nobody asked.
+   * Deferred by a tick and then asked of `document.activeElement`
+   * ([collapseIfOutside]), because `relatedTarget` is null for the commonest
+   * move there is — a click on a paragraph of the conversation, which nothing
+   * can focus.
    *
    * Full screen is exempt: there is one way out of it and it is its own button,
    * and a `fixed inset-0` panel with a hidden host is a blank window. So is a
-   * panel somebody has pinned, which is the whole of what the pin does.
+   * panel somebody has pinned, which is the whole of what the pin does. And so
+   * is a press that turns out to be a SELECTION rather than a click
+   * ([collapseOnRelease]), which is the one exception the rule itself carries.
    */
   const collapseOnFocusOut = useCallback(() => {
     if (full || minimised || confirmClose || pinned) return;
     window.setTimeout(() => {
-      const root = rootRef.current;
-      if (!root || !document.hasFocus()) return;
-      const active = document.activeElement;
-      if (active && active !== document.body && root.contains(active)) return;
-      setMinimised(true);
+      // A button still held is a gesture still being made: what it meant is
+      // known when it is let go of, and until then nothing may move.
+      if (pendingRelease.current) return;
+      collapseIfOutside();
     }, 0);
-  }, [full, minimised, confirmClose, pinned]);
+  }, [full, minimised, confirmClose, pinned, collapseIfOutside]);
+
+  /**
+   * Reading text out of the conversation is the exception to that rule, and the
+   * press is not what says so — the RELEASE is.
+   *
+   * A press outside means "I am done with the terminal", and for a click that is
+   * exactly what it means. A drag is the same press meaning the opposite: the
+   * conversation is being read with the panel in plain sight, and what it used
+   * to get was the panel folding to its bar on `mousedown`, under a held button,
+   * halfway through the gesture — the sticky slot losing 350 px, the whole
+   * conversation sliding down under a pointer that went on selecting, and the
+   * highlighted text ending up somewhere below the words it was drawn across.
+   *
+   * So the decision waits for the button to come up, which is the first moment
+   * the two can be told apart: a gesture that left NEW text highlighted holds
+   * the panel open, and one that left none collapses it exactly as before. A
+   * click still puts the terminal away; it just does it a gesture later.
+   *
+   * **New text, not merely text**, which is the difference between an exception
+   * and a second pin. Whether anything is highlighted at all is the wrong
+   * question: a selection made and let go of is still standing when the next
+   * press lands somewhere that is not text — a button in the header does not
+   * clear it — and a panel that read that as "still selecting" would never
+   * close again. So the press remembers what was highlighted underneath it and
+   * the release compares.
+   *
+   * **The press arms it, not the `focusout`**, which is what keeps the rule
+   * alive after the exception has fired once. By then the focus is already on
+   * `body`, so no further `focusout` is ever coming — the panel would sit open
+   * until it had been clicked into and out of again. Watching
+   * the presses themselves means every later one outside gets the same question
+   * asked of it, and the click that follows the reading still folds the panel.
+   *
+   * Installed only while the panel is subject to the rule, so a pinned, full or
+   * collapsed one arms nothing.
+   */
+  useEffect(() => {
+    if (full || minimised || confirmClose || pinned) return;
+    const armRelease = (e: MouseEvent) => {
+      // The LEFT button only, and only outside the panel: a press inside is the
+      // terminal being used ([takeFocus]), and the other buttons are a menu and
+      // a paste rather than a way out of anything.
+      const target = e.target;
+      const outside = e.button === 0 && target instanceof Node && rootRef.current?.contains(target) === false;
+      pendingRelease.current = outside;
+      // Read on the CAPTURE phase, so this is the selection as the press found
+      // it: nothing has placed a caret or collapsed anything yet.
+      selectionAtPress.current = outside ? selectionText() : '';
+    };
+    const collapseOnRelease = () => {
+      if (!pendingRelease.current) return;
+      // A tick, for the same reason the `focusout` needs one: what a release
+      // did to the selection is the mouseup's DEFAULT ACTION, and that happens
+      // after every handler it has. Measured — a click landing inside the words
+      // just highlighted is held as a possible drag-and-drop and only collapsed
+      // to a caret once this had already read it as "still selected", so the
+      // panel stayed open for a click that meant the opposite.
+      window.setTimeout(() => {
+        pendingRelease.current = false;
+        const selected = selectionText();
+        if (selected && selected !== selectionAtPress.current) return;
+        collapseIfOutside();
+      }, 0);
+    };
+    document.addEventListener('mousedown', armRelease, true);
+    // On the WINDOW, so a drag let go of over the browser's own chrome still
+    // answers. One let go of outside the window is not heard at all, and the
+    // panel simply stays open until the next press — the safe way round.
+    window.addEventListener('mouseup', collapseOnRelease, true);
+    return () => {
+      document.removeEventListener('mousedown', armRelease, true);
+      window.removeEventListener('mouseup', collapseOnRelease, true);
+      pendingRelease.current = false;
+    };
+  }, [full, minimised, confirmClose, pinned, collapseIfOutside]);
 
   const start = useMutation({
     mutationFn: async () => {

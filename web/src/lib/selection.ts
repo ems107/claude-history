@@ -7,5 +7,17 @@
  * `click` event fires — so this only ever answers true for the case it is for.
  */
 export function hasSelection(): boolean {
-  return Boolean(window.getSelection()?.toString());
+  return Boolean(selectionText());
+}
+
+/**
+ * The highlighted text itself, for the callers that have to tell one selection
+ * from another rather than merely notice that there is one.
+ *
+ * The terminal panel is the case: a press that leaves the SAME words
+ * highlighted did not select anything, it just happened while something was
+ * ([SessionTerminal]).
+ */
+export function selectionText(): string {
+  return window.getSelection()?.toString() ?? '';
 }
