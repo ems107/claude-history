@@ -6,16 +6,32 @@ import { useNotifications } from '../api/useNotifications.ts';
 import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow.tsx';
 
 /**
- * How long a card stays. Also the duration of the bar's animation, in
- * `styles.css` — the two must agree, and this is the number that decides.
+ * How long a card stays, and the duration of the bar's animation in
+ * `styles.css`. **The bar is what actually ends the card** — see `Toast` — so
+ * this figure exists to be read beside that one and to size the backstop below.
  */
 export const TOAST_MS = 10_000;
 
 /**
- * Above that and the stack owns the screen. The bell holds every one of them
- * anyway, so what is dropped here is only the announcement, never the record.
+ * The card cannot be immortal, whatever happens to its animation. Nothing in
+ * this app reads `prefers-reduced-motion` (see `styles.css`), so the bar always
+ * runs and `animationend` always comes — but a browser that disabled animations
+ * some other way would otherwise leave a card on screen for ever. Far longer
+ * than any pause a person makes with a pointer, so it never races the real end.
  */
-const MAX_VISIBLE = 4;
+const BACKSTOP_MS = TOAST_MS * 12;
+
+/**
+ * A hard ceiling, not a budget — every stop that happens together should be on
+ * screen together, so this is set where the column still fits the shortest
+ * window worth caring about rather than where the list looks tidy. Measured: a
+ * card is 76 px and the gaps are 8, so six of them end 548 px down, inside a
+ * 600 px window. Four fitted twice over and would have bitten first.
+ *
+ * When it does bite, what is dropped is only the ANNOUNCEMENT: the bell holds
+ * every one of them, with the count on the badge right above the stack.
+ */
+const MAX_VISIBLE = 6;
 
 /** What makes a stop THIS stop: a later one for the same session is a new card. */
 const keyOf = (s: StoppedSessionEntry): string => `${s.sessionId}:${s.at}`;
@@ -124,10 +140,21 @@ function Toast({
   onClose: () => void;
 }) {
   const needsYou = stop.kind === 'needs-you';
-  // The card takes itself down. A ref-free timeout keyed on the card's identity:
-  // it is remounted per key, so one timer per card and no reset on a re-render.
+  /**
+   * **The bar ends the card, not a timer beside it.**
+   *
+   * A `setTimeout(TOAST_MS)` was the obvious way and it was wrong: hovering
+   * pauses the ANIMATION, and a timeout knows nothing about that — so a card
+   * held under the pointer disappeared anyway with its bar frozen at 30%, the
+   * gauge saying seven seconds left as the thing went. Two clocks for one fact,
+   * and the visible one was the liar.
+   *
+   * `animationend` is that fact: it fires when the bar is full, which is when
+   * the ten seconds have actually been spent, pauses included. The backstop
+   * below is only for a browser where the animation never runs at all.
+   */
   useEffect(() => {
-    const timer = setTimeout(onClose, TOAST_MS);
+    const timer = setTimeout(onClose, BACKSTOP_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -163,7 +190,10 @@ function Toast({
           `getBoundingClientRect`, so it stays measurable. Track underneath, or
           the bar reads as an edge of the card rather than as a gauge. */}
       <div aria-hidden="true" className="h-[3px] w-full bg-[var(--border)]">
-        <div className={`toast-fill h-full origin-left ${needsYou ? 'bg-amber-400' : 'bg-[var(--accent)]'}`} />
+        <div
+          onAnimationEnd={onClose}
+          className={`toast-fill h-full origin-left ${needsYou ? 'bg-amber-400' : 'bg-[var(--accent)]'}`}
+        />
       </div>
     </div>
   );
