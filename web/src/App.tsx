@@ -7,6 +7,7 @@ import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RemoteDisabledPage } from './pages/RemoteDisabledPage.tsx';
+import { NotificationsButton } from './components/NotificationsButton.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
@@ -184,6 +185,7 @@ export function App() {
         </nav>
         <span className="ml-auto flex items-center gap-2">
           <UsageWidget />
+          <NotificationsButton />
           <UpdateButton />
           <NavLink
             to="/settings"

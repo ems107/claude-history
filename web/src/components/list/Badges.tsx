@@ -1,4 +1,5 @@
 import type { LiveInfo, SessionSummary } from '@claude-history/shared';
+import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 
 function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
@@ -45,18 +46,37 @@ export function SessionBadges({
 
   if (liveInfo) {
     // Claude Code writes no status for a `--print` run, so a session being
-    // answered from the app reads "unknown" here — which told the user
-    // nothing. Only the two states that mean something get named.
-    const busy = liveInfo.status === 'busy';
-    const idle = liveInfo.status === 'idle';
+    // answered from the app reads "unknown" here — which tells the user
+    // nothing. Only the states that mean something get named.
+    const busy = liveInfo.status === LIVE_BUSY;
+    // A dialog is on screen: a permission, a question, a plan to approve. It is
+    // NOT green — green here means "there is a process", and this one is stuck
+    // until somebody answers it. Amber for the same reason `BlockedBar` is
+    // amber: a state to resolve, not a failure.
+    const waiting = liveInfo.status === LIVE_WAITING;
+    const stopped = LIVE_STOPPED.includes(liveInfo.status);
     badges.push(
       <span
         key="live"
-        title={busy ? 'Answering right now' : idle ? 'Open and idle' : 'A Claude Code process has this session open'}
-        className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-green-400 uppercase"
+        title={
+          busy
+            ? 'Answering right now'
+            : waiting
+              ? `Waiting for you${liveInfo.waitingFor ? ` — ${liveInfo.waitingFor}` : ''}`
+              : stopped
+                ? 'Open and idle'
+                : 'A Claude Code process has this session open'
+        }
+        className={`inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-semibold tracking-wide uppercase ${
+          waiting ? 'bg-amber-500/15 text-amber-400' : 'bg-green-500/15 text-green-400'
+        }`}
       >
-        <span className={`size-1.5 rounded-full bg-green-400 ${busy ? 'animate-pulse' : ''}`} />
-        {busy ? 'busy' : 'live'}
+        <span
+          className={`size-1.5 rounded-full ${waiting ? 'bg-amber-400' : 'bg-green-400'} ${
+            busy ? 'animate-pulse' : ''
+          }`}
+        />
+        {busy ? 'busy' : waiting ? 'waiting' : 'live'}
       </span>,
     );
   }

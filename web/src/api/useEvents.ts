@@ -174,6 +174,11 @@ export function useEvents(): void {
           // `maxActiveSessions` is one of them, and it is half of "3 of 10".
           void queryClient.invalidateQueries({ queryKey: ['activeSessions'] });
           break;
+        // A session stopped, came back, or was cleared. One key, and only this
+        // one: the bell is the whole consumer.
+        case 'notifications-changed':
+          void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          break;
         // Costs are computed in the browser wherever they appear, so a saved
         // table has to reach the windows that did not save it.
         case 'prices-changed':

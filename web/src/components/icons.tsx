@@ -23,6 +23,21 @@ export function UpgradeIcon() {
 }
 
 /**
+ * Bell. Two arcs and a clapper rather than a filled blob: at 14 px a solid
+ * bell loses its shoulders and reads as a thumbprint, where the open outline
+ * keeps the silhouette everyone recognises. Same stroke weight as the upgrade
+ * arrow it sits next to, so the pair does not look like two different sets.
+ */
+export function BellIcon() {
+  return (
+    <svg {...base} className="h-3.5 w-3.5">
+      <path d="M4 6.8a4 4 0 0 1 8 0c0 2.4.5 3.6 1.2 4.4H2.8C3.5 10.4 4 9.2 4 6.8Z" />
+      <path d="M6.6 13.2a1.5 1.5 0 0 0 2.8 0" />
+    </svg>
+  );
+}
+
+/**
  * Gear. Drawn as a filled silhouette on purpose: a stroked one with radial
  * ticks reads as a sun/brightness symbol at this size — the teeth have to be
  * solid shapes to be recognisable as a cog.

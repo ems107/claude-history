@@ -10,6 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { useNotifications } from '../api/useNotifications.ts';
 import { draftSessionDetail } from '../lib/draftSession.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
 import { collectMentionedFiles, filterMentions } from '../lib/mentionedFiles.ts';
@@ -82,6 +83,25 @@ export function SessionViewPage() {
     // tell this page; the event tells every reader of that list, including the
     // amber "already open in a terminal" under the composer.
   });
+  /**
+   * Opening a session is having seen it, so its row in the bell goes.
+   *
+   * Gated on the row EXISTING, which is the whole reason this reads the list
+   * rather than posting blind: the query is already mounted for the life of the
+   * page by the bell in the header, so the common case — a session nothing was
+   * waiting on — costs a lookup and sends nothing at all.
+   */
+  const notifications = useNotifications();
+  const notified = !!id && (notifications.data?.stopped.some((s) => s.sessionId === id) ?? false);
+  useEffect(() => {
+    if (!id || !notified) return;
+    void api
+      .dismissNotification(id)
+      .then((body) => queryClient.setQueryData(['notifications'], body))
+      // Nothing to report: the row is a convenience, and the SSE that follows
+      // any real change will put the list right anyway.
+      .catch(() => undefined);
+  }, [id, notified, queryClient]);
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
   // Which of the two the app offers at the foot of a session. Meaningless while

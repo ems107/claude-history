@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CountBadge } from '../CountBadge.tsx';
 
 /**
  * Distance from the bottom, in pixels, still counted as being AT the bottom.
@@ -6,8 +7,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * make "scrolled to the end" almost unreachable.
  */
 const BOTTOM_SLACK = 24;
-/** Past this the badge stops counting and starts saying "a lot". */
-const UNSEEN_MAX = 99;
 
 export interface FollowBottom {
   /** Pinned to the bottom: new content keeps the view at the end. */
@@ -332,16 +331,7 @@ export function FollowBottomButton({
         )}
       </span>
       {following ? 'Following' : 'To the end'}
-      {badge > 0 && (
-        // aria-hidden: the count is already in the title, and a live region here
-        // would announce every message arriving while nobody asked for it.
-        <span
-          aria-hidden="true"
-          className="absolute -top-1.5 -right-1.5 min-w-4 rounded-full border-2 border-[var(--bg)] bg-amber-400 px-1 text-[9px] leading-3 font-bold text-black"
-        >
-          {badge > UNSEEN_MAX ? `${UNSEEN_MAX}+` : badge}
-        </span>
-      )}
+      <CountBadge count={badge} />
     </button>
   );
 }
