@@ -1,29 +1,32 @@
 import type { SessionDetail } from '@claude-history/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
-import { entrypointLabel, formatDateTimeFull, formatDateTimeShort, shortModel } from '../../lib/format.ts';
+import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
+import { entrypointLabel, formatDateTimeFull, shortModel } from '../../lib/format.ts';
 import { listUrl } from '../../lib/listState.ts';
 import { SessionBadges } from '../list/Badges.tsx';
 import { ProjectTag } from '../list/ProjectTag.tsx';
+import { SessionMenu } from './SessionActions.tsx';
 
-/**
- * The look of every control in the session header, wherever it is rendered.
- *
- * `inline-flex` because most of them now carry a 14 px icon beside their label:
- * the menus, the find button and the resume button all draw one, and a
- * text-only control looks the same either way.
- */
-export function toggleClass(active: boolean, disabled = false): string {
-  return `inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs ${
-    disabled
-      ? 'cursor-default border-[var(--border)] text-[var(--text-dim)]/50'
-      : active
-        ? 'cursor-pointer border-[var(--accent)] text-[var(--accent)]'
-        : 'cursor-pointer border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
-  }`;
+function Chevron({ up = false }: { up?: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="size-3 shrink-0"
+      style={up ? { transform: 'rotate(180deg)' } : undefined}
+    >
+      <path d="M3.5 6.2 8 10.2 12.5 6.2" />
+    </svg>
+  );
 }
 
 function AncestryChips({ label, ids }: { label: string; ids: string[] }) {
@@ -138,7 +141,7 @@ const KEY = 'headerDetails';
  * the conversation is drawn, which panel is open, what can be done with the
  * session, and find — so no amount of squeezing would have helped.
  *
- * Two lines now, each with one job. Identity and the four controls up top; the
+ * Two lines now, each with one job. Identity and three controls up top; the
  * facts about the session below, ending in the `more` that holds the ones you
  * look up rather than read. The panels are not here at all any more: they are
  * the rail down the right-hand side ([inspector.ts](../../lib/inspector.ts)).
@@ -163,10 +166,9 @@ export function SessionHeader({
   /** Live state from the page, which tracks it far more closely than the summary. */
   live?: import('@claude-history/shared').LiveInfo | null;
   /**
-   * The right-hand cluster — find, resume, the two menus. Composed by the page
-   * because every one of them belongs to something the page already owns, and
-   * the order they read in is a decision about the header rather than about any
-   * of them.
+   * Find and the view menu — the two the page owns the state of. The session's
+   * own menu is drawn here, after them, because the rename it offers is edited
+   * where the title is.
    */
   actions?: import('react').ReactNode;
 }) {
@@ -189,82 +191,63 @@ export function SessionHeader({
   const e = s.enrichment ?? lastEnrichment.current;
   const [editing, setEditing] = useState(false);
   const [details, setDetails] = useState(() => localStorage.getItem(KEY) === 'true');
-  const queryClient = useQueryClient();
+  // One shared query with every other reader of the price table.
+  const prices = useQuery({ queryKey: ['prices'], queryFn: api.prices });
+  // The same figure, from the same function, as the list and the sort: a session
+  // that delegated its work to eleven agents spent that money as surely as one
+  // that did the work itself. Remembered along with the counts, or it would
+  // blink out on every message a live session writes.
+  const cost = sessionCostParts(
+    e ? { ...s, enrichment: e } : s,
+    prices.data?.prices ?? {},
+  );
 
   return (
     <div className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">
       <div className="flex items-center gap-2">
-        <Link to={listUrl()} className="mr-1 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
+        <Link to={listUrl()} className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
           ←
         </Link>
         <ProjectTag name={s.projectName} path={s.projectPath} color={color} />
         {draft ? (
-          <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-[var(--text-dim)]" title={s.title}>
+          <h1 className="min-w-0 truncate text-base font-semibold text-[var(--text-dim)]" title={s.title}>
             {s.title}
           </h1>
         ) : editing ? (
           <TitleEditor sessionId={s.id} title={s.title} isLocal={s.titleSource === 'local'} onDone={() => setEditing(false)} />
         ) : (
-          // Rename/pin sit next to the title and only appear on hover, as in
-          // the session list. A pinned star stays visible so the state reads
-          // at a glance.
-          <span className="group flex min-w-0 flex-1 items-center gap-1">
-            <h1 className="min-w-0 truncate text-base font-semibold" title={s.title}>
-              {s.title}
-              {s.titleSource === 'local' && (
-                <span
-                  className="ml-2 rounded bg-amber-500/15 px-1.5 py-px align-middle text-[10px] font-semibold tracking-wide text-amber-400 uppercase"
-                  title="Renamed locally in claude-history — Claude Code still shows the original title"
-                >
-                  ✎ local rename
-                </span>
-              )}
-            </h1>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-xs text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] focus-visible:opacity-100"
-              title="Rename locally (stored in this tool only; never writes to ~/.claude)"
-            >
-              ✎
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void api.pinSession(s.id, !s.pinned).then(() => {
-                  void queryClient.invalidateQueries({ queryKey: ['session', s.id] });
-                  void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-                });
-              }}
-              className={`shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-sm focus-visible:opacity-100 ${
-                s.pinned
-                  ? 'text-amber-400 hover:text-amber-300'
-                  : 'text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-amber-400'
-              }`}
-              title={s.pinned ? 'Unpin' : 'Pin (stored locally)'}
-            >
-              {s.pinned ? '★' : '☆'}
-            </button>
-          </span>
+          <h1 className="min-w-0 truncate text-base font-semibold" title={s.title}>
+            {s.title}
+          </h1>
         )}
-        {/* Up here rather than among the facts below, because what they say is
-            WHO this session is: it is live, it is a fork, it is a throwaway.
-            Three of them are drawn elsewhere now and would otherwise be said
-            twice — the star is the button beside the title, the ⑂ count is in
-            the rail, and the PR is one press away under `more`. */}
+        {/* Right AFTER the title, not pushed to the far end of the row: what
+            they say is WHO this session is — it is live, it is pinned, it is a
+            fork, it is a throwaway — and that reads with the name or not at all.
+            The title is the one that gives way, which is what `min-w-0
+            truncate` on it and `shrink-0` here mean together.
+            Two are drawn elsewhere and would otherwise be said twice: the ⑂
+            count is in the rail, and the PR is one press away under `more`. */}
         <span className="shrink-0">
-          <SessionBadges session={s} omitPr omitPinned omitAgents live={live} />
+          <SessionBadges session={s} omitPr omitAgents live={live} />
         </span>
-        <span className="flex shrink-0 items-center gap-2">{actions}</span>
+        <span className="flex-1" />
+        <span className="flex shrink-0 items-center gap-2">
+          {actions}
+          <SessionMenu detail={detail} draft={draft} onRename={() => setEditing(true)} />
+        </span>
       </div>
 
-      {/* The one thing a local rename may never do is hide what Claude Code
-          still calls this session. Its own row, present exactly when the
-          rename is: static, so it cannot shake anything. */}
+      {/* What Claude Code still calls this session, which a local rename may
+          never hide. Amber, like every local override in this app, and directly
+          under the name it replaced — present exactly when the rename is, so it
+          is static and cannot shake anything. */}
       {s.titleSource === 'local' && s.originalTitle && (
-        <div className="mt-1 text-xs text-[var(--text-dim)]">
-          <span className="opacity-60">original title (what Claude Code shows):</span>{' '}
-          <span className="italic">“{s.originalTitle}”</span>
+        <div className="mt-1 flex items-baseline gap-1.5 text-xs">
+          <span className="shrink-0 font-semibold text-amber-400/90">✎ renamed here</span>
+          <span className="shrink-0 text-[var(--text-dim)]">— Claude Code still calls it</span>
+          <span className="min-w-0 truncate text-[var(--text)] italic" title={s.originalTitle}>
+            “{s.originalTitle}”
+          </span>
         </div>
       )}
 
@@ -278,14 +261,11 @@ export function SessionHeader({
           <span className="opacity-60">not started yet</span>
         ) : (
           <>
-            {/* The clock without its year and seconds, which is what this row
-                is for — a fact beside other facts. The full stamp is on the
-                hover, where it has always belonged. */}
-            <span title={formatDateTimeFull(s.createdAt)}>
-              <span className="opacity-60">created</span> {formatDateTimeShort(s.createdAt)}
+            <span>
+              <span className="opacity-60">created</span> {formatDateTimeFull(s.createdAt)}
             </span>
-            <span title={formatDateTimeFull(s.lastActivityAt)}>
-              <span className="opacity-60">last activity</span> {formatDateTimeShort(s.lastActivityAt)}
+            <span>
+              <span className="opacity-60">last activity</span> {formatDateTimeFull(s.lastActivityAt)}
             </span>
           </>
         )}
@@ -305,6 +285,23 @@ export function SessionHeader({
             </span>
           </>
         )}
+        {/* The whole of what it spent, agents included — they can be 88% of it —
+            with the split on the hover. A session that cannot be priced stays
+            blank rather than claiming it was free. */}
+        {cost.total !== null && (
+          <span
+            className="font-semibold text-[var(--text)]"
+            title={
+              cost.subagents !== null
+                ? `${formatUsd(cost.own)} in this conversation + ${formatUsd(cost.subagents)} in ${
+                    s.subagentCount
+                  } subagent${s.subagentCount === 1 ? '' : 's'} — API-equivalent value at the configured prices`
+                : 'API-equivalent value at the configured prices — not actual subscription spend (see Stats)'
+            }
+          >
+            {formatUsd(cost.total)}
+          </span>
+        )}
         <span className="ml-auto" />
         <button
           type="button"
@@ -314,12 +311,13 @@ export function SessionHeader({
               return !v;
             })
           }
-          className={`shrink-0 cursor-pointer rounded px-1 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] ${
+          className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] ${
             details ? 'text-[var(--accent)]' : ''
           }`}
           title="The rest of what is known about this session"
         >
-          {details ? 'less ⌃' : 'more ⌄'}
+          {details ? 'less' : 'more'}
+          <Chevron up={details} />
         </button>
       </div>
 

@@ -36,7 +36,6 @@ import { Inspector } from '../components/viewer/Inspector.tsx';
 import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
-import { ResumeButton, SessionMenu } from '../components/viewer/SessionActions.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
@@ -958,18 +957,12 @@ export function SessionViewPage() {
                   open={finder.isOpen}
                   onToggle={() => (finder.isOpen ? finder.close() : finder.openBar())}
                 />
-                {/* It resumes a transcript, and a draft has none: the endpoint
-                    resolves the folder from the index and would answer 404 for
-                    this id. The app's own foot below is how you pick a session
-                    up at this stage. */}
-                {!isDraft && <ResumeButton session={session.summary} />}
                 <ViewMenu
                   view={view}
                   reading={reading}
                   fold={fold}
                   counts={{ thinking: thinkingCount, tools: toolCount, compactions: compactionCount }}
                 />
-                <SessionMenu detail={session} draft={isDraft} />
               </>
             }
           />

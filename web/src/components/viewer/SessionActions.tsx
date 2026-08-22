@@ -1,28 +1,27 @@
 import type { SessionDetail, SessionSummary } from '@claude-history/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { api } from '../../api/client.ts';
 import { useLocalOnly } from '../../api/useLocal.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { downloadMarkdown, type ExportOptions } from '../../lib/exportMarkdown.ts';
 import { usePopover } from '../../lib/popover.ts';
-import { toggleClass } from './SessionHeader.tsx';
+import { toggleClass } from './controlClass.ts';
 
 /**
- * What can be DONE with a session, as opposed to how it is read: open the folder
- * it lives in, open it in VS Code, pick it up in a terminal, copy the command
- * that would, export the conversation.
+ * What can be DONE with a session, as opposed to how it is read: rename it, pin
+ * it, export it, open the folder it lives in, open it in VS Code, pick it up in
+ * a terminal, copy the command that would.
  *
- * One hook and one file for all five because they share everything that matters
- * — the resume command, the error state, and the fact that three of them open a
- * window on the machine the SERVER runs on and are therefore dead from anywhere
- * else. Only one of the five is worth a button of its own in the header
- * (`ResumeButton`); the rest are in the `⋯` menu, which is what took four
- * buttons out of a row that had eighteen.
+ * All of it behind one `⋯`, which is what took nine buttons out of a row that
+ * had eighteen. Nothing here is a mode and nothing here is consulted while
+ * reading — every one of them is a thing you decide to do and then do once.
  */
 function useSessionActions(session: SessionSummary) {
   const [copied, setCopied] = useState(false);
   const [state, setState] = useState<'idle' | 'launching' | 'ok' | 'error'>('idle');
   const [error, setError] = useState('');
-  // Three of the five open a window on the machine the server runs on, so from
+  // Three of them open a window on the machine the server runs on, so from
   // another one they are dead. The server refuses them too (409) — this is the
   // half that says why before the click.
   const folder = useLocalOnly('openFolder');
@@ -74,6 +73,15 @@ function useSessionActions(session: SessionSummary) {
       .catch(fail);
   };
 
+  /**
+   * Resuming a session something else already holds gives the transcript two
+   * writers, which is what leaves the duplicated uuids the parser has to undo.
+   * The server refuses it (409) and that is the authority; this only says so
+   * before the click, because an action that launches nothing and explains
+   * afterwards is the worse version.
+   */
+  const holder = session.live;
+
   return {
     command,
     copied,
@@ -90,15 +98,29 @@ function useSessionActions(session: SessionSummary) {
       reason: vscode.reason ?? `Open ${session.projectPath} in VS Code`,
       run: () => openTarget('vscode'),
     },
-    terminal: { disabled: terminal.disabled, reason: terminal.reason, run: launch },
-    /**
-     * Resuming a session something else already holds gives the transcript two
-     * writers, which is what leaves the duplicated uuids the parser has to
-     * undo. The server refuses it (409) and that is the authority; this only
-     * says so before the click, because a button that launches nothing and
-     * explains afterwards is the worse version.
-     */
-    holder: session.live,
+    resume: {
+      disabled: state === 'launching' || holder !== null || terminal.disabled,
+      reason:
+        state === 'error'
+          ? error
+          : (terminal.reason ??
+            (holder
+              ? `This session is already open (pid ${String(holder.pid)}) — close it there first`
+              : `Open a terminal in ${session.projectPath} and resume this session`)),
+      // The label says which of the five states it is in rather than waiting to
+      // be hovered: inside a menu, the words are all there is.
+      label:
+        state === 'launching'
+          ? 'Launching…'
+          : state === 'ok'
+            ? 'Launched ✓'
+            : state === 'error'
+              ? 'Failed ✕'
+              : holder
+                ? 'Already open elsewhere'
+                : 'Resume in terminal',
+      run: launch,
+    },
   };
 }
 
@@ -112,6 +134,14 @@ const icon = {
   'aria-hidden': true,
   className: 'size-3.5 shrink-0',
 };
+
+function PencilIcon() {
+  return (
+    <svg {...icon}>
+      <path d="M11.1 2.6a1.6 1.6 0 0 1 2.3 2.3L5.7 12.5l-3.1.8.8-3.1Z" />
+    </svg>
+  );
+}
 
 function FolderIcon() {
   return (
@@ -150,6 +180,14 @@ function DotsIcon() {
   );
 }
 
+function Section({ label }: { label: string }) {
+  return (
+    <div className="mt-1 mb-0.5 px-1.5 text-[10px] font-semibold tracking-wider text-[var(--text-dim)]/60 uppercase">
+      {label}
+    </div>
+  );
+}
+
 function Item({
   onClick,
   disabled,
@@ -175,62 +213,31 @@ function Item({
 }
 
 /**
- * The one action in the header that keeps a button of its own — the way back
- * into a conversation, which is what most visits to this page are for.
- *
- * It says which of the five states it is in rather than waiting to be hovered:
- * the label is the only part read at a glance.
- */
-export function ResumeButton({ session }: { session: SessionSummary }) {
-  const a = useSessionActions(session);
-  const dead = a.state === 'launching' || a.holder !== null || a.terminal.disabled;
-  return (
-    <button
-      type="button"
-      onClick={a.terminal.run}
-      disabled={dead}
-      className={
-        a.state === 'error'
-          ? `${toggleClass(false)} border-red-400 text-red-400`
-          : `${toggleClass(false)} ${dead ? '' : 'border-[var(--accent-dim)] text-[var(--accent)] hover:border-[var(--accent)]'}`
-      }
-      title={
-        a.state === 'error'
-          ? a.error
-          : (a.terminal.reason ??
-            (a.holder
-              ? `This session is already open (pid ${String(a.holder.pid)}) — close it there first`
-              : `Open a terminal in ${session.projectPath} and resume this session`))
-      }
-    >
-      {/* Same ❯ used by the "cli" entrypoint chip elsewhere. */}
-      {a.state === 'launching'
-        ? 'Launching…'
-        : a.state === 'ok'
-          ? 'Launched ✓'
-          : a.state === 'error'
-            ? 'Failed ✕'
-            : a.holder
-              ? '❯ Already open'
-              : '❯ Resume'}
-    </button>
-  );
-}
-
-/**
- * Everything else you can do with this session, behind one `⋯`.
+ * Everything you can do with this session, behind one `⋯`.
  *
  * Export keeps its four options, on a second page of the same menu rather than
- * in a popover of its own: they are the same gesture — say what goes in the file,
- * then download it.
+ * in a popover of its own: they are the same gesture — say what goes in the
+ * file, then download it.
  *
- * Renaming and pinning are deliberately NOT here. They are the `✎` and `★` that
- * appear beside the title on hover, exactly as in the session list, and a second
- * way in would be a second place to keep in step for no gain.
+ * Renaming and pinning are here rather than as glyphs that appear beside the
+ * title on hover. What appears on hover is invisible until the pointer happens
+ * to be in the right place, and both of these are things you go looking for.
+ * The pinned STATE is still visible without hovering anything: it is the ★
+ * badge beside the title, which is where a state belongs.
  */
-export function SessionMenu({ detail, draft }: { detail: SessionDetail; draft?: boolean }) {
+export function SessionMenu({
+  detail,
+  draft,
+  onRename,
+}: {
+  detail: SessionDetail;
+  draft?: boolean;
+  /** Starts the title editor, which the header draws where the title is. */
+  onRename: () => void;
+}) {
   const pop = usePopover<HTMLDivElement>();
   const a = useSessionActions(detail.summary);
+  const queryClient = useQueryClient();
   const [exporting, setExporting] = useState(false);
   const [opts, setOpts] = useState<ExportOptions>({
     includeTools: true,
@@ -238,6 +245,7 @@ export function SessionMenu({ detail, draft }: { detail: SessionDetail; draft?: 
     includeSystem: false,
     includeImages: true,
   });
+  const s = detail.summary;
 
   const check = (key: keyof ExportOptions, label: string) => (
     <label className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs select-none hover:bg-[var(--bg-hover)]">
@@ -251,18 +259,29 @@ export function SessionMenu({ detail, draft }: { detail: SessionDetail; draft?: 
     </label>
   );
 
+  const pin = () => {
+    void api.pinSession(s.id, !s.pinned).then(() => {
+      void queryClient.invalidateQueries({ queryKey: ['session', s.id] });
+      void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    });
+  };
+
   return (
     <div ref={pop.ref} className="relative inline-block">
-      <button type="button" onClick={pop.toggle} className={toggleClass(pop.open)} title="What can be done with this session">
+      <button
+        type="button"
+        onClick={pop.toggle}
+        className={toggleClass(pop.open)}
+        title="What can be done with this session"
+        aria-label="Session actions"
+      >
         <DotsIcon />
       </button>
       {pop.open && (
         <div className="absolute right-0 z-30 mt-1 w-60 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 shadow-xl">
           {exporting ? (
             <>
-              <div className="mb-0.5 px-1.5 text-[10px] font-semibold tracking-wider text-[var(--text-dim)]/60 uppercase">
-                What goes in the file
-              </div>
+              <Section label="What goes in the file" />
               {check('includeTools', 'Tool calls')}
               {check('includeThinking', 'Thinking')}
               {check('includeSystem', 'System messages')}
@@ -282,18 +301,37 @@ export function SessionMenu({ detail, draft }: { detail: SessionDetail; draft?: 
             </>
           ) : (
             <>
+              <Section label="This session" />
+              {/* Both act on an id the index has never heard of while the
+                  session is only a reservation: the endpoints answer 404. */}
+              {!draft && (
+                <>
+                  <Item
+                    onClick={() => {
+                      pop.close();
+                      onRename();
+                    }}
+                    title="Rename locally (stored in this tool only; never writes to ~/.claude)"
+                  >
+                    <PencilIcon />
+                    Rename locally
+                  </Item>
+                  <Item onClick={pin} title={s.pinned ? 'Unpin (stored locally)' : 'Pin (stored locally)'}>
+                    <span aria-hidden className="w-3.5 shrink-0 text-center text-sm text-amber-400">
+                      {s.pinned ? '★' : '☆'}
+                    </span>
+                    {s.pinned ? 'Unpin' : 'Pin'}
+                  </Item>
+                </>
+              )}
               <Item onClick={() => setExporting(true)} title="Export this conversation as a Markdown file">
                 <DownloadIcon />
                 Export as Markdown…
               </Item>
-              {/* Both of the machine actions resolve the folder from the index,
-                  and a draft is not in it: they would answer 404 for this id. */}
               {!draft && (
                 <>
                   <div className="my-1.5 -mx-2 h-px bg-[var(--border)]" />
-                  <div className="mb-0.5 px-1.5 text-[10px] font-semibold tracking-wider text-[var(--text-dim)]/60 uppercase">
-                    Open on this machine
-                  </div>
+                  <Section label="Open on this machine" />
                   <Item onClick={a.folder.run} disabled={a.folder.disabled} title={a.folder.reason}>
                     <FolderIcon />
                     Project folder
@@ -303,6 +341,13 @@ export function SessionMenu({ detail, draft }: { detail: SessionDetail; draft?: 
                       {'{}'}
                     </span>
                     VS Code
+                  </Item>
+                  <Item onClick={a.resume.run} disabled={a.resume.disabled} title={a.resume.reason}>
+                    {/* Same ❯ the "cli" entrypoint chip uses. */}
+                    <span aria-hidden className="w-3.5 shrink-0 text-center text-xs">
+                      ❯
+                    </span>
+                    {a.resume.label}
                   </Item>
                   {/* Live from anywhere, including another machine, where it is
                       the only one of these that still does something useful. */}

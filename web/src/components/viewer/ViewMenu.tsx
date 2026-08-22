@@ -11,7 +11,7 @@ import {
   ZOOM_MIN,
   type ViewPrefs,
 } from '../../lib/viewPrefs.ts';
-import { toggleClass } from './SessionHeader.tsx';
+import { toggleClass } from './controlClass.ts';
 
 /**
  * A number you can both step and type. The draft is local so a half-typed "12"

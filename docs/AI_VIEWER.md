@@ -69,29 +69,37 @@ Each kind has one home now, and the header is two rows — 65 px measured, again
 | Kind | Where it lives |
 | --- | --- |
 | How the conversation is drawn | `ViewMenu` — thinking, tool calls, compacted stretches, the two folding actions, zoom and width. Lit when **anything** in it is off its default, which is the rule `ViewButton` applied to two values and now covers five. |
-| What can be done with the session | `SessionActions` — `❯ Resume` as a button of its own, and `⋯` for export, the project folder, VS Code and the resume command. |
+| What can be done with the session | `SessionActions`, all of it behind `⋯`: rename, pin, export, and under **Open on this machine** the project folder, VS Code, resuming in a terminal and copying the command. Nothing here is a mode and nothing here is consulted while reading — each one is decided and then done once. |
 | Which panel is open | The rail down the right-hand edge (`lib/inspector.ts`, `InspectorRail`, `Inspector`). |
 | Find | `FindButton`, which lives beside the bar it opens. |
 
-Row two is the facts — branch, model, entrypoint, both dates and the four counts
-— ending in `more`, which holds what you look UP rather than read: the slug, the
-`cc` version, the context entries, `resumed ×N`, the fork chain, the PR links and
-the id with its copy button. Remembered in `localStorage`, like the reading
-preferences.
+Row two is the facts — branch, model, entrypoint, both dates in full, the four
+counts and **what the session cost** — ending in `more`, which holds what you
+look UP rather than read: the slug, the `cc` version, the context entries,
+`resumed ×N`, the fork chain, the PR links and the id with its copy button.
+Remembered in `localStorage`, like the reading preferences.
 
-The dates are `formatDateTimeShort` with the full stamp on the hover, which is
-what that helper was written for: a clock beside other facts, not the fact
-itself.
+The cost is `sessionCostParts(…).total` with the split on the hover — **the same
+figure from the same function as the list and the sort**, agents included,
+because a session that delegated its work spent that money as surely as one that
+did it itself. It reads the REMEMBERED enrichment along with the counts, or it
+would blink out on every message a live session writes.
 
-Three duplications went with the rewrite. The pin was the `★` badge AND the star
-button; the subagent count was the `⑂ N` badge AND a button; and five panels
-wrote their own name at the top of a column whose title bar already said it.
-`SessionBadges` takes `omitPinned` / `omitAgents` for the first two.
+**Two duplications went with the rewrite**: the subagent count was the `⑂ N`
+badge AND a button (`SessionBadges` takes `omitAgents`), and five panels wrote
+their own name at the top of a column whose title bar already said it.
 
-**Rename and pin stay as the `✎` and `★` beside the title, on hover**, exactly as
-in the list, and are deliberately absent from `⋯`: a second way in is a second
-thing to keep in step. `originalTitle` keeps its own row whenever a local rename
-exists — a hard rule, not a detail of layout.
+**Rename and pin are in `⋯`, not glyphs that appear on hover beside the title.**
+What appears on hover is invisible until the pointer happens to be in the right
+place, and both of them are things you go looking for. The pinned STATE is still
+visible without hovering anything — it is the `★` badge beside the title, which
+is where a state belongs, and the difference between the two is the whole reason
+the badge stayed and the button went.
+
+**`originalTitle` is a row of its own** whenever a local rename exists, in amber
+like every local override, directly under the name it replaced: `✎ renamed here
+— Claude Code still calls it “…”`. It is a hard rule and not a detail of layout,
+so it says so at a glance rather than in a tooltip.
 
 **Escape closes a menu instead of leaving the page.** `usePopover` listens on the
 `document` in the CAPTURE phase and stops the key there, so the page's own

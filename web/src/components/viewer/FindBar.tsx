@@ -14,7 +14,7 @@ import type { MatchHighlight } from '../../lib/highlight.ts';
 import { useSelectedMessage } from '../../lib/selectedMessage.ts';
 import { isFromTerminal } from '../../lib/terminalPrefs.ts';
 import { SnippetRow } from '../list/SnippetRow.tsx';
-import { toggleClass } from './SessionHeader.tsx';
+import { toggleClass } from './controlClass.ts';
 import type { FindState, FindTarget } from './TurnList.tsx';
 
 /** Long enough that a word is typed before it is scanned, short enough not to lag. */
