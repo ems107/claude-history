@@ -97,9 +97,10 @@ scripts/        package.mjs · release.mjs
 - **The embedded terminal runs `claude.exe` with no shell around it**, and the pseudo-terminal belongs to the server rather than to the tab. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **Everything in `~/.claude` has an expiry date** (`cleanupPeriodDays`), fixtures included. → [Transcripts](docs/AI_TRANSCRIPTS.md)
 - **The installed release is never touched from here** — not its port, not its data folder, not its scheduled task. Everything this repo runs is the dev instance. → [Two instances](#two-instances-and-the-line-between-them)
+- **A stop is a TRANSITION, and nothing on disk records one.** `idle` is the resting state of every open session, so the bell keeps its own memory of what each session was doing — in memory, never persisted, because a restart loses the transitions with it. → [Transcripts](docs/AI_TRANSCRIPTS.md)
 - **Never log with `console.*`** in new code. → [Logging](docs/AI_LOGGING.md)
 - **Wrap every `JSON.parse` of a transcript line in try/catch.** Lines can be corrupt or half-written, and active files grow while being read.
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 39 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 40 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

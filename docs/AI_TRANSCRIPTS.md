@@ -17,6 +17,7 @@ Related: token and cost fields are in [AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTE
 - **The file is a TREE.** Walk `parentUuid` from the last line; bridge compactions with `logicalParentUuid`; resolve an edge to the LAST occurrence of the parent.
 - **Take the LAST occurrence of any sidecar** (they are re-appended per turn) and dedupe.
 - **Wrap every `JSON.parse` of a transcript line in try/catch**: lines can be corrupt or half-written, and active files grow while being read.
+- **`status` in `sessions/<pid>.json` has exactly four values**, and `waiting` means a dialog is on screen — with `waitingFor` naming it. A stop is a transition, which nothing on disk records.
 - **Nothing here is permanent** — Claude Code sweeps its own history on `cleanupPeriodDays`.
 
 ## Files and directories
@@ -194,7 +195,55 @@ The app keeps them as `runIds` and says "resumed ×N", never as lineage.
 
 ## Live sessions and streaming
 
-`sessions/<pid>.json` lists what is running: `sessionId`, `cwd`, `status` (idle/busy), `pid`. **Verify pid liveness with `process.kill(pid, 0)` before trusting an entry** (on Windows, treat `EPERM` as alive).
+`sessions/<pid>.json` lists what is running: `sessionId`, `cwd`, `status`, `pid`. **Verify pid liveness with `process.kill(pid, 0)` before trusting an entry** (on Windows, treat `EPERM` as alive).
+
+### `status` has four values, and one of them says the session is waiting for you
+
+Read out of the 2.1.239 binary rather than guessed from what this machine happens to have written — which for a year was only two of them, and left the field typed `string // "idle" | "busy" | ...`:
+
+```js
+Ybv = ["busy", "shell", "idle", "waiting"]        // the whole set; Xbv() validates against it
+```
+
+| `status` | What it means | For us |
+| --- | --- | --- |
+| `busy` | a turn is in flight | working — this is what `isWorking` tests |
+| `waiting` | **a dialog is on screen** | stopped, and it wants an answer |
+| `idle` | the turn is over | stopped |
+| `shell` | `idle` with a shell open over it | stopped — nothing about the conversation differs |
+| *absent* | a `--print` run (ours included) never writes one | say nothing; the composer answers for those |
+
+`idle` and `shell` are one state to every reader here, which is what `LIVE_STOPPED` is for. The CLI computes the pair as `status === 'idle' && shellOpen ? 'shell' : status`, so a shell is never anything but an idle session with a shell over it.
+
+**`waiting` comes with `waitingFor`, and that field is the only thing on disk that says WHY a session stopped.** Any dialog at all produces it — a permission prompt, an `AskUserQuestion`, a plan to approve, a `/model` picker:
+
+```js
+function qyA(e) {
+  if (e.workerSandboxPrompt) return "sandbox request";
+  if (e.elicitationPrompt) return "input needed";
+  if (e.topDialogWaitingFor !== void 0) return e.topDialogWaitingFor;
+  if (e.pendingWorkerRequest) return "worker request";
+  if (e.pendingSandboxRequest) return "sandbox request";
+  if (e.isShowingLocalJSXCommand) return "dialog open";
+}
+function s_y(e) { return e === void 0 ? void 0 : y2A[e] ?? "permission prompt"; }
+```
+
+So the vocabulary is closed and short — `"permission prompt"`, `"input needed"`, `"dialog open"`, `"goal proposal"`, `"sandbox request"`, `"worker request"` — and `"permission prompt"` is by far the commonest, being the `??` fallback for every dialog kind the CLI has no name of its own for. **Show it as written.** Translating it into something friendlier would be this app claiming to know which dialog it was, which it does not.
+
+Measured on this repo's own session, while a question was on screen:
+
+```
+23:32:18.684 pid=25996 status=busy
+23:32:55.191 pid=25996 status=waiting waitingFor="input needed"
+23:34:33.154 pid=25996 status=busy
+```
+
+Two things the registry's schema declares and this machine has never written: `tempo` (`active`/`idle`/`blocked`) and `needs`. The CLI reads both defensively, so something else writes them; nothing here reads them until one is actually seen.
+
+**A stop is a TRANSITION, and none of this records one.** `idle` is the resting state of every open session, so the set of idle sessions is only the set of terminals you have open — see `core/notifications.ts` for the memory that turns it into an event, and [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md#where-state-lives) for why that memory is not persisted. Three writes look like stops and are not: a session being born writes its file with **no `status` at all** and then `idle` half a second later (measured), a shell opening over an idle session writes `shell`, and a menu the user pulled up writes `waiting`.
+
+**Do not use the idle-notification channel.** `peerFeatures: ["notify_idle"]` and `messagingSocketPath` in that same file are a real IPC channel the CLI uses to tell other sessions it has gone idle (`cross_session_notify_idle` in the binary, with its own `peer-gone` / `send-failed` states). Subscribing to it would mean talking to the Claude Code process over its named pipe, which is the same line the IDE channel is on and which this app must never cross. The file says the same thing a debounce later, for free.
 
 **That file has no heartbeat: it is written when something CHANGES.** Measured mid-turn, `updatedAt` and `statusUpdatedAt` sat frozen at the start of the turn for 3 minutes while the session was busy. Good news for the live indicator — `idle`→`busy` is stamped at the instant it happens, so the watcher sees it within its 300 ms debounce and `statusUpdatedAt` is a truthful "working since". The cost is the other direction: a CLI killed outright leaves the file saying `busy` forever and nothing announces it. Only `pidAlive` catches that, and every reader re-checks it as it reads, so no answer is ever wrong — what was missing is anyone to SAY so, and a page with nothing to ask went on believing a dead terminal still held the session until it was reloaded. That is `Watcher.checkLiveness`: one `process.kill(pid, 0)` per running CLI every 5 s, none at all while nothing is running, and a `live-changed` the moment one is gone.
 
