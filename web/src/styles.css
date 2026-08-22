@@ -179,20 +179,20 @@ body {
    per frame — and a transform still reports through `getBoundingClientRect`,
    which is what keeps it measurable from a check.
 
-   **Paused while the pointer is on the card.** A card you have reached over to
-   read, or are about to click, must not vanish under the cursor; ten seconds is
-   ten seconds of nobody looking. `forwards` holds it full at the end, for the
-   moment between the animation finishing and the card going.
+   **Nothing here pauses it, and there used to be a `:hover` rule that did.**
+   Ten seconds is ten seconds of somebody looking — the pointer resting on a card
+   is one way of not spending them and every tab of the app being off screen is
+   the other — and both are now `pause()` calls in `NotificationToasts.tsx`,
+   which says why. A script that plays an animation takes `animation-play-state`
+   out of the running for good, so the two could not have been split anyway.
+   `forwards` holds the bar full at the end, for the moment between the animation
+   finishing and the card going.
 
    The duration is `TOAST_MS` in `NotificationToasts.tsx`, and the two have to
    agree — that constant is the one that decides. */
 .toast-fill {
   transform: scaleX(0);
   animation: toast-fill 10s linear forwards;
-}
-
-.group:hover .toast-fill {
-  animation-play-state: paused;
 }
 
 @keyframes toast-fill {

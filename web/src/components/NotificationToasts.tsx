@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
+import { useAnyTabVisible } from '../lib/tabVisibility.ts';
 import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow.tsx';
 
 /**
@@ -18,6 +19,11 @@ const TOAST_MS = 10_000;
  * runs and `animationend` always comes — but a browser that disabled animations
  * some other way would otherwise leave a card on screen for ever. Far longer
  * than any pause a person makes with a pointer, so it never races the real end.
+ *
+ * It measures the time somebody was WATCHING, in whole stretches: the timer is
+ * dropped when every tab goes away and started again from the top when one comes
+ * back. A ceiling on how long a card can hold the corner in front of a person,
+ * which is what it was always for — never a second clock on the ten seconds.
  */
 const BACKSTOP_MS = TOAST_MS * 12;
 
@@ -66,6 +72,13 @@ const keyOf = (s: StoppedSessionEntry): string => `${s.sessionId}:${s.at}`;
 export function NotificationToasts() {
   const { data } = useNotifications();
   const [toasts, setToasts] = useState<StoppedSessionEntry[]>([]);
+  /**
+   * **The ten seconds are ten seconds of somebody looking.** Read once here and
+   * handed down, so every card on the stack answers to one reading of it rather
+   * than to a subscription each — and so the OTHER tabs' answer is in it, which
+   * is the whole of `tabVisibility.ts`.
+   */
+  const watching = useAnyTabVisible();
   /** The newest `at` seen per session. `null` until the first answer seeds it. */
   const lastAt = useRef<Map<string, number> | null>(null);
   // Only once there is something to draw: a colour for the project tags is worth
@@ -120,6 +133,7 @@ export function NotificationToasts() {
         <Toast
           key={keyOf(stop)}
           stop={stop}
+          watching={watching}
           color={
             (stop.projectKey ? projects?.find((p) => p.key === stop.projectKey)?.color : undefined) ?? FALLBACK_COLOR
           }
@@ -133,13 +147,28 @@ export function NotificationToasts() {
 function Toast({
   stop,
   color,
+  watching,
   onClose,
 }: {
   stop: StoppedSessionEntry;
   color: string;
+  /** Whether any tab of the app is on screen — see `NotificationToasts`. */
+  watching: boolean;
   onClose: () => void;
 }) {
   const needsYou = stop.kind === 'needs-you';
+  const [hovered, setHovered] = useState(false);
+  /**
+   * **The two reasons the ten seconds are not being spent, as one fact.** The
+   * pointer is on the card, so it is being read; or nobody is at the app at all,
+   * so nothing is. Both are "there is a person in front of this and the card
+   * must wait for them", and the second is only the stronger of the two.
+   */
+  const running = watching && !hovered;
+  const bar = useRef<HTMLDivElement>(null);
+  /** How far the bar had got when it was stopped, in ms of its own ten. */
+  const held = useRef(0);
+
   /**
    * **The bar ends the card, not a timer beside it.**
    *
@@ -152,15 +181,59 @@ function Toast({
    * `animationend` is that fact: it fires when the bar is full, which is when
    * the ten seconds have actually been spent, pauses included. The backstop
    * below is only for a browser where the animation never runs at all.
+   *
+   * **Which is why the pause is driven here and not from a class**, and why the
+   * `:hover` rule left `styles.css` to join it. A CSS animation is timed off the
+   * document's clock, not off the frames it is drawn in: a hidden tab paints
+   * nothing, and the animation it never drew is nonetheless FINISHED when the
+   * tab comes back — the bar jumps to full and the card is gone in the frame you
+   * arrive on, its ten seconds spent on an empty screen. Stopping it has to be
+   * an INSTRUCTION rather than a declaration for a stopped pipeline to notice,
+   * which is `pause()` and is not a class: measured, a card raised into a hidden
+   * tab sits at `currentTime` 0 for as long as the tab stays hidden. It is also
+   * all-or-nothing: the API and `animation-play-state` do not share an animation
+   * (touch one with a script and the property stops applying), so the pointer
+   * has to come through here too.
+   *
+   * **And the position is written back by hand on the way in.** Belt to that
+   * brace, and cheap: a browser that let its clock run on while the pause was
+   * still pending would otherwise hand back a bar that is already full, and
+   * setting `currentTime` before playing makes the resumed bar the one that was
+   * stopped whatever it did meanwhile.
    */
   useEffect(() => {
+    const el = bar.current;
+    if (!el?.getAnimations) return;
+    for (const animation of el.getAnimations()) {
+      if (running) {
+        animation.currentTime = held.current;
+        animation.play();
+      } else {
+        animation.pause();
+        const at = animation.currentTime;
+        held.current = typeof at === 'number' ? at : held.current;
+      }
+    }
+  }, [running]);
+
+  /**
+   * Only while something is being spent — a card nobody can see is not holding
+   * anything up, and its backstop would be a clock running against a person who
+   * is not there. Hovering does NOT stop it: a pointer left on a card for two
+   * minutes is not somebody reading it.
+   */
+  useEffect(() => {
+    if (!watching) return;
     const timer = setTimeout(onClose, BACKSTOP_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [watching]);
 
   return (
     <div
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      onPointerCancel={() => setHovered(false)}
       className={`group pointer-events-auto overflow-hidden rounded-lg border bg-[var(--bg-raised)] shadow-xl ${
         needsYou ? 'border-amber-500/50' : 'border-[var(--border)]'
       }`}
@@ -191,6 +264,7 @@ function Toast({
           the bar reads as an edge of the card rather than as a gauge. */}
       <div aria-hidden="true" className="h-[3px] w-full bg-[var(--border)]">
         <div
+          ref={bar}
           onAnimationEnd={onClose}
           className={`toast-fill h-full origin-left ${needsYou ? 'bg-amber-400' : 'bg-[var(--accent)]'}`}
         />
