@@ -2,7 +2,7 @@ import type { LiveInfo, SessionSummary } from '@claude-history/shared';
 import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 
-function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
+export function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
   return (
     <span
       title={title}
@@ -16,11 +16,20 @@ function Badge({ label, className, title }: { label: string; className: string; 
 export function SessionBadges({
   session,
   omitPr = false,
+  omitPinned = false,
+  omitAgents = false,
   live,
   onSubagentsClick,
 }: {
   session: SessionSummary;
   omitPr?: boolean;
+  /**
+   * The session page draws the pin as the ★ beside the title and the subagent
+   * count in the inspector rail, so repeating either here would be the same
+   * fact twice in one header. The list, which has neither, omits neither.
+   */
+  omitPinned?: boolean;
+  omitAgents?: boolean;
   /**
    * Makes the ⑂ badge the way IN to the subagents, instead of a number with
    * nothing behind it. Absent where there is nowhere to go.
@@ -38,7 +47,7 @@ export function SessionBadges({
   const badges: ReactNode[] = [];
   const liveInfo = live === undefined ? session.live : live;
 
-  if (session.pinned) {
+  if (session.pinned && !omitPinned) {
     badges.push(
       <Badge key="pinned" label="★" title="Pinned (local)" className="bg-amber-500/15 text-amber-400" />,
     );
@@ -80,7 +89,7 @@ export function SessionBadges({
       </span>,
     );
   }
-  if (session.subagentCount > 0) {
+  if (session.subagentCount > 0 && !omitAgents) {
     const label = `⑂ ${session.subagentCount}`;
     const className = 'bg-sky-500/15 text-sky-400';
     const title = `${session.subagentCount} subagent${session.subagentCount === 1 ? '' : 's'}${

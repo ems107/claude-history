@@ -1,12 +1,11 @@
 import type { PriceTable, SubagentDetail, SubagentMeta } from '@claude-history/shared';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { type ReactNode, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { type CostEntry, costEntries, formatTokens, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
 import { durationBetween, formatDateTime, formatDateTimeFull } from '../../lib/format.ts';
 import { promptOf, rowStatus, subagentStatus, type SubagentRow } from '../../lib/subagents.ts';
 import { CostPill } from './CostPill.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { Fold } from './Fold.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useSubagents } from './SubagentContext.ts';
 
@@ -169,24 +168,6 @@ function StatusChip({
   );
 }
 
-function Fold({ label, children }: { label: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <FoldHeader
-        open={open}
-        onToggle={() => setOpen((v) => !v)}
-        className="rounded px-1 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-      >
-        {open ? '▾' : '▸'} {label}
-      </FoldHeader>
-      {open && (
-        <div className="mt-1 mb-1 ml-4 rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">{children}</div>
-      )}
-    </>
-  );
-}
-
 /**
  * One of the two jumps. Disabled it still says where the thing is — a dead
  * button that explains nothing is the bug this whole panel exists to undo.
@@ -268,28 +249,35 @@ function AgentRow({
       // Indented under whoever sent it out, with a rail on the left so the
       // parentage reads at a glance instead of from the line below. An inline
       // margin because the depth is data — Tailwind cannot make a class from it.
-      style={depth > 0 ? { marginLeft: `${depth * 1.5}rem` } : undefined}
+      //
+      // Half of what it was, and capped at two levels: in the inspector's column
+      // every indent is width taken off the description, and the rail plus the
+      // "sent out by" line below already say whose child this is.
+      style={depth > 0 ? { marginLeft: `${Math.min(depth, 2) * 0.75}rem` } : undefined}
       className={`mb-1 rounded border px-2 py-1.5 ${
         active ? 'border-sky-500/40 bg-sky-500/5' : 'border-[var(--border)]'
       } ${depth > 0 ? 'border-l-2 border-l-sky-500/30' : ''}`}
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      {/* What kind of agent, how it went, what it cost: the three chips, which
+          are all short and can share a line at any width. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
         <span className="shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-sky-400 uppercase">
           ⑂ {meta.agentType}
         </span>
-        <span className="min-w-0 flex-1 truncate font-medium" title={meta.description}>
-          {meta.description || meta.agentId}
-        </span>
-        {/* The id itself, because it is what the URL carries, what a
-            notification calls this agent, and what the search now finds. */}
-        <span
-          className="shrink-0 font-mono text-[10px] text-[var(--text-dim)] opacity-60 select-text"
-          title={`Subagent id: ${meta.agentId} — paste it into the search to come back here`}
-        >
-          {meta.agentId}
-        </span>
         <StatusChip row={row} nesting={nesting} live={live} />
+        <span className="flex-1" />
         {figures && <CostPill entries={figures.entries} prices={prices} variant="badge" />}
+      </div>
+      {/* What it was ASKED, on a line of its own and allowed to wrap. It is the
+          first thing anyone reads and it was the first thing to be squeezed. */}
+      <div className="mt-1 text-xs font-medium text-[var(--text)]">{meta.description || meta.agentId}</div>
+      {/* The id itself, because it is what the URL carries, what a
+          notification calls this agent, and what the search now finds. */}
+      <div
+        className="mt-0.5 font-mono text-[10px] text-[var(--text-dim)] opacity-60 select-text"
+        title={`Subagent id: ${meta.agentId} — paste it into the search to come back here`}
+      >
+        {meta.agentId}
       </div>
       {nesting && (
         <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">
@@ -322,7 +310,11 @@ function AgentRow({
           </span>
         )}
         {loading && <span>reading its transcript…</span>}
-        <span className="flex-1" />
+      </div>
+      {/* The three ways in, on their own line: sharing one with the clocks
+          above meant they wrapped underneath them at any column width, which
+          read as a second row of facts rather than as buttons. */}
+      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
         <button
           type="button"
           onClick={() => subagents?.openAgent(meta.agentId)}
@@ -458,17 +450,15 @@ export function SubagentsPanel({
   const tokens = usage.input + usage.output + usage.cacheRead + usage.cacheCreate;
 
   return (
-    <div className="max-h-[45vh] overflow-y-auto border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
-      <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        Subagents — {rows.length}
+    <div className="px-4 py-3">
+      {/* The name and the count are the inspector's title bar now. */}
+      <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">
         {tokens > 0 && (
-          <span className="ml-2 font-normal normal-case">
-            {formatTokens(tokens)} tokens · {formatUsd(total)}
+          <span className="text-[var(--text-dim)]">
+            {formatTokens(tokens)} tokens · {formatUsd(total)} ·{' '}
           </span>
         )}
-        <span className="ml-2 font-normal normal-case opacity-70">
-          (each one its own conversation — counted in the session total, and in none of its messages)
-        </span>
+        each one its own conversation — counted in the session total, and in none of its messages
       </div>
       {ordered.map(({ row, depth }) => {
         const i = rows.indexOf(row);

@@ -996,7 +996,7 @@ export function SessionTerminal({
             // The follow pill floats in this corner; give it back where the
             // column reaches the window's edge. Same `max()` the composer does.
             paddingRight: columnWidth
-              ? `max(0.75rem, calc(${String(PILL_CORNER_PX)}px - 50vw + ${columnWidth} / 2))`
+              ? `max(0.75rem, calc(${String(PILL_CORNER_PX)}px - var(--conv-box, 100vw) / 2 + ${columnWidth} / 2))`
               : undefined,
           }}
         >

@@ -14,6 +14,7 @@ import type { MatchHighlight } from '../../lib/highlight.ts';
 import { useSelectedMessage } from '../../lib/selectedMessage.ts';
 import { isFromTerminal } from '../../lib/terminalPrefs.ts';
 import { SnippetRow } from '../list/SnippetRow.tsx';
+import { toggleClass } from './controlClass.ts';
 import type { FindState, FindTarget } from './TurnList.tsx';
 
 /** Long enough that a word is typed before it is scanned, short enough not to lag. */
@@ -377,6 +378,38 @@ const control =
   'cursor-pointer rounded border px-1.5 py-0.5 text-[11px] transition-colors disabled:cursor-default disabled:opacity-40';
 const idle = 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]';
 const on = 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--text)]';
+
+/**
+ * The way into the bar for anyone who does not know Ctrl+F opens it — which is
+ * how anyone finds that out. Here rather than in the header because it belongs
+ * to the find, and the shortcut printed on it is one fact with one home.
+ */
+export function FindButton({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={toggleClass(open)}
+      title="Find in this conversation — reaches what is folded away, which the browser's own find cannot. Ctrl+F searches the selected message, or what is unfolded; Ctrl+Shift+F searches all of it."
+    >
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="size-3.5 shrink-0"
+      >
+        <circle cx="7" cy="7" r="4.3" />
+        <path d="M10.3 10.3 13.8 13.8" />
+      </svg>
+      Find
+      <span className="rounded border border-[var(--border)] px-1 text-[10px] leading-4 opacity-60">Ctrl+F</span>
+    </button>
+  );
+}
 
 export function FindBar(p: FindBarProps) {
   if (!p.open) return null;

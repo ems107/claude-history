@@ -154,7 +154,8 @@ export function Composer({
    * The width of the conversation's column, as a CSS length. Used for one piece
    * of arithmetic: the follow-the-end pill floats in the scroller's bottom-right
    * corner, which is the corner Send sits in, and the pill is on top — it would
-   * take the click. `50vw - column/2` is the margin between this box and the
+   * take the click. `--conv-box/2 - column/2` is the margin between this box
+   * and the
    * window's edge, so where that margin is smaller than the pill needs, the
    * action row gives up the difference and Send steps aside. Where it is not
    * (any width with room around it), the row keeps its own padding and nothing
@@ -427,7 +428,7 @@ export function Composer({
                 className="flex items-center gap-1 px-2 pt-0.5 pb-2"
                 style={
                   columnWidth
-                    ? { paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - 50vw + ${columnWidth} / 2))` }
+                    ? { paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - var(--conv-box, 100vw) / 2 + ${columnWidth} / 2))` }
                     : undefined
                 }
               >
