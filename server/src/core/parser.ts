@@ -296,6 +296,7 @@ export function planTitle(markdown: string): string | null {
 
 function buildResult(
   c: Record<string, unknown>,
+  timestamp: string | null,
   projectsDir: string,
   persistedOutputPath: string | null,
   answers: Record<string, string> | null,
@@ -323,6 +324,7 @@ function buildResult(
   }
   return {
     text,
+    timestamp,
     truncated,
     totalChars,
     isError: c.is_error === true,
@@ -873,6 +875,7 @@ export async function parseTranscript(
             if (tool) {
               tool.result = buildResult(
                 c,
+                str(o.timestamp),
                 projectsDir,
                 persistedOutputPath,
                 tool.toolName === 'AskUserQuestion' ? askedAnswers : null,
@@ -1048,6 +1051,7 @@ export async function parseTranscript(
               kind: 'tool',
               toolName,
               toolUseId,
+              timestamp: str(o.timestamp),
               inputSummary: summarizeInput(toolName, c.input),
               intent: toolIntent(toolName, c.input),
               input: c.input ?? null,

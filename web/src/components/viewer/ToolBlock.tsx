@@ -1,9 +1,10 @@
 import type { ContentBlock } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
-import { formatBytes } from '../../lib/format.ts';
+import { formatBytes, formatDateTime, formatMs, formatTimeOfDay, msBetween } from '../../lib/format.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
+import { CardLine, HoverCard } from './HoverCard.tsx';
 import { useFoldable, useRevealed } from './RevealContext.ts';
 import { useSubagents } from './SubagentContext.ts';
 
@@ -61,6 +62,7 @@ function OffloadedResult({
   return (
     <button
       type="button"
+      data-chrome
       disabled={loading}
       onClick={load}
       className="mt-1 cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
@@ -95,6 +97,11 @@ export function ToolBlock({
   // run holds five of them; it falls back to the generic one outside a session.
   const agentType = block.agentId ? subagents?.byId.get(block.agentId)?.agentType : null;
   const launched = !!block.agentId && !!result && !result.isError && result.text.startsWith(LAUNCH_NOTE);
+  // The call's own wall time: its tool_use line's clock to its result line's.
+  // Null while nothing has come back — a call with no result keeps its clock
+  // and claims no span. For a launched Agent this is the dispatch, not the run:
+  // the subagent's own lifetime lives in its panel.
+  const tookMs = msBetween(block.timestamp, result?.timestamp ?? null);
 
   return (
     // The anchor a search result scrolls to and flashes. A data attribute rather
@@ -106,7 +113,45 @@ export function ToolBlock({
     >
       <div className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs">
         <FoldHeader open={open} onToggle={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-          <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
+          {/* `data-chrome` on the caret and on everything after the header: the
+              box's message text is exactly what `findInSession` folds — name,
+              intent, summary, input, result — and nothing else in it may be
+              marked, counted or pasted by the formatted copy. */}
+          <span data-chrome className="text-[var(--text-dim)]">
+            {open ? '▾' : '▸'}
+          </span>
+          {/* Time of day only on the face — the date is already said by the
+              message headers around the run, and lives on the hover. Inside the
+              FoldHeader, which its rule allows: a HoverCard takes no click, so
+              the header keeps folding through it. `data-chrome` because this is
+              text in the marking box that is not the message's own words: the
+              find bar must not mark a clock.
+
+              Two fixed columns, not one prose blob: the hour is always 8ch and
+              the span right-aligns in a reserved column — kept even when empty,
+              so a resultless call does not shift its name — which is what lines
+              the tool names up down a run. A span longer than the column (a
+              minutes-long call) pushes its own row wider, and sticking out is
+              the right look for it. */}
+          {block.timestamp && (
+            <span data-chrome className="shrink-0">
+              <HoverCard
+                pill={
+                  <span className="flex items-baseline gap-2">
+                    <span className="opacity-70">{formatTimeOfDay(block.timestamp)}</span>
+                    <span className="inline-block min-w-[6ch] text-right">{tookMs !== null ? formatMs(tookMs) : ''}</span>
+                  </span>
+                }
+              >
+                <CardLine label="called" value={formatDateTime(block.timestamp)} />
+                {result?.timestamp && <CardLine label="result" value={formatDateTime(result.timestamp)} />}
+                {tookMs !== null && <CardLine label="took" value={formatMs(tookMs)} />}
+              </HoverCard>
+            </span>
+          )}
+          {/* The dot is the RESULT's state (green OK, red error, grey none), so
+              it sits against the tool's name — and doubles as the seam between
+              the timing columns and the words. */}
           <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
           {/* One truncating box, two voices: what the model said it was doing
@@ -123,15 +168,15 @@ export function ToolBlock({
             </span>
           </span>
         </FoldHeader>
-        {/* Gated on the tool NAME, not on the shape of the string: for these
-            five the summary IS the `file_path` (parser.ts summarizeInput), so
-            there is nothing to guess. A Bash command that happens to contain a
-            path is not a file this opens. */}
-        {FILE_TOOLS.has(block.toolName) && <FileRefChip path={block.inputSummary} />}
-        {costBadge}
+        {costBadge && (
+          <span data-chrome className="flex shrink-0 items-center gap-2">
+            {costBadge}
+          </span>
+        )}
         {block.agentId && onOpenAgent && (
           <button
             type="button"
+            data-chrome
             onClick={() => onOpenAgent(block.agentId!)}
             className="shrink-0 cursor-pointer rounded bg-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-400 hover:bg-sky-500/25"
             title="Open subagent transcript"
@@ -139,26 +184,34 @@ export function ToolBlock({
             ⑂ {agentType ?? 'subagent'}
           </button>
         )}
+        {/* Last in the row, after every badge. Gated on the tool NAME, not on
+            the shape of the string: for these five the summary IS the
+            `file_path` (parser.ts summarizeInput), so there is nothing to
+            guess. A Bash command that happens to contain a path is not a file
+            this opens. */}
+        {FILE_TOOLS.has(block.toolName) && <FileRefChip path={block.inputSummary} />}
       </div>
       {open && (
         <div className="border-t border-[var(--border)] px-2 py-1.5">
           {block.input !== null && block.input !== undefined && (
             <>
-              <div className="mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">Input</div>
+              <div data-chrome className="mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+                Input
+              </div>
               <pre className="max-h-64 overflow-auto rounded bg-black/40 p-2 text-xs whitespace-pre-wrap">
                 {JSON.stringify(block.input, null, 2)}
               </pre>
             </>
           )}
           {launched && (
-            <div className="mt-2 text-xs text-[var(--text-dim)]">
+            <div data-chrome className="mt-2 text-xs text-[var(--text-dim)]">
               Sent out — nothing came back here. Its report arrives further down as a notification, and its own
               transcript is behind the ⑂ button.
             </div>
           )}
           {result && !launched && (
             <>
-              <div className="mt-2 mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+              <div data-chrome className="mt-2 mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
                 Result{result.isError ? ' (error)' : ''}
                 {result.truncated && (
                   <span className="ml-2 normal-case text-amber-400">

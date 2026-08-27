@@ -1,22 +1,55 @@
 import type { SessionSummary } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../../api/client.ts';
 import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
-import { entrypointLabel, formatBytes, formatDateTime, relativeTime, shortModel } from '../../lib/format.ts';
+import {
+  entrypointLabel,
+  formatBytes,
+  formatClock,
+  formatDateTime,
+  relativeTime,
+  shortModel,
+} from '../../lib/format.ts';
 import { SessionBadges } from './Badges.tsx';
 import { ProjectTag } from './ProjectTag.tsx';
 
 function RowDates({ session }: { session: SessionSummary }) {
   const last = session.lastActivityAt ?? session.mtimeMs;
+
+  // An active row counts its last activity by the second, so it re-renders by
+  // the second too — only while live, and the list is virtualized, so only the
+  // live rows on screen tick.
+  const isLive = session.live !== null;
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!isLive) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1_000);
+    return () => clearInterval(timer);
+  }, [isLive]);
+
   return (
     <div
       className="shrink-0 text-right"
       title={`Last activity: ${formatDateTime(last)}\nCreated: ${formatDateTime(session.createdAt)}`}
     >
-      <div className="text-sm leading-tight">{relativeTime(last)}</div>
-      <div className="text-xs leading-tight text-[var(--text-dim)]">{formatDateTime(last)}</div>
+      {isLive ? (
+        // The counter and the stamp under it are ONE fact — how long ago, and
+        // when that was — so the label sits on the stamp, the same
+        // label-then-value pattern the created line already reads in.
+        <>
+          <div className="text-sm leading-tight font-semibold text-sky-400 tabular-nums">
+            {formatClock(Date.now() - (typeof last === 'number' ? last : Date.parse(last)))}
+          </div>
+          <div className="text-xs leading-tight text-[var(--text-dim)]">last activity {formatDateTime(last)}</div>
+        </>
+      ) : (
+        <>
+          <div className="text-sm leading-tight">{relativeTime(last)}</div>
+          <div className="text-xs leading-tight text-[var(--text-dim)]">{formatDateTime(last)}</div>
+        </>
+      )}
       <div className="text-xs leading-tight text-[var(--text-dim)] opacity-70">
         created {formatDateTime(session.createdAt)}
       </div>
