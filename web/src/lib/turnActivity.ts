@@ -178,6 +178,51 @@ export function turnActivity(turns: Turn[]): TurnActivity {
   return { startedAt, lastMessageAt, lastToolAt, lastWriteAt, lastQueuedAt, unanswered: unansweredAt(turn.items) };
 }
 
+/** When a finished turn ran: prompt in to last thing that landed, epoch ms. */
+export interface TurnSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * The whole turn as the transcript records it: from its first kept item —
+ * normally the prompt — to the newest stamp anything in it carries.
+ *
+ * **The same boundary `total` counts from live** (`turnClocks`), interruptions
+ * held inside the turn and rewound-away items left out, so the figure the fold
+ * strip settles on is the one the working row was showing when the turn ended.
+ * Deliberately NOT the CLI's own `turn_duration.durationMs`, which the parser
+ * drops: measured against it, the transcript's own stamps land within ~30 ms
+ * (p99 393 ms) — invisible at the seconds this is drawn at — while the line is
+ * missing exactly where a fallback would be needed anyway (interrupted turns,
+ * CLIs before ~2.1.229), and on an interrupted turn it counts only the stretch
+ * after the last input, which is not what the live clock just said.
+ *
+ * The end reads tool RESULTS as well as message ends: a `<task-notification>`
+ * opens a turn of its own and cuts the previous one right after a returned
+ * call, whose result stamp is then the newest clock that turn has.
+ *
+ * Null for a turn with nothing to measure — a dangling prompt, a turn Claude
+ * never answered. Pure, and checkable without a browser.
+ */
+export function turnSpan(turn: Turn): TurnSpan | null {
+  let start: number | null = null;
+  let end: number | null = null;
+  for (const item of turn.items) {
+    if (item.discardedBranch !== null) continue;
+    if (start === null) start = stamp(item.timestamp);
+    const ended = stamp(item.endTimestamp ?? item.timestamp);
+    if (ended !== null && (end === null || ended > end)) end = ended;
+    for (const block of item.blocks) {
+      if (block.kind !== 'tool') continue;
+      const returned = stamp(block.result?.timestamp ?? null);
+      if (returned !== null && (end === null || returned > end)) end = returned;
+    }
+  }
+  if (start === null || end === null || end <= start) return null;
+  return { start, end };
+}
+
 /**
  * How far from the turn's own start a stamp has to be before it is somebody
  * interrupting rather than somebody starting. Below it the two figures are one

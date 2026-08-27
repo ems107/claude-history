@@ -1088,6 +1088,7 @@ export function SessionViewPage() {
                       onFindMarks={finder.onFindMarks}
                       onOpenAgent={openAgent}
                       footer={workingFooter}
+                      lastTurnInFlight={isWorking(liveInfo)}
                       pending={pendingTurns}
                     />
                   </StarContext>
