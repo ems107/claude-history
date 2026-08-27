@@ -416,6 +416,14 @@ export interface SentAttachment {
 
 export interface ToolResultInfo {
   text: string;
+  /**
+   * The clock of the user line that carried this result — when the tool came
+   * back. With the call's own `timestamp` on the tool block, the two are the
+   * tool's wall time: where a tool self-reports one (`toolUseResult.durationMs`,
+   * Glob and WebFetch only), the delta between the two lines matches it to
+   * within ~15 ms.
+   */
+  timestamp: string | null;
   truncated: boolean;
   totalChars: number;
   isError: boolean;
@@ -601,6 +609,13 @@ export type ContentBlock =
       kind: 'tool';
       toolName: string;
       toolUseId: string;
+      /**
+       * The `tool_use` line's own clock — when the call was issued. A streamed
+       * message writes one closed block per line, each with its own timestamp,
+       * and the merge by `message.id` keeps only the message's first and last;
+       * this is the per-call one, kept before the merge flattens it.
+       */
+      timestamp: string | null;
       inputSummary: string;
       /**
        * What the model said it was doing, in its own words: the `description`
