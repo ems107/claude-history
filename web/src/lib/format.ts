@@ -162,6 +162,24 @@ export function msBetween(from: string | null, to: string | null): number | null
   return Math.max(0, b - a);
 }
 
+/**
+ * A live counter's spelling of a duration: "2h 34m 15s", "30m 04s", "42s".
+ * Not `formatDuration`, on purpose: this one keeps the seconds visible at any
+ * length (it is re-rendered every second, and a counter that stops moving
+ * reads as stopped) and never rolls hours into days — a session open since
+ * yesterday says "26h 05m 12s". First unit unpadded, the rest two digits, so
+ * the width only changes when a unit appears.
+ */
+export function formatClock(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total / 60) % 60;
+  const seconds = total % 60;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`;
+  return `${seconds}s`;
+}
+
 /** The span between two transcript timestamps, or null when either is missing. */
 export function durationBetween(from: string | null, to: string | null): string | null {
   const ms = msBetween(from, to);
