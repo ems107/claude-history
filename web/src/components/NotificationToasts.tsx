@@ -13,8 +13,10 @@ import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow
  * How long a card stays, and the duration of the bar's animation in
  * `styles.css`. **The bar is what actually ends the card** — see `Toast` — so
  * this figure exists to be read beside that one and to size the backstop below.
+ * Exported for the session view, whose deferred withdrawal of an announced
+ * row (`notifyInFront`) is this same window measured from the stop.
  */
-const TOAST_MS = 10_000;
+export const TOAST_MS = 10_000;
 
 /**
  * The card cannot be immortal, whatever happens to its animation. Nothing in
@@ -115,9 +117,16 @@ export function NotificationToasts() {
    * Decided HERE and not in the session view, because this is where a stop is
    * known to be news at all, and the switches next to it are decided in one
    * place for the same reason.
+   *
+   * Unless `notifyInFront` says otherwise: with it on, the session in front of
+   * you is announced exactly like any other, so `inFront` stays null and the
+   * filter below has nothing to drop. The session view defers its withdrawal
+   * of the row for the same setting, or the card would fall with the row
+   * before anybody heard it.
    */
   const viewed = useMatch('/session/:id')?.params.id ?? null;
-  const inFront = useWindowFocused() ? viewed : null;
+  const focused = useWindowFocused();
+  const inFront = focused && settings?.notifyInFront !== true ? viewed : null;
   /** The newest `at` seen per session. `null` until the first answer seeds it. */
   const lastAt = useRef<Map<string, number> | null>(null);
   /**
