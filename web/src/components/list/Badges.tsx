@@ -2,6 +2,7 @@ import type { LiveInfo, SessionSummary } from '@claude-history/shared';
 import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
+import { useActiveSessions } from '../../api/useActiveSessions.ts';
 import { formatClock, formatDateTime } from '../../lib/format.ts';
 
 export function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
@@ -75,21 +76,37 @@ export function SessionBadges({
     );
   }
 
+  // Whether THIS APP is the thing holding the session open — the composer or
+  // the embedded terminal — and which, for the tooltip. One shared query across
+  // every visible row (same key, one request), kept fresh by `chat-changed` /
+  // `terminal-changed`. While it has not answered yet, a session reads as
+  // outside: most live sessions are, and the flash lasts one render.
+  const active = useActiveSessions();
+  const ours = active.data?.sessions.find((a) => a.sessionId === session.id);
+
   if (liveInfo) {
     // Two badges for two facts. LIVE says "there is a process", in every state
     // alike, and carries how long that process has been there; the state badge
     // says what the process is doing NOW, and only when the CLI actually said
     // — a `--print` run writes no status, so "unknown" draws no state at all.
+    // The pill itself says WHOSE process: tinted plain "live" when this app
+    // holds the session, the hollow outline "live outside" when something
+    // else does — the outline is the house it is not in.
+    const since = liveInfo.startedAt !== null ? ` — since ${formatDateTime(liveInfo.startedAt)}` : '';
     badges.push(
       <span
         key="live"
-        title={`A Claude Code process has this session open${
-          liveInfo.startedAt !== null ? ` — since ${formatDateTime(liveInfo.startedAt)}` : ''
+        title={
+          ours
+            ? `Open in this app — ${ours.what}${since}`
+            : `A Claude Code process has this session open outside this app${since}`
+        }
+        className={`inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-semibold tracking-wide text-green-400 uppercase ${
+          ours ? 'bg-green-500/15' : 'ring-1 ring-green-400/45 ring-inset'
         }`}
-        className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-green-400 uppercase"
       >
         <span className="size-1.5 rounded-full bg-green-400" />
-        live
+        {ours ? 'live' : 'live outside'}
         {/* Lowercase units inside an uppercase pill, tabular digits so the
             ticking seconds don't wobble the badge. */}
         {liveInfo.startedAt !== null && (
