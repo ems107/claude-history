@@ -462,6 +462,14 @@ Then Chrome over CDP, with check 9's harness:
 - **`?agents=1` opens the inspector on the subagent list**, and clicking any other rail item removes the parameter rather than leaving two things open.
 - **The two overlays stop short of the rail**: the drawer and the file viewer are `fixed` with `right: 72`, so the rail stays clickable behind neither of them.
 
+**42. The tool clocks.** The data half without a browser, over `GET /api/sessions/:id`:
+
+- **Every result's clock is at or after its call's** — `result.timestamp >= block.timestamp` as plain string compare, both being UTC ISO — over the whole corpus. `msBetween` clamps at zero for the replays, so the assertion is on the raw fields, where a real inversion would still show.
+- **The span is validated by the tools that self-report one.** Find a session by the property (`rg '"durationMs"' ~/.claude/projects/*/*.jsonl`, ignoring `compactMetadata`): Glob and WebFetch write `toolUseResult.durationMs`, and the API's two clocks must bracket it to within ~15 ms. The self-report is not exposed by the API — read it from the raw line.
+- **A call with no result keeps its clock and claims no span**: `b343d4ac` is the fixture (a turn ending on `PowerShell` with no result beside a `Bash` with one).
+
+Then in the viewer, on that same session: the row's face reads `HH:mm:ss` (the call's own line, not the message's) plus ` · span` only when something came back; the date appears on the hover title and in the card (`called` / `result` / `took`); `model · effort` sits beside the cost pill on the FIRST call of each message and nowhere else — check 28's arithmetic is untouched by it. And the chrome half, which is check 26's contract: a find for `input`, `result` or a clock's own digits must mark labels, clocks and pills **nowhere**.
+
 **21. The file viewer.** `fileRefs.ts` is pure, so start without a browser (`node --experimental-strip-types`). Must parse: `server/src/app.ts:12`, `app.ts:12`, `x.ts:12:5`, `a/b.cs#L59-L60`, `C:\Users\…`, `\srv\share\x.ts`, and `Actualizacion%20Base%20de%20Datos%202.0/sentenciasSQL.bas:6648` (decoded, with its spaces). Must give null: `https://github.com/x/y.ts`, `mailto:`, `javascript:`, `v1.3.2`, `2.1.222`, `api.anthropic.com`, `/logs`. And `formatFileRef(parseFileRef(x))` must give back `x`.
 
 - `20a73271` (DistribVB6_0) is the fixture: 26 links in one session, `ActualizadorVersion/frmActualizador.frm` at 1,086 lines (the stripe) and `Actualizacion Base de Datos 2.0/sentenciasSQL.bas` at 376 KB (the "syntax highlighting skipped" note).
