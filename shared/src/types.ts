@@ -417,11 +417,14 @@ export interface SentAttachment {
 export interface ToolResultInfo {
   text: string;
   /**
-   * The clock of the user line that carried this result — when the tool came
-   * back. With the call's own `timestamp` on the tool block, the two are the
-   * tool's wall time: where a tool self-reports one (`toolUseResult.durationMs`,
-   * Glob and WebFetch only), the delta between the two lines matches it to
-   * within ~15 ms.
+   * The clock of the user line that carried this result — when the result was
+   * RECORDED. With the call's own `timestamp` on the tool block, the two are
+   * the call's wall time from issue to result, which is more than the tool's
+   * own run when something sat in between (a parallel batch, a permission
+   * wait): against the duration Glob and WebFetch self-report
+   * (`toolUseResult.durationMs`), the span never undershoots and lands within
+   * 20 ms for 72 of the 93 in this corpus (median +6 ms), with the rest
+   * overshooting by up to 90 s of real waiting.
    */
   timestamp: string | null;
   truncated: boolean;
