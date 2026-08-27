@@ -245,7 +245,10 @@ function ToolGroup({
     let previousOwner: string | null = null;
     return (
       <div className="my-1.5 border-l border-[var(--border)] pl-2">
-        <div className="mb-1 flex items-center gap-2">
+        {/* `data-chrome` on the header row, never on the container: a run inside
+            an assistant bubble sits in its `[data-bubble-body]`, and these words
+            are ours — but the tool boxes below must stay markable. */}
+        <div data-chrome className="mb-1 flex items-center gap-2">
           <FoldHeader open onToggle={() => setOpen(false)} className="text-xs text-[var(--text-dim)] hover:text-[var(--text)]">
             ▾ {blocks.length} tool call{blocks.length !== 1 ? 's' : ''} — collapse
           </FoldHeader>
@@ -266,9 +269,10 @@ function ToolGroup({
                   <>
                     {/* The same trailing run an assistant header wears — these
                         messages are tool-only, so this is the one place their
-                        model is said out loud. Chrome: not the message's words. */}
+                        model is said out loud. ToolBlock wraps the whole badge
+                        in `data-chrome`: not the message's words. */}
                     {t.item.model && (
-                      <span data-chrome className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]">
+                      <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]">
                         {shortModel(t.item.model)}
                         {t.item.effort && ` · ${t.item.effort}`}
                       </span>
@@ -289,7 +293,12 @@ function ToolGroup({
     );
   }
   return (
-    <div className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]">
+    // Collapsed, the whole line is chrome: a summary of ours, not the messages'
+    // own words — those are counted folded and marked when the run opens.
+    <div
+      data-chrome
+      className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+    >
       <FoldHeader
         open={false}
         onToggle={() => setOpen(true)}

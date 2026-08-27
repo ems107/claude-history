@@ -59,13 +59,18 @@ export function FileRefChip({ path, title }: { path: string; title?: string }) {
   const fileRef = ctx ? parseFileRef(path) : null;
   if (!ctx || !fileRef) return null;
   return (
-    <FileLink
-      ctx={ctx}
-      fileRef={fileRef}
-      className="shrink-0 cursor-pointer rounded bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-300 hover:bg-amber-500/25"
-      title={title ?? `Open ${fileRef.path}`}
-    >
-      📄
-    </FileLink>
+    // `data-chrome` on the chip, never on `FileLink` itself: the link also
+    // dresses paths that ARE message text (Markdown), and those must stay
+    // markable. The chip is ours, wherever it sits.
+    <span data-chrome className="shrink-0">
+      <FileLink
+        ctx={ctx}
+        fileRef={fileRef}
+        className="cursor-pointer rounded bg-amber-500/15 px-1.5 py-0.5 font-semibold text-amber-300 hover:bg-amber-500/25"
+        title={title ?? `Open ${fileRef.path}`}
+      >
+        📄
+      </FileLink>
+    </span>
   );
 }

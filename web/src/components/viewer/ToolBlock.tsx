@@ -62,6 +62,7 @@ function OffloadedResult({
   return (
     <button
       type="button"
+      data-chrome
       disabled={loading}
       onClick={load}
       className="mt-1 cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
@@ -112,7 +113,13 @@ export function ToolBlock({
     >
       <div className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs">
         <FoldHeader open={open} onToggle={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-          <span className="text-[var(--text-dim)]">{open ? '▾' : '▸'}</span>
+          {/* `data-chrome` on the caret and on everything after the header: the
+              box's message text is exactly what `findInSession` folds — name,
+              intent, summary, input, result — and nothing else in it may be
+              marked, counted or pasted by the formatted copy. */}
+          <span data-chrome className="text-[var(--text-dim)]">
+            {open ? '▾' : '▸'}
+          </span>
           <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
           {/* One truncating box, two voices: what the model said it was doing
@@ -154,10 +161,15 @@ export function ToolBlock({
             </HoverCard>
           </span>
         )}
-        {costBadge}
+        {costBadge && (
+          <span data-chrome className="flex shrink-0 items-center gap-2">
+            {costBadge}
+          </span>
+        )}
         {block.agentId && onOpenAgent && (
           <button
             type="button"
+            data-chrome
             onClick={() => onOpenAgent(block.agentId!)}
             className="shrink-0 cursor-pointer rounded bg-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-400 hover:bg-sky-500/25"
             title="Open subagent transcript"
@@ -170,21 +182,23 @@ export function ToolBlock({
         <div className="border-t border-[var(--border)] px-2 py-1.5">
           {block.input !== null && block.input !== undefined && (
             <>
-              <div className="mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">Input</div>
+              <div data-chrome className="mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+                Input
+              </div>
               <pre className="max-h-64 overflow-auto rounded bg-black/40 p-2 text-xs whitespace-pre-wrap">
                 {JSON.stringify(block.input, null, 2)}
               </pre>
             </>
           )}
           {launched && (
-            <div className="mt-2 text-xs text-[var(--text-dim)]">
+            <div data-chrome className="mt-2 text-xs text-[var(--text-dim)]">
               Sent out — nothing came back here. Its report arrives further down as a notification, and its own
               transcript is behind the ⑂ button.
             </div>
           )}
           {result && !launched && (
             <>
-              <div className="mt-2 mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+              <div data-chrome className="mt-2 mb-1 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
                 Result{result.isError ? ' (error)' : ''}
                 {result.truncated && (
                   <span className="ml-2 normal-case text-amber-400">
