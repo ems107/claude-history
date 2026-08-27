@@ -192,11 +192,15 @@ export interface TurnSpan {
  * held inside the turn and rewound-away items left out, so the figure the fold
  * strip settles on is the one the working row was showing when the turn ended.
  * Deliberately NOT the CLI's own `turn_duration.durationMs`, which the parser
- * drops: measured against it, the transcript's own stamps land within ~30 ms
- * (p99 393 ms) — invisible at the seconds this is drawn at — while the line is
- * missing exactly where a fallback would be needed anyway (interrupted turns,
- * CLIs before ~2.1.229), and on an interrupted turn it counts only the stretch
- * after the last input, which is not what the live clock just said.
+ * drops. Measured against it over the whole corpus (751 lines): on a turn with
+ * no human wait inside, the two agree within ms (p50 58 ms) — and every real
+ * disagreement is a wait or a boundary, not an error. A permission dialog (the
+ * gap between a call and its result), a question, a queued prompt make this
+ * span LONGER by exactly the wait, which is the point: the figure is wall
+ * time, prompt in to answer out, the same reading the live `total` gives —
+ * where `durationMs` excludes what the turn spent blocked on a person. And the
+ * line is missing exactly where a fallback would be needed anyway: interrupted
+ * turns get none, CLIs ≤ 2.1.202 write none at all.
  *
  * The end reads tool RESULTS as well as message ends: a `<task-notification>`
  * opens a turn of its own and cuts the previous one right after a returned
