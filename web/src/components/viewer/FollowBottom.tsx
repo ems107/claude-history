@@ -86,6 +86,9 @@ export function useFollowBottom(
   // Read inside the observer, which must not be rebuilt on every toggle.
   const followingRef = useRef(false);
   followingRef.current = following;
+  // Read inside the reset below, which must run on a session change only.
+  const scrollElRef = useRef<HTMLDivElement | null>(null);
+  scrollElRef.current = scrollEl;
   /** The geometry every scroll event is judged against — see the note above. */
   const lastTop = useRef(0);
   const lastHeight = useRef(0);
@@ -99,9 +102,23 @@ export function useFollowBottom(
 
   useEffect(() => {
     setFollowing(false);
+    // The ref too, synchronously: the observer below reads it between this
+    // effect and the re-render that mirrors the state, and a tick in that gap —
+    // the new session's content has just been committed, so one is coming —
+    // would pin this session to its end on the PREVIOUS session's flag.
+    followingRef.current = false;
     setUnseen(0);
     touched.current = false;
     armed.current = false;
+    // A session change is not always a fresh mount: navigating from inside
+    // another conversation (a notification click) reuses the page and the
+    // scroller with it, which would otherwise hand this session the previous
+    // one's scroll offset and message count. So the reset puts the view at the
+    // top — the arming below, in this same flush, or an anchor jump then says
+    // otherwise — and zeroes the count, because a conversation arriving is not
+    // growth whether or not a query was in flight for it.
+    if (scrollElRef.current) scrollElRef.current.scrollTop = 0;
+    lastCount.current = 0;
   }, [resetKey]);
 
   useEffect(() => {
@@ -202,8 +219,14 @@ export function useFollowBottom(
     if (!autoFollow || !scrollEl || armed.current || touched.current) return;
     armed.current = true;
     setFollowing(true);
+    // Synchronously, for the same observer gap the reset closes above.
+    followingRef.current = true;
     scrollEl.scrollTop = scrollEl.scrollHeight;
-  }, [autoFollow, scrollEl]);
+    // `resetKey` too: on a session change with the page already mounted neither
+    // `autoFollow` nor `scrollEl` need change (the previous session was live and
+    // the element survived), and arming is per SESSION, not per element — the
+    // reset above has just disarmed, and runs first.
+  }, [autoFollow, scrollEl, resetKey]);
 
   const toggle = useCallback(() => {
     // Either way the reader has just said what they want, which is also an
