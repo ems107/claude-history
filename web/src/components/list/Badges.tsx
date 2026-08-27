@@ -49,11 +49,20 @@ export function SessionBadges({
   const badges: ReactNode[] = [];
   const liveInfo = live === undefined ? session.live : live;
 
-  // The clock inside the LIVE badge has to move on its own: nothing refetches
-  // a list whose sessions are merely getting older. Mounted only when there is
-  // a clock to move.
+  // "In this state since": what the idle and waiting clocks count from — the
+  // flip, which is exactly what those two states mean. NOT the last activity:
+  // a resumed session is idle for seconds over a transcript last written days
+  // ago, and a menu pulled up writes `waiting` without a byte of transcript.
+  const stateSince = liveInfo ? (liveInfo.statusUpdatedAt ?? liveInfo.updatedAt) : null;
+  // The working clock is the turn's own: `busySince` holds across the
+  // waiting↔busy flips a dialog causes, where the flip restarts on every
+  // answered permission.
+  const workingSince = liveInfo ? (liveInfo.busySince ?? stateSince) : null;
+
+  // The clocks have to move on their own: nothing refetches a list whose
+  // sessions are merely getting older. Mounted only when there is one to move.
   const [, tick] = useState(0);
-  const hasClock = liveInfo?.startedAt != null;
+  const hasClock = liveInfo != null && (liveInfo.startedAt != null || stateSince != null);
   useEffect(() => {
     if (!hasClock) return;
     const timer = setInterval(() => tick((n) => n + 1), 1_000);
@@ -92,11 +101,16 @@ export function SessionBadges({
       badges.push(
         <span
           key="state"
-          title="Answering right now"
+          title={`Answering right now${
+            workingSince !== null ? `\nThis turn began ${formatDateTime(workingSince)}` : ''
+          }`}
           className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-[var(--accent)] uppercase"
         >
           <span className="size-2 animate-spin rounded-full border-[1.5px] border-[var(--accent)]/35 border-t-[var(--accent)]" />
           working
+          {workingSince !== null && (
+            <span className="tabular-nums normal-case">{formatClock(Date.now() - workingSince)}</span>
+          )}
         </span>,
       );
     } else if (liveInfo.status === LIVE_WAITING) {
@@ -107,23 +121,31 @@ export function SessionBadges({
       badges.push(
         <span
           key="state"
-          title={`Waiting for you${liveInfo.waitingFor ? ` — ${liveInfo.waitingFor}` : ''}`}
+          title={`Waiting for you${liveInfo.waitingFor ? ` — ${liveInfo.waitingFor}` : ''}${
+            stateSince !== null ? `\nSince ${formatDateTime(stateSince)}` : ''
+          }`}
           className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-amber-400 uppercase"
         >
           <span className="size-1.5 animate-pulse rounded-full bg-amber-400" />
           waiting
+          {stateSince !== null && (
+            <span className="tabular-nums normal-case">{formatClock(Date.now() - stateSince)}</span>
+          )}
         </span>,
       );
     } else if (LIVE_STOPPED.includes(liveInfo.status)) {
       badges.push(
         <span
           key="state"
-          title="Open and idle"
+          title={`Open and idle${stateSince !== null ? `\nSince ${formatDateTime(stateSince)}` : ''}`}
           className="inline-flex items-center gap-1 rounded bg-zinc-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-zinc-400 uppercase"
         >
           {/* A hollow dot: a process at rest, not absent. */}
           <span className="size-1.5 rounded-full border-[1.5px] border-zinc-400" />
           idle
+          {stateSince !== null && (
+            <span className="tabular-nums normal-case">{formatClock(Date.now() - stateSince)}</span>
+          )}
         </span>,
       );
     }
