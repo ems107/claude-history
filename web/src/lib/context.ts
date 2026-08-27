@@ -53,7 +53,30 @@ export interface ContextPoint {
   recached: number;
   recacheCause: RecacheCause | null;
   /** Set when the context shrank into this request. */
-  shrink: { from: number; to: number; compacted: CompactBoundary | null } | null;
+  shrink: { from: number; to: number; compacted: CompactBoundary | null; boundaryUuid: string | null } | null;
+}
+
+/**
+ * One compaction, anchored on the transcript line that records it — which is
+ * what `shrink.compacted` alone cannot do: the boundary's own uuid is where a
+ * click navigates, and a boundary nothing has followed yet (a fresh /compact in
+ * a live session) has no shrink point to hang from at all.
+ */
+export interface CompactionEvent {
+  boundary: CompactBoundary;
+  /** uuid of the `system`/`compact_boundary` line — `CompactBoundaryPanel` renders inside `<div id={uuid}>`. */
+  uuid: string;
+  timestamp: string | null;
+  /** The summary user line the compaction wrote (`isCompactSummary`), when this parse holds it. */
+  summaryUuid: string | null;
+  /** Points recorded before the boundary: `points[afterIndex]` is where the next request lands. */
+  afterIndex: number;
+  /**
+   * First request after the boundary. Null while nothing has followed yet, and
+   * on all but the last of several back-to-back boundaries. The measured drop,
+   * when there is one, is `point.shrink` — never derived from `postTokens`.
+   */
+  point: ContextPoint | null;
 }
 
 export interface ContextTurn {
@@ -75,6 +98,8 @@ export interface ContextIndex {
   shrinks: ContextPoint[];
   recaches: ContextPoint[];
   recachedTotal: number;
+  /** Every boundary in the transcript, in order — with or without a request after it. */
+  compactions: CompactionEvent[];
 }
 
 function pointOf(item: MessageItem, index: number): ContextPoint | null {
@@ -114,8 +139,9 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
   const perTurn: ContextIndex['perTurn'] = [];
   const shrinks: ContextPoint[] = [];
   const recaches: ContextPoint[] = [];
+  const compactions: CompactionEvent[] = [];
   // A compaction line sits between two requests: it belongs to the next one.
-  let pendingCompaction: CompactBoundary | null = null;
+  let pendingCompaction: CompactionEvent | null = null;
   let previous: ContextPoint | null = null;
 
   for (const turn of turns) {
@@ -127,7 +153,24 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
 
     for (const item of turn.items) {
       const boundary = item.blocks.find((b) => b.kind === 'compact');
-      if (boundary?.kind === 'compact') pendingCompaction = boundary.boundary;
+      // The uuid guard mirrors the `byUuid.has` dedupe below, which runs too
+      // late to protect this branch; the array stays a handful of entries.
+      if (boundary?.kind === 'compact' && !compactions.some((c) => c.uuid === item.uuid)) {
+        pendingCompaction = {
+          boundary: boundary.boundary,
+          uuid: item.uuid,
+          timestamp: item.timestamp,
+          summaryUuid: null,
+          afterIndex: points.length,
+          point: null,
+        };
+        compactions.push(pendingCompaction);
+      }
+      // The summary lands between the boundary and the next request, so the
+      // pending event is still live when it comes past.
+      if (item.isCompactSummary && pendingCompaction && pendingCompaction.summaryUuid === null) {
+        pendingCompaction.summaryUuid = item.uuid;
+      }
 
       if (byUuid.has(item.uuid)) continue;
       const point = pointOf(item, points.length);
@@ -155,12 +198,22 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
           turnRecaches.push(point);
         }
         if (point.delta <= -SHRINK_MIN) {
-          point.shrink = { from: previous.total, to: point.total, compacted: pendingCompaction };
+          point.shrink = {
+            from: previous.total,
+            to: point.total,
+            compacted: pendingCompaction?.boundary ?? null,
+            boundaryUuid: pendingCompaction?.uuid ?? null,
+          };
           shrinks.push(point);
           turnShrinks.push(point);
         }
       }
-      pendingCompaction = null;
+      // Attached even when the delta never reached SHRINK_MIN: the event list
+      // can then say honestly that no measured drop followed.
+      if (pendingCompaction) {
+        pendingCompaction.point = point;
+        pendingCompaction = null;
+      }
       points.push(point);
       byUuid.set(point.uuid, point);
       first ??= point;
@@ -191,6 +244,7 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
     shrinks,
     recaches,
     recachedTotal: recaches.reduce((n, p) => n + p.recached, 0),
+    compactions,
   };
 }
 
