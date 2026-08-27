@@ -768,6 +768,11 @@ and never when the URL carries an anchor — `?msg=` / `?tool=` is a request to
 stand somewhere, and the two would fight over the scroll for as long as the turn
 lasted. The pill is offered whether or not there is anything to scroll; with
 nothing to scroll it is the switch that says the next message will be followed.
+**Whichever door it came through**: from the list the page mounts fresh, but a
+notification clicked from inside another conversation reuses the page and the
+scroller with it, so the follow re-arms on the session id, not on the element —
+and a session that does NOT arm opens at the top rather than inheriting the
+previous session's offset or counting its history as unseen.
 
 ## Nothing above the conversation may change height
 
