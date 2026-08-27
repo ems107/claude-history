@@ -262,6 +262,7 @@ export function FollowBottomButton({
   unseen,
   working = false,
   workingWhat = 'Claude is working',
+  waiting,
   liftPx = 0,
 }: {
   following: boolean;
@@ -284,6 +285,17 @@ export function FollowBottomButton({
    */
   working?: boolean;
   /**
+   * The turn is open and blocked on the reader — the working row's waiting mode,
+   * seen from wherever the scroll is. The sentence to show, `Waiting for you —
+   * permission prompt`, because for waiting the honest answer to "is anything
+   * more coming" is: not until you answer. It WINS over `working` when both
+   * arrive — a question can stand while subagents still run, and blocked on the
+   * reader is the fact that decides what happens next — and it never spins: the
+   * spinner is asserted to mean `busy` and nothing else, so this draws the amber
+   * pulse in the same 12 px box instead.
+   */
+  waiting?: string | null;
+  /**
    * Sit this far above the foot of the scroller instead of the usual 16 px.
    *
    * For the embedded terminal, which fills the corner this floats in. The
@@ -303,7 +315,7 @@ export function FollowBottomButton({
       title={
         // The turn comes first: it is news about the session, while the rest is
         // about this control.
-        (working ? `${workingWhat} — ` : '') +
+        (waiting != null ? `${waiting} — ` : working ? `${workingWhat} — ` : '') +
         (following
           ? 'following the end of the conversation; click, or scroll up, to stop'
           : badge > 0
@@ -324,7 +336,13 @@ export function FollowBottomButton({
           any more and is kept as the handle the checks grab, since the same ring
           also spins on the update button and twice in Remote access. */}
       <span aria-hidden="true" className="flex size-3 items-center justify-center">
-        {working ? (
+        {waiting != null ? (
+          // The working row's amber pulse, not the spinner — and tested FIRST:
+          // the checks assert `.turn-spinner` means busy and nothing else, and
+          // spinning for a session blocked on a person is the lie the row
+          // refuses to tell, agents outstanding or not.
+          <span className="size-2 animate-pulse rounded-full bg-amber-400" />
+        ) : working ? (
           <span className="turn-spinner size-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
         ) : (
           '↓'

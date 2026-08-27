@@ -175,6 +175,7 @@ export const TurnList = memo(function TurnList({
   onFindMarks,
   onOpenAgent,
   footer,
+  lastTurnInFlight = false,
   pending,
 }: {
   turns: Turn[];
@@ -226,6 +227,14 @@ export const TurnList = memo(function TurnList({
    * instead of as a sibling of the prompt.
    */
   footer?: ReactNode;
+  /**
+   * The footer's turn is still being answered — or waited on — so its fold
+   * strip must hold back the settled duration. A boolean of the caller's
+   * (`isWorking(liveInfo) || isWaiting(liveInfo)`, or the drawer's `running`)
+   * rather than inferred from `footer`, which is also passed when the turn is
+   * over and only its subagents are still out.
+   */
+  lastTurnInFlight?: boolean;
   /**
    * Prompts sent from the composer that the transcript has not caught up with,
    * appended after the last turn. Passed in rather than rendered beside the
@@ -558,6 +567,7 @@ export const TurnList = memo(function TurnList({
         <TurnView
           key={key}
           footer={footer && key === footerTurnKey ? footer : undefined}
+          inFlight={lastTurnInFlight && key === footerTurnKey}
           turn={st.turn}
           showThinking={showThinking}
           expandTools={expandTools}

@@ -22,8 +22,9 @@ import type {
   ChatState,
   ChatStatus,
 } from '@claude-history/shared';
-import { activeSessionLimitMessage, CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import { askingFor, activeSessionLimitMessage, CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
+import type { OurTurn } from '../util/chatLive.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
@@ -679,11 +680,26 @@ export class SessionChatService implements TranscriptWriter {
     }));
   }
 
-  /** Sessions with a turn in flight — the session list shows these as busy. */
-  workingSessions(): Map<string, number> {
-    const out = new Map<string, number>();
+  /**
+   * Sessions with a turn in flight — the session list shows these as busy, or
+   * as waiting while a question of ours is on screen (`p.working` stays true
+   * right through an ask, so without `asking` the badge and the viewer's foot
+   * would spin at a person).
+   */
+  workingSessions(): Map<string, OurTurn> {
+    const out = new Map<string, OurTurn>();
     for (const p of this.procs.values()) {
-      if (p.working) out.set(p.sessionId, p.turnStartedAt ?? Date.now());
+      if (!p.working) continue;
+      const askedAt = p.ask ? Date.parse(p.ask.question.askedAt) : Number.NaN;
+      out.set(p.sessionId, {
+        startedAt: p.turnStartedAt ?? Date.now(),
+        asking: p.ask
+          ? {
+              waitingFor: askingFor(p.ask.question.toolName),
+              since: Number.isNaN(askedAt) ? (p.turnStartedAt ?? Date.now()) : askedAt,
+            }
+          : null,
+      });
     }
     return out;
   }

@@ -1,5 +1,5 @@
 import type { LiveInfo } from '@claude-history/shared';
-import { LIVE_BUSY } from '@claude-history/shared';
+import { LIVE_BUSY, LIVE_WAITING } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
 import { elapsed, formatDateTime } from '../../lib/format.ts';
 import { NO_ACTIVITY, type TurnActivity, turnClocks } from '../../lib/turnActivity.ts';
@@ -31,10 +31,31 @@ const WORKING = 'Claude is working…';
  * all mean stopped — see [AI_TRANSCRIPTS.md](../../../../docs/AI_TRANSCRIPTS.md).
  * `waiting` is the one worth naming here: a session with a dialog on screen has
  * a turn open and nothing moving in it, so this must stay false for it. Spinning
- * for a session blocked on a person would be the one lie this row could tell.
+ * for a session blocked on a person would be the one lie this row could tell —
+ * that state gets the row's own waiting mode instead (`waitingFor` below).
  */
 export function isWorking(live: LiveInfo | null | undefined): boolean {
   return live?.status === LIVE_BUSY;
+}
+
+/**
+ * The other live state with a turn open: a dialog is on screen — a permission,
+ * a question, a plan — and nothing can move until the reader answers it.
+ * `isWorking`'s counterpart so the two branches of the foot read as one
+ * decision, and `LiveInfo.waitingFor` is the sentence that goes with it.
+ */
+export function isWaiting(live: LiveInfo | null | undefined): boolean {
+  return live?.status === LIVE_WAITING;
+}
+
+/**
+ * The waiting state written out, one wording for everything that says it — the
+ * row below and the follow pill's hover. The badge's own tooltip already used
+ * these words; the cause is the CLI's `waitingFor`, null for a dialog it has
+ * no name for.
+ */
+export function waitingSentence(waitingFor: string | null): string {
+  return `Waiting for you${waitingFor ? ` — ${waitingFor}` : ''}`;
 }
 
 /**
@@ -112,15 +133,17 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
  *
  * **Whether anything is working at all is the CALLER's to answer**, and so is
  * the clock: a session reads both off `~/.claude/sessions` (`isWorking` /
- * `workingSince`), a subagent has no such file and reads its own transcript
- * instead. Rendered, this row always means "still going" — every call site
- * already had to know that before drawing the rail it hangs on.
+ * `workingSince` / `isWaiting`), a subagent has no such file and reads its own
+ * transcript instead. Rendered, this row always means "the turn is still open" —
+ * still going, or blocked on the reader (`waitingFor`) — and every call site
+ * already had to know which before drawing the rail it hangs on.
  */
 export function WorkingIndicator({
   since,
   activity = NO_ACTIVITY,
   startHint = 'Turn started',
   news,
+  waitingFor,
 }: {
   /**
    * When the wait last started counting (epoch ms); null draws no clocks. For a
@@ -150,6 +173,18 @@ export function WorkingIndicator({
    * Absent, `WORKING` is announced and nothing is drawn.
    */
   news?: string;
+  /**
+   * The row's WAITING mode: a dialog is on screen and the turn is blocked on
+   * the reader. Its PRESENCE is the switch — the CLI writes `waitingFor` as
+   * null for a dialog it has no name for, so `null` still means waiting and
+   * only `undefined` means working. It changes three things at once: the
+   * spinner rests into the amber pulse of the list's own badge (movement that
+   * means "it wants you", not "it is going"), the sentence is drawn because
+   * a resting dot cannot name a cause, and the activity clocks stand down —
+   * with a dialog up, "last tool 3 s" counts nothing that can move — leaving
+   * `total` and how long the dialog has been waiting.
+   */
+  waitingFor?: string | null;
 }) {
   // The counter is re-rendered, not recomputed from a stored value: `elapsed`
   // reads the clock, so a tick a second is all it takes to keep it truthful.
@@ -164,7 +199,15 @@ export function WorkingIndicator({
   /**
    * Where `total` counts from, and whether the turn was interrupted at all. The
    * whole rule lives in `turnClocks`, pure and beside the readings it weighs.
+   *
+   * The waiting mode reads only `total` out of it: there `since` is the moment
+   * the DIALOG opened, not the reader's last word, so `input` — which turnClocks
+   * derives from that same flip — would caption the dialog's own age as
+   * "You answered". The flip still anchors `total` correctly, because a turn
+   * blocked on a dialog is exactly the `unanswered` shape the adoption test
+   * already covers.
    */
+  const waiting = waitingFor !== undefined;
   const { total, input, inputTyped } = turnClocks(activity, since);
 
   /**
@@ -204,15 +247,32 @@ export function WorkingIndicator({
       {/* The ring the whole app turns — the follow pill, the update button,
           twice in Remote access — in the accent the three dots wore and in the
           pill's own 12 px box. It replaced a wave of dots that read as a chat's
-          "someone is typing", which is exactly what this is not. */}
-      <span
-        aria-hidden="true"
-        className="size-3 shrink-0 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent"
-      />
+          "someone is typing", which is exactly what this is not. Waiting, the
+          ring rests into the amber pulse of the list badge, inside the same
+          12 px slot so the row does not shift when the state flips. */}
+      {waiting ? (
+        <span aria-hidden="true" className="flex size-3 shrink-0 items-center justify-center">
+          <span className="size-2 animate-pulse rounded-full bg-amber-400" />
+        </span>
+      ) : (
+        <span
+          aria-hidden="true"
+          className="size-3 shrink-0 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent"
+        />
+      )}
       {/* Deliberately never "writing a response": `busy` covers the whole turn,
           tool calls included, and most of a turn is not prose being written.
-          Claiming otherwise would be wrong for most of the time it shows. */}
-      {news ? <span className="working-label text-sm">{news}</span> : <span className="sr-only">{WORKING}</span>}
+          Claiming otherwise would be wrong for most of the time it shows.
+          The waiting sentence is drawn by the `news` rule — a resting dot
+          cannot name a cause — and plain amber, not the working shimmer: the
+          shimmer's sweep says "going", which is the one thing this is not. */}
+      {waiting ? (
+        <span className="text-sm text-amber-300/90">{waitingSentence(waitingFor ?? null)}</span>
+      ) : news ? (
+        <span className="working-label text-sm">{news}</span>
+      ) : (
+        <span className="sr-only">{WORKING}</span>
+      )}
       {total !== null && (
         // Out of the announced text: a screen reader repeating the seconds
         // every second would drown the one thing worth saying.
@@ -230,11 +290,20 @@ export function WorkingIndicator({
               and could only be the turn, but next to "last message" a naked
               number is one of three and says nothing about which. */}
           <Figure label="total" at={total} hint={startHint} />
+          {/* Waiting, the activity clocks stand down: with a dialog on screen
+              nothing they count can move, and the one figure worth their place
+              is how long the dialog has been standing there. */}
+          {waiting && since !== null && (
+            <>
+              {' · '}
+              <Figure label="waiting" at={since} hint="Waiting since" />
+            </>
+          )}
           {/* No figure can appear without the turn's own (all three are gated
               on a known start), so a separator never opens the row. Inline
               text with `nowrap` on each figure: the line breaks at a dot and
               never inside "1 min 4 s". */}
-          {input !== null && (
+          {!waiting && input !== null && (
             <>
               {' · '}
               {/* Second because it re-anchors the reading of the two after
@@ -247,13 +316,13 @@ export function WorkingIndicator({
               <Figure label="last input" at={input} hint={inputTyped ? 'You typed this' : 'You answered'} />
             </>
           )}
-          {messageAt !== null && (
+          {!waiting && messageAt !== null && (
             <>
               {' · '}
               <Figure label="last message" at={messageAt} hint="Last message landed" />
             </>
           )}
-          {toolAt !== null && (
+          {!waiting && toolAt !== null && (
             <>
               {' · '}
               <Figure label="last tool" at={toolAt} hint="Last tool called" />

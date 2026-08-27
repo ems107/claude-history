@@ -6,7 +6,7 @@ import type {
   StoppedSession,
   StoppedSessionEntry,
 } from '@claude-history/shared';
-import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
+import { askingFor, LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import type { SessionIndex } from './index.ts';
 import { createLogger } from './logger.ts';
 import type { SessionChatService } from './sessionChat.ts';
@@ -226,14 +226,4 @@ function stopKind(status: string): StopKind | null {
   // `unknown` — a `--print` run of ours, which the composer half answers for —
   // and anything a later CLI adds that we have not been taught to read.
   return null;
-}
-
-/**
- * The composer's answer to `waitingFor`, in the CLI's own vocabulary so a row
- * reads the same whichever half raised it.
- */
-function askingFor(toolName: string | undefined): string {
-  if (toolName === 'ExitPlanMode') return 'plan approval';
-  if (toolName === 'AskUserQuestion') return 'input needed';
-  return 'permission prompt';
 }

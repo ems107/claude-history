@@ -1,4 +1,5 @@
 import {
+  askingFor,
   MAX_STAT_PATHS,
   type ChatPermissionMode,
   type LiveInfo,
@@ -47,7 +48,7 @@ import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
 import { ViewMenu } from '../components/viewer/ViewMenu.tsx';
 import { TOAST_MS } from '../components/NotificationToasts.tsx';
-import { isWorking, WorkingIndicator, workingSince } from '../components/viewer/WorkingIndicator.tsx';
+import { isWaiting, isWorking, waitingSentence, WorkingIndicator, workingSince } from '../components/viewer/WorkingIndicator.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 /** Stable identity while the conversation loads, so the fold state is not rebuilt. */
@@ -715,6 +716,24 @@ export function SessionViewPage() {
    * the comparison and redraw the whole conversation for anything at all.
    */
   const liveInfo = useMemo<LiveInfo | null>(() => {
+    // A question of OURS is on screen. It has to be asked before the busy
+    // branch: the SDK keeps the turn open while a question stands, so
+    // `turnStartedAt` is still set and reading it first would spin the foot at
+    // a person — the one lie the indicator refuses to tell. The clock is the
+    // question's own `askedAt`, which is exactly the flip a CLI would write.
+    const question = chat.data?.state === 'asking' ? (chat.data.question ?? null) : null;
+    if (question) {
+      const askedAt = Date.parse(question.askedAt);
+      return {
+        pid: 0,
+        status: 'waiting',
+        waitingFor: askingFor(question.toolName),
+        name: null,
+        startedAt: null,
+        updatedAt: null,
+        statusUpdatedAt: Number.isNaN(askedAt) ? null : askedAt,
+      };
+    }
     // The server's figure when it has arrived, and until then the moment the
     // prompt was accepted. Waiting for the round trip left the indicator dark
     // for about a second after the click, which on a short turn is most of it —
@@ -733,7 +752,10 @@ export function SessionViewPage() {
       };
     }
     return live.data?.find((l) => l.sessionId === id) ?? null;
-  }, [chat.data?.turnStartedAt, pending, live.data, id]);
+    // The question's two SCALARS, not the object: its identity changes on every
+    // refetch of the status, and this memo feeds a memoised TurnList — an object
+    // dep would redraw the whole conversation for a payload that said nothing new.
+  }, [chat.data?.state, chat.data?.question?.askedAt, chat.data?.question?.toolName, chat.data?.turnStartedAt, pending, live.data, id]);
 
   /**
    * The two clocks the indicator shows beside the turn's own. Read off the
@@ -817,6 +839,20 @@ export function SessionViewPage() {
     () =>
       pending.length === 0 && isWorking(liveInfo) ? (
         <WorkingIndicator since={workingSince(liveInfo)} activity={activity} />
+      ) : /**
+       * A dialog is on screen — a permission, a question, a plan to approve —
+       * and the turn is blocked on the reader. The same row in its waiting
+       * mode, in the same place: the ring rests into the amber pulse, the
+       * cause is written out, and the clock beside `total` is how long the
+       * dialog has been standing. `workingSince` is the busy→waiting flip,
+       * which is exactly when it went up.
+       */
+      pending.length === 0 && isWaiting(liveInfo) ? (
+        <WorkingIndicator
+          since={workingSince(liveInfo)}
+          activity={activity}
+          waitingFor={liveInfo?.waitingFor ?? null}
+        />
       ) : /**
        * The turn is over and something it sent out is not, which is a state the
        * foot of the conversation said nothing about: an agent is launched
@@ -1088,6 +1124,7 @@ export function SessionViewPage() {
                       onFindMarks={finder.onFindMarks}
                       onOpenAgent={openAgent}
                       footer={workingFooter}
+                      lastTurnInFlight={isWorking(liveInfo) || isWaiting(liveInfo)}
                       pending={pendingTurns}
                     />
                   </StarContext>
@@ -1155,13 +1192,18 @@ export function SessionViewPage() {
                 back while a prompt of ours is still an echo, and the turn is in
                 flight all the same. Agents outstanding spin it too — what the
                 pill answers is whether anything more is coming, and their
-                reports will land here — but they say so in their own words. */}
+                reports will land here — but they say so in their own words.
+                Waiting is the third state, and it never spins: the pill wears
+                the row's amber pulse and its hover says what is being waited
+                for, because "is anything more coming" is then answered by the
+                reader, not by Claude. */}
             <FollowBottomButton
               following={follow.following}
               toggle={follow.toggle}
               unseen={follow.unseen}
               working={isWorking(liveInfo) || agentsWorking !== null}
               workingWhat={isWorking(liveInfo) ? undefined : (agentsWorking ?? undefined)}
+              waiting={isWaiting(liveInfo) ? waitingSentence(liveInfo?.waitingFor ?? null) : undefined}
                   liftPx={pillLift}
                 />
               </div>

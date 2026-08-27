@@ -195,6 +195,7 @@ export function SubagentDrawer({
                   scrollToUuid={scrollToUuid}
                   jumpNonce={jumpNonce}
                   footer={workingFooter}
+                  lastTurnInFlight={running}
                 />
               </div>
             )}

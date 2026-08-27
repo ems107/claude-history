@@ -1143,6 +1143,19 @@ export interface ChatQuestion {
 }
 
 /**
+ * The composer's answer to `waitingFor`, in the CLI's own vocabulary so a row
+ * reads the same whichever half raised it. Here rather than in the server,
+ * because both halves say it: the notifications raise a `needs-you` stop with
+ * it, and the session page synthesizes a waiting `LiveInfo` from the same
+ * question.
+ */
+export function askingFor(toolName: string | undefined): string {
+  if (toolName === 'ExitPlanMode') return 'plan approval';
+  if (toolName === 'AskUserQuestion') return 'input needed';
+  return 'permission prompt';
+}
+
+/**
  * The three answers Claude Code itself offers to a plan. The first two allow
  * the tool and set the mode the session continues in; the third denies it, and
  * the note goes back as the reason — which is exactly what the transcript then

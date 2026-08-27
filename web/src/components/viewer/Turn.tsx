@@ -3,12 +3,13 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
 import { systemChars } from '../../lib/findInSession.ts';
-import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
+import { formatDateTime, formatDateTimeFull, formatDuration, relativeTime, shortModel } from '../../lib/format.ts';
 import { foldedCounts } from '../../lib/folding.ts';
 import { parsePlan } from '../../lib/plans.ts';
 import { isPromptItem } from '../../lib/segments.ts';
 import { parseSentFiles } from '../../lib/sentFiles.ts';
 import { systemLabel, systemTitle } from '../../lib/systemLines.ts';
+import { type TurnSpan, turnSpan } from '../../lib/turnActivity.ts';
 import { AnsweredQuestionCard, parseAskUserQuestion } from './AnsweredQuestion.tsx';
 import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
@@ -487,12 +488,20 @@ function FoldStrip({
   open,
   responses,
   tools,
+  span,
   at,
   onToggle,
 }: {
   open: boolean;
   responses: number;
   tools: number;
+  /**
+   * How long the turn ran, prompt to last thing landed (`turnSpan`). Null for
+   * the turn in flight — its live clock is the working row's `total`, counted
+   * from the same boundary, and two figures with different ends would disagree
+   * on screen — and for a turn with nothing to measure.
+   */
+  span: TurnSpan | null;
   /** Only for a turn no prompt opened, which would otherwise be anonymous. */
   at: string | null;
   onToggle?: () => void;
@@ -509,6 +518,19 @@ function FoldStrip({
       {tools > 0 && (
         <span className="shrink-0 font-semibold text-sky-300/80">
           {tools} tool call{tools === 1 ? '' : 's'}
+        </span>
+      )}
+      {/* The counts wear their own colours; the duration is a figure and wears
+          the figures' white, like the working row's clocks. A duration, never a
+          datetime: a DATE reappearing on the strip is AI_TESTING's failure
+          signal for notice-opened turns, and this must not look like one. */}
+      {(responses > 0 || tools > 0) && span && <span className="opacity-50">·</span>}
+      {span && (
+        <span
+          className="shrink-0 font-medium text-[var(--text)]/90 tabular-nums"
+          title={`From ${formatDateTime(span.start)} to ${formatDateTime(span.end)}`}
+        >
+          {formatDuration(span.end - span.start)}
         </span>
       )}
     </>
@@ -635,6 +657,7 @@ export function TurnView({
   onToggleExpanded,
   targetTool,
   footer,
+  inFlight = false,
 }: {
   turn: TurnType;
   showThinking: boolean;
@@ -657,6 +680,14 @@ export function TurnView({
    * that folds, counts or prices a message can see it.
    */
   footer?: ReactNode;
+  /**
+   * This turn is the one being answered (or waited on) right now, so its fold
+   * strip holds back the duration: the working row below is already counting
+   * the same span live, and a second figure that stops at the last write would
+   * quietly disagree with it. NOT inferred from `footer`, which is also passed
+   * when the turn is over and only its subagents are still out.
+   */
+  inFlight?: boolean;
 }) {
   // Tool runs are grouped across items, not just within one assistant
   // message: a turn is usually assistant(tool) → assistant(tool) → … and the
@@ -741,12 +772,14 @@ export function TurnView({
       </span>
     </div>
   ) : null;
+  const span = inFlight ? null : turnSpan(turn);
   const foldStrip = (open: boolean) => (
     <FoldStrip
       key="fold"
       open={open}
       responses={folded.responses}
       tools={folded.tools}
+      span={span}
       // A turn nobody prompted would otherwise be an anonymous line.
       at={promptShown ? null : (turn.items[0]?.timestamp ?? null)}
       onToggle={onToggleExpanded}
