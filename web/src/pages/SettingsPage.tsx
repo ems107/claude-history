@@ -767,6 +767,16 @@ export function SettingsPage() {
             />
           </Row>
 
+          <Row badge={<DefaultBadge field="notifyInFront" value={s.notifyInFront} save={save} />}>
+            <Toggle
+              checked={s.notifyInFront}
+              onChange={(v) => save({ notifyInFront: v })}
+              disabled={notifyOff}
+              label="Announce the session on screen too"
+              hint="By default the session in front of you is never announced — the page is already saying it. This makes it ring and raise its card like any other."
+            />
+          </Row>
+
           {/* The general tone comes FIRST, because everything under it refers to
               it by name: a per-kind tone reading "General tone (Chime)" only
               means anything once you have met the thing it defers to. */}

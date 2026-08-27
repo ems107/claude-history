@@ -46,6 +46,7 @@ import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
 import { ViewMenu } from '../components/viewer/ViewMenu.tsx';
+import { TOAST_MS } from '../components/NotificationToasts.tsx';
 import { isWorking, WorkingIndicator, workingSince } from '../components/viewer/WorkingIndicator.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
@@ -105,20 +106,40 @@ export function SessionViewPage() {
    * So the row now WAITS, and the effect re-runs the moment the focus arrives,
    * which is the instant the session really was seen. `lib/windowFocus.ts` holds
    * why the test is this one and not the softer one the cards use.
+   *
+   * With `notifyInFront` on there is one more thing at stake: this stop is
+   * being ANNOUNCED, right here, and withdrawing the row kills the card
+   * (`NotificationToasts`' `live` filter) and silences the tone (its
+   * `listed.current` re-check) before either has happened. So a row younger
+   * than the announcement window is withdrawn when that window closes —
+   * `TOAST_MS` from the stop, the card's own lifetime — and an older one
+   * (walked into long after it stopped) goes immediately, as ever. Keyed on
+   * the row's `at` rather than on this tab having raised a card, so a second
+   * tab's card lives its ten seconds too.
    */
   const notifications = useNotifications();
-  const notified = !!id && (notifications.data?.stopped.some((s) => s.sessionId === id) ?? false);
+  const rowAt = id ? notifications.data?.stopped.find((s) => s.sessionId === id)?.at : undefined;
   const atWindow = useWindowFocused();
-  useEffect(() => {
-    if (!id || !notified || !atWindow) return;
-    void api
-      .dismissNotification(id)
-      .then((body) => queryClient.setQueryData(['notifications'], body))
-      // Nothing to report: the row is a convenience, and the SSE that follows
-      // any real change will put the list right anyway.
-      .catch(() => undefined);
-  }, [id, notified, atWindow, queryClient]);
   const settings = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const announceInFront =
+    settings.data?.settings.notifyEnabled === true && settings.data?.settings.notifyInFront === true;
+  useEffect(() => {
+    if (!id || rowAt === undefined || !atWindow) return;
+    const dismiss = () =>
+      void api
+        .dismissNotification(id)
+        .then((body) => queryClient.setQueryData(['notifications'], body))
+        // Nothing to report: the row is a convenience, and the SSE that follows
+        // any real change will put the list right anyway.
+        .catch(() => undefined);
+    const wait = announceInFront ? rowAt + TOAST_MS - Date.now() : 0;
+    if (wait <= 0) {
+      dismiss();
+      return;
+    }
+    const timer = setTimeout(dismiss, wait);
+    return () => clearTimeout(timer);
+  }, [id, rowAt, atWindow, announceInFront, queryClient]);
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
   // Which of the two the app offers at the foot of a session. Meaningless while
   // `chatEnabled` is off, and never read there: nothing is drawn either way.

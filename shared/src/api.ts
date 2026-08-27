@@ -689,6 +689,16 @@ export interface AppSettings {
   notifyOnNeedsYou: boolean;
   /** Announce the sessions that finished answering — an error being one of those. */
   notifyOnFinished: boolean;
+  /**
+   * Announce the session in front of you too.
+   *
+   * OFF by default: a stop you are watching happen is normally not news — the
+   * page is already saying it, so the card and the tone are suppressed and the
+   * bell row is withdrawn on sight (`components/NotificationToasts.tsx`,
+   * `pages/SessionViewPage.tsx`). ON makes that session announce exactly like
+   * any other, for whoever looks away from the window without leaving it.
+   */
+  notifyInFront: boolean;
   /** The tone every stop rings with, unless its own kind overrides it below. */
   notifyTone: ToneId;
   /**
@@ -850,6 +860,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyEnabled: true,
   notifyOnNeedsYou: true,
   notifyOnFinished: true,
+  notifyInFront: false,
   notifyTone: 'chime',
   notifyToneNeedsYou: 'alert',
   notifyToneFinished: TONE_INHERIT,
