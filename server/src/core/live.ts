@@ -50,6 +50,9 @@ export async function readLiveSessions(sessionsDir: string): Promise<LiveSession
         startedAt: num(raw.startedAt),
         updatedAt: num(raw.updatedAt),
         statusUpdatedAt: num(raw.statusUpdatedAt),
+        // Not on disk: the index fills it from its own memory of the flips
+        // (`refreshLive`), which is the only place turns can be told apart.
+        busySince: null,
         entrypoint: str(raw.entrypoint),
       });
     } catch {

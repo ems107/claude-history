@@ -42,5 +42,8 @@ export function markOurs(live: LiveInfo | null, turn: OurTurn): LiveInfo {
     // The flip's clock: when the question went up, or when the turn began —
     // the same two moments the CLI's own statusUpdatedAt names.
     statusUpdatedAt: turn.asking?.since ?? turn.startedAt,
+    // Our own turns are the one case this is exact rather than remembered:
+    // the composer stamped the click itself.
+    busySince: turn.startedAt,
   };
 }

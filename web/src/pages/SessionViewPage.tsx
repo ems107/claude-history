@@ -722,6 +722,9 @@ export function SessionViewPage() {
     // a person — the one lie the indicator refuses to tell. The clock is the
     // question's own `askedAt`, which is exactly the flip a CLI would write.
     const question = chat.data?.state === 'asking' ? (chat.data.question ?? null) : null;
+    // The turn our question interrupted is still open, and its start is the
+    // composer's own stamp — the badge's turn clock must not restart on it.
+    const turnStarted = chat.data?.turnStartedAt != null ? Date.parse(chat.data.turnStartedAt) : NaN;
     if (question) {
       const askedAt = Date.parse(question.askedAt);
       return {
@@ -732,6 +735,7 @@ export function SessionViewPage() {
         startedAt: null,
         updatedAt: null,
         statusUpdatedAt: Number.isNaN(askedAt) ? null : askedAt,
+        busySince: Number.isNaN(turnStarted) ? null : turnStarted,
       };
     }
     // The server's figure when it has arrived, and until then the moment the
@@ -749,6 +753,7 @@ export function SessionViewPage() {
         startedAt: null,
         updatedAt: null,
         statusUpdatedAt: busySince,
+        busySince,
       };
     }
     return live.data?.find((l) => l.sessionId === id) ?? null;

@@ -20,6 +20,8 @@ import {
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
   defaultSettings,
+  LIVE_BUSY,
+  LIVE_WAITING,
   LOG_LEVEL_CHOICES,
   MIN_LOG_RETENTION_DAYS,
   MIN_USAGE_INTERVAL_SECONDS,
@@ -138,6 +140,12 @@ export class SessionIndex {
   private scanned = new Map<string, ScannedSession>();
   private history: HistoryData = { entries: [], sessionProject: new Map() };
   private live: LiveSessionEntry[] = [];
+  /**
+   * When each open turn began — `LiveInfo.busySince`. In memory, never
+   * persisted, like every transition: a stop is a transition and nothing on
+   * disk records one, and neither does anything record a start.
+   */
+  private turnStarts = new Map<string, number>();
   /** Local title renames — stored in userdata.json, NEVER written to ~/.claude. */
   private titleOverrides: Record<string, string> = {};
   /** Pinned session ids — stored in userdata.json. */
@@ -339,6 +347,21 @@ export class SessionIndex {
     const before = new Set(this.live.map((l) => l.sessionId));
     this.live = await readLiveSessions(this.config.sessionsDir);
     const after = new Set(this.live.map((l) => l.sessionId));
+    // What the pid file cannot say: when the open TURN began. `statusUpdatedAt`
+    // moves on every flip — answering a permission restarts it — so the moment
+    // a session is first seen busy is remembered here, and survives the
+    // waiting↔busy flips a dialog causes. Anything else ends the turn. A server
+    // restarted mid-turn starts empty and adopts the flip the file still holds,
+    // which is the best it can know.
+    for (const l of this.live) {
+      if (l.status === LIVE_BUSY) {
+        if (!this.turnStarts.has(l.sessionId)) this.turnStarts.set(l.sessionId, l.statusUpdatedAt ?? Date.now());
+      } else if (l.status !== LIVE_WAITING) {
+        this.turnStarts.delete(l.sessionId);
+      }
+      l.busySince = this.turnStarts.get(l.sessionId) ?? null;
+    }
+    for (const id of this.turnStarts.keys()) if (!after.has(id)) this.turnStarts.delete(id);
     const ids = [...new Set([...before, ...after])].filter((id) => before.has(id) !== after.has(id));
     this.applyLive();
     this.events.emit('live-changed', ids);
@@ -357,6 +380,7 @@ export class SessionIndex {
             startedAt: l.startedAt,
             updatedAt: l.updatedAt,
             statusUpdatedAt: l.statusUpdatedAt,
+            busySince: l.busySince,
           }
         : null;
     }

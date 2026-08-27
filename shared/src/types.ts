@@ -259,6 +259,19 @@ export interface LiveInfo {
    * a heartbeat appearing later would move `updatedAt` while this stays true.
    */
   statusUpdatedAt: number | null; // epoch ms
+  /**
+   * When the turn in flight began, as this app best knows it: the moment the
+   * session was last seen LEAVING idle, kept across the waiting↔busy flips a
+   * dialog causes — a session goes busy when the user gives it something back
+   * (`statusUpdatedAt` restarts on every answered permission), and the turn's
+   * own clock must not. Ours, not the CLI's: the pid file has no turn concept,
+   * so the index remembers the flip in memory like every other transition, and
+   * a server restarted mid-turn falls back to `statusUpdatedAt` until the next
+   * turn. Null while no turn is open. The viewer's `total` is still the finer
+   * reading (`turnClocks` bounds the turn by the transcript itself); this is
+   * the list's, exact wherever the server saw the turn start.
+   */
+  busySince: number | null; // epoch ms
 }
 
 export interface SessionSummary {
