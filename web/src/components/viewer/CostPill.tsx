@@ -2,18 +2,11 @@ import type { PriceTable } from '@claude-history/shared';
 import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
 import { recacheCauseText } from '../../lib/context.ts';
 import { type CostEntry, type RecacheSummary, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
-import { shortModel } from '../../lib/format.ts';
+import { formatMs, shortModel } from '../../lib/format.ts';
 import { CardFoot, CardHead, CardLine, HoverCard } from './HoverCard.tsx';
 
 function tokens(n: number): string {
   return n.toLocaleString();
-}
-
-function answerTime(ms: number): string {
-  if (ms < 1000) return `${ms} ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
-  const min = Math.floor(ms / 60_000);
-  return `${min} min ${Math.round((ms % 60_000) / 1000)} s`;
 }
 
 /**
@@ -152,7 +145,7 @@ export function CostPill({
 
       <span className="mt-1.5 block border-t border-[var(--border)] pt-1">
         {context !== null && <CardLine label="context at this point" value={`${tokens(context)} tok`} />}
-        {single?.elapsedMs ? <CardLine label="answer time" value={answerTime(single.elapsedMs)} /> : null}
+        {single?.elapsedMs ? <CardLine label="answer time" value={formatMs(single.elapsedMs)} /> : null}
         {cumulative !== null && cumulative !== undefined && (
           <CardLine
             label="cumulative"

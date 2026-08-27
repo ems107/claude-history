@@ -188,6 +188,7 @@ function ToolGroup({
   onOpenAgent,
   costs,
   targetTool,
+  mixedModels = false,
 }: {
   tools: PendingTool[];
   expandAll: boolean;
@@ -195,6 +196,14 @@ function ToolGroup({
   costs: CostContext;
   /** A deep link's tool call: the run holding it has to be open to show it. */
   targetTool?: string | null;
+  /**
+   * The turn answered under more than one `model · effort` pair. Only then does
+   * a first call name its own — the turn's header already says the pair when
+   * there is one, and a tool call cannot differ from its message (the
+   * `tool_use` line carries the message's model and effort verbatim), so
+   * repeating it on every run was saying nothing.
+   */
+  mixedModels?: boolean;
 }) {
   const holdsTarget = !!targetTool && tools.some((t) => t.block.toolUseId === targetTool);
   // The find bar's destination, read from the context rather than threaded: a
@@ -245,7 +254,10 @@ function ToolGroup({
     let previousOwner: string | null = null;
     return (
       <div className="my-1.5 border-l border-[var(--border)] pl-2">
-        <div className="mb-1 flex items-center gap-2">
+        {/* `data-chrome` on the header row, never on the container: a run inside
+            an assistant bubble sits in its `[data-bubble-body]`, and these words
+            are ours — but the tool boxes below must stay markable. */}
+        <div data-chrome className="mb-1 flex items-center gap-2">
           <FoldHeader open onToggle={() => setOpen(false)} className="text-xs text-[var(--text-dim)] hover:text-[var(--text)]">
             ▾ {blocks.length} tool call{blocks.length !== 1 ? 's' : ''} — collapse
           </FoldHeader>
@@ -263,12 +275,24 @@ function ToolGroup({
               targeted={!!targetTool && t.block.toolUseId === targetTool}
               costBadge={
                 entry ? (
-                  <CostPill
-                    entries={[entry]}
-                    prices={costs.prices}
-                    cumulative={costs.cumulative.get(entry.uuid)}
-                    sessionTotal={costs.sessionTotal}
-                  />
+                  <>
+                    {/* Named only when the turn is mixed — see `mixedModels`.
+                        ToolBlock wraps the whole badge in `data-chrome`: not
+                        the message's words. */}
+                    {mixedModels && t.item.model && (
+                      <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]">
+                        {shortModel(t.item.model)}
+                        {t.item.effort && ` · ${t.item.effort}`}
+                      </span>
+                    )}
+                    <CostPill
+                      entries={[entry]}
+                      prices={costs.prices}
+                      cumulative={costs.cumulative.get(entry.uuid)}
+                      sessionTotal={costs.sessionTotal}
+                    />
+                    <ContextPill point={costs.context.get(t.item.uuid)} />
+                  </>
                 ) : null
               }
             />
@@ -278,7 +302,12 @@ function ToolGroup({
     );
   }
   return (
-    <div className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]">
+    // Collapsed, the whole line is chrome: a summary of ours, not the messages'
+    // own words — those are counted folded and marked when the run opens.
+    <div
+      data-chrome
+      className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+    >
       <FoldHeader
         open={false}
         onToggle={() => setOpen(true)}
@@ -656,6 +685,7 @@ export function TurnView({
           onOpenAgent={onOpenAgent}
           costs={costs}
           targetTool={targetTool}
+          mixedModels={models.length > 1}
         />
       </div>,
     );
@@ -837,6 +867,7 @@ export function TurnView({
               onOpenAgent={onOpenAgent}
               costs={costs}
               targetTool={targetTool}
+              mixedModels={models.length > 1}
             />,
           );
           pendingTools = [];
@@ -861,6 +892,7 @@ export function TurnView({
             // differ from its two siblings, waiting for the first transcript
             // that goes text → tool → text.
             targetTool={targetTool}
+            mixedModels={models.length > 1}
           />,
         );
         pendingTools = [];

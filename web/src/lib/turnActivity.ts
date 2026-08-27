@@ -161,8 +161,9 @@ export function turnActivity(turns: Turn[]): TurnActivity {
     // between two pieces of prose). `timestamp` is its FIRST line, which is
     // where the writing was: the thinking or the prose that came before the
     // call. That is why the message figure reads the start and the tool figure
-    // the end — a per-block clock exists in the transcript and is dropped in
-    // the merge, and this is what survives of it.
+    // the end. (Each tool block now keeps its own line's clock too —
+    // `block.timestamp`, what ToolBlock's pill reads — but for these two
+    // figures the message's own ends already say the same thing.)
     const started = stamp(item.timestamp);
     const ended = stamp(item.endTimestamp ?? item.timestamp);
     const wrote = item.blocks.some((b) => b.kind !== 'tool');
