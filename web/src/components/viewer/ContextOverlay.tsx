@@ -195,7 +195,11 @@ function Chart({ index, jump }: { index: ContextIndex; jump: ((uuid: string) => 
       amber: true,
       label: p?.shrink ? `⇣ ${formatContextDelta(p.shrink.to - p.shrink.from)}` : '⇣ compacted',
       title: `${event.boundary.trigger === 'auto' ? 'Autocompaction' : 'Compaction'}${
-        p?.shrink ? `: ${formatContextTokens(p.shrink.from)} → ${formatContextTokens(p.shrink.to)}` : ' — no request since'
+        p?.shrink
+          ? `: ${formatContextTokens(p.shrink.from)} → ${formatContextTokens(p.shrink.to)}`
+          : p
+            ? ' — no measured drop followed'
+            : ' — no request since'
       }. Click to open it in the conversation.`,
       uuid: event.uuid,
     });
@@ -213,7 +217,7 @@ function Chart({ index, jump }: { index: ContextIndex; jump: ((uuid: string) => 
   }
 
   return (
-    <div ref={wrap} className="relative h-[42vh] min-h-56 shrink-0 px-0">
+    <div ref={wrap} className="relative h-[42vh] min-h-56 shrink-0">
       {size && innerW > 0 && innerH > 0 && (
         <>
           <svg width={w} height={h} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="block">
