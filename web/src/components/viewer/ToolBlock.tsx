@@ -121,6 +121,28 @@ export function ToolBlock({
             {open ? '▾' : '▸'}
           </span>
           <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
+          {/* Time of day only on the face — the date is already said by the
+              message headers around the run, and lives on the hover. Inside the
+              FoldHeader, which its rule allows: a HoverCard takes no click, so
+              the header keeps folding through it. `data-chrome` because this is
+              text in the marking box that is not the message's own words: the
+              find bar must not mark a clock. */}
+          {block.timestamp && (
+            <span data-chrome className="shrink-0">
+              <HoverCard
+                pill={
+                  <>
+                    {formatTimeOfDay(block.timestamp)}
+                    {tookMs !== null && ` · ${formatMs(tookMs)}`}
+                  </>
+                }
+              >
+                <CardLine label="called" value={formatDateTime(block.timestamp)} />
+                {result?.timestamp && <CardLine label="result" value={formatDateTime(result.timestamp)} />}
+                {tookMs !== null && <CardLine label="took" value={formatMs(tookMs)} />}
+              </HoverCard>
+            </span>
+          )}
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
           {/* One truncating box, two voices: what the model said it was doing
               (`intent`) and what it literally ran. One ellipsis, at the end, and
@@ -136,31 +158,6 @@ export function ToolBlock({
             </span>
           </span>
         </FoldHeader>
-        {/* Gated on the tool NAME, not on the shape of the string: for these
-            five the summary IS the `file_path` (parser.ts summarizeInput), so
-            there is nothing to guess. A Bash command that happens to contain a
-            path is not a file this opens. */}
-        {FILE_TOOLS.has(block.toolName) && <FileRefChip path={block.inputSummary} />}
-        {/* Time of day only on the face — the date is already said by the
-            message headers around the run, and lives on the hover. `data-chrome`
-            because this is text inside the marking box that is not the
-            message's own words: the find bar must not mark a clock. */}
-        {block.timestamp && (
-          <span data-chrome className="shrink-0">
-            <HoverCard
-              pill={
-                <>
-                  {formatTimeOfDay(block.timestamp)}
-                  {tookMs !== null && ` · ${formatMs(tookMs)}`}
-                </>
-              }
-            >
-              <CardLine label="called" value={formatDateTime(block.timestamp)} />
-              {result?.timestamp && <CardLine label="result" value={formatDateTime(result.timestamp)} />}
-              {tookMs !== null && <CardLine label="took" value={formatMs(tookMs)} />}
-            </HoverCard>
-          </span>
-        )}
         {costBadge && (
           <span data-chrome className="flex shrink-0 items-center gap-2">
             {costBadge}
@@ -177,6 +174,12 @@ export function ToolBlock({
             ⑂ {agentType ?? 'subagent'}
           </button>
         )}
+        {/* Last in the row, after every badge. Gated on the tool NAME, not on
+            the shape of the string: for these five the summary IS the
+            `file_path` (parser.ts summarizeInput), so there is nothing to
+            guess. A Bash command that happens to contain a path is not a file
+            this opens. */}
+        {FILE_TOOLS.has(block.toolName) && <FileRefChip path={block.inputSummary} />}
       </div>
       {open && (
         <div className="border-t border-[var(--border)] px-2 py-1.5">

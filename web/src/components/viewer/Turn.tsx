@@ -283,6 +283,7 @@ function ToolGroup({
                       cumulative={costs.cumulative.get(entry.uuid)}
                       sessionTotal={costs.sessionTotal}
                     />
+                    <ContextPill point={costs.context.get(t.item.uuid)} />
                   </>
                 ) : null
               }
