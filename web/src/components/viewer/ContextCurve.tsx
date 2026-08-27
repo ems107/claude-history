@@ -1,6 +1,8 @@
 import type { PriceTable } from '@claude-history/shared';
+import { useState } from 'react';
 import { type ContextIndex, formatContextDelta, formatContextTokens, recacheCauseText } from '../../lib/context.ts';
 import { formatUsd, summariseRecache } from '../../lib/cost.ts';
+import { ContextOverlay } from './ContextOverlay.tsx';
 
 const W = 600;
 const H = 44;
@@ -14,8 +16,13 @@ const TICK = 7;
  *
  * A viewBox this wide with preserveAspectRatio="none" lets the line stretch to
  * whatever width the panel has: the shape is the message, not the pixel ratio.
+ *
+ * Clicking it opens `ContextOverlay` — the same data at full size, with axes,
+ * timestamps and the event list. The curve owns that state itself, the way
+ * `ZoomableImage` owns its zoom: the panel above needs to know nothing.
  */
 export function ContextCurve({ index, prices }: { index: ContextIndex; prices: PriceTable }) {
+  const [full, setFull] = useState(false);
   const { points, max } = index;
   if (points.length < 2 || max === 0) return null;
   const recache = summariseRecache(index.recaches, prices);
@@ -48,7 +55,24 @@ export function ContextCurve({ index, prices }: { index: ContextIndex; prices: P
             {recache.cost.billed !== null && ` (≈${formatUsd(recache.cost.billed)})`}
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => setFull(true)}
+          className="ml-auto normal-case hover:text-[var(--text)]"
+          title="Open the context chart full screen"
+        >
+          ⤢ full screen
+        </button>
       </div>
+      {/* No selectable text inside the svg, so a real button is fine here —
+          and it brings Enter/Space for free. */}
+      <button
+        type="button"
+        onClick={() => setFull(true)}
+        className="block w-full cursor-zoom-in"
+        title="Open the context chart full screen"
+        aria-label="Open the context chart full screen"
+      >
       <svg
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
@@ -102,10 +126,12 @@ export function ContextCurve({ index, prices }: { index: ContextIndex; prices: P
           <title>{`Peak: ${peak.total.toLocaleString()} tokens at request ${peak.index + 1}`}</title>
         </circle>
       </svg>
+      </button>
       <p className="mt-1 text-[10px] text-[var(--text-dim)] opacity-70">
         Prompt size per request as the API billed it — the figure /context reports. The window size is not recorded in
         transcripts, so this is scaled to its own peak, not to a limit.
       </p>
+      {full && <ContextOverlay index={index} prices={prices} onClose={() => setFull(false)} />}
     </div>
   );
 }
