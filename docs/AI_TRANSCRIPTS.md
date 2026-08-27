@@ -58,7 +58,7 @@ Seven exist in this corpus, and **only three ever carry `content`** — the rest
 
 | subtype | lines | What it is |
 | --- | --- | --- |
-| `turn_duration` | 364 | per-turn timing; dropped outright (its `messageCount` is read from the head/tail scan instead) |
+| `turn_duration` | 364 | per-turn timing; dropped outright (its `messageCount` is read from the head/tail scan instead, and the viewer times a turn from the turn's own stamps — `turnSpan`, within ~30 ms of `durationMs` on uninterrupted turns, p99 393 ms over 469 lines, and present where this line is missing: interrupted turns get none, and CLIs ≤ 2.1.202 write none at all) |
 | `away_summary` | 147 | **the recap below** |
 | `local_command` | 65 | the slash command that was typed, as `<command-name>` markup |
 | `stop_hook_summary` | 40 | a Stop hook's report — in `hookInfos` / `hookErrors`, **no `content`** |
