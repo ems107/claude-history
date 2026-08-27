@@ -141,9 +141,12 @@ export function formatDuration(ms: number): string {
  */
 export function formatMs(ms: number): string {
   if (ms < 1000) return `${ms} ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
-  const min = Math.floor(ms / 60_000);
-  return `${min} min ${Math.round((ms % 60_000) / 1000)} s`;
+  // 59,950+ would print "60.0 s" below and "N min 60 s" if the seconds were
+  // rounded after the minutes were cut — so round to whole seconds FIRST and
+  // split what that gives (the bug shipped in answerTime for a while).
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1)} s`;
+  const totalS = Math.round(ms / 1000);
+  return `${Math.floor(totalS / 60)} min ${totalS % 60} s`;
 }
 
 /**
