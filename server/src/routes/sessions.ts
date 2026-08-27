@@ -4,7 +4,7 @@ import type { AppContext } from '../context.ts';
 import { pidAlive } from '../core/live.ts';
 import { parseSession } from '../core/parser.ts';
 import { UUID_RE } from '../core/scanner.ts';
-import { markBusy } from '../util/chatLive.ts';
+import { markOurs } from '../util/chatLive.ts';
 
 export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/sessions', async () => {
@@ -13,8 +13,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
     // `status`, so the badge would sit on "live" through the whole turn.
     const working = ctx.chat.workingSessions();
     return list.map((s) => {
-      const startedAt = working.get(s.id);
-      if (startedAt !== undefined) return { ...s, live: markBusy(s.live, startedAt) };
+      const turn = working.get(s.id);
+      if (turn !== undefined) return { ...s, live: markOurs(s.live, turn) };
       // And a session whose process has since exited is not live at all: the
       // cached list keeps the entry because nothing writes to that directory
       // on the way out, so the pid is what has to be asked.

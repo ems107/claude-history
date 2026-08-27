@@ -1,4 +1,5 @@
 import {
+  askingFor,
   MAX_STAT_PATHS,
   type ChatPermissionMode,
   type LiveInfo,
@@ -715,6 +716,24 @@ export function SessionViewPage() {
    * the comparison and redraw the whole conversation for anything at all.
    */
   const liveInfo = useMemo<LiveInfo | null>(() => {
+    // A question of OURS is on screen. It has to be asked before the busy
+    // branch: the SDK keeps the turn open while a question stands, so
+    // `turnStartedAt` is still set and reading it first would spin the foot at
+    // a person — the one lie the indicator refuses to tell. The clock is the
+    // question's own `askedAt`, which is exactly the flip a CLI would write.
+    const question = chat.data?.state === 'asking' ? (chat.data.question ?? null) : null;
+    if (question) {
+      const askedAt = Date.parse(question.askedAt);
+      return {
+        pid: 0,
+        status: 'waiting',
+        waitingFor: askingFor(question.toolName),
+        name: null,
+        startedAt: null,
+        updatedAt: null,
+        statusUpdatedAt: Number.isNaN(askedAt) ? null : askedAt,
+      };
+    }
     // The server's figure when it has arrived, and until then the moment the
     // prompt was accepted. Waiting for the round trip left the indicator dark
     // for about a second after the click, which on a short turn is most of it —
@@ -733,7 +752,7 @@ export function SessionViewPage() {
       };
     }
     return live.data?.find((l) => l.sessionId === id) ?? null;
-  }, [chat.data?.turnStartedAt, pending, live.data, id]);
+  }, [chat.data?.state, chat.data?.question, chat.data?.turnStartedAt, pending, live.data, id]);
 
   /**
    * The two clocks the indicator shows beside the turn's own. Read off the
