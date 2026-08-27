@@ -188,6 +188,7 @@ function ToolGroup({
   onOpenAgent,
   costs,
   targetTool,
+  mixedModels = false,
 }: {
   tools: PendingTool[];
   expandAll: boolean;
@@ -195,6 +196,14 @@ function ToolGroup({
   costs: CostContext;
   /** A deep link's tool call: the run holding it has to be open to show it. */
   targetTool?: string | null;
+  /**
+   * The turn answered under more than one `model · effort` pair. Only then does
+   * a first call name its own — the turn's header already says the pair when
+   * there is one, and a tool call cannot differ from its message (the
+   * `tool_use` line carries the message's model and effort verbatim), so
+   * repeating it on every run was saying nothing.
+   */
+  mixedModels?: boolean;
 }) {
   const holdsTarget = !!targetTool && tools.some((t) => t.block.toolUseId === targetTool);
   // The find bar's destination, read from the context rather than threaded: a
@@ -267,11 +276,10 @@ function ToolGroup({
               costBadge={
                 entry ? (
                   <>
-                    {/* The same trailing run an assistant header wears — these
-                        messages are tool-only, so this is the one place their
-                        model is said out loud. ToolBlock wraps the whole badge
-                        in `data-chrome`: not the message's words. */}
-                    {t.item.model && (
+                    {/* Named only when the turn is mixed — see `mixedModels`.
+                        ToolBlock wraps the whole badge in `data-chrome`: not
+                        the message's words. */}
+                    {mixedModels && t.item.model && (
                       <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]">
                         {shortModel(t.item.model)}
                         {t.item.effort && ` · ${t.item.effort}`}
@@ -677,6 +685,7 @@ export function TurnView({
           onOpenAgent={onOpenAgent}
           costs={costs}
           targetTool={targetTool}
+          mixedModels={models.length > 1}
         />
       </div>,
     );
@@ -858,6 +867,7 @@ export function TurnView({
               onOpenAgent={onOpenAgent}
               costs={costs}
               targetTool={targetTool}
+              mixedModels={models.length > 1}
             />,
           );
           pendingTools = [];
@@ -882,6 +892,7 @@ export function TurnView({
             // differ from its two siblings, waiting for the first transcript
             // that goes text → tool → text.
             targetTool={targetTool}
+            mixedModels={models.length > 1}
           />,
         );
         pendingTools = [];
