@@ -1,9 +1,10 @@
 import type { ContentBlock } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
-import { formatBytes } from '../../lib/format.ts';
+import { formatBytes, formatDateTime, formatMs, formatTimeOfDay, msBetween } from '../../lib/format.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
+import { CardLine, HoverCard } from './HoverCard.tsx';
 import { useFoldable, useRevealed } from './RevealContext.ts';
 import { useSubagents } from './SubagentContext.ts';
 
@@ -95,6 +96,11 @@ export function ToolBlock({
   // run holds five of them; it falls back to the generic one outside a session.
   const agentType = block.agentId ? subagents?.byId.get(block.agentId)?.agentType : null;
   const launched = !!block.agentId && !!result && !result.isError && result.text.startsWith(LAUNCH_NOTE);
+  // The call's own wall time: its tool_use line's clock to its result line's.
+  // Null while nothing has come back — a call with no result keeps its clock
+  // and claims no span. For a launched Agent this is the dispatch, not the run:
+  // the subagent's own lifetime lives in its panel.
+  const tookMs = msBetween(block.timestamp, result?.timestamp ?? null);
 
   return (
     // The anchor a search result scrolls to and flashes. A data attribute rather
@@ -128,6 +134,26 @@ export function ToolBlock({
             there is nothing to guess. A Bash command that happens to contain a
             path is not a file this opens. */}
         {FILE_TOOLS.has(block.toolName) && <FileRefChip path={block.inputSummary} />}
+        {/* Time of day only on the face — the date is already said by the
+            message headers around the run, and lives on the hover. `data-chrome`
+            because this is text inside the marking box that is not the
+            message's own words: the find bar must not mark a clock. */}
+        {block.timestamp && (
+          <span data-chrome className="shrink-0">
+            <HoverCard
+              pill={
+                <>
+                  {formatTimeOfDay(block.timestamp)}
+                  {tookMs !== null && ` · ${formatMs(tookMs)}`}
+                </>
+              }
+            >
+              <CardLine label="called" value={formatDateTime(block.timestamp)} />
+              {result?.timestamp && <CardLine label="result" value={formatDateTime(result.timestamp)} />}
+              {tookMs !== null && <CardLine label="took" value={formatMs(tookMs)} />}
+            </HoverCard>
+          </span>
+        )}
         {costBadge}
         {block.agentId && onOpenAgent && (
           <button

@@ -263,12 +263,23 @@ function ToolGroup({
               targeted={!!targetTool && t.block.toolUseId === targetTool}
               costBadge={
                 entry ? (
-                  <CostPill
-                    entries={[entry]}
-                    prices={costs.prices}
-                    cumulative={costs.cumulative.get(entry.uuid)}
-                    sessionTotal={costs.sessionTotal}
-                  />
+                  <>
+                    {/* The same trailing run an assistant header wears — these
+                        messages are tool-only, so this is the one place their
+                        model is said out loud. Chrome: not the message's words. */}
+                    {t.item.model && (
+                      <span data-chrome className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]">
+                        {shortModel(t.item.model)}
+                        {t.item.effort && ` · ${t.item.effort}`}
+                      </span>
+                    )}
+                    <CostPill
+                      entries={[entry]}
+                      prices={costs.prices}
+                      cumulative={costs.cumulative.get(entry.uuid)}
+                      sessionTotal={costs.sessionTotal}
+                    />
+                  </>
                 ) : null
               }
             />

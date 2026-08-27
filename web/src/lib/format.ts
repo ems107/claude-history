@@ -46,6 +46,15 @@ export function formatDateTimeShort(when: string | number | null): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Just the time of day — for a row whose date is already said by the headers around it. */
+export function formatTimeOfDay(when: string | number | null): string {
+  if (when === null) return '—';
+  const ms = typeof when === 'number' ? when : Date.parse(when);
+  if (Number.isNaN(ms)) return '—';
+  const d = new Date(ms);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 /**
  * Time left until `when`, always rounded DOWN: "2 hr 37 min" promises less
  * than is actually left, never more, which is the safe direction for a quota
@@ -125,13 +134,35 @@ export function formatDuration(ms: number): string {
   return parts.join(' ');
 }
 
-/** The span between two transcript timestamps, or null when either is missing. */
-export function durationBetween(from: string | null, to: string | null): string | null {
+/**
+ * The same span where fractions of a second are the point — a tool call's wall
+ * time is 60 ms at one median in this corpus. `formatDuration` starts flooring
+ * at the second, which would spell most of a tool run "0 s".
+ */
+export function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
+  const min = Math.floor(ms / 60_000);
+  return `${min} min ${Math.round((ms % 60_000) / 1000)} s`;
+}
+
+/**
+ * Milliseconds between two transcript timestamps, or null when either is
+ * missing or unreadable. Clamped at zero: a replayed segment keeps its original
+ * clocks, and a span must never read negative for it.
+ */
+export function msBetween(from: string | null, to: string | null): number | null {
   if (!from || !to) return null;
   const a = Date.parse(from);
   const b = Date.parse(to);
   if (Number.isNaN(a) || Number.isNaN(b)) return null;
-  return formatDuration(b - a);
+  return Math.max(0, b - a);
+}
+
+/** The span between two transcript timestamps, or null when either is missing. */
+export function durationBetween(from: string | null, to: string | null): string | null {
+  const ms = msBetween(from, to);
+  return ms === null ? null : formatDuration(ms);
 }
 
 export function formatBytes(n: number): string {
