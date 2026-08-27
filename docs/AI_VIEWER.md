@@ -115,7 +115,9 @@ same vertical middle.
 `document` in the CAPTURE phase and stops the key there, so the page's own
 listener on the `window` never sees it. Neither of the popovers it replaces did
 this, which was harmless with a pair of checkboxes in them and would not be with
-the session's actions.
+the session's actions. The full-screen overlays stop the key at the `document`
+too — `QuestionPanel`'s reading view and `ContextOverlay` (the token panel's
+context chart, a body portal) — so closing one never touches the unwind below.
 
 ### The rail and the inspector
 
