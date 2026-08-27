@@ -752,7 +752,10 @@ export function SessionViewPage() {
       };
     }
     return live.data?.find((l) => l.sessionId === id) ?? null;
-  }, [chat.data?.state, chat.data?.question, chat.data?.turnStartedAt, pending, live.data, id]);
+    // The question's two SCALARS, not the object: its identity changes on every
+    // refetch of the status, and this memo feeds a memoised TurnList — an object
+    // dep would redraw the whole conversation for a payload that said nothing new.
+  }, [chat.data?.state, chat.data?.question?.askedAt, chat.data?.question?.toolName, chat.data?.turnStartedAt, pending, live.data, id]);
 
   /**
    * The two clocks the indicator shows beside the turn's own. Read off the
