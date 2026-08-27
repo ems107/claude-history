@@ -120,7 +120,6 @@ export function ToolBlock({
           <span data-chrome className="text-[var(--text-dim)]">
             {open ? '▾' : '▸'}
           </span>
-          <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
           {/* Time of day only on the face — the date is already said by the
               message headers around the run, and lives on the hover. Inside the
               FoldHeader, which its rule allows: a HoverCard takes no click, so
@@ -150,6 +149,10 @@ export function ToolBlock({
               </HoverCard>
             </span>
           )}
+          {/* The dot is the RESULT's state (green OK, red error, grey none), so
+              it sits against the tool's name — and doubles as the seam between
+              the timing columns and the words. */}
+          <span className={`size-1.5 shrink-0 rounded-full ${statusColor}`} title={result ? (result.isError ? 'Error' : 'OK') : 'No result recorded'} />
           <span className="shrink-0 font-semibold text-sky-300">{block.toolName}</span>
           {/* One truncating box, two voices: what the model said it was doing
               (`intent`) and what it literally ran. One ellipsis, at the end, and
