@@ -111,8 +111,13 @@ because that was load-bearing and none of it survives a re-flow:
   compactions are paragraphs, and four paragraphs in a narrow column is a wall —
   each is one line you can open, with every word still inside it.
 
-`ContextCurve` needed nothing: its `viewBox` with `preserveAspectRatio="none"`
-stretches to any width it is given.
+`ContextCurve` still stretches its `viewBox` with `preserveAspectRatio="none"`
+to any width it is given — and clicking it (or its `⤢`) opens `ContextOverlay`,
+the same index at full size: a body portal whose chart is measured in pixels
+(ResizeObserver) precisely because axis text and marker labels cannot survive a
+stretched viewBox, with per-request hover detail and an event list — every
+compaction, boundary-less shrink and re-cache, each row and marker navigating
+to its own line via `goToMessage`.
 
 ## `/context` snapshots
 
@@ -128,7 +133,7 @@ stretches to any width it is given.
 
 - **`postTokens` is the summary alone, NOT the context after the compaction.** A 333,718 → 14,199 boundary was followed by a first request measuring 83,222 (summary + system prompt + tools + memory + skills + the new prompt). So the panel's figures and the curve's drop legitimately disagree — the panel quotes the boundary, the curve measures requests. Never "reconcile" them by feeding `postTokens` into the curve: it is not a request and nothing was ever billed at it.
 - **Compacting costs money and the transcript hides it.** The summarising call has NO `usage` anywhere: no assistant line is written for it (the nearest one before the boundary is the previous turn's ordinary answer, 3/19/16 lines earlier) and the summary itself is a `user` line with `isCompactSummary: true` and no `usage` — 3 of 3 boundaries here. The session total therefore understates the real spend, like subagent cost did, except this part cannot be recovered at all: the input split (cache read vs re-written) is unknown, a 10× band on the input alone. The panel states that the cost is not recorded — an absent pill would read as "it was free". Do NOT price it from `preTokens`/`postTokens`: `postTokens` is not the output either (16,144 chars of summary against `postTokens` 14,199).
-- **The shrink is only knowable once the next request happens**: until then there is a boundary panel and no drop in the curve, which is correct rather than a parsing failure (verified live in this repo's own session).
+- **The shrink is only knowable once the next request happens**: until then there is a boundary panel and no drop in the curve, which is correct rather than a parsing failure (verified live in this repo's own session). `ContextIndex.compactions` holds the boundary anyway — anchored on the boundary line's own uuid, with `point: null` until a request follows — which is how the overlay's event list can show a compaction the curve cannot yet mark.
 - **The summary is a `user` line and admits it**: `isCompactSummary: true`, string content, no `usage`, and its uuid is exactly the boundary's `preservedSegment.anchorUuid`. Nothing read that flag, so it came down the ordinary prompt path and the viewer drew a 17,042-character "prompt" nobody typed. `MessageItem.isCompactSummary` carries it now and it gets its own folded panel. It is still counted as a prompt by `enricher.ts`, the search index and `/api/prompts` — fixing that means re-enriching the whole corpus and moving numbers on the list, the stats and the prompts page, so it was left alone deliberately.
 - **The command that triggered it is written twice.** Once as the plain string the user typed, just before the boundary, and once as a `<command-name>/compact</command-name>` line right after the summary — carrying its **original** timestamp, so it is older than the summary it follows (14:59:47 typed → 15:02:09 summary → 14:59:47 replay, on both boundaries of `f3384d17`). The second is the replay into the fresh context, and `parser.ts` drops it (a slash command whose previous item is the summary and whose timestamp is not later). An `auto` compaction has no such line at all. The enricher still counts both as prompts, like the summary itself.
 - **The boundary is the last item of its turn** — verified on both boundaries of `f3384d17`: the parser hangs it off the turn already open (`ensureTurn`) and the summary right after it always opens a new one (`newTurn`). That is what lets the viewer fold a compacted stretch at turn granularity (`web/src/lib/segments.ts`) instead of splitting a `Turn`, which would hand two halves one per-turn cost badge. Folding is presentation ONLY: `buildCostIndex`/`buildContextIndex` still run over every turn and are read by original index (checked: the three segments of `f3384d17` re-add to its $311.588143500 total, delta 6e-14).
