@@ -126,15 +126,22 @@ export function ToolBlock({
               FoldHeader, which its rule allows: a HoverCard takes no click, so
               the header keeps folding through it. `data-chrome` because this is
               text in the marking box that is not the message's own words: the
-              find bar must not mark a clock. */}
+              find bar must not mark a clock.
+
+              Two fixed columns, not one prose blob: the hour is always 8ch and
+              the span right-aligns in a reserved column — kept even when empty,
+              so a resultless call does not shift its name — which is what lines
+              the tool names up down a run. A span longer than the column (a
+              minutes-long call) pushes its own row wider, and sticking out is
+              the right look for it. */}
           {block.timestamp && (
             <span data-chrome className="shrink-0">
               <HoverCard
                 pill={
-                  <>
-                    {formatTimeOfDay(block.timestamp)}
-                    {tookMs !== null && ` · ${formatMs(tookMs)}`}
-                  </>
+                  <span className="flex items-baseline gap-2">
+                    <span className="opacity-70">{formatTimeOfDay(block.timestamp)}</span>
+                    <span className="inline-block min-w-[6ch] text-right">{tookMs !== null ? formatMs(tookMs) : ''}</span>
+                  </span>
                 }
               >
                 <CardLine label="called" value={formatDateTime(block.timestamp)} />
