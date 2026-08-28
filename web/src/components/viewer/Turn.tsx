@@ -1,10 +1,10 @@
-import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@claude-history/shared';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { RECAP_SUBTYPE, type ContentBlock, type MessageItem, type PriceTable, type Turn as TurnType } from '@claude-history/shared';
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
 import { systemChars } from '../../lib/findInSession.ts';
 import { formatDateTime, formatDateTimeFull, formatDuration, relativeTime, shortModel } from '../../lib/format.ts';
-import { foldedCounts } from '../../lib/folding.ts';
+import { anythingToFold, type FoldCounts, foldedCounts } from '../../lib/folding.ts';
 import { parsePlan } from '../../lib/plans.ts';
 import { isPromptItem } from '../../lib/segments.ts';
 import { parseSentFiles } from '../../lib/sentFiles.ts';
@@ -476,6 +476,25 @@ function SystemItem({ item }: { item: MessageItem }) {
 }
 
 /**
+ * What the strip enumerates, in the order it reads. A list rather than four
+ * conditional blocks: every one of these is hidden by the same fold, and the
+ * separator between them is the part that gets written wrong when each carries
+ * its own `&&` chain of everything before it.
+ *
+ * The assistant's own output leads and wears its own colours; everything that
+ * merely landed in the thread follows in the neutral one, told apart by its
+ * word rather than by a hue invented for it.
+ */
+function countWords(c: FoldCounts): { n: number; word: string; className: string }[] {
+  return [
+    { n: c.responses, word: 'response', className: 'text-emerald-300/80' },
+    { n: c.tools, word: 'tool call', className: 'text-sky-300/80' },
+    { n: c.notices, word: 'notice', className: 'text-zinc-300/70' },
+    { n: c.recaps, word: 'recap', className: 'text-zinc-300/70' },
+  ].filter((x) => x.n > 0);
+}
+
+/**
  * The fold line of a turn. It is rendered in BOTH states and at the same place
  * — where the folded content starts — so unfolding moves nothing around and
  * there is always something to click to fold it back.
@@ -486,15 +505,13 @@ function SystemItem({ item }: { item: MessageItem }) {
  */
 function FoldStrip({
   open,
-  responses,
-  tools,
+  counts: folded,
   span,
   at,
   onToggle,
 }: {
   open: boolean;
-  responses: number;
-  tools: number;
+  counts: FoldCounts;
   /**
    * How long the turn ran, prompt to last thing landed (`turnSpan`). Null for
    * the turn in flight — its live clock is the working row's `total`, counted
@@ -506,25 +523,24 @@ function FoldStrip({
   at: string | null;
   onToggle?: () => void;
 }) {
+  const words = countWords(folded);
   const counts = (
     <>
       {at && <span className="shrink-0">{formatDateTime(at)}</span>}
-      {responses > 0 && (
-        <span className="shrink-0 font-semibold text-emerald-300/80">
-          {responses} response{responses === 1 ? '' : 's'}
-        </span>
-      )}
-      {responses > 0 && tools > 0 && <span className="opacity-50">·</span>}
-      {tools > 0 && (
-        <span className="shrink-0 font-semibold text-sky-300/80">
-          {tools} tool call{tools === 1 ? '' : 's'}
-        </span>
-      )}
+      {words.map((w, i) => (
+        <Fragment key={w.word}>
+          {i > 0 && <span className="opacity-50">·</span>}
+          <span className={`shrink-0 font-semibold ${w.className}`}>
+            {w.n} {w.word}
+            {w.n === 1 ? '' : 's'}
+          </span>
+        </Fragment>
+      ))}
       {/* The counts wear their own colours; the duration is a figure and wears
           the figures' white, like the working row's clocks. A duration, never a
           datetime: a DATE reappearing on the strip is AI_TESTING's failure
           signal for notice-opened turns, and this must not look like one. */}
-      {(responses > 0 || tools > 0) && span && <span className="opacity-50">·</span>}
+      {words.length > 0 && span && <span className="opacity-50">·</span>}
       {span && (
         <span
           className="shrink-0 font-medium text-[var(--text)]/90 tabular-nums"
@@ -750,7 +766,7 @@ export function TurnView({
   let badgePlaced = false;
 
   const folded = foldedCounts(turn, showThinking);
-  const anyFolded = folded.responses > 0 || folded.tools > 0;
+  const anyFolded = anythingToFold(folded);
   const models = turnModels(turn);
   let promptShown = false;
   // A rewind that cut in the MIDDLE of a turn: part of it is still the
@@ -777,8 +793,7 @@ export function TurnView({
     <FoldStrip
       key="fold"
       open={open}
-      responses={folded.responses}
-      tools={folded.tools}
+      counts={folded}
       span={span}
       // A turn nobody prompted would otherwise be an anonymous line.
       at={promptShown ? null : (turn.items[0]?.timestamp ?? null)}
@@ -812,12 +827,32 @@ export function TurnView({
       }
       const notice = noticeOf(item);
       if (notice) {
+        // A notice that landed MID-turn is part of the thread, so it folds away
+        // with the thread — folding the answers and leaving the news standing
+        // was the one thing left on screen, which reads as the turn having been
+        // about the notice. The strip counts it, so nothing goes in silence.
+        // The other kind IS the turn's opener and stays, like a prompt.
+        if (notice.queued) {
+          markFold();
+          continue;
+        }
         nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;
         continue;
       }
       if (item.role === 'system') {
+        // A recap is Claude Code's own prose about what the turn did, written
+        // at its end — the assistant's side of the turn as much as an answer
+        // is, so it folds with the answers and the strip counts it. It used to
+        // be the one thing left standing on a folded turn, which read as the
+        // turn having been about it. Every other system line stays: a `Command`
+        // is the user's own action and a panel is what happened to the
+        // conversation (`foldedCounts`).
+        if (item.systemSubtype === RECAP_SUBTYPE) {
+          markFold();
+          continue;
+        }
         nodes.push(<SystemItem key={item.uuid} item={item} />);
         continue;
       }
@@ -853,6 +888,11 @@ export function TurnView({
       flushTools();
       const notice = noticeOf(item);
       if (notice) {
+        // A task that finished while Claude was working did not open this turn —
+        // it landed in the middle of one. `markFold` puts it on the rail with
+        // the answers, exactly as a prompt typed mid-turn is, so the thread it
+        // interrupted still reads as one thread.
+        if (notice.queued) markFold();
         nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;

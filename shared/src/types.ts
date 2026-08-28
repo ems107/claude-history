@@ -539,8 +539,9 @@ export type ContentBlock =
    * A line Claude Code injected into the conversation itself — today a
    * background command or an Agent reporting back (`origin.kind`,
    * e.g. `task-notification`). It wears the `user` role in the transcript but
-   * nobody typed it, so it gets its own panel: it OPENS a turn (a real exchange
-   * follows) and has to look like an event, not like a prompt.
+   * nobody typed it, so it gets its own panel: it has to look like an event,
+   * not like a prompt. Whether it opens a turn or joins the one already open is
+   * `queued` below.
    *
    * `text` is the block's own `<summary>` — the readable line. The fields below
    * are the rest of what a `<task-notification>` carries and used to be thrown
@@ -551,6 +552,27 @@ export type ContentBlock =
       kind: 'notice';
       origin: string;
       text: string;
+      /**
+       * It arrived through the QUEUED envelope, which means the task finished
+       * while a turn was still in flight — so it joins that turn instead of
+       * opening one, and the viewer draws it on the answers' rail as the
+       * interjection it is ([AI_TRANSCRIPTS.md](../../docs/AI_TRANSCRIPTS.md#task-notifications)).
+       *
+       * **Its `timestamp` is when the TASK finished, not when it was handed
+       * over**, so it is legitimately older than the answer above it — the same
+       * reading a queued prompt's stamp takes, and the reason the panel wears a
+       * chip saying so.
+       *
+       * False for the other kind: a notification that lands with the turn
+       * already closed comes down the `user` path with a fresh `promptId` of its
+       * own, wakes the session, and really does open a turn.
+       *
+       * Deliberately NOT `MessageItem.queued`, which the working row reads as
+       * "the reader's own last word" (`lastQueuedAt`, `unansweredAt` in
+       * `web/src/lib/turnActivity.ts`). A robot reporting back is not the user
+       * putting something in, and a clock that said so would be lying.
+       */
+      queued: boolean;
       /**
        * `<task-id>`. For an Agent it IS the `agentId`, which is the only exact
        * link between a report and the subagent transcript that produced it. A

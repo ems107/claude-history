@@ -93,10 +93,12 @@ export interface TurnActivity {
    * **A call that already came back is not this**, and that is the whole reason
    * the asking ones are named rather than the rule being "ends on a call": a
    * turn ends on a returned call all the time, because a `<task-notification>`
-   * opens a turn of its own and cuts the previous one exactly there — 4 of the
-   * 44 turns in `15a86025` + `b343d4ac`, on `ScheduleWakeup`, `Bash`,
-   * `AskUserQuestion` and `ExitPlanMode`. Calling those unfinished would lend a
-   * finished turn's start to whatever opens the next one.
+   * that arrives with the turn already closed opens one of its own right after
+   * it — 4 of the 44 turns in `15a86025` + `b343d4ac`, on `ScheduleWakeup`,
+   * `Bash`, `AskUserQuestion` and `ExitPlanMode`. Calling those unfinished would
+   * lend a finished turn's start to whatever opens the next one. (A notification
+   * that landed MID-turn joins the turn instead and cuts nothing, so it never
+   * produced one of these — see `notice.queued`.)
    */
   unanswered: boolean;
 }
@@ -203,8 +205,8 @@ export interface TurnSpan {
  * turns get none, CLIs ≤ 2.1.202 write none at all.
  *
  * The end reads tool RESULTS as well as message ends: a `<task-notification>`
- * opens a turn of its own and cuts the previous one right after a returned
- * call, whose result stamp is then the newest clock that turn has.
+ * arriving with the turn already closed opens one of its own right after a
+ * returned call, whose result stamp is then the newest clock that turn has.
  *
  * Null for a turn with nothing to measure — a dangling prompt, a turn Claude
  * never answered. Pure, and checkable without a browser.
