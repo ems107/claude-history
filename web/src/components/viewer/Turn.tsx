@@ -812,7 +812,20 @@ export function TurnView({
       }
       const notice = noticeOf(item);
       if (notice) {
-        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
+        const node = noticeNode(item, notice, badgePlaced ? undefined : turnBadge);
+        // Folded, a notice that landed MID-turn keeps the rail it has when the
+        // turn is open — it did not open this turn, and at the prompt's own
+        // margin it would read as a second one. Still drawn rather than hidden:
+        // the report inside it is the agent's only copy in this transcript.
+        nodes.push(
+          notice.queued ? (
+            <div key={item.uuid} className={RAIL}>
+              {node}
+            </div>
+          ) : (
+            node
+          ),
+        );
         badgePlaced = true;
         promptShown = true;
         continue;
@@ -853,6 +866,11 @@ export function TurnView({
       flushTools();
       const notice = noticeOf(item);
       if (notice) {
+        // A task that finished while Claude was working did not open this turn —
+        // it landed in the middle of one. `markFold` puts it on the rail with
+        // the answers, exactly as a prompt typed mid-turn is, so the thread it
+        // interrupted still reads as one thread.
+        if (notice.queued) markFold();
         nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;

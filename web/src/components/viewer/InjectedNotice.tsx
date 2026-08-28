@@ -13,13 +13,20 @@ type Notice = Extract<ContentBlock, { kind: 'notice' }>;
  * Something Claude Code put in the conversation on its own — a background
  * command or an Agent reporting back.
  *
- * It arrives as a `user` line with plain string content (or, when it was queued
- * behind a turn, as an attachment), so it used to draw a prompt bubble nobody
- * wrote. It is not a prompt, but it is not a footnote either: an exchange
- * follows it, so it OPENS a turn, and it is drawn as the event that opened it.
- * Which is also why it carries the turn's badge and its own timestamp — left as
- * a bare muted line, the turn's cost pill floated above it with nothing to
- * belong to, and the date turned up again on the fold strip below.
+ * It arrives as a `user` line with plain string content, so it used to draw a
+ * prompt bubble nobody wrote. It is not a prompt, but it is not a footnote
+ * either: an exchange follows it, so it OPENS a turn, and it is drawn as the
+ * event that opened it. Which is also why it carries the turn's badge and its
+ * own timestamp — left as a bare muted line, the turn's cost pill floated above
+ * it with nothing to belong to, and the date turned up again on the fold strip
+ * below.
+ *
+ * **Unless it was queued** (`notice.queued`), which means the task finished
+ * while Claude was still working: that one joins the turn already open and is
+ * drawn on the answers' rail, with a chip for the clock that reads backwards.
+ * The badge expression is the same either way and needs no case of its own — by
+ * the time a mid-turn notice is reached, the prompt that opened the turn has
+ * already taken it.
  *
  * When the task was an Agent, the block also holds the whole report it handed
  * back. That report exists nowhere else in this transcript, so it is shown
@@ -81,6 +88,19 @@ export function InjectedNotice({
         {item.timestamp && (
           <span className="text-[var(--text-dim)]" title={formatDateTimeFull(item.timestamp)}>
             {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
+          </span>
+        )}
+        {/* The task finished while Claude was still working, so the news waited
+            in the queue until the turn's current stretch of work ended — which
+            is why the clock above reads EARLIER than the answer this sits under.
+            Without the chip that looks like a parsing error, the same reason a
+            queued prompt wears one. */}
+        {notice.queued && (
+          <span
+            className="rounded border border-[var(--border)] px-1 py-px text-[10px] text-[var(--text-dim)]"
+            title="The task finished while Claude was working, so this waited in the queue and was delivered when the current stretch of work ended. The time shown is when the task finished."
+          >
+            queued
           </span>
         )}
         <span className="flex-1" />
