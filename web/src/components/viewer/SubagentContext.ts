@@ -29,7 +29,13 @@ export interface SubagentContextValue {
   goToCall(toolUseId: string): void;
   /** A message (`?msg=`) — the report, from the panel. */
   goToMessage(uuid: string): void;
-  /** Whether that call is in this parse at all: a fork copies none of them. */
+  /**
+   * Whether that call is in this parse at all: a fork copies none of them, and a
+   * compaction can swallow the message that made it. **Any** call, not only an
+   * Agent one — a notice panel asks it about the `Bash` call a background
+   * command reported back from (`toolCallIds`), and the two agent-only callers
+   * pass ids that are a subset of the same set.
+   */
   hasCall(toolUseId: string): boolean;
 }
 
