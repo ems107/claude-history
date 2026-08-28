@@ -1511,6 +1511,16 @@ export interface NotificationsResponse {
 }
 
 /**
+ * What has been read of each session, as of the last time somebody read it:
+ * `sessionId` → the tally `messageTally` gave then. Only sessions that have been
+ * read are in here, which is what lets a row nobody has opened draw no count at
+ * all rather than its whole history.
+ */
+export interface ReadMarksResponse {
+  marks: Record<string, number>;
+}
+
+/**
  * The things that may not happen while the app is running Claude.
  *
  * All six either kill this process or pull the ground from under a live CLI,
@@ -1921,4 +1931,12 @@ export type ServerEvent =
    * a handful of rows and is refetched whole.
    */
   | { type: 'notifications-changed' }
+  /**
+   * A session was read, so the unread count on its row moved. Its own event
+   * rather than a ride on `sessions-changed`: nothing about a transcript has
+   * changed, and the payload it would have to share is invalidated in every
+   * open window. Payload-free like the bell's — the set is a handful of numbers
+   * and is refetched whole.
+   */
+  | { type: 'read-marks-changed' }
   | { type: 'logs-appended' };

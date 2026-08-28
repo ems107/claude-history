@@ -180,6 +180,12 @@ export function useEvents(): void {
         case 'notifications-changed':
           void queryClient.invalidateQueries({ queryKey: ['notifications'] });
           break;
+        // A session was read, here or in another window. One key: the rows
+        // subtract it from the summary they already hold, so nothing else has
+        // to be re-asked for the count to move.
+        case 'read-marks-changed':
+          void queryClient.invalidateQueries({ queryKey: ['readMarks'] });
+          break;
         // Costs are computed in the browser wherever they appear, so a saved
         // table has to reach the windows that did not save it.
         case 'prices-changed':

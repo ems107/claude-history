@@ -1,5 +1,7 @@
-// Small inline icons for the header controls. Stroke-based so they inherit
-// the current text colour, sized to sit next to each other in the header.
+// Small inline icons for the header controls and for the marks a session row
+// wears. Stroke-based so they inherit the current text colour, sized to sit next
+// to each other in the header — and sizeable, because the same bell that reads
+// well at 14 px beside a button has to fit a 10 px badge in the list.
 
 const base = {
   viewBox: '0 0 16 16',
@@ -28,11 +30,26 @@ export function UpgradeIcon() {
  * keeps the silhouette everyone recognises. Same stroke weight as the upgrade
  * arrow it sits next to, so the pair does not look like two different sets.
  */
-export function BellIcon() {
+export function BellIcon({ className = 'h-3.5 w-3.5' }: { className?: string } = {}) {
   return (
-    <svg {...base} className="h-3.5 w-3.5">
+    <svg {...base} className={className}>
       <path d="M4 6.8a4 4 0 0 1 8 0c0 2.4.5 3.6 1.2 4.4H2.8C3.5 10.4 4 9.2 4 6.8Z" />
       <path d="M6.6 13.2a1.5 1.5 0 0 0 2.8 0" />
+    </svg>
+  );
+}
+
+/**
+ * Speech bubble, for the count of messages a session has grown by since it was
+ * read. A rectangle with one corner drawn down into a tail: the tail is the
+ * whole of what makes it a message rather than a note, so it is on the leading
+ * edge where nothing crops it, and the box keeps square corners at 12 px where
+ * rounded ones turn to mush.
+ */
+export function MessageIcon({ className = 'h-3.5 w-3.5' }: { className?: string } = {}) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M2.5 4a1.5 1.5 0 0 1 1.5-1.5h8A1.5 1.5 0 0 1 13.5 4v5a1.5 1.5 0 0 1-1.5 1.5H6.5l-3 3v-3H4A1.5 1.5 0 0 1 2.5 9Z" />
     </svg>
   );
 }

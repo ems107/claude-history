@@ -22,6 +22,7 @@ import { registerPlanRoutes } from './routes/plans.ts';
 import { registerPriceRoutes } from './routes/prices.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPromptRoutes } from './routes/prompts.ts';
+import { registerReadMarkRoutes } from './routes/readMarks.ts';
 import { registerResumeRoutes } from './routes/resume.ts';
 import { registerRetentionRoutes } from './routes/retention.ts';
 import { registerSearchRoutes } from './routes/search.ts';
@@ -155,6 +156,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerActiveSessionRoutes(app, ctx);
   registerMetaRoutes(app, ctx);
   registerNotificationRoutes(app, ctx);
+  registerReadMarkRoutes(app, ctx);
   registerProjectRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
   registerSearchRoutes(app, ctx);

@@ -42,6 +42,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onSettings = () => send({ type: 'settings-changed' });
     const onPrices = () => send({ type: 'prices-changed' });
     const onNotifications = () => send({ type: 'notifications-changed' });
+    const onReadMarks = () => send({ type: 'read-marks-changed' });
     let logsTimer: NodeJS.Timeout | null = null;
     const onLogAppended = () => {
       if (logsTimer) return;
@@ -62,6 +63,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.chat.events.on('chat-changed', onChat);
     ctx.terminals.events.on('terminal-changed', onTerminal);
     ctx.notifications.events.on('notifications-changed', onNotifications);
+    ctx.readMarks.events.on('read-marks-changed', onReadMarks);
     logEvents.on('appended', onLogAppended);
 
     const heartbeat = setInterval(() => reply.raw.write(': hb\n\n'), HEARTBEAT_MS);
@@ -81,6 +83,7 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.chat.events.off('chat-changed', onChat);
       ctx.terminals.events.off('terminal-changed', onTerminal);
       ctx.notifications.events.off('notifications-changed', onNotifications);
+      ctx.readMarks.events.off('read-marks-changed', onReadMarks);
     });
   });
 }

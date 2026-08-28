@@ -6,3 +6,4 @@ export * from './recache.ts';
 export * from './fold.ts';
 export * from './match.ts';
 export * from './searchText.ts';
+export * from './unread.ts';
