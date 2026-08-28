@@ -147,8 +147,9 @@ function RowContent({
               {formatUsd(cost.total)}
             </span>
           )}
-          {/* The whole row is a <Link>, so this cannot be one too — same reason
-              the rename and pin buttons swallow their click here. */}
+          {/* Nothing in here is interactive: the row is a <Link> and every badge
+              is a <span>. The rename and pin buttons above are the only things
+              that have to swallow a click of their own. */}
           <SessionBadges session={session} />
         </div>
       </div>
