@@ -942,8 +942,10 @@ it was the only figure and could only be the turn.
   result. **Nothing else in the turn is read until one of the two holds**, the
   queued stamp included: a clock taken off a turn that may be the previous one is
   the very thing this guards against. Named rather than "ends on a call" because a turn ends on a call that
-  came back all the time: a `<task-notification>` opens a turn of its own and cuts
-  the previous one exactly there. **Measured exposure of the sign that can be
+  came back all the time: a `<task-notification>` that lands with the turn already
+  closed opens one of its own, right after the returned call that ended the last
+  one. (The other kind, one that landed mid-turn, joins the turn instead and never
+  cuts anything — [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#task-notifications).) **Measured exposure of the sign that can be
   wrong**: 2 of 94 ended turns across the 30 most recent sessions of this project
   would lend their start to whatever opens the next one, for the second the
   watcher takes to catch up — against a `total` stuck at 0 for the 5-20 s Claude
