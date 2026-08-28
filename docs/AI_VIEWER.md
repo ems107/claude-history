@@ -30,7 +30,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
 - **A notification tone is played by ONE tab, out of a context a gesture unlocked** — `claimAnnouncement` in `lib/tabs.ts`, `primeAudio` in `lib/notificationSound.ts`. There is no system notification anywhere in this app, and the reason is a rule: `Notification` is secure-context only.
 - **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
-- **A row's unread count is measured from a READING**, never from a first sight — `lib/unread.ts`, written by the session view under the same focus test the bell uses.
+- **A row's unread count is measured from a READING**, never from a first sight — and the mark lives in the SERVER (`core/readMarks.ts`), beside the bell, so a reload keeps both.
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 - **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
@@ -819,6 +819,10 @@ nobody has read, and the row drew that exactly like one opened a minute ago.
 - **The unit is the enrichment's `userMessageCount + assistantMessageCount`** —
   typed prompts plus distinct assistant messages, the nearest a summary gets to
   what the follow pill counts ([the end of the conversation](#the-end-of-the-conversation)).
+  It is `messageTally` in `shared`, written once and used twice: the server
+  stamps a mark with it and the browser subtracts that from the row's own tally,
+  and a count measured with one ruler and drawn with another is off by whatever
+  the two disagree about.
   **Not `summary.messageCount`**, which is Claude Code's own `turn_duration`
   figure and counts context entries — tool results, streamed chunks — and is null
   for many sessions besides ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)). A null
@@ -835,16 +839,30 @@ nobody has read, and the row drew that exactly like one opened a minute ago.
   what the baseline being a READING buys. Seeding every session the list has ever
   drawn would light two thousand rows with their own history, and "unread" would
   come to mean "exists".
-- **The focus writes it, and it is the strict test** — `lib/windowFocus.ts`, the
-  same one that withdraws a bell row, for the same reason in the same words: a
-  page is mounted whether or not anybody is in front of it. The mark is written
-  on every growth rather than once on arrival, so what you are watching land does
-  not pile up behind you; the moment the focus goes, the counting starts.
-- **Nothing is persisted, and that is deliberate** — the bell's own argument
-  ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md), "Where state lives"): what has
-  arrived since you read it is a TRANSITION this page watched happen, and a
-  reload loses the watching along with it. It is per tab too, like the focus that
-  writes it.
+- **The focus decides WHEN it is written, and it is the strict test** —
+  `lib/windowFocus.ts`, the same one that withdraws a bell row, for the same
+  reason in the same words: a page is mounted whether or not anybody is in front
+  of it. `POST /api/sessions/:id/read` goes on every growth rather than once on
+  arrival, so what you are watching land does not pile up behind you; the moment
+  the focus goes, the counting starts. It is sent only when the mark is actually
+  behind, so a turn of thirty tool calls costs one round trip and not a render's
+  worth — and the server takes the tally itself rather than believing a number a
+  browser sent it.
+- **The mark lives in the SERVER, and that is the whole of why F5 keeps the
+  count.** It was a module store in the page first, which was wrong for one plain
+  reason: a reload lost it, while the bell beside it on the same row came
+  straight back — `/api/notifications` is served from that process. Two marks on
+  one row, one surviving a refresh and one not, is not a design. It is also the
+  truer place: having read a session is a fact about the PERSON, so it reads the
+  same in a second window and on a phone, and the only thing that stays per
+  window is the focus test above.
+- **Still not persisted, and for the bell's own reason**
+  ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md), "Where state lives"): a restart
+  empties both. A mark written to disk would claim, after a machine came back
+  tomorrow, to know what somebody had read — while the only thing that ever made
+  the claim true was this process watching it happen. Emptying costs nothing
+  anybody can name: every session reads as "nothing new" until it is opened
+  again.
 - **The bell mark is the bell's own row**, read from the `['notifications']`
   query the header already keeps mounted — no second copy of what a stop is, and
   the hover carries the CLI's own words exactly as `NotificationRow` does. It
