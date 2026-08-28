@@ -488,6 +488,7 @@ function FoldStrip({
   open,
   responses,
   tools,
+  notices,
   span,
   at,
   onToggle,
@@ -495,6 +496,7 @@ function FoldStrip({
   open: boolean;
   responses: number;
   tools: number;
+  notices: number;
   /**
    * How long the turn ran, prompt to last thing landed (`turnSpan`). Null for
    * the turn in flight — its live clock is the working row's `total`, counted
@@ -518,6 +520,15 @@ function FoldStrip({
       {tools > 0 && (
         <span className="shrink-0 font-semibold text-sky-300/80">
           {tools} tool call{tools === 1 ? '' : 's'}
+        </span>
+      )}
+      {/* A notice that landed mid-turn folds away with the answers, so the strip
+          has to say so: this line is the promise that nothing is hidden in
+          silence, and the notice is neither a response nor a call. */}
+      {(responses > 0 || tools > 0) && notices > 0 && <span className="opacity-50">·</span>}
+      {notices > 0 && (
+        <span className="shrink-0 font-semibold text-zinc-300/70">
+          {notices} notice{notices === 1 ? '' : 's'}
         </span>
       )}
       {/* The counts wear their own colours; the duration is a figure and wears
@@ -750,7 +761,7 @@ export function TurnView({
   let badgePlaced = false;
 
   const folded = foldedCounts(turn, showThinking);
-  const anyFolded = folded.responses > 0 || folded.tools > 0;
+  const anyFolded = folded.responses > 0 || folded.tools > 0 || folded.notices > 0;
   const models = turnModels(turn);
   let promptShown = false;
   // A rewind that cut in the MIDDLE of a turn: part of it is still the
@@ -779,6 +790,7 @@ export function TurnView({
       open={open}
       responses={folded.responses}
       tools={folded.tools}
+      notices={folded.notices}
       span={span}
       // A turn nobody prompted would otherwise be an anonymous line.
       at={promptShown ? null : (turn.items[0]?.timestamp ?? null)}
@@ -812,20 +824,16 @@ export function TurnView({
       }
       const notice = noticeOf(item);
       if (notice) {
-        const node = noticeNode(item, notice, badgePlaced ? undefined : turnBadge);
-        // Folded, a notice that landed MID-turn keeps the rail it has when the
-        // turn is open — it did not open this turn, and at the prompt's own
-        // margin it would read as a second one. Still drawn rather than hidden:
-        // the report inside it is the agent's only copy in this transcript.
-        nodes.push(
-          notice.queued ? (
-            <div key={item.uuid} className={RAIL}>
-              {node}
-            </div>
-          ) : (
-            node
-          ),
-        );
+        // A notice that landed MID-turn is part of the thread, so it folds away
+        // with the thread — folding the answers and leaving the news standing
+        // was the one thing left on screen, which reads as the turn having been
+        // about the notice. The strip counts it, so nothing goes in silence.
+        // The other kind IS the turn's opener and stays, like a prompt.
+        if (notice.queued) {
+          markFold();
+          continue;
+        }
+        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;
         continue;

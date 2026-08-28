@@ -15,19 +15,31 @@ export function turnKey(turn: Turn, index: number): string {
 export interface FoldCounts {
   responses: number;
   tools: number;
+  /**
+   * The notices that fold away with the answers: a task that finished while the
+   * turn was in flight (`notice.queued`), which joined the thread rather than
+   * opening a turn. The other kind IS the turn's opener and stays, like a
+   * prompt.
+   */
+  notices: number;
 }
 
-/** What a turn would fold away: the assistant's side of it. */
+/** What a turn would fold away: the assistant's side of it, and what landed in it. */
 export function foldedCounts(turn: Turn, showThinking: boolean): FoldCounts {
   let responses = 0;
   let tools = 0;
+  let notices = 0;
   for (const item of turn.items) {
-    if (item.role !== 'assistant') continue;
+    if (item.role !== 'assistant') {
+      const first = item.blocks[0];
+      if (first?.kind === 'notice' && first.queued) notices += 1;
+      continue;
+    }
     const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
     if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
     tools += visible.filter((b) => b.kind === 'tool').length;
   }
-  return { responses, tools };
+  return { responses, tools, notices };
 }
 
 export interface FoldState {
@@ -54,7 +66,7 @@ export function useFoldState(turns: Turn[], showThinking: boolean, resetKey?: st
     const keys: string[] = [];
     turns.forEach((turn, i) => {
       const counts = foldedCounts(turn, showThinking);
-      if (counts.responses > 0 || counts.tools > 0) keys.push(turnKey(turn, i));
+      if (counts.responses > 0 || counts.tools > 0 || counts.notices > 0) keys.push(turnKey(turn, i));
     });
     return keys;
   }, [turns, showThinking]);
