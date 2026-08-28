@@ -30,6 +30,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
 - **A notification tone is played by ONE tab, out of a context a gesture unlocked** — `claimAnnouncement` in `lib/tabs.ts`, `primeAudio` in `lib/notificationSound.ts`. There is no system notification anywhere in this app, and the reason is a rule: `Notification` is secure-context only.
 - **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
+- **A row's unread count is measured from a READING**, never from a first sight — `lib/unread.ts`, written by the session view under the same focus test the bell uses.
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 - **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
@@ -87,8 +88,9 @@ did it itself. It reads the REMEMBERED enrichment along with the counts, or it
 would blink out on every message a live session writes.
 
 **Two duplications went with the rewrite**: the subagent count was the `⑂ N`
-badge AND a button (`SessionBadges` takes `omitAgents`), and five panels wrote
-their own name at the top of a column whose title bar already said it.
+badge AND a button, and five panels wrote their own name at the top of a column
+whose title bar already said it. (The badge itself has since left the header and
+the list both — it is prose on the list's meta line now, beside the compactions.)
 
 **Rename and pin are in `⋯`, not glyphs that appear on hover beside the title.**
 What appears on hover is invisible until the pointer happens to be in the right
@@ -141,10 +143,10 @@ arriving, now true of a panel opening too.
   for all six panels — see [the three file panels](#the-three-file-panels) for
   the objection this answers.
 - **What is open is ONE value, and `?agents=1` is a mirror of it** — not half of
-  the answer. The parameter has to stay, because the session list links straight
-  onto it and the link can be copied, but it is written when the value changes
-  and adopted when it changes from outside (a deep link, the ⑂ badge in the list,
-  the token panel's own link, the back button). `closeAgents` exists beside
+  the answer. The parameter has to stay, because the link can be copied and
+  survives a reload, but it is written when the value changes and adopted when it
+  changes from outside (a deep link, the token panel's own link, the back
+  button). `closeAgents` exists beside
   `toggleAgents` for the writing half: asking a toggle to close something already
   closed would open it.
 - **A router navigation and a `setState` do not land in the same commit, and
@@ -309,7 +311,7 @@ Four things are lifted out from between the tool calls, because each is a turn o
 
 `SubagentsPanel` is the index of the call, the report and the transcript (see [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md) for what joins them): the call is a `ToolBlock` with a chip named after the agent type, the report an `InjectedNotice`, the transcript a `SubagentDrawer`.
 
-- Opened by the ⑂ badge in the LIST, and by the rail on the session page — where the badge is omitted, because the rail already carries the count ([the header](#the-header-and-where-the-panels-went)). Its `?agents=1` lives in the URL because the session list opens a session straight onto it; the drawer's `?agent=` is a different parameter for a different thing.
+- Opened by the rail, and by `?agents=1` — which lives in the URL so the panel survives a reload and can be linked to, the one panel state that does; the drawer's `?agent=` is a different parameter for a different thing. The list used to link straight onto it from a `⑂ N` badge and no longer does: that count is prose on the row now, beside the compactions, because it is a fact about what the conversation contains rather than a state of right now, and it was the only clickable thing inside a row that is entirely a link.
 - The panel reads each agent's transcript under the **same query key the drawer uses**, so nothing is fetched twice and opening one afterwards is instant — 350-500 KB and ~20 ms each, measured.
 - **The reports fold inside a notice that itself folds the turn on a click**, so that whole region must stop the event — otherwise reading a report collapses the conversation around it.
 - **The list is a tree** (`asTree`): an agent an agent spawned is drawn under it, indented, in the order it was sent out. A flat list left four rows at the top level explaining their parentage in prose, which the reader then had to reassemble. A row whose parent is somehow not in the list is appended rather than dropped — out of place beats invisible.
@@ -806,6 +808,53 @@ so because they were clicked — `more` and the find bar. And the follow's `Resi
 itself as well as the content, so if the end does leave the view that way — a
 window being resized is the honest case — being pinned still means being at the
 end.
+
+## What a list row says you have not seen
+
+Two questions, and the badges beside a row answer only the first: what a session
+is DOING (`live`, `working`, `waiting`, `idle`, each with its clock) and what it
+is HOLDING FOR YOU. A session idle for half an hour may carry twenty messages
+nobody has read, and the row drew that exactly like one opened a minute ago.
+
+- **The unit is the enrichment's `userMessageCount + assistantMessageCount`** —
+  typed prompts plus distinct assistant messages, the nearest a summary gets to
+  what the follow pill counts ([the end of the conversation](#the-end-of-the-conversation)).
+  **Not `summary.messageCount`**, which is Claude Code's own `turn_duration`
+  figure and counts context entries — tool results, streamed chunks — and is null
+  for many sessions besides ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)). A null
+  enrichment means "cannot say" and falls back to NOTHING: a server serving its
+  cache while it re-enriches would otherwise read the enrichment arriving as four
+  hundred messages landing at once.
+- **The count is a subtraction, not an accumulator.** `unreadOf` is
+  `max(0, tally − mark)` against a baseline that stands still until the next
+  reading, so nothing has to WATCH the list for the figure to be right: a session
+  that grew by nine while the reader was inside another one says nine the moment
+  the list comes back, with nobody having observed the nine steps. A re-parse
+  that shrinks a session reads 0 rather than a negative.
+- **A session nobody has opened has no mark and therefore no count**, which is
+  what the baseline being a READING buys. Seeding every session the list has ever
+  drawn would light two thousand rows with their own history, and "unread" would
+  come to mean "exists".
+- **The focus writes it, and it is the strict test** — `lib/windowFocus.ts`, the
+  same one that withdraws a bell row, for the same reason in the same words: a
+  page is mounted whether or not anybody is in front of it. The mark is written
+  on every growth rather than once on arrival, so what you are watching land does
+  not pile up behind you; the moment the focus goes, the counting starts.
+- **Nothing is persisted, and that is deliberate** — the bell's own argument
+  ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md), "Where state lives"): what has
+  arrived since you read it is a TRANSITION this page watched happen, and a
+  reload loses the watching along with it. It is per tab too, like the focus that
+  writes it.
+- **The bell mark is the bell's own row**, read from the `['notifications']`
+  query the header already keeps mounted — no second copy of what a stop is, and
+  the hover carries the CLI's own words exactly as `NotificationRow` does. It
+  goes when the row goes, whichever way that happens: opening the session,
+  dismissing it from the panel, or the server withdrawing it.
+- **Both are amber and neither is `CountBadge`.** Amber is this app's one colour
+  for something unseen, but that component rides a control's top-right corner in
+  absolute position and a 64 px virtualised row has neither a spare corner nor a
+  positioned host. `omitNews` turns the pair off on the session page, where the
+  follow pill already counts what lands and the bell row is withdrawn on sight.
 
 ## The working indicator
 
