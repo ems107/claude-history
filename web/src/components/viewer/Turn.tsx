@@ -476,16 +476,7 @@ function SystemItem({ item }: { item: MessageItem }) {
 }
 
 /**
- * The fold line of a turn. It is rendered in BOTH states and at the same place
- * — where the folded content starts — so unfolding moves nothing around and
- * there is always something to click to fold it back.
- *
- * The two states are drawn to look nothing alike, because at a glance they
- * used to read the same: folded it is a closed drawer (dashed, raised, "show"),
- * open it is the head of the rail that holds everything the prompt produced.
- */
-/**
- * What the strip enumerates, in the order it reads. A list rather than five
+ * What the strip enumerates, in the order it reads. A list rather than four
  * conditional blocks: every one of these is hidden by the same fold, and the
  * separator between them is the part that gets written wrong when each carries
  * its own `&&` chain of everything before it.
@@ -503,6 +494,15 @@ function countWords(c: FoldCounts): { n: number; word: string; className: string
   ].filter((x) => x.n > 0);
 }
 
+/**
+ * The fold line of a turn. It is rendered in BOTH states and at the same place
+ * — where the folded content starts — so unfolding moves nothing around and
+ * there is always something to click to fold it back.
+ *
+ * The two states are drawn to look nothing alike, because at a glance they
+ * used to read the same: folded it is a closed drawer (dashed, raised, "show"),
+ * open it is the head of the rail that holds everything the prompt produced.
+ */
 function FoldStrip({
   open,
   counts: folded,
