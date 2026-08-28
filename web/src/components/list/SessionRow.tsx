@@ -1,7 +1,7 @@
 import type { SessionSummary } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
 import { entrypointLabel, formatBytes, formatDateTime, relativeTime, shortModel } from '../../lib/format.ts';
@@ -40,11 +40,17 @@ function RowContent({
   // One shared query across every visible row: same key, one request.
   const prices = useQuery({ queryKey: ['prices'], queryFn: api.prices });
   const cost = sessionCostParts(session, prices.data?.prices ?? {});
-  const navigate = useNavigate();
 
   // "Prompts" = user-typed messages (from enrichment) — the same metric the
   // Prompts sort uses. Fallback: Claude Code's internal context-entry count
   // (includes tool results and streamed chunks), shown as approximate.
+  //
+  // Agents and compactions are neighbours because they are the same kind of
+  // fact — what this conversation turned out to contain — and neither is a
+  // state of right now. That is what took the subagent count out of the badge
+  // cluster beside LIVE and working: there it read as something happening,
+  // and it was the only thing inside a row that is entirely a link that could
+  // be clicked on its own.
   const meta: Array<string | null> = [
     entrypointLabel(session.entrypoint),
     shortModel(session.model),
@@ -55,6 +61,9 @@ function RowContent({
         ? `~${session.messageCount} msgs`
         : null,
     // Only when it happened: every session would otherwise carry a "0".
+    session.subagentCount > 0
+      ? `${session.subagentCount} subagent${session.subagentCount === 1 ? '' : 's'}`
+      : null,
     session.enrichment && session.enrichment.compactionCount > 0
       ? `${session.enrichment.compactionCount} compaction${session.enrichment.compactionCount === 1 ? '' : 's'}`
       : null,
@@ -121,8 +130,9 @@ function RowContent({
               cost stays blank instead of claiming the session was free. It is
               the whole of what the session spent, subagents included — they can
               be 88% of it — with the split in the tooltip. Nothing marks that
-              here: the ⑂ badge on the same row already says there are agents,
-              and saying it twice is noise around the one figure being read. */}
+              here: `N subagents` on the same line already says there are
+              agents, and saying it twice is noise around the one figure being
+              read. */}
           {cost.total !== null && (
             <span
               className="shrink-0"
@@ -139,14 +149,7 @@ function RowContent({
           )}
           {/* The whole row is a <Link>, so this cannot be one too — same reason
               the rename and pin buttons swallow their click here. */}
-          <SessionBadges
-            session={session}
-            onSubagentsClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              navigate(`/session/${session.id}?agents=1`);
-            }}
-          />
+          <SessionBadges session={session} />
         </div>
       </div>
       <RowDates session={session} />

@@ -23,20 +23,17 @@ export function SessionBadges({
   session,
   omitPr = false,
   omitPinned = false,
-  omitAgents = false,
   omitNews = false,
   live,
-  onSubagentsClick,
 }: {
   session: SessionSummary;
   omitPr?: boolean;
   /**
-   * The session page draws the pin as the ★ beside the title and the subagent
-   * count in the inspector rail, so repeating either here would be the same
-   * fact twice in one header. The list, which has neither, omits neither.
+   * The session page draws the pin as the ★ beside the title, so repeating it
+   * here would be the same fact twice in one header. The list has no other
+   * place for it and omits nothing.
    */
   omitPinned?: boolean;
-  omitAgents?: boolean;
   /**
    * The two marks about what you have NOT seen — the count of what has arrived
    * and the bell. Omitted on the page that is showing the session: down there
@@ -45,11 +42,6 @@ export function SessionBadges({
    * would be a flash and nothing more.
    */
   omitNews?: boolean;
-  /**
-   * Makes the ⑂ badge the way IN to the subagents, instead of a number with
-   * nothing behind it. Absent where there is nowhere to go.
-   */
-  onSubagentsClick?: (e: import('react').MouseEvent) => void;
   /**
    * Live state from a fresher source than the summary, when the caller has one.
    * The session page does: its summary comes from `['session', id]`, which is
@@ -226,29 +218,6 @@ export function SessionBadges({
       >
         <BellIcon className="h-3 w-3" />
       </span>,
-    );
-  }
-
-  if (session.subagentCount > 0 && !omitAgents) {
-    const label = `⑂ ${session.subagentCount}`;
-    const className = 'bg-sky-500/15 text-sky-400';
-    const title = `${session.subagentCount} subagent${session.subagentCount === 1 ? '' : 's'}${
-      onSubagentsClick ? ' — open the list' : ''
-    }`;
-    badges.push(
-      onSubagentsClick ? (
-        <button
-          key="agents"
-          type="button"
-          onClick={onSubagentsClick}
-          title={title}
-          className={`inline-flex cursor-pointer items-center rounded px-1.5 py-px text-[10px] font-semibold tracking-wide uppercase hover:bg-sky-500/30 ${className}`}
-        >
-          {label}
-        </button>
-      ) : (
-        <Badge key="agents" label={label} title={title} className={className} />
-      ),
     );
   }
   if (!omitPr && session.enrichment && session.enrichment.prLinks.length > 0) {
