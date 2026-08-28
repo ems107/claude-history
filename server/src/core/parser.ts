@@ -18,7 +18,7 @@ import type {
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
-import { extractPrompt, injectedOrigin, parseNotification, queuedByHuman, queuedPrompt, queuedText } from './summarizer.ts';
+import { extractPrompt, injectedOrigin, parseNotification, queuedByHuman, queuedText } from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
 
@@ -667,16 +667,43 @@ export async function parseTranscript(
 
   /**
    * Something Claude Code injected into the conversation — today an Agent or a
-   * background command reporting back. It OPENS a turn, because a real exchange
-   * follows it, EXCEPT when the turn it would open was itself opened by one:
-   * agents that finish together are delivered back to back (three in a row in
-   * `980751cb`), and a turn each would leave all but the last holding nothing
-   * but the news. Only notice-after-notice merges, so nothing can ever swallow a
-   * prompt or an answer.
+   * background command reporting back.
+   *
+   * **The envelope says whether a turn was in flight when it landed, and that is
+   * what decides the boundary.** Measured over the whole corpus, 175 notices,
+   * with no case sitting between the two:
+   *
+   *  - `queued` — the `attachment` / `queued_command` envelope, which exists
+   *    precisely because something was running. It carries no `promptId` at all
+   *    (116 of 116) and hangs off a line from INSIDE the turn, with a stamp
+   *    older than its own parent (p50 −10 s: the clock is when the task
+   *    finished, not when it was handed over). So it JOINS the open turn, the
+   *    same as a prompt typed mid-turn. A turn of its own cut the thread where
+   *    Claude had not stopped — the answers before and after the news were two
+   *    turns of one piece of work, and the turn's cost and context badges were
+   *    split between the halves.
+   *  - otherwise — the `user` path, which is how a notification reaches a
+   *    session that had gone quiet. It carries a fresh `promptId` of its own
+   *    (59 of 59) and follows the line that CLOSED the turn (`end_turn`, p50
+   *    +78 s later, up to 27 minutes). It really does open a turn: it woke the
+   *    session and a real exchange follows.
+   *
+   * The one exception on the `user` side: when the turn it would open was itself
+   * opened by a notice. Agents that finish together are delivered back to back
+   * (three in a row in `980751cb`), and a turn each would leave all but the last
+   * holding nothing but the news. Only notice-after-notice merges, so nothing
+   * can ever swallow a prompt or an answer.
    */
-  const pushNotice = (o: RawLine, origin: string, content: string, carriedOver: boolean, runId: string | null): void => {
+  const pushNotice = (
+    o: RawLine,
+    origin: string,
+    content: string,
+    carriedOver: boolean,
+    runId: string | null,
+    queued: boolean,
+  ): void => {
     const previous = lastItem();
-    const turn = previous?.blocks[0]?.kind === 'notice' ? ensureTurn() : newTurn(str(o.promptId));
+    const turn = queued || previous?.blocks[0]?.kind === 'notice' ? ensureTurn() : newTurn(str(o.promptId));
     turn.items.push({
       uuid: makeUuid(o),
       aliasUuids: [],
@@ -694,7 +721,7 @@ export async function parseTranscript(
       discardedBranch: null,
       usage: null,
       effort: null,
-      blocks: [{ kind: 'notice', origin, ...parseNotification(content) }],
+      blocks: [{ kind: 'notice', origin, queued, ...parseNotification(content) }],
     });
   };
 
@@ -753,7 +780,7 @@ export async function parseTranscript(
         const meta = str(o.message.content);
         const injected = meta ? injectedOrigin(o) : null;
         if (meta && injected) {
-          pushNotice(o, injected, meta, carriedOver, runId);
+          pushNotice(o, injected, meta, carriedOver, runId, false);
           continue;
         }
         const snapshot = meta ? parseContextSnapshot(meta) : null;
@@ -810,7 +837,7 @@ export async function parseTranscript(
         // follows it — but as what it is, and `isPromptItem` stops counting it.
         const injected = injectedOrigin(o);
         if (injected) {
-          pushNotice(o, injected, content, carriedOver, runId);
+          pushNotice(o, injected, content, carriedOver, runId, false);
           continue;
         }
         const prompt = extractPrompt(content);
@@ -950,21 +977,35 @@ export async function parseTranscript(
         continue;
       }
 
-      const queued = attachment?.type === 'queued_command' ? queuedText(attachment.prompt) : null;
-      if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
-        pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId);
-        continue;
-      }
-      // Or a prompt the user typed while Claude was working. `queuedPrompt` is
+      // A prompt the user typed while Claude was working. `queuedByHuman` is
       // what tells the two apart, and the reason it does not reuse
       // `injectedOrigin` is written there.
-      const typed = queuedPrompt(o);
+      //
+      // **It is asked FIRST, and that order is the whole guard.** The other
+      // thing this envelope carries is a notification, which used to be
+      // recognised by finding `<task-notification>` in the payload — a test on
+      // the TEXT, so a prompt merely QUOTING the tag became a notice and stopped
+      // being a prompt anywhere: uncounted, unindexed, drawn as somebody else's
+      // news. This repo's own sessions type that tag constantly. Nothing on disk
+      // trips it today (120 notifications and 24 typed prompts, no crossing:
+      // every notification carries `commandMode: "task-notification"` and no
+      // `origin`, every typed one `commandMode: "prompt"` and `origin.kind:
+      // "human"`), which is exactly why it had to be closed before it did.
+      const byHuman = queuedByHuman(o);
+      const queued = !byHuman && attachment?.type === 'queued_command' ? queuedText(attachment.prompt) : null;
+      if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
+        // Queued, so a turn was in flight when the task finished: it joins that
+        // turn rather than cutting it in two. See `pushNotice`.
+        pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId, true);
+        continue;
+      }
+      const typed = queuedText(byHuman);
       const prompt = typed ? extractPrompt(typed) : null;
       // The images pasted into it, which is what made the payload an array in
       // the first place. Read through the same affirmative test as the text, and
       // tested separately from it so a prompt that is nothing but a pasted image
       // still gets a bubble.
-      const images = queuedImages(queuedByHuman(o));
+      const images = queuedImages(byHuman);
       if (!prompt && images.length === 0) continue;
       // It joins the turn already open (`ensureTurn`) instead of starting one,
       // because that is what Claude Code does with it: the `last-prompt` sidecar
