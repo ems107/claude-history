@@ -3,7 +3,10 @@ import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useActiveSessions } from '../../api/useActiveSessions.ts';
+import { useNotifications } from '../../api/useNotifications.ts';
 import { formatClock, formatDateTime } from '../../lib/format.ts';
+import { unreadOf, useReadMark } from '../../lib/unread.ts';
+import { BellIcon, MessageIcon } from '../icons.tsx';
 
 export function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
   return (
@@ -21,6 +24,7 @@ export function SessionBadges({
   omitPr = false,
   omitPinned = false,
   omitAgents = false,
+  omitNews = false,
   live,
   onSubagentsClick,
 }: {
@@ -33,6 +37,14 @@ export function SessionBadges({
    */
   omitPinned?: boolean;
   omitAgents?: boolean;
+  /**
+   * The two marks about what you have NOT seen — the count of what has arrived
+   * and the bell. Omitted on the page that is showing the session: down there
+   * what has landed is what the follow pill counts, and the bell row is
+   * withdrawn the moment the window holds the focus, so drawing either here
+   * would be a flash and nothing more.
+   */
+  omitNews?: boolean;
   /**
    * Makes the ⑂ badge the way IN to the subagents, instead of a number with
    * nothing behind it. Absent where there is nowhere to go.
@@ -69,6 +81,13 @@ export function SessionBadges({
     const timer = setInterval(() => tick((n) => n + 1), 1_000);
     return () => clearInterval(timer);
   }, [hasClock]);
+
+  // What this tab has read of this session, and what it has been told stopped.
+  // Both come from one shared source across every visible row — a module store
+  // and a query key the bell already keeps mounted for the life of the page —
+  // so a hundred rows cost neither a request nor a copy of the reasoning.
+  const readMark = useReadMark(session.id);
+  const notifications = useNotifications();
 
   if (session.pinned && !omitPinned) {
     badges.push(
@@ -167,6 +186,49 @@ export function SessionBadges({
       );
     }
   }
+
+  // Then, in the same breath, the two marks about what happened while nobody
+  // was looking. They stand beside the state badges on purpose: those say what
+  // a session is DOING, these say what it is HOLDING FOR YOU, and which rows
+  // are which is the one question a person has in front of this list.
+  //
+  // Both are amber, this app's single colour for "there is something here you
+  // have not seen" — `CountBadge`, the update button, the follow pill's badge.
+  // What is NOT reused is `CountBadge` itself: it rides the top-right corner of
+  // a control in absolute position, and a 64 px virtualised row has neither a
+  // spare corner nor a positioned host to hang one on.
+  const unread = omitNews ? 0 : unreadOf(session, readMark);
+  if (unread > 0) {
+    badges.push(
+      <span
+        key="unread"
+        title={`${unread} new message${unread === 1 ? '' : 's'} since you last read this session`}
+        className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold tabular-nums text-amber-400"
+      >
+        <MessageIcon className="h-3 w-3" />
+        {unread}
+      </span>,
+    );
+  }
+  const stop = omitNews ? undefined : notifications.data?.stopped.find((s) => s.sessionId === session.id);
+  if (stop) {
+    badges.push(
+      <span
+        key="notice"
+        // The CLI's own words, exactly as the bell's own rows carry them
+        // (`NotificationRow`): nothing is translated here either.
+        title={`${
+          stop.kind === 'needs-you'
+            ? `Needs you${stop.waitingFor ? ` — ${stop.waitingFor}` : ''}`
+            : 'Finished answering'
+        }\nStopped ${formatDateTime(stop.at)}\nStill in the bell — opening this session clears it`}
+        className="inline-flex items-center rounded bg-amber-500/15 px-1.5 py-px text-amber-400"
+      >
+        <BellIcon className="h-3 w-3" />
+      </span>,
+    );
+  }
+
   if (session.subagentCount > 0 && !omitAgents) {
     const label = `⑂ ${session.subagentCount}`;
     const className = 'bg-sky-500/15 text-sky-400';

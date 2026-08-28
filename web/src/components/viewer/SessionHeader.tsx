@@ -251,7 +251,7 @@ export function SessionHeader({
               className="bg-amber-500/15 text-amber-400"
             />
           )}
-          <SessionBadges session={s} omitPr omitAgents live={live} />
+          <SessionBadges session={s} omitPr omitAgents omitNews live={live} />
         </span>
         <span className="flex-1" />
         <span className="flex shrink-0 items-center gap-2">
