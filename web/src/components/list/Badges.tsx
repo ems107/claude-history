@@ -1,11 +1,11 @@
 import type { LiveInfo, SessionSummary } from '@claude-history/shared';
-import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
+import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING, unreadOf } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useActiveSessions } from '../../api/useActiveSessions.ts';
 import { useNotifications } from '../../api/useNotifications.ts';
+import { useReadMarks } from '../../api/useReadMarks.ts';
 import { formatClock, formatDateTime } from '../../lib/format.ts';
-import { unreadOf, useReadMark } from '../../lib/unread.ts';
 import { BellIcon, MessageIcon } from '../icons.tsx';
 
 export function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
@@ -74,11 +74,12 @@ export function SessionBadges({
     return () => clearInterval(timer);
   }, [hasClock]);
 
-  // What this tab has read of this session, and what it has been told stopped.
-  // Both come from one shared source across every visible row — a module store
-  // and a query key the bell already keeps mounted for the life of the page —
-  // so a hundred rows cost neither a request nor a copy of the reasoning.
-  const readMark = useReadMark(session.id);
+  // How much of this session has been read, and what it has been told stopped.
+  // Both are one query key across every visible row, so a hundred rows cost one
+  // request between them and no copy of the reasoning — and both are answered
+  // by the SERVER, which is what makes the two marks on a row behave alike when
+  // the page is reloaded.
+  const readMarks = useReadMarks();
   const notifications = useNotifications();
 
   if (session.pinned && !omitPinned) {
@@ -189,7 +190,7 @@ export function SessionBadges({
   // What is NOT reused is `CountBadge` itself: it rides the top-right corner of
   // a control in absolute position, and a 64 px virtualised row has neither a
   // spare corner nor a positioned host to hang one on.
-  const unread = omitNews ? 0 : unreadOf(session, readMark);
+  const unread = omitNews ? 0 : unreadOf(session, readMarks.data?.marks[session.id]);
   if (unread > 0) {
     badges.push(
       <span

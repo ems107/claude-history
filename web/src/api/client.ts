@@ -27,6 +27,7 @@ import type {
   PriceTable,
   ProjectsResponse,
   PromptsResponse,
+  ReadMarksResponse,
   RetentionResponse,
   SearchResponse,
   SessionDetailResponse,
@@ -509,6 +510,18 @@ export const api = {
   },
   /** Which sessions have stopped — what the header's bell counts. */
   notifications: () => getJson<NotificationsResponse>('/api/notifications'),
+  /** How much of each session had been read the last time somebody read it. */
+  readMarks: () => getJson<ReadMarksResponse>('/api/read-marks'),
+  /**
+   * "I have read this session." The server takes the tally itself, and answers
+   * with the whole set so the row is right before the SSE round trip lands.
+   */
+  markSessionRead: async (sessionId: string) => {
+    const res = await fetch(`/api/sessions/${sessionId}/read`, { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as ReadMarksResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
   /**
    * Drop one row. Both the panel's cross and the session view opening a session
    * that had one, because they mean the same thing. The new list comes back, so

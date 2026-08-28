@@ -1,6 +1,7 @@
 import {
   askingFor,
   MAX_STAT_PATHS,
+  messageTally,
   type ChatPermissionMode,
   type LiveInfo,
   type MessageItem,
@@ -12,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
+import { useReadMarks } from '../api/useReadMarks.ts';
 import { draftSessionDetail } from '../lib/draftSession.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
 import { collectMentionedFiles, filterMentions } from '../lib/mentionedFiles.ts';
@@ -25,7 +27,6 @@ import { turnActivity } from '../lib/turnActivity.ts';
 import { GRIP_PX, RAIL_PX, useInspector } from '../lib/inspector.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
-import { markRead, messageTally } from '../lib/unread.ts';
 import { useWindowFocused } from '../lib/windowFocus.ts';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { FindBar, FindButton, useFindBar } from '../components/viewer/FindBar.tsx';
@@ -144,24 +145,32 @@ export function SessionViewPage() {
   }, [id, rowAt, atWindow, announceInFront, queryClient]);
   /**
    * And the same act, said to the list: reading a session is what the row's
-   * unread count is measured from.
+   * unread count is measured from (`server/src/core/readMarks.ts`).
    *
-   * The tally comes off `detail.data.summary`, so the baseline and the figure
-   * the list draws are the same field in the same unit (`lib/unread.ts`). It is
-   * written on every growth rather than once on arrival, which is what keeps
-   * what you are WATCHING land from piling up as unread — `['session', id]` is
-   * refetched whenever the transcript grows, so this effect re-runs with it.
+   * The server takes the tally itself; this only says WHEN. It is said on every
+   * growth rather than once on arrival, which is what keeps what you are
+   * WATCHING land from piling up as unread — `['session', id]` is refetched
+   * whenever the transcript grows, so this effect re-runs with it — and it is
+   * sent only when the mark is actually behind, so a turn of thirty tool calls
+   * costs one POST rather than a render's worth.
    *
    * **Gated on the same focus as the bell row above**, and the sentence there
    * applies word for word: a page is mounted whether or not anybody is in front
    * of it, so a session view behind an editor is a session nobody has read. The
    * moment the focus arrives, so does the mark.
    */
+  const readMarks = useReadMarks();
   const tally = detail.data ? messageTally(detail.data.summary) : null;
+  const marked = id ? readMarks.data?.marks[id] : undefined;
   useEffect(() => {
-    if (!id || !atWindow) return;
-    markRead(id, tally);
-  }, [id, atWindow, tally]);
+    if (!id || !atWindow || tally === null || marked === tally) return;
+    void api
+      .markSessionRead(id)
+      .then((body) => queryClient.setQueryData(['readMarks'], body))
+      // Nothing to report: the count is a convenience, and the SSE that follows
+      // any real change puts every window right anyway.
+      .catch(() => undefined);
+  }, [id, atWindow, tally, marked, queryClient]);
   const chatEnabled = settings.data?.settings.chatEnabled ?? false;
   // Which of the two the app offers at the foot of a session. Meaningless while
   // `chatEnabled` is off, and never read there: nothing is drawn either way.

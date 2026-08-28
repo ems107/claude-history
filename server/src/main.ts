@@ -4,6 +4,7 @@ import { AutoReloadService } from './core/autoReload.ts';
 import { decideBind, logBind } from './core/bind.ts';
 import { SessionIndex } from './core/index.ts';
 import { NotificationsService } from './core/notifications.ts';
+import { ReadMarksService } from './core/readMarks.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
 import { SearchService } from './core/search.ts';
@@ -56,6 +57,8 @@ async function main(): Promise<void> {
   // After both halves it watches, and started below once the index has been
   // built — it seeds itself from what is already running.
   const notifications = new NotificationsService(index, chat);
+  // Nothing to start: it has no source of its own to watch, only readers.
+  const readMarks = new ReadMarksService(index);
   const app = await buildApp({
     config,
     bind,
@@ -68,6 +71,7 @@ async function main(): Promise<void> {
     chat,
     terminals,
     notifications,
+    readMarks,
   });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);

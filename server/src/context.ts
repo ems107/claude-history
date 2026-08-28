@@ -4,6 +4,7 @@ import type { AutoReloadService } from './core/autoReload.ts';
 import type { DeepSearchService } from './core/deepSearch.ts';
 import type { SessionIndex } from './core/index.ts';
 import type { NotificationsService } from './core/notifications.ts';
+import type { ReadMarksService } from './core/readMarks.ts';
 import type { SearchService } from './core/search.ts';
 import type { SessionChatService } from './core/sessionChat.ts';
 import type { SessionTerminalService } from './core/sessionTerminal.ts';
@@ -27,6 +28,8 @@ export interface AppContext {
   chat: SessionChatService;
   /** Which sessions have stopped, and why — the header's bell. */
   notifications: NotificationsService;
+  /** How much of each session has been read — the count on a list row. */
+  readMarks: ReadMarksService;
   /** The embedded terminals — the other half of `chatMode`. */
   terminals: SessionTerminalService;
 }
