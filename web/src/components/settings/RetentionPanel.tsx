@@ -46,7 +46,7 @@ export function RetentionPanel() {
 
   return (
     <>
-      <p id="info-retention" className="max-w-prose scroll-mt-16">
+      <p id="info-retention" className="scroll-mt-16">
         Claude Code keeps your conversations for{' '}
         <span className={`font-semibold ${view.tone === 'warn' ? 'text-amber-400' : 'text-[var(--text)]'}`}>
           {retentionLabel(view, false)}
@@ -74,14 +74,14 @@ export function RetentionPanel() {
       </p>
 
       {view.blocked && (
-        <p className="max-w-prose rounded border border-red-500/40 px-2 py-1.5 text-red-300">
+        <p className="rounded border border-red-500/40 px-2 py-1.5 text-red-300">
           Claude Code is not cleaning up <span className="font-semibold">at all</span> right now: {view.blocked}. It
           stays paused — nothing is deleted, and the figure above is what <em>would</em> apply, not what does — until
           that file is valid JSON again.
         </p>
       )}
 
-      <p className={`max-w-prose ${!view.blocked && view.expired > 0 ? 'text-amber-400' : 'text-[var(--text-dim)]'}`}>
+      <p className={`${!view.blocked && view.expired > 0 ? 'text-amber-400' : 'text-[var(--text-dim)]'}`}>
         {view.expired > 0 ? (
           <>
             {view.expired} of the {data.countedSessions} sessions listed here are already past that cutoff
@@ -130,7 +130,7 @@ export function RetentionPanel() {
 
       {data.projectOverrides.length > 0 && (
         <div className="space-y-1 border-t border-[var(--border)] pt-3">
-          <p className="max-w-prose text-amber-400">
+          <p className="text-amber-400">
             These projects have their own settings, and a project's settings beat yours whenever Claude Code is started
             inside it — the sweep is global, so the value in force is the one of wherever it happened to be launched.
           </p>

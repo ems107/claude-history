@@ -252,7 +252,7 @@ export function ClaudeArea() {
             {
               value: 'composer',
               label: 'A composer at the foot of the conversation (experimental)',
-              hint: 'A box you type into. Questions arrive as buttons, plans can be commented passage by passage, and the model and effort are pickers beside Send — all drawn by this app, which is what makes it the experimental one.',
+              hint: 'A box you type into — questions as buttons, plans commented passage by passage, model and effort beside Send. All of it drawn by this app, which is what makes it the experimental one.',
             },
           ]}
         />

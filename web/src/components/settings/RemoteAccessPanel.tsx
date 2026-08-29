@@ -59,7 +59,7 @@ export function RemoteAccessPanel() {
 
   if (dev) {
     return (
-      <p className="max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">
+      <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
         Remote access belongs to the installed release. This dev instance listens on 127.0.0.1 only, so there is nothing
         here to switch on — and nothing it could expose.
       </p>
@@ -196,7 +196,7 @@ export function RemoteAccessPanel() {
           />
           <span>
             Let other machines on this network use claude-history
-            <span className="mt-0.5 block max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">
+            <span className="mt-0.5 block text-[11px] leading-relaxed text-[var(--text-dim)]">
               {credentials.disabled
                 ? credentials.reason
                 : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
@@ -260,7 +260,7 @@ export function RemoteAccessPanel() {
               </>
             )}
           </div>
-          <p className="max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">
+          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
             No old password is ever asked for: being at this machine is already enough to run anything on it, so it is
             what gets you back in after forgetting one.
           </p>
@@ -268,7 +268,7 @@ export function RemoteAccessPanel() {
       )}
 
       {settings.remoteAccessEnabled && (
-        <div className="max-w-prose space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
+        <div className="space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">
           {/* The URL is only printed once it is a URL that answers. Offering it
               while the server listens on loopback alone would send someone to
               another room to type an address that refuses the connection. */}
@@ -419,7 +419,7 @@ export function RemoteAccessPanel() {
           {/* A failed look is not a clean firewall, and this is where saying so
               belongs: no list, and nothing to point the button at. */}
           {rule?.blockingRulesError && (
-            <p className="max-w-prose text-[11px] leading-relaxed text-amber-400">
+            <p className="text-[11px] leading-relaxed text-amber-400">
               Windows would not say whether anything blocks this app: {rule.blockingRulesError}
             </p>
           )}
@@ -468,7 +468,7 @@ export function RemoteAccessPanel() {
             </div>
           )}
 
-          <p className="max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">
+          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
             Turning this on does not open the port by itself, and that is the point: the server waits until Windows
             already allows it, so installing an update can never make Windows ask you for permission.
           </p>

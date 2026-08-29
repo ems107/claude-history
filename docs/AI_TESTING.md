@@ -693,13 +693,24 @@ up as several failures at once rather than as a setting nobody notices is gone.
   The rail is a fixed 224 px and does not fold; the panel is what gives. While
   you are there: a text field must FILL its card — `Field` sized its content to
   fit once, and every box came out 160 px wide.
-- **The measure, which is the half a wider column breaks.** The card is 976 px
-  (`max-w-5xl`), but a line of prose in it must stay between **45 and 90
-  characters** at 1920 / 1600 / 1440 / 1280 — it is 65 at all four. Measure it by
-  probing the element's own font rather than by eye, because "it looks fine on
-  mine" is what this kind of thing always passes. In the same pass: a grid gives
-  its slack to the LAST column (the retention values must sit ~12 px from their
-  path, not ~350), and a notice box is as wide as its sentence, not as its card.
+- **Nothing is capped narrower than the card.** The card is 976 px
+  (`max-w-5xl`), and **no hint may take more than two lines** at 1920 / 1600 /
+  1440 / 1280 — 17 of them, none over two. Count lines off the element's own
+  `line-height` rather than by eye. This replaced a check on the reading measure
+  and the cap that went with it: at `max-w-prose` a one-line hint wrapped at a
+  third of the card with the row empty beside it, which is the complaint the
+  wider column existed to fix. A hint that wraps here wants CUTTING, and what is
+  cut belongs in the group's `Explain`. Also: a grid gives its slack to the LAST
+  column — the retention values must sit ~12 px from their path, not ~350.
+- **The rail follows what you are reading.** Park each group's heading one pixel
+  ABOVE the spy line and the rail's sub-item must be that group; the very bottom
+  must light the LAST one (a short final group never reaches the line on its
+  own); clicking a sub-item must scroll there and light it; and exactly one is
+  ever lit. The bug this replaces looked like a design decision rather than a
+  fault: an `IntersectionObserver` keeping the smallest `boundingClientRect.top`
+  keeps the most NEGATIVE one, so the first group of every area stayed lit for
+  ever and clicking any other did nothing. **Off-by-one in the harness, not the
+  page**: at `line + 1` the heading has not arrived yet and must NOT count.
 
 ## Platform and plumbing
 

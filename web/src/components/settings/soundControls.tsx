@@ -133,7 +133,7 @@ export function ToneSelect({
         </label>
         <PlayButton tone={resolved} volume={volume} disabled={disabled} />
       </div>
-      {hint && <p className="mt-0.5 max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</p>}
     </div>
   );
 }

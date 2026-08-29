@@ -70,7 +70,7 @@ export function DangerArea() {
           >
             {stopped ? 'Stopping…' : 'Stop server'}
           </button>
-          <p className="max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">
+          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
             Ends this server. It refuses while an update is being installed, and while the app is running Claude — each
             of those would lose something that cannot be got back.
           </p>
@@ -86,7 +86,7 @@ export function DangerArea() {
           >
             Uninstall
           </button>
-          <p className="max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">
+          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
             Removes the scheduled task, the Start Menu shortcut and the install folder, and asks whether your own data
             should go with them. Your Claude conversations are never touched — this tool only ever reads them.
           </p>

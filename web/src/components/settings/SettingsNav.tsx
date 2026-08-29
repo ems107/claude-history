@@ -248,40 +248,54 @@ function SearchResults({ query, clear }: { query: string; clear: () => void }) {
   );
 }
 
+/** How far below the panel's top edge a heading counts as "the one you are on". */
+const SPY_LINE_PX = 90;
+
 /**
- * Which group is at the top of the panel right now.
+ * Which group you are reading — the LAST one whose heading has passed the line
+ * near the top of the panel.
  *
- * Scrolling, not clicking, is what this answers — a click already knows where it
- * went. The topmost INTERSECTING heading wins rather than the closest one,
- * because a group taller than the viewport must go on being the answer while you
- * read through it, which "closest to the top edge" stops doing halfway down.
+ * **This was an `IntersectionObserver` and it was wrong in a way that looked
+ * like a design decision.** It kept the topmost intersecting heading, chosen by
+ * the smallest `boundingClientRect.top` — which is the most NEGATIVE one, so a
+ * tall first group that you had scrolled well past went on winning for ever.
+ * The first sub-item of every area stayed lit, clicking any other did nothing
+ * visible, and nothing about it read as a bug rather than as a rail that simply
+ * marked its area.
+ *
+ * Reading the positions on scroll is both correct and something you can check by
+ * eye: walk the headings in order, keep the last one at or above the line. At the
+ * top of the panel that is the first group; scrolled to the very bottom it is
+ * forced to the last, because a short final group never reaches the line on its
+ * own and would otherwise leave the previous one lit at the end of the page.
  */
 function useVisibleGroup(scroller: HTMLElement | null, area: AreaId | null): string | null {
   const [here, setHere] = useState<string | null>(null);
   useEffect(() => {
     if (!scroller) return;
-    const seen = new Map<string, number>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const id = e.target.getAttribute('data-settings-group');
-          if (id) seen.set(id, e.isIntersecting ? e.boundingClientRect.top : Number.POSITIVE_INFINITY);
-        }
-        let best: string | null = null;
-        let top = Number.POSITIVE_INFINITY;
-        for (const [id, y] of seen) {
-          if (y < top) {
-            top = y;
-            best = id;
-          }
-        }
-        setHere(best);
-      },
-      { root: scroller, rootMargin: '0px 0px -70% 0px' },
-    );
-    for (const el of scroller.querySelectorAll('[data-settings-group]')) observer.observe(el);
-    return () => observer.disconnect();
-    // Re-armed when the area changes: the groups on screen are different ones.
+    const read = () => {
+      const groups = [...scroller.querySelectorAll('[data-settings-group]')];
+      if (groups.length === 0) return;
+      const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4;
+      if (atBottom) {
+        setHere(groups[groups.length - 1].getAttribute('data-settings-group'));
+        return;
+      }
+      const line = scroller.getBoundingClientRect().top + SPY_LINE_PX;
+      let current = groups[0];
+      for (const el of groups) {
+        if (el.getBoundingClientRect().top <= line) current = el;
+      }
+      setHere(current.getAttribute('data-settings-group'));
+    };
+    read();
+    scroller.addEventListener('scroll', read, { passive: true });
+    window.addEventListener('resize', read);
+    return () => {
+      scroller.removeEventListener('scroll', read);
+      window.removeEventListener('resize', read);
+    };
+    // Re-read when the area changes: the groups on screen are different ones.
   }, [scroller, area]);
   return here;
 }

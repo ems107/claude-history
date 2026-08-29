@@ -27,7 +27,7 @@ export function DataArea() {
           notice a price is wrong. So it stays, and this says where it went. */}
       <GroupCard id="prices">
         <Anchored id="info-prices">
-          <p className="max-w-prose">
+          <p>
             Your price table lives in the same file as everything above, and a restore replaces it along with the rest.
             It is edited on the{' '}
             <Link to="/stats" className="text-[var(--accent)] hover:underline">

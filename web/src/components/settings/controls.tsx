@@ -155,7 +155,7 @@ export function GroupCard({
           text inside a full-width box was tried first and read worse than
           either: three wrapped lines with 600 px of empty border beside them. */}
       {master && !on && offNote && (
-        <p className="mb-3 max-w-prose rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
+        <p className="mb-3 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
           {offNote}
         </p>
       )}
@@ -272,11 +272,15 @@ export function DefaultBadge<K extends keyof AppSettings>({ field }: { field: K 
  * — and ten paragraphs of small grey text under ten switches is a wall you read
  * past rather than read. What was cut is not gone: it moved into the group's own
  * `Explain`, one click away and no longer standing in front of the control you
- * came for. `max-w-prose` stops a long one running the full width of the card,
- * which is most of what makes a column of them scannable.
+ * **And it is NOT capped to a reading measure.** It was, at 65 characters, and
+ * that is what makes a one-line hint wrap at a third of a 976 px card with the
+ * rest of the row empty beside it — the cap and the wide column were pulling in
+ * opposite directions, and the cap was the one that had to go. A hint that still
+ * wraps at this width is a hint that broke the one-line rule and wants cutting,
+ * not wrapping.
  */
 export function Hint({ children }: { children: ReactNode }) {
-  return <span className="mt-0.5 block max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</span>;
+  return <span className="mt-0.5 block text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</span>;
 }
 
 /** The label and hint of a preference, in the shape a checkbox wants them. */
@@ -389,7 +393,7 @@ export function NumberField({
         />
         {after && <span>{after}</span>}
       </label>
-      {note && <p className="mt-0.5 max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{note}</p>}
+      {note && <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-dim)]">{note}</p>}
     </Field>
   );
 }
@@ -556,7 +560,7 @@ export function TextField({
       {(after || hint) && (
         <div className={`mt-1.5 flex flex-wrap items-center gap-2 ${disabled ? inactiveRow : ''}`}>
           {after}
-          {hint && <span className="max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</span>}
+          {hint && <span className="text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</span>}
         </div>
       )}
     </Field>
@@ -650,7 +654,7 @@ export function Explain({ label = 'How it works', children }: { label?: string; 
   return (
     <div className="pt-1">
       <Fold label={label}>
-        <div className="max-w-prose space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</div>
+        <div className="space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</div>
       </Fold>
     </div>
   );
