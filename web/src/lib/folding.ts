@@ -29,6 +29,16 @@ export interface FoldCounts {
    * and every one used to be the thing left standing on a folded turn.
    */
   recaps: number;
+  /**
+   * Entering and leaving plan mode. The odd one out among the `system` panels,
+   * and the reason is what the event IS: a compaction or a `/context` run is a
+   * fact about the CONVERSATION, while entering plan mode is a moment of the
+   * turn itself — the entry carries the prompt's own timestamp, and the exit is
+   * the plan being approved. Folded, the two were left hanging above and below
+   * the strip with everything between them gone, which reads as the turn having
+   * been about them — the same bug the recap rule fixed once already.
+   */
+  planMode: number;
 }
 
 /**
@@ -39,29 +49,43 @@ export interface FoldCounts {
  * `Command` (`local_command`, 70 here) is the USER's own action and folds no
  * more than the prompt does; an `informational` (7) is Claude Code explaining
  * itself; and every `system` item drawn as a PANEL — a compaction, a `/context`
- * run, a plan-mode marker, the stop marker (162 in all) — says what happened to
- * the CONVERSATION, which is exactly what a folded turn still has to show.
+ * run, the stop marker — says what happened to the CONVERSATION, which is
+ * exactly what a folded turn still has to show. The plan-mode marker is the one
+ * panel that does not, and `planMode` says why.
  */
 export function foldedCounts(turn: Turn, showThinking: boolean): FoldCounts {
   let responses = 0;
   let tools = 0;
   let notices = 0;
   let recaps = 0;
+  let planMode = 0;
   for (const item of turn.items) {
     if (item.role !== 'assistant') {
       const first = item.blocks[0];
       if (first?.kind === 'notice' && first.queued) notices += 1;
       else if (item.role === 'system' && first?.kind === 'text' && item.systemSubtype === RECAP_SUBTYPE) recaps += 1;
+      // All four events under one rule — an entry, a re-entry, an exit, and the
+      // copy a compaction carried through. Telling them apart here would be a
+      // second rule to keep true for a marker nobody reads differently.
+      else if (first?.kind === 'plan-mode') planMode += 1;
       continue;
     }
     const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
     if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
     tools += visible.filter((b) => b.kind === 'tool').length;
   }
-  return { responses, tools, notices, recaps };
+  return { responses, tools, notices, recaps, planMode };
 }
 
-/** Whether a turn has anything at all to fold — the strip exists only for these. */
+/**
+ * Whether a turn has anything at all to fold — the strip exists only for these.
+ *
+ * **`planMode` is deliberately absent: a plan-mode marker joins a thread, it
+ * never makes one.** The `reference` flavour lands beside a `compact_boundary`,
+ * in a turn that is a compaction and nothing else (2 of the 7 in `f3384d17`) —
+ * counting it here would grow a fold strip on a turn with no answers to hide,
+ * and put the only line saying the plan survived the compaction behind it.
+ */
 export function anythingToFold(c: FoldCounts): boolean {
   return c.responses > 0 || c.tools > 0 || c.notices > 0 || c.recaps > 0;
 }
