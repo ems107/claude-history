@@ -19,7 +19,7 @@ import { Anchored, Explain, GroupCard, NumberField, Readout, ReadoutRow, SelectF
  * people actually come here to change.
  */
 export function SystemArea() {
-  const { meta, dev } = useSettingsPage();
+  const { settings, meta, dev } = useSettingsPage();
   const update = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });
   const guard = useActiveSessionsGuard();
   const dataFolder = useLocalOnly('openDataFolder');
@@ -54,7 +54,7 @@ export function SystemArea() {
           after="minutes (minimum 5)"
           min={5}
           max={1440}
-          disabled={!meta.settings.updateAutoCheck}
+          disabled={!settings.updateAutoCheck}
         />
         <Readout>
           <ReadoutRow label="last check">
