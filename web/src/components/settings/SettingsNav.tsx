@@ -40,8 +40,8 @@ export function SettingsNav({
     const changed = counts.get(a.id) ?? 0;
     const open = a.id === area;
     return (
-      <div key={a.id} className={a.danger ? 'mt-auto border-t border-[var(--border)] pt-3' : ''}>
-        <RailLink to={`/settings/${a.id}`} open={open} danger={a.danger} label={a.title} count={changed} />
+      <div key={a.id}>
+        <RailLink to={`/settings/${a.id}`} open={open} label={a.title} count={changed} />
         {/* Only the open area's groups, and only when it has more than one: a
             single-group area would list its own name back at you. */}
         {open && groups.length > 1 && (
@@ -77,11 +77,11 @@ export function SettingsNav({
         <SearchResults query={query} clear={() => setQuery('')} />
       ) : (
         <>
-          {AREAS.filter((a) => !a.danger).map(item)}
-          {/* After the areas it summarises and before the danger zone, and only
-              when there is anything to summarise. A rail item that comes and
-              goes must not be the first one, or the list moves under the
-              pointer as you change a setting. */}
+          {AREAS.map(item)}
+          {/* Last, after the areas it summarises, and only when there is
+              anything to summarise. A rail item that comes and goes must not be
+              the first one, or the list moves under the pointer as you change a
+              setting. */}
           {totalChanged > 0 && (
             <RailLink
               to={`/settings/${CHANGED_VIEW.id}`}
@@ -90,7 +90,6 @@ export function SettingsNav({
               count={totalChanged}
             />
           )}
-          {AREAS.filter((a) => a.danger).map(item)}
         </>
       )}
     </nav>
@@ -98,35 +97,19 @@ export function SettingsNav({
 }
 
 /** One row of the rail: the bar that says you are here, a label, and a tally. */
-function RailLink({
-  to,
-  open,
-  danger,
-  label,
-  count,
-}: {
-  to: string;
-  open: boolean;
-  danger?: true;
-  label: string;
-  count: number;
-}) {
+function RailLink({ to, open, label, count }: { to: string; open: boolean; label: string; count: number }) {
   return (
     <NavLink
       to={to}
       className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
-        open
-          ? 'text-[var(--text)]'
-          : danger
-            ? 'text-red-300/70 hover:text-red-300'
-            : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+        open ? 'text-[var(--text)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
       }`}
     >
       {/* The bar says where you are without indenting the label, so every row
           starts on the same column and the list reads as a list, not a tree. */}
       <span
         aria-hidden="true"
-        className={`h-4 w-0.5 shrink-0 rounded ${open ? (danger ? 'bg-red-400' : 'bg-[var(--accent)]') : 'bg-transparent'}`}
+        className={`h-4 w-0.5 shrink-0 rounded ${open ? 'bg-[var(--accent)]' : 'bg-transparent'}`}
       />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {count > 0 && (

@@ -22,7 +22,7 @@ import { foldText, TONE_INHERIT } from '@claude-history/shared';
  * having rather than a crash.
  */
 
-export type AreaId = 'notifications' | 'claude' | 'access' | 'data' | 'system' | 'danger';
+export type AreaId = 'notifications' | 'claude' | 'access' | 'data' | 'system';
 
 export interface Area {
   id: AreaId;
@@ -30,8 +30,6 @@ export interface Area {
   title: string;
   /** One line under that heading, saying what the area is for. */
   blurb: string;
-  /** Drawn apart and in red. Only the things that cannot be undone. */
-  danger?: true;
 }
 
 export interface Group {
@@ -133,12 +131,6 @@ export const AREAS: Area[] = [
     title: 'System',
     blurb: 'Updates, logs, and where this instance keeps everything.',
   },
-  {
-    id: 'danger',
-    title: 'Danger zone',
-    blurb: 'Ends this server, or removes the app. Neither undoes itself.',
-    danger: true,
-  },
 ];
 
 export const GROUPS: Group[] = [
@@ -160,8 +152,6 @@ export const GROUPS: Group[] = [
   { id: 'updates', area: 'system', title: 'Updates' },
   { id: 'logs', area: 'system', title: 'Logs' },
   { id: 'paths', area: 'system', title: 'This instance' },
-
-  { id: 'danger', area: 'danger', title: 'Danger zone' },
 ];
 
 /**
@@ -486,16 +476,16 @@ export const ENTRIES: Entry[] = [
     keywords: 'cache rebuild delete derived rescan',
   },
 
-  // Danger zone
+  // …and the two that do not undo themselves, which live at the foot of it
   {
     id: 'act-stop-server',
-    group: 'danger',
+    group: 'paths',
     label: 'Stop the server',
     keywords: 'stop shutdown quit exit kill',
   },
   {
     id: 'act-uninstall',
-    group: 'danger',
+    group: 'paths',
     label: 'Uninstall claude-history',
     keywords: 'uninstall remove delete wipe',
   },
@@ -623,19 +613,33 @@ export interface SearchHit {
 const startsWord = (text: string, query: string) => text.startsWith(query) || text.includes(` ${query}`);
 
 /**
+ * Is the query a WHOLE word of this text?
+ *
+ * The tier that separates "stop" the verb from "stops" the ending. Both
+ * `Stop the server` and `Announce when a session stops` start a word with those
+ * four letters, so with only `startsWord` between them the catalogue's order
+ * decided — and answered a search for "stop" with a notification setting.
+ * Split on anything that is not a letter or a digit, because the folded text
+ * still carries the punctuation: "0%." is one token away from "0%".
+ */
+const hasWord = (text: string, query: string) => text.split(/[^\p{L}\p{N}]+/u).includes(query);
+
+/**
  * The rank a hit gets, lowest first — or `null` for no hit at all.
  *
  * Deliberately a handful of tiers rather than a score: with forty-six entries
  * the only thing that has to be true is that a word in the NAME beats the same
  * word buried in somebody's keywords.
  *
- * **A word at the START of a label is NOT its own tier**, and that is the one
- * decision here worth stating. It was, and typing "tone" then answered with
- * `Tone for a session waiting for you` ahead of `General tone` — the setting the
- * other two defer to, and the one anybody typing that word means. Both are the
- * same kind of hit; what separates them is the page's own order, which is what
- * breaks every tie below and is a rule that can be explained: the answers come
- * back in the order you would meet them reading the page.
+ * **Three tiers separate a hit in the NAME, and the order of them is the whole
+ * of what this got wrong twice.** A whole word beats a word merely started —
+ * `stop` must find *Stop the server* rather than *Announce when a session stops*
+ * — and a word started beats a match buried anywhere. Below those, the same
+ * three again over the keywords.
+ *
+ * Ties break on the page's own order, which is a rule that can be explained:
+ * the answers come back in the order you would meet them reading the page. That
+ * is what puts `General tone` above the two tones that defer to it.
  *
  * Folded with `foldText`, the same folding the transcript search uses on both
  * sides of the wire — so "tono" and "tonó" behave here exactly as they do there.
@@ -643,13 +647,15 @@ const startsWord = (text: string, query: string) => text.startsWith(query) || te
 function rank(entry: Entry, group: Group, area: Area, query: string): number | null {
   const label = foldText(entry.label);
   if (label === query) return 0;
-  if (startsWord(label, query)) return 1;
-  if (label.includes(query)) return 2;
+  if (hasWord(label, query)) return 1;
+  if (startsWord(label, query)) return 2;
+  if (label.includes(query)) return 3;
   const keywords = entry.keywords ? foldText(entry.keywords) : '';
-  if (startsWord(keywords, query)) return 3;
-  if (keywords.includes(query)) return 4;
-  if (foldText(group.title).includes(query)) return 5;
-  if (foldText(area.title).includes(query)) return 6;
+  if (hasWord(keywords, query)) return 4;
+  if (startsWord(keywords, query)) return 5;
+  if (keywords.includes(query)) return 6;
+  if (foldText(group.title).includes(query)) return 7;
+  if (foldText(area.title).includes(query)) return 8;
   return null;
 }
 

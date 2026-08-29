@@ -657,7 +657,7 @@ up as several failures at once rather than as a setting nobody notices is gone.
   group has at least one entry, no id is used twice, and `remote-access`,
   `backups` and `claude-retention` are still group ids (the README and
   `RetentionFooter` link to them).
-- **Every id is in the DOM of its own area.** Walk the six areas, collect
+- **Every id is in the DOM of its own area.** Walk the five areas, collect
   `[id]`, and every group id and every row id must be there. **The four
   remote-access ones are the expected absence on a dev instance** — that panel
   returns its one-sentence explanation instead — so assert the sentence rather
@@ -668,9 +668,12 @@ up as several failures at once rather than as a setting nobody notices is gone.
   it. A row-level `#set-notifyVolume` must do the same. Getting this wrong is
   silent: the default area renders and the scroll finds nothing.
 - **Search.** `volume`, `uninstall`, `firewall`, `429`, `cleanup` and `tone` must
-  each put the right row FIRST — `tone` is the one that catches a ranking
-  regression, because `General tone` has to beat the two rows whose labels start
-  with the word. A miss says so rather than showing an empty rail. Picking a hit
+  each put the right row FIRST, and **two of them are the ranking's own tiers**:
+  `tone` must answer `General tone` rather than either of the two rows whose
+  labels START with the word (a tie, broken by the page's order), and `stop` must
+  answer *Stop the server* rather than *Announce when a session stops* — a whole
+  word beats a word merely started, which is the tier that exists for exactly
+  this. A miss says so rather than showing an empty rail. Picking a hit
   navigates, scrolls and flashes, clears the box, and switches area when the hit
   is in another one (`cache` → `/settings/system#act-clear-cache`). `/` focuses
   the box, and must NOT when a text field has the focus.
@@ -721,7 +724,7 @@ up as several failures at once rather than as a setting nobody notices is gone.
 
 ## Platform and plumbing
 
-**29. The dev/release split.** Run it with the release actually up, because "they do not collide" is the whole claim. `.\dev.ps1` → `/api/meta` on **7434** reports `devInstance: true` and a `cacheDir` under `claude-history-dev`, while 7433 goes on answering with the release's version and its own paths, untouched. Then, from the dev page (**Stop server** and **Uninstall** live under *Danger zone*, the folders under *System*): **Stop server** must kill 7434 only (7433 still answers, and the notice must point at `dev.ps1`, not at the Start Menu), **Open data folder** must open `…\claude-history-dev`, and *Open install folder* / *Uninstall* must both be disabled — a source run is not an install. Star a message and rename a session in each instance and diff the two `userdata.json` files: neither may know about the other's. Finally the guards: `dev.ps1 -Port 7433` and `PORT=7433 pnpm stop` must both refuse rather than touch the release. On a **fresh** dev data folder, *System → Updates* and *Claude → Subscription usage* must show the update check and the interval usage read already off, with no "default" marker beside them (they are this instance's defaults) — and switching one on must make the marker appear.
+**29. The dev/release split.** Run it with the release actually up, because "they do not collide" is the whole claim. `.\dev.ps1` → `/api/meta` on **7434** reports `devInstance: true` and a `cacheDir` under `claude-history-dev`, while 7433 goes on answering with the release's version and its own paths, untouched. Then, from the dev page (all four live under *System → This instance*, the two that do not undo themselves in its *Danger zone* subsection): **Stop server** must kill 7434 only (7433 still answers, and the notice must point at `dev.ps1`, not at the Start Menu), **Open data folder** must open `…\claude-history-dev`, and *Open install folder* / *Uninstall* must both be disabled — a source run is not an install. Star a message and rename a session in each instance and diff the two `userdata.json` files: neither may know about the other's. Finally the guards: `dev.ps1 -Port 7433` and `PORT=7433 pnpm stop` must both refuse rather than touch the release. On a **fresh** dev data folder, *System → Updates* and *Claude → Subscription usage* must show the update check and the interval usage read already off, with no "default" marker beside them (they are this instance's defaults) — and switching one on must make the marker appear.
 
 ### Remote access
 

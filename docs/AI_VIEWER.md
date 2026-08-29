@@ -428,7 +428,7 @@ and would reset it on every click. The session list keeps its own machinery
 (`filters.ts`: five sort fields, day/project grouping, all of it in the URL) and
 shares nothing with this but the look of the controls.
 
-## The settings page is a catalogue and six areas
+## The settings page is a catalogue and five areas
 
 `pages/SettingsPage.tsx` is the shell alone — which area is showing, what a save
 does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
@@ -436,7 +436,7 @@ does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
 state, actions and read-only information, all wearing the same card.
 
 **What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
-list.** Six areas → fifteen groups → forty-six rows, data only, no JSX. Four
+list.** Five areas → fourteen groups → forty-six rows, data only, no JSX. Four
 readers depend on it and that is why it is data: the rail, the search box, the
 changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
 the field in `AppSettings`, an `Entry` here, the row in its area file — and
@@ -508,9 +508,13 @@ allowed to fill its box. The same rule settles a grid: **give the slack to the
 last column, never to a middle one**, or the values end up half a screen from the
 paths they describe.
 
-**Only what cannot be undone is in the danger zone** — stop the server, uninstall
-— and both are also local-only, so over the network it is one explanation rather
-than greyed buttons scattered through other groups.
+**What cannot be undone is a marked SUBSECTION, not a destination.** *Stop the
+server* and *Uninstall* sit at the foot of *This instance* — the block naming the
+install they act on — under a red rule and a red heading, each saying in a line
+what it costs. They were a `flex-wrap` beside *Open data folder* once, which was
+too little separation, and then an area of their own in the rail, which was too
+much: a whole destination for two buttons, exiled from what they operate on. Both
+are local-only, so over the network they grey together.
 
 ## What folds
 

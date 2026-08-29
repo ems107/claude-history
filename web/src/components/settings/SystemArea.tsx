@@ -8,6 +8,7 @@ import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
+import { DangerZone } from './DangerZone.tsx';
 import { Anchored, Explain, GroupCard, NumberField, Readout, ReadoutRow, SelectField } from './controls.tsx';
 
 /**
@@ -181,6 +182,10 @@ export function SystemArea() {
             Your data are for.
           </p>
         </Explain>
+
+        {/* Last in the group that names what they act on, and marked off from
+            the benign buttons above rather than moved out of their reach. */}
+        <DangerZone />
       </GroupCard>
     </>
   );

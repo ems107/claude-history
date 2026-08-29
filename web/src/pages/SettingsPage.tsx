@@ -8,7 +8,6 @@ import { useActiveSessionsGuard } from '../components/ActiveSessionsDialog.tsx';
 import { ChangedView } from '../components/settings/ChangedView.tsx';
 import { ClaudeArea } from '../components/settings/ClaudeArea.tsx';
 import { SettingsContext } from '../components/settings/context.ts';
-import { DangerArea } from '../components/settings/DangerArea.tsx';
 import { DataArea } from '../components/settings/DataArea.tsx';
 import { NotificationsArea } from '../components/settings/NotificationsArea.tsx';
 import { RemoteAccessArea } from '../components/settings/RemoteAccessArea.tsx';
@@ -25,7 +24,6 @@ const AREA_CONTENT: Record<AreaId, () => ReactElement> = {
   access: RemoteAccessArea,
   data: DataArea,
   system: SystemArea,
-  danger: DangerArea,
 };
 
 /**

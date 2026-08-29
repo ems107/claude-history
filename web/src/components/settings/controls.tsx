@@ -173,14 +173,30 @@ export function GroupCard({
 /**
  * A run of rows under a line of their own, inside a group.
  *
- * For the one case a group cannot express: the usage triggers, which are four
- * switches that only mean anything under the sentence "Re-read the figures:".
- * Anything that needed a heading AND an anchor became a group instead.
+ * For what a group cannot express: the usage triggers, which are four switches
+ * that only mean anything under the sentence "Re-read the figures:", and the two
+ * buttons at the foot of *This instance* that do not undo themselves. Anything
+ * that needed a heading AND an anchor became a group instead.
+ *
+ * `tone="danger"` is the second of those: a red rule and a red heading, which is
+ * the separation *Stop server* and *Uninstall* were always after. They spent a
+ * while as a whole area of their own and that was too much — a destination in
+ * the rail for two buttons, exiled from the block naming the install they
+ * remove.
  */
-export function Subgroup({ title, children }: { title: string; children: ReactNode }) {
+export function Subgroup({
+  title,
+  tone,
+  children,
+}: {
+  title: string;
+  tone?: 'danger';
+  children: ReactNode;
+}) {
+  const danger = tone === 'danger';
   return (
-    <div className="space-y-2 border-t border-[var(--border)] pt-3">
-      <p className="text-[var(--text)]">{title}</p>
+    <div className={`space-y-2 border-t pt-3 ${danger ? 'border-red-500/30' : 'border-[var(--border)]'}`}>
+      <p className={danger ? 'font-semibold text-red-300' : 'text-[var(--text)]'}>{title}</p>
       {children}
     </div>
   );
