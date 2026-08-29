@@ -1,12 +1,11 @@
 import type { UserdataBackup } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../api/client.ts';
-import { formatDateTime, relativeTime } from '../lib/format.ts';
-import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
-
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
+import { api } from '../../api/client.ts';
+import { formatDateTime, relativeTime } from '../../lib/format.ts';
+import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
+import { actionClass } from '../controlClass.ts';
+import { Anchored, Explain, Readout, ReadoutRow } from './controls.tsx';
 
 /** Bytes, in the two digits that mean something at these sizes. */
 function size(bytes: number): string {
@@ -113,13 +112,6 @@ export function BackupsPanel() {
 
   return (
     <>
-      <p>
-        Renames, pins, starred messages, your price table and these settings all live in one file, and it is the only
-        thing here that cannot be rebuilt from <span className="font-mono">~/.claude</span>. A dated copy is kept on the
-        first change of each day, whenever the version changes, before an update, and before any write that would empty
-        one of those lists — never two copies of the same bytes.
-      </p>
-
       {data.recovered && (
         <p className="rounded border border-amber-500/40 px-2 py-1.5 text-amber-300">
           This start-up found <span className="font-mono">userdata.json</span> unreadable and restored{' '}
@@ -129,15 +121,24 @@ export function BackupsPanel() {
         </p>
       )}
 
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={takeOne} disabled={busy} className={btn}>
+      <Anchored id="act-backup-now" className="flex items-center gap-2">
+        <button type="button" onClick={takeOne} disabled={busy} className={actionClass}>
           Back up now
         </button>
-        <button type="button" onClick={refresh} disabled={isFetching} className={btn}>
+        <button type="button" onClick={refresh} disabled={isFetching} className={actionClass}>
           {isFetching ? 'Reading…' : 'Refresh'}
         </button>
-        <span className="ml-auto font-mono text-[11px] break-all text-[var(--text-dim)]">{data.backupsDir}</span>
-      </div>
+        <span className="text-[11px] text-[var(--text-dim)]">
+          {data.backups.length} {data.backups.length === 1 ? 'copy' : 'copies'} kept
+        </span>
+      </Anchored>
+
+      {/* The folder is a readout, not something crowding the end of a button
+          row: at a narrow width that path used to push the buttons together and
+          then wrap under them. */}
+      <Readout>
+        <ReadoutRow label="folder">{data.backupsDir}</ReadoutRow>
+      </Readout>
 
       {note && <p className="text-[var(--text-dim)]">{note}</p>}
       {error && <p className="rounded border border-red-500/40 px-2 py-1.5 text-red-300">{error}</p>}
@@ -147,7 +148,7 @@ export function BackupsPanel() {
           No copies yet. The first one is taken the next time anything in that file changes.
         </p>
       ) : (
-        <ul className="divide-y divide-[var(--border)]">
+        <ul id="act-restore" className="scroll-mt-16 divide-y divide-[var(--border)]">
           {data.backups.map((b, i) => (
             <li key={b.name} className="py-2">
               <div className="flex items-baseline gap-2">
@@ -157,10 +158,10 @@ export function BackupsPanel() {
                 <span className="ml-auto text-[11px] text-[var(--text-dim)]">{size(b.sizeBytes)}</span>
                 {confirming === b.name ? (
                   <>
-                    <button type="button" onClick={() => restore(b.name)} disabled={busy} className={`${btn} border-amber-500/60 text-amber-300`}>
+                    <button type="button" onClick={() => restore(b.name)} disabled={busy} className={`${actionClass} border-amber-500/60 text-amber-300`}>
                       Replace everything
                     </button>
-                    <button type="button" onClick={() => setConfirming(null)} className={btn}>
+                    <button type="button" onClick={() => setConfirming(null)} className={actionClass}>
                       Cancel
                     </button>
                   </>
@@ -170,7 +171,7 @@ export function BackupsPanel() {
                     onClick={() => setConfirming(b.name)}
                     // A copy that does not parse has nothing to put back.
                     disabled={busy || b.contents === null}
-                    className={btn}
+                    className={actionClass}
                     title={
                       b.contents === null
                         ? 'This copy is unreadable — there is nothing in it to restore'
@@ -194,6 +195,18 @@ export function BackupsPanel() {
           ))}
         </ul>
       )}
+
+      {/* At the foot rather than at the head, where it used to be: what you come
+          to this group for is the list of copies and the button that takes one,
+          and four lines about which file this is stood in front of both. */}
+      <Explain label="What is in this file, and when a copy is taken">
+        <p>
+          Renames, pins, starred messages, your price table and these settings all live in one file, and it is the only
+          thing here that cannot be rebuilt from <span className="font-mono">~/.claude</span>. A dated copy is kept on
+          the first change of each day, whenever the version changes, before an update, and before any write that would
+          empty one of those lists — never two copies of the same bytes.
+        </p>
+      </Explain>
     </>
   );
 }

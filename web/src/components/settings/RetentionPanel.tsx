@@ -2,14 +2,13 @@ import type { RetentionSource } from '@claude-history/shared';
 import { CLAUDE_SWEEP_INTERVAL_HOURS } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
-import { api } from '../api/client.ts';
-import { useLocalOnly } from '../api/useLocal.ts';
-import { copyPlain } from '../lib/clipboard.ts';
-import { formatDateTime, relativeTime } from '../lib/format.ts';
-import { retentionLabel, retentionView } from '../lib/retention.ts';
-
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
+import { api } from '../../api/client.ts';
+import { useLocalOnly } from '../../api/useLocal.ts';
+import { copyPlain } from '../../lib/clipboard.ts';
+import { formatDateTime, relativeTime } from '../../lib/format.ts';
+import { retentionLabel, retentionView } from '../../lib/retention.ts';
+import { actionClass } from '../controlClass.ts';
+import { Explain } from './controls.tsx';
 
 /** What one settings file has to say, in the one word that matters. */
 function sourceValue(s: RetentionSource): { text: string; tone: string } {
@@ -47,7 +46,7 @@ export function RetentionPanel() {
 
   return (
     <>
-      <p>
+      <p id="info-retention" className="scroll-mt-16">
         Claude Code keeps your conversations for{' '}
         <span className={`font-semibold ${view.tone === 'warn' ? 'text-amber-400' : 'text-[var(--text)]'}`}>
           {retentionLabel(view, false)}
@@ -82,7 +81,7 @@ export function RetentionPanel() {
         </p>
       )}
 
-      <p className={!view.blocked && view.expired > 0 ? 'text-amber-400' : 'text-[var(--text-dim)]'}>
+      <p className={`${!view.blocked && view.expired > 0 ? 'text-amber-400' : 'text-[var(--text-dim)]'}`}>
         {view.expired > 0 ? (
           <>
             {view.expired} of the {data.countedSessions} sessions listed here are already past that cutoff
@@ -101,8 +100,13 @@ export function RetentionPanel() {
 
       {/* Every file looked at, including the ones that are not there: "we checked
           and it does not exist" is an answer, and hiding it turns the winner
-          above into something the user has to take on trust. */}
-      <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 border-t border-[var(--border)] pt-3 font-mono text-[11px] text-[var(--text-dim)]">
+          above into something the user has to take on trust.
+
+          The slack goes to the LAST column, not the middle one. With `1fr` on
+          the path the values were flung to the far edge of a 975 px card, half a
+          screen from the file they belong to; `auto` on the path still sizes
+          that column to the longest of them, so the values line up anyway. */}
+      <div className="grid grid-cols-[auto_auto_1fr] gap-x-3 gap-y-1 border-t border-[var(--border)] pt-3 font-mono text-[11px] text-[var(--text-dim)]">
         {data.sources.map((s) => {
           const value = sourceValue(s);
           return (
@@ -130,7 +134,7 @@ export function RetentionPanel() {
             These projects have their own settings, and a project's settings beat yours whenever Claude Code is started
             inside it — the sweep is global, so the value in force is the one of wherever it happened to be launched.
           </p>
-          <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
+          <div className="grid grid-cols-[auto_auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
             {data.projectOverrides.map((o) => {
               const value = sourceValue(o);
               return (
@@ -145,7 +149,12 @@ export function RetentionPanel() {
         </div>
       )}
 
-      <div className="space-y-2 border-t border-[var(--border)] pt-3 text-[11px] leading-relaxed text-[var(--text-dim)]">
+      {/* Three essays, and the reason they fold: this panel's JOB is the figure
+          at the top — how long Claude Code keeps things, and what is already
+          past the cutoff. How to change it by hand, why this app will not do it
+          for you, and what the sweep takes with it are all true and all worth
+          keeping, and none of them is what you came to read. */}
+      <Explain label="How to change it, and what the sweep really deletes">
         <p className="text-[var(--text)]">To change it, edit that file by hand:</p>
         <ol className="ml-4 list-decimal space-y-1 marker:text-[var(--text-dim)]/50">
           <li>
@@ -195,12 +204,12 @@ export function RetentionPanel() {
             </>
           )}
         </p>
-      </div>
+      </Explain>
 
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
         <button
           type="button"
-          className={btn}
+          className={actionClass}
           onClick={() => void api.openClaudeSettingsFolder()}
           disabled={claudeFolder.disabled}
           title={claudeFolder.reason ?? undefined}
@@ -209,7 +218,7 @@ export function RetentionPanel() {
         </button>
         <button
           type="button"
-          className={btn}
+          className={actionClass}
           onClick={() => {
             void copyPlain(data.userSettingsFile).then(
               () => setNote('Path copied.'),
@@ -221,7 +230,7 @@ export function RetentionPanel() {
         </button>
         <button
           type="button"
-          className={btn}
+          className={actionClass}
           disabled={isFetching}
           title="Read the settings files again, after editing them"
           onClick={() => {

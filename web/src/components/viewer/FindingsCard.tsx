@@ -4,7 +4,7 @@ import type { Finding, Findings } from '../../lib/findings.ts';
 import { Chip } from './Chip.tsx';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 
 /** `_common.ps1:51` — what a reader scans a review by, with the whole path on the hover. */
 function Where({ finding }: { finding: Finding }) {

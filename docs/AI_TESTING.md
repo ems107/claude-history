@@ -461,7 +461,7 @@ Then Chrome over CDP, with check 9's harness:
 
   > **Two traps in the harness, both about the composer rather than the cards.** A prompt that is refused returns a code nobody checked, and the run then fails three assertions later for no visible reason — assert `200` on every send. And **a composer holding a pending question will not take another prompt**, so the `AskUserQuestion` turn has to be the LAST one of the check; a `needs-you` card is otherwise the end of your ability to make anything else happen. Order it so the seeding case reuses the row the cross left behind, and the whole check costs three turns instead of five.
 
-- **The noise, which is half an ear and half measurable.** Every tone must play from its ▶ in Settings, at two volumes, distinguishable from the others and **without a click at either end** — that half is a person's and there is no substitute for it, so it is the half to report rather than to assert. What a harness can hold: volume **0** disables the ▶ and plays nothing; `No tone (Silent)` on the general tone with both kinds inheriting draws the card and makes no sound; and the counting trick for everything else — `Runtime.evaluate` an override of `AudioContext.prototype.createOscillator` that tallies its calls, then read the tally against the number of steps in the recipe you chose (`chime` is 2, `alert` is 4). A tally of zero where a tone was due is the check; a tally of double is the next bullet.
+- **The noise, which is half an ear and half measurable.** Every tone must play from its ▶ in *Settings → Notifications*, at two volumes, distinguishable from the others and **without a click at either end** — that half is a person's and there is no substitute for it, so it is the half to report rather than to assert. What a harness can hold: volume **0** disables the ▶ and plays nothing; `No tone (Silent)` on the general tone with both kinds inheriting draws the card and makes no sound; and the counting trick for everything else — `Runtime.evaluate` an override of `AudioContext.prototype.createOscillator` that tallies its calls, then read the tally against the number of steps in the recipe you chose (`chime` is 2, `alert` is 4). A tally of zero where a tone was due is the check; a tally of double is the next bullet.
 - **The switches gate the ANNOUNCEMENT and never the bell**, which is five assertions and the reason the block exists. Master off: no card, no oscillator, and `/api/notifications` still counts the row with the badge showing it — `notifyInFront` on changes none of that, and the front session's row still goes at once, because the deferral only serves an announcement that is actually due. One kind off: that kind announces nothing while its row still appears in the panel under its own heading, and the other kind still rings. Then the one that is easy to get wrong — **turn the master back on and nothing that stopped while it was off may be announced**: the seeding runs switched off too, or the whole backlog arrives as though it had just happened. And switching it off with cards up must clear them at once rather than in ten seconds' time.
 - **One tone for two tabs.** Two tabs of 7434 and one real stop: two cards, **one** tone, with the oscillator tally above summed ACROSS both tabs. Then the failure that the claim exists for — make the two tabs learn of the stop far apart (intercept `/api/notifications` in one of them and delay the response half a second) and the sum must still be one recipe's worth. That is what recording a claim for a key this tab has not claimed yet is for; without it both tabs conclude they were alone. **The release on 7433 ringing as well is not a bug to chase**: two ports are two origins, and a `BroadcastChannel` does not cross them.
 - **The narrator.** With it on, the phrase must arrive **after** the tone and not over it (`speechSynthesis.speaking` false until the tone's length has passed, true after). Every name in the dropdown must be a local one: `speechSynthesis.getVoices().filter((v) => !v.localService).map((v) => v.name)` must share no member with the `<option>`s — this is the network rule, not a preference. A `notifyVoiceName` naming nothing installed (write one into `userdata.json` and restart) must still speak, with the browser's own voice, and appear in the select marked `(not installed)`. A machine with no local voices at all must say so under the dropdown instead of offering an empty one.
@@ -643,12 +643,93 @@ Then in the viewer, on that same session: the row leads with `HH:mm:ss` (the cal
 - **`POST /api/server/restart` and `/stop` put the guard FIRST**, so both halves are visible from a dev instance: with a session of ours running, restart must be **409 with the list** (not the 400 it answers on a source run), and with nothing running the same request must go back to **400 "not a managed install"**. Measured, both ways round, on the dev instance. The same order puts the sessions ahead of "an update is being installed", which is only observable mid-update.
 - **The cap is one number across both doors.** `PUT {"maxActiveSessions":1}` with that terminal running, then read `GET /api/sessions/<other id>/terminal` **and** `/chat` — both `blockedReason` must say `The app is already running 1 Claude Code session, which is the most it is allowed (Settings)`, singular, from `activeSessionLimitMessage`. A terminal filling the composer's slot is the whole point of the change; two caps of three could not see each other.
 - **The way out, end to end** (`POST /api/active-sessions/close`): the list comes back empty, and the setting that was refused a moment ago now saves.
-- **The browser half over CDP** (check 26's harness), on `/settings`: the cap row must read `Run at most … of them at once — 1 running right now` with the input at 10. Click the **composer** radio — select it by its label text, not by `value`: `RadioGroup` sets `checked` and nothing else, so every radio reads `value="on"` and a `value === 'composer'` selector silently finds nothing (it passed as `NO RADIO` first time). The dialog must appear reading *A Claude Code session is running* with the sentence from `activeSessionsRefusal`, one row linking to `/session/<id>` and holding `TERMINAL | <project> — <title> | <n> minutes ago`, and the two buttons. **The radio must NOT have moved** — the control reflects saved settings, so a refusal needs no revert. Then *Close them all and continue*: the dialog goes, `/api/active-sessions` empties, and `chatMode` is `composer` afterwards — the refused save, run again by the dialog. Put it back to `terminal` when you are done.
+- **The browser half over CDP** (check 26's harness), on `/settings/claude`: the cap row must read `Run at most … of them at once — 1 running right now` with the input at 10. Click the **composer** radio — select it by its label text, not by `value`: `RadioGroup` sets `checked` and nothing else, so every radio reads `value="on"` and a `value === 'composer'` selector silently finds nothing (it passed as `NO RADIO` first time). The dialog must appear reading *A Claude Code session is running* with the sentence from `activeSessionsRefusal`, one row linking to `/session/<id>` and holding `TERMINAL | <project> — <title> | <n> minutes ago`, and the two buttons. **The radio must NOT have moved** — the control reflects saved settings, so a refusal needs no revert. Then *Close them all and continue*: the dialog goes, `/api/active-sessions` empties, and `chatMode` is `composer` afterwards — the refused save, run again by the dialog. Put it back to `terminal` when you are done.
 - **The scripts are outside the guard on purpose**, so do not read `dev.ps1 -Restart` killing a terminal as a bug: it kills the port's owner without asking the API, which is what makes it the way out when the server is wedged.
+
+**47. The settings page: the catalogue is the assertion.** Everything below is
+cheap to automate over CDP (check 26's harness) and the point of it is that one
+list decides all of it, so a row that fell out of `lib/settingsCatalog.ts` shows
+up as several failures at once rather than as a setting nobody notices is gone.
+
+- **The catalogue against `AppSettings`, without a browser**: every field has an
+  `Entry`, no `Entry` names a field that does not exist, and none is listed
+  twice — 32 and 32 here. Then internally: every `Entry.group` exists, every
+  group has at least one entry, no id is used twice, and `remote-access`,
+  `backups` and `claude-retention` are still group ids (the README and
+  `RetentionFooter` link to them).
+- **Every id is in the DOM of its own area.** Walk the five areas, collect
+  `[id]`, and every group id and every row id must be there. **The four
+  remote-access ones are the expected absence on a dev instance** — that panel
+  returns its one-sentence explanation instead — so assert the sentence rather
+  than skipping the check.
+- **The legacy anchors.** `/settings#backups`, `#remote-access` and
+  `#claude-retention` must each render the RIGHT area (the hash decides it when
+  the path does not name one), scroll to the group and leave `.anchor-flash` on
+  it. A row-level `#set-notifyVolume` must do the same. Getting this wrong is
+  silent: the default area renders and the scroll finds nothing.
+- **Search.** `volume`, `uninstall`, `firewall`, `429`, `cleanup` and `tone` must
+  each put the right row FIRST, and **two of them are the ranking's own tiers**:
+  `tone` must answer `General tone` rather than either of the two rows whose
+  labels START with the word (a tie, broken by the page's order), and `stop` must
+  answer *Stop the server* rather than *Announce when a session stops* — a whole
+  word beats a word merely started, which is the tier that exists for exactly
+  this. A miss says so rather than showing an empty rail. Picking a hit
+  navigates, scrolls and flashes, clears the box, and switches area when the hit
+  is in another one (`cache` → `/settings/system#act-clear-cache`). `/` focuses
+  the box, and must NOT when a text field has the focus.
+- **The changed list.** The rail's tally equals the sum of the per-area ones and
+  the list holds exactly that many rows; a row links back to its own setting and
+  flashes it; changing a setting adds a row and *restore* puts the default back
+  on the server. Put anything you changed back afterwards — this is the dev
+  instance's real `userdata.json`.
+- **The off state, which is the half that used to look broken.** With a feature's
+  master switched off: its own group shows the switch (`[role="switch"]`, not a
+  checkbox) and ONE `offNote`; every other group the same switch governs shows an
+  `OFF` chip and NO note; the group holding the switch shows no chip. Then the
+  assertion the whole thing exists for — the dependent labels must still be
+  **readable**: computed opacity 0.7 rather than 0.4, and no text at the
+  background's own colour.
+- **No horizontal overflow** at 1440 / 1100 / 900 / 700 px on the three widest
+  areas — measured on **`main`**, not on the document: the app header does not
+  wrap and overflows ~88 px at 700 px on every page of the app (and `/` overflows
+  245 px in its own content), which is real, pre-existing, and not this page's.
+  The rail is a fixed 224 px and does not fold; the panel is what gives. While
+  you are there: a text field must FILL its card — `Field` sized its content to
+  fit once, and every box came out 160 px wide.
+- **Nothing is capped narrower than the card.** The card is 976 px
+  (`max-w-5xl`), and **no hint may take more than two lines** at 1920 / 1600 /
+  1440 / 1280 — 17 of them, none over two. Count lines off the element's own
+  `line-height` rather than by eye. This replaced a check on the reading measure
+  and the cap that went with it: at `max-w-prose` a one-line hint wrapped at a
+  third of the card with the row empty beside it, which is the complaint the
+  wider column existed to fix. A hint that wraps here wants CUTTING, and what is
+  cut belongs in the group's `Explain`. Also: a grid gives its slack to the LAST
+  column — the retention values must sit ~12 px from their path, not ~350.
+- **The rail marks what you CLICKED, and nothing by default.** On arrival, and
+  after scrolling to any position including the very bottom, **no** rail item and
+  **no** block may be marked. Clicking a rail sub-item must mark it in the rail
+  AND put `data-selected` on its block; clicking a block must move both to it;
+  clicking the column beside the cards must clear both; a deep link must leave
+  the block it landed in marked; and changing area must start clean.
+  **This replaced a scroll-spy twice**, which is why it is worth the paragraph.
+  The first kept the smallest `boundingClientRect.top` — the most NEGATIVE — so
+  the first group of every area stayed lit for ever and clicking any other did
+  nothing. The second read positions correctly and was still wrong as a design:
+  something was always lit, it was whatever you had scrolled past rather than
+  anything you had chosen, and there was no way to have nothing lit. Two harness
+  traps went with it, both of which cost a run: `elementFromPoint` returns null
+  once the panel is scrolled (dispatch the click on the column instead), and a
+  scroll test parked at a FRACTION of the page proves nothing if that fraction
+  happens not to cross a heading.
+- **A sub-item is INDENTED past its area**, and this is a measurement rather than
+  an eye: they used to start at 22.4 px against an area label's 22, which is the
+  same column and not an indent at all. At least 12 px to the right of the area
+  label, in each of the four areas that have sub-items, with none of them
+  truncating at the deeper indent.
 
 ## Platform and plumbing
 
-**29. The dev/release split.** Run it with the release actually up, because "they do not collide" is the whole claim. `.\dev.ps1` → `/api/meta` on **7434** reports `devInstance: true` and a `cacheDir` under `claude-history-dev`, while 7433 goes on answering with the release's version and its own paths, untouched. Then, from the dev page: **Stop server** must kill 7434 only (7433 still answers, and the notice must point at `dev.ps1`, not at the Start Menu), **Open data folder** must open `…\claude-history-dev`, and *Open install folder* / *Uninstall* must both be disabled — a source run is not an install. Star a message and rename a session in each instance and diff the two `userdata.json` files: neither may know about the other's. Finally the guards: `dev.ps1 -Port 7433` and `PORT=7433 pnpm stop` must both refuse rather than touch the release. On a **fresh** dev data folder, Settings must show the update check and the interval usage read already off, with no "default" marker beside them (they are this instance's defaults) — and switching one on must make the marker appear.
+**29. The dev/release split.** Run it with the release actually up, because "they do not collide" is the whole claim. `.\dev.ps1` → `/api/meta` on **7434** reports `devInstance: true` and a `cacheDir` under `claude-history-dev`, while 7433 goes on answering with the release's version and its own paths, untouched. Then, from the dev page (all four live under *System → This instance*, the two that do not undo themselves in its *Danger zone* subsection): **Stop server** must kill 7434 only (7433 still answers, and the notice must point at `dev.ps1`, not at the Start Menu), **Open data folder** must open `…\claude-history-dev`, and *Open install folder* / *Uninstall* must both be disabled — a source run is not an install. Star a message and rename a session in each instance and diff the two `userdata.json` files: neither may know about the other's. Finally the guards: `dev.ps1 -Port 7433` and `PORT=7433 pnpm stop` must both refuse rather than touch the release. On a **fresh** dev data folder, *System → Updates* and *Claude → Subscription usage* must show the update check and the interval usage read already off, with no "default" marker beside them (they are this instance's defaults) — and switching one on must make the marker appear.
 
 ### Remote access
 

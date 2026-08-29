@@ -6,7 +6,7 @@ import { useLocalOnly } from '../../api/useLocal.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { downloadMarkdown, type ExportOptions } from '../../lib/exportMarkdown.ts';
 import { usePopover } from '../../lib/popover.ts';
-import { toggleClass } from './controlClass.ts';
+import { toggleClass } from '../controlClass.ts';
 
 /**
  * What can be DONE with a session, as opposed to how it is read: rename it, pin

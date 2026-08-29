@@ -1,15 +1,16 @@
-import type { ActiveConnection, AppSettings } from '@claude-history/shared';
+import type { ActiveConnection } from '@claude-history/shared';
 import { BIND_REASONS, MIN_PASSWORD_LENGTH } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../api/client.ts';
-import { useLocalOnly } from '../api/useLocal.ts';
-import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
+import { api } from '../../api/client.ts';
+import { useLocalOnly } from '../../api/useLocal.ts';
+import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
+import { actionClass } from '../controlClass.ts';
+import { useSettingsPage } from './context.ts';
+import { Anchored, inputClass, Switch } from './controls.tsx';
 
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
-const inputClass =
-  'w-44 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
+/** The shared box, at the width three credentials fields want. */
+const credentialClass = `w-44 ${inputClass}`;
 
 /**
  * Turning remote access on, and the three things that have to be true for it to
@@ -30,15 +31,8 @@ const inputClass =
  * it. Saying so is the panel's job: the alternative is a switch that reads "on"
  * beside a port nothing can reach.
  */
-export function RemoteAccessPanel({
-  settings,
-  save,
-  dev,
-}: {
-  settings: AppSettings;
-  save: (patch: Partial<AppSettings>) => void;
-  dev: boolean;
-}) {
+export function RemoteAccessPanel() {
+  const { settings, save, dev } = useSettingsPage();
   const queryClient = useQueryClient();
   const guard = useActiveSessionsGuard();
   const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
@@ -189,46 +183,50 @@ export function RemoteAccessPanel({
 
   return (
     <>
-      <label className={`flex items-start gap-2 ${credentials.disabled ? 'opacity-40' : 'cursor-pointer'}`}>
-        <input
-          type="checkbox"
-          checked={settings.remoteAccessEnabled}
-          disabled={credentials.disabled}
-          onChange={(e) => toggle(e.target.checked)}
-          className="mt-0.5 accent-[var(--accent)]"
-        />
-        <span>
-          Let other machines on this network use claude-history
-          <span className="block text-[11px] text-[var(--text-dim)]">
-            {credentials.disabled
-              ? credentials.reason
-              : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
+      {/* The same switch every other feature on this page wears — this one is a
+          feature master too, and the fact that its `toggle` does more than save
+          (it opens the credentials form when there are none) is a reason for it
+          to look MORE like the others, not less. */}
+      <Anchored id="set-remoteAccessEnabled" className="border-b border-[var(--border)] pb-3">
+        <div className={`flex items-start gap-2.5 ${credentials.disabled ? 'opacity-70' : ''}`}>
+          <Switch
+            checked={settings.remoteAccessEnabled}
+            disabled={credentials.disabled}
+            onChange={(v) => toggle(v)}
+          />
+          <span>
+            Let other machines on this network use claude-history
+            <span className="mt-0.5 block text-[11px] leading-relaxed text-[var(--text-dim)]">
+              {credentials.disabled
+                ? credentials.reason
+                : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
+            </span>
           </span>
-        </span>
-      </label>
+        </div>
+      </Anchored>
 
       {(formOpen || configured) && !credentials.disabled && (
-        <div className="space-y-2 rounded border border-[var(--border)] p-2">
+        <Anchored id="act-credentials" className="space-y-2 border border-[var(--border)] p-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[var(--text-dim)]">{configured && !formOpen ? 'Signing in uses' : 'Set'}</span>
             {configured && !formOpen ? (
               <>
                 <span className="font-mono">a username and password</span>
-                <button type="button" className={btn} onClick={() => setSettingUp(true)}>
+                <button type="button" className={actionClass} onClick={() => setSettingUp(true)}>
                   Change them
                 </button>
               </>
             ) : (
               <>
                 <input
-                  className={inputClass}
+                  className={credentialClass}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
                   autoComplete="username"
                 />
                 <input
-                  className={inputClass}
+                  className={credentialClass}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -236,7 +234,7 @@ export function RemoteAccessPanel({
                   autoComplete="new-password"
                 />
                 <input
-                  className={inputClass}
+                  className={credentialClass}
                   type="password"
                   value={repeat}
                   onChange={(e) => setRepeat(e.target.value)}
@@ -245,7 +243,7 @@ export function RemoteAccessPanel({
                 />
                 <button
                   type="button"
-                  className={btn}
+                  className={actionClass}
                   disabled={busy !== null || !username.trim() || password.length < MIN_PASSWORD_LENGTH}
                   onClick={submitCredentials}
                 >
@@ -255,7 +253,7 @@ export function RemoteAccessPanel({
                   <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent text-[var(--text-dim)]" />
                 )}
                 {settingUp && configured && (
-                  <button type="button" className={btn} onClick={() => setSettingUp(false)}>
+                  <button type="button" className={actionClass} onClick={() => setSettingUp(false)}>
                     Cancel
                   </button>
                 )}
@@ -266,7 +264,7 @@ export function RemoteAccessPanel({
             No old password is ever asked for: being at this machine is already enough to run anything on it, so it is
             what gets you back in after forgetting one.
           </p>
-        </div>
+        </Anchored>
       )}
 
       {settings.remoteAccessEnabled && (
@@ -292,7 +290,7 @@ export function RemoteAccessPanel({
       )}
 
       {!firewallOnly.disabled && showBind && (
-        <div className="space-y-2 rounded border border-[var(--border)] p-2">
+        <Anchored id="act-firewall" className="space-y-2 border border-[var(--border)] p-2">
           {settings.remoteAccessEnabled && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[var(--text-dim)]">
@@ -328,7 +326,7 @@ export function RemoteAccessPanel({
                   "not now" — visibly unusable, and it claims nothing. */}
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy !== null || rule === undefined || rule.ruleExists === null}
                 title={firewallOnly.reason ?? 'Windows will ask for administrator approval'}
                 onClick={() => setFirewallRule(!rule?.ruleExists)}
@@ -347,7 +345,7 @@ export function RemoteAccessPanel({
                   </span>
                   <button
                     type="button"
-                    className={btn}
+                    className={actionClass}
                     disabled={busy !== null}
                     title={firewallOnly.reason ?? 'Replaces them with a single rule. Windows will ask for approval'}
                     onClick={() => setFirewallRule(true)}
@@ -405,7 +403,7 @@ export function RemoteAccessPanel({
             {rule?.restartNeeded && busy !== 'restart' && (
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy !== null}
                 title="Where the server listens is decided when it starts, so this is what applies the change."
                 onClick={restart}
@@ -445,7 +443,7 @@ export function RemoteAccessPanel({
               </ul>
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy !== null}
                 title={firewallOnly.reason ?? 'Windows will ask for administrator approval'}
                 onClick={() => {
@@ -474,15 +472,15 @@ export function RemoteAccessPanel({
             Turning this on does not open the port by itself, and that is the point: the server waits until Windows
             already allows it, so installing an update can never make Windows ask you for permission.
           </p>
-        </div>
+        </Anchored>
       )}
 
       {configured && (
-        <div className="flex flex-wrap items-center gap-2 pt-1">
+        <Anchored id="act-sign-out" className="flex flex-wrap items-center gap-2 pt-1">
           {remote && (
             <button
               type="button"
-              className={btn}
+              className={actionClass}
               onClick={() => {
                 void api.logout().then(() => queryClient.invalidateQueries({ queryKey: ['auth'] }));
               }}
@@ -492,7 +490,7 @@ export function RemoteAccessPanel({
           )}
           <button
             type="button"
-            className={btn}
+            className={actionClass}
             disabled={busy !== null}
             title="Replaces the signing key, so every device that is signed in has to sign in again — this one included."
             onClick={() => {
@@ -510,7 +508,7 @@ export function RemoteAccessPanel({
           >
             Sign out everywhere
           </button>
-        </div>
+        </Anchored>
       )}
 
       {note && <p className="text-[11px] text-[var(--text-dim)]">{note}</p>}

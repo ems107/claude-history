@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { actionClass } from '../components/controlClass.ts';
 import { copyPlain } from '../lib/clipboard.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
 import { hasSelection } from '../lib/selection.ts';
@@ -16,9 +17,6 @@ const LEVEL_STYLE: Record<LogLevel, string> = {
   error: 'text-red-400',
   fatal: 'text-red-400 font-semibold',
 };
-
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 
 /** Time only: the day is already the thing you picked on the left. */
 function clockTime(t: string): string {
@@ -343,7 +341,7 @@ export function LogsPage() {
               <p className="font-mono break-all opacity-60">{logs.data?.logsDir}</p>
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy}
                 onClick={() => {
                   if (!confirm('Delete every log file, including today?')) return;
@@ -403,7 +401,7 @@ export function LogsPage() {
                   paste elsewhere when asking someone what went wrong. */}
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={records.length === 0}
                 title="Copy every record shown, one JSON object per line"
                 onClick={() => copyAll(records.map((r) => JSON.stringify(r)).join('\n'))}

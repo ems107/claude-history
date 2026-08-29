@@ -36,7 +36,7 @@ export function RetentionFooter() {
           Claude keeps history
         </span>
         <Link
-          to="/settings#claude-retention"
+          to="/settings/data#claude-retention"
           title="What this means, and how to change it"
           className="ml-auto inline-flex items-center gap-1 text-[var(--text-dim)] hover:text-[var(--text)]"
         >
