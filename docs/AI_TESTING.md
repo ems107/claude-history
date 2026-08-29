@@ -524,6 +524,16 @@ Then in the viewer, on that same session: the row leads with `HH:mm:ss` (the cal
 - **The bell mark and the bell agree.** A session that stops must show the bell glyph on its row and a row in the panel at the same moment, with the same words on the hover (`Needs you — permission prompt` / `Finished answering`). Dismissing it from the panel's cross must take the glyph off the row without opening anything; opening the session with the window in front must take both. Closing a toast card must take neither.
 - **Neither mark appears on the session page's own header** (`omitNews`), and both must be there in the search results' rows, which draw the same component.
 
+**45. A working row holds still.** The list refreshes a live session's row every couple of seconds, and everything below is about that refresh changing nothing it should not ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)). Needs a session actually working — the release's composer on 7433 will do — and a minute of watching the dev instance's list.
+
+- **Nothing may leave the row and come back.** Watch the working row for a minute: the cost, `N prompts`, the compaction and subagent items and the PR and fork badges must all stay drawn, and the LIVE pill and the WORKING spinner must not move horizontally. Anything that vanishes for a tenth of a second and returns is `enrichment` going null on a rebuilt summary, which is the whole of what this check is for.
+- **Without a browser, which is where it is provable.** Poll `GET /api/sessions` while the session works and check its entry every time: `enrichment` must never be null once it has been non-null. The only session that may answer null is one that has never been enriched — restart the dev instance to see that case, and it must fill in and stay filled.
+- **The sort and the filters read the same field.** With **Cost** selected, the working row must not jump to the end of the list and back. With the `pr` or the `fork` filter on and a working session that has one, the row must not disappear from the list at all.
+- **A rewritten status file is not a lost process.** LIVE and WORKING must never blink out together for one refresh — that is `<pid>.json` caught mid-write being read as "the process is gone".
+- **One refetch per write, not two.** DevTools → Network, filtered to `sessions`: with one session working, `/api/sessions` must come back at roughly the rate the transcript grows, not twice per line. `curl -N /api/events` on the side must show `live-changed` only when something actually moved — no run of them while a session sits idle, and one on every busy→waiting→idle flip.
+- **The badge is still right, not merely still.** Send a prompt and WORKING must appear; answer a permission prompt and WAITING must show while the dialog is up; end the turn and the row must go IDLE, with the bell ringing for the stop (check 40 — it hangs off the same event).
+- **The keyboard selection survives it.** Pick a row with `j`/`k` and leave it alone for a minute with a session working: the highlight must stay on that row, and follow it if the list reorders under it.
+
 ## Running Claude
 
 **8. Auto-reload.** Point it at a throwaway folder and drive the config errors through `PUT /api/settings` — missing folder, a file instead of a folder, relative path, empty message, unknown model — each must come back in `configError`.
