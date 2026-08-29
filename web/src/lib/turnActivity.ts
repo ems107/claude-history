@@ -1,4 +1,4 @@
-import type { MessageItem, Turn } from '@claude-history/shared';
+import { RECAP_SUBTYPE, type MessageItem, type Turn } from '@claude-history/shared';
 
 /**
  * What the turn in flight is made of — the readings the working indicator's
@@ -188,7 +188,8 @@ export interface TurnSpan {
 
 /**
  * The whole turn as the transcript records it: from its first kept item —
- * normally the prompt — to the newest stamp anything in it carries.
+ * normally the prompt — to the newest stamp anything in it carries, a recap
+ * excepted.
  *
  * **The same boundary `total` counts from live** (`turnClocks`), interruptions
  * held inside the turn and rewound-away items left out, so the figure the fold
@@ -208,6 +209,20 @@ export interface TurnSpan {
  * arriving with the turn already closed opens one of its own right after a
  * returned call, whose result stamp is then the newest clock that turn has.
  *
+ * **A recap is the one thing left out, and it is left out whole.** Claude Code
+ * writes the `away_summary` line minutes AFTER the turn it summarises, for
+ * whoever comes back to it, and the parser has no turn of its own to give it
+ * ([AI_TRANSCRIPTS.md](../../../docs/AI_TRANSCRIPTS.md)) — so its stamp is
+ * normally the newest one the turn carries and what it measures is the reader's
+ * absence: a turn nobody came back to until morning read as a turn that took all
+ * night. It closed 258 of this corpus's 1,235 turns (20.9 %), adding a median
+ * 3 min and once 16 hr, and it was the whole of the disagreement with
+ * `durationMs` the paragraph above says cannot happen — on `fa64ae58`'s four
+ * recap turns the span now lands within 14-63 ms of the CLI's own figure, where
+ * it used to overshoot by 3 min, 3 min, 43 min and 3 min. Left out of the START
+ * as well as the end, so a turn that opens on one cannot take its beginning from
+ * it, and a turn that is nothing but one has nothing to measure.
+ *
  * Null for a turn with nothing to measure — a dangling prompt, a turn Claude
  * never answered. Pure, and checkable without a browser.
  */
@@ -216,6 +231,8 @@ export function turnSpan(turn: Turn): TurnSpan | null {
   let end: number | null = null;
   for (const item of turn.items) {
     if (item.discardedBranch !== null) continue;
+    // The one line written after the turn, about the turn: see above.
+    if (item.systemSubtype === RECAP_SUBTYPE) continue;
     if (start === null) start = stamp(item.timestamp);
     const ended = stamp(item.endTimestamp ?? item.timestamp);
     if (ended !== null && (end === null || ended > end)) end = ended;
