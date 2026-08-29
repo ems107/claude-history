@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /**
- * The columns that open to the RIGHT of the session, beside it rather than over
- * it: the file viewer and a subagent's transcript.
+ * The column that opens to the RIGHT of the session, beside it rather than over
+ * it: the file viewer or a subagent's transcript — one at a time, and one
+ * remembered width for whichever it is.
  *
  * Both were `position: fixed` overlays anchored at `right: RAIL_PX` — 832 px and
  * 704 px of drop-shadow laid over the conversation AND over the app's own
@@ -72,10 +73,20 @@ const SIDE_MAX = 1600;
  */
 export const CONV_MIN = 400;
 
-export const FILE_KEY = 'fileColumnWidth';
-export const AGENT_KEY = 'agentColumnWidth';
-export const FILE_DEFAULT = 620;
-export const AGENT_DEFAULT = 560;
+/**
+ * ONE width for the column, whatever is in it — the inspector's rule, and it
+ * became the right one here the moment only one column could be open at a time.
+ *
+ * The file and the subagent transcript had a key each, which described a split
+ * that cannot exist: two panels side by side, each with its own share. What
+ * there actually is is a SPLIT — how much of the window the reader wants to give
+ * to the thing beside the conversation — and swapping what is in the column is
+ * not a reason to change it. Two keys meant walking from a file into an agent's
+ * transcript threw away the split you had just set and dropped you at the other
+ * one's default.
+ */
+export const COLUMN_KEY = 'sideColumnWidth';
+export const COLUMN_DEFAULT = 620;
 
 /**
  * The inspector's own floor, and it is not `SIDE_MIN`: every one of its six
@@ -94,43 +105,44 @@ export interface ColumnWidth {
   startResize: (e: React.MouseEvent) => void;
 }
 
-function readWidth(key: string, def: number): number {
-  const n = Number(localStorage.getItem(key));
-  return Number.isFinite(n) && n > 0 ? Math.min(SIDE_MAX, Math.max(SIDE_MIN, n)) : def;
+function readWidth(): number {
+  const n = Number(localStorage.getItem(COLUMN_KEY));
+  return Number.isFinite(n) && n > 0 ? Math.min(SIDE_MAX, Math.max(SIDE_MIN, n)) : COLUMN_DEFAULT;
 }
 
 /**
- * One remembered width, dragged from the seam on its LEFT — so the sign is
- * mirrored, exactly as in `useInspector`. The same `mousedown` → document
- * `mousemove`/`mouseup` shape as the session list's sidebar, which is the
- * original of all three.
+ * The column's remembered width, dragged from the seam on its LEFT — so the
+ * sign is mirrored, exactly as in `useInspector`. The same `mousedown` →
+ * document `mousemove`/`mouseup` shape as the session list's sidebar, which is
+ * the original of all three.
+ *
+ * It takes no key: there is one width, and it belongs to the SLOT rather than to
+ * whatever is currently in it. That is what makes walking from a file into a
+ * subagent's transcript keep the split you set.
  */
-export function useColumnWidth(key: string, def: number): ColumnWidth {
-  const [width, setWidth] = useState(() => readWidth(key, def));
+export function useColumnWidth(): ColumnWidth {
+  const [width, setWidth] = useState(readWidth);
 
-  const startResize = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      const startX = e.clientX;
-      const from = readWidth(key, def);
-      // A cap for the DRAG, not for the layout: `fitColumns` is what keeps the
-      // conversation alive when several columns are open at once, and it runs
-      // on every render rather than once per gesture.
-      const max = Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - RAIL_PX - GRIP_PX - CONV_MIN));
-      const onMove = (ev: MouseEvent) => {
-        const w = Math.min(max, Math.max(SIDE_MIN, from + startX - ev.clientX));
-        setWidth(w);
-        localStorage.setItem(key, String(w));
-      };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-      };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
-    },
-    [key, def],
-  );
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const from = readWidth();
+    // A cap for the DRAG, not for the layout: `fitColumns` is what keeps the
+    // conversation alive when the inspector is open beside this, and it runs on
+    // every render rather than once per gesture.
+    const max = Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - RAIL_PX - GRIP_PX - CONV_MIN));
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.min(max, Math.max(SIDE_MIN, from + startX - ev.clientX));
+      setWidth(w);
+      localStorage.setItem(COLUMN_KEY, String(w));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, []);
 
   return useMemo(() => ({ width, startResize }), [width, startResize]);
 }
@@ -140,10 +152,11 @@ export function useColumnWidth(key: string, def: number): ColumnWidth {
  *
  * The inspector could read `window.innerWidth` once at the start of a drag and
  * never again — a window narrowed afterwards simply squeezed the conversation,
- * which is `flex-1 min-w-0` and shrinks to nothing without complaint. With three
- * `shrink-0` columns beside it that stops being true: the conversation reaches
- * zero and the ROW overflows, which grows the page a horizontal scrollbar. So
- * the fit is recomputed on resize, and this is the value it is recomputed from.
+ * which is `flex-1 min-w-0` and shrinks to nothing without complaint. With two
+ * `shrink-0` columns and the rail beside it that stops being true: the
+ * conversation reaches zero and the ROW overflows, which grows the page a
+ * horizontal scrollbar. So the fit is recomputed on resize, and this is the
+ * value it is recomputed from.
  */
 export function useWindowWidth(): number {
   const [w, setW] = useState(() => (typeof window === 'undefined' ? 1440 : window.innerWidth));
@@ -212,46 +225,44 @@ export function fitColumns(available: number, columns: FitColumn[]): number[] {
 }
 
 export interface SideLayout {
-  /** Drawn widths. `0` where the column is closed. */
+  /** Drawn widths. `0` where the thing is closed. */
   inspector: number;
-  agent: number;
-  file: number;
-  /** Everything the conversation does not get: the rail, the open columns and their seams. */
+  column: number;
+  /** Everything the conversation does not get: the rail, what is open, and their seams. */
   gutter: number;
 }
 
 /**
  * The whole right-hand side of the session in one value.
  *
- * All three columns are fitted together — the inspector included, even though it
- * lives inside the session and the other two beside it. Fitting only the new two
- * would let an inspector dragged wide take the room they were about to yield,
- * and the reader would be left dragging one column to fix another.
+ * Both are fitted together — the inspector included, even though it lives inside
+ * the session and the column beside it. Fitting only the column would let an
+ * inspector dragged wide take the room it was about to yield, and the reader
+ * would be left dragging one to fix the other.
  */
 export function useSideLayout(stored: {
   inspector: number | null;
-  agent: number | null;
-  file: number | null;
+  /** The file or the subagent transcript, whichever is open — never both. */
+  column: number | null;
 }): SideLayout {
   const windowWidth = useWindowWidth();
-  const { inspector, agent, file } = stored;
+  const { inspector, column } = stored;
 
   return useMemo(() => {
-    const open: Array<{ key: 'inspector' | 'agent' | 'file'; width: number; min: number }> = [];
-    // Rail order, left to right — and the order `fitColumns` answers in.
+    const open: Array<{ key: 'inspector' | 'column'; width: number; min: number }> = [];
+    // Left to right — and the order `fitColumns` answers in.
     if (inspector !== null) open.push({ key: 'inspector', width: inspector, min: INSPECTOR_MIN });
-    if (agent !== null) open.push({ key: 'agent', width: agent, min: SIDE_MIN });
-    if (file !== null) open.push({ key: 'file', width: file, min: SIDE_MIN });
+    if (column !== null) open.push({ key: 'column', width: column, min: SIDE_MIN });
 
     const seams = RAIL_PX + open.length * GRIP_PX;
     const available = Math.max(0, windowWidth - seams - CONV_MIN);
     const drawn = fitColumns(available, open);
 
-    const out: SideLayout = { inspector: 0, agent: 0, file: 0, gutter: seams };
+    const out: SideLayout = { inspector: 0, column: 0, gutter: seams };
     open.forEach((c, i) => {
       out[c.key] = drawn[i];
       out.gutter += drawn[i];
     });
     return out;
-  }, [windowWidth, inspector, agent, file]);
+  }, [windowWidth, inspector, column]);
 }

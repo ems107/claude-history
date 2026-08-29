@@ -26,14 +26,7 @@ import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useInspector } from '../lib/inspector.ts';
-import {
-  AGENT_DEFAULT,
-  AGENT_KEY,
-  FILE_DEFAULT,
-  FILE_KEY,
-  useColumnWidth,
-  useSideLayout,
-} from '../lib/sideColumns.ts';
+import { useColumnWidth, useSideLayout } from '../lib/sideColumns.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { useWindowFocused } from '../lib/windowFocus.ts';
@@ -735,23 +728,25 @@ export function SessionViewPage() {
   });
 
   /**
-   * The two columns that open beside the session — a subagent's transcript and
-   * the file a link pointed at. Their widths are held HERE and not inside the
-   * panels: the file viewer is keyed on the reference, so it remounts on every
-   * new file, and a width in its own state would go back to the default each
-   * time a second path was clicked.
+   * The column that opens beside the session — a subagent's transcript, or the
+   * file a link pointed at. ONE width for both, because there is one slot: the
+   * reader sets a split, and swapping what is in the column is not a reason to
+   * change it.
+   *
+   * Held HERE and not inside the panels for the same reason it survives the
+   * swap: the file viewer is keyed on the reference, so it remounts on every new
+   * file, and a width in its own state would go back to the default each time a
+   * second path was clicked.
    */
-  const agentColumn = useColumnWidth(AGENT_KEY, AGENT_DEFAULT);
-  const fileColumn = useColumnWidth(FILE_KEY, FILE_DEFAULT);
+  const column = useColumnWidth();
   /**
-   * And how wide each of the three is actually drawn. All three go in together,
-   * the inspector included: fitting only the two new ones would let an inspector
-   * dragged wide keep the room they were about to give up.
+   * And how wide each thing beside the conversation is actually drawn. The
+   * inspector goes in with the column: fitting only the column would let an
+   * inspector dragged wide keep the room it was about to give up.
    */
   const sideLayout = useSideLayout({
     inspector: inspector.open === null ? null : inspector.width,
-    agent: agentId ? agentColumn.width : null,
-    file: fileRef ? fileColumn.width : null,
+    column: agentId || fileRef ? column.width : null,
   });
 
   const navigate = useNavigate();
@@ -1348,7 +1343,7 @@ export function SessionViewPage() {
               buy that by being drawn OVER the drawer, and buys it now by being
               the column after it. */}
           {agentId && (
-            <SideColumn kind="agent" width={sideLayout.agent} onResizeStart={agentColumn.startResize}>
+            <SideColumn kind="agent" width={sideLayout.column} onResizeStart={column.startResize}>
               <SubagentDrawer
                 sessionId={id}
                 agentId={agentId}
@@ -1363,7 +1358,7 @@ export function SessionViewPage() {
             </SideColumn>
           )}
           {fileRef && (
-            <SideColumn kind="file" width={sideLayout.file} onResizeStart={fileColumn.startResize}>
+            <SideColumn kind="file" width={sideLayout.column} onResizeStart={column.startResize}>
               <FileViewerPanel
                 // Keyed on the reference: opening another file starts a fresh panel
                 // rather than scrolling the previous one's state onto a new body.

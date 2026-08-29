@@ -227,6 +227,16 @@ inspector's are all consequences of one choice.
   The inspector goes in with them: fitting only the new two would let an
   inspector dragged wide keep the room they were about to give up, and the reader
   would be dragging one column to fix another.
+- **One width for the column, whatever is in it** (`sideColumnWidth`) — the
+  inspector's own rule, and it became the right one here the moment only one
+  column could be open at a time. A key each described a split that cannot
+  exist: two panels side by side, each with its own share. What there actually
+  is is a SPLIT — how much of the window the reader gives to the thing beside
+  the conversation — so walking from a file into a subagent's transcript keeps
+  it, where before it threw the split away and landed on the other one's
+  default. The width belongs to the SLOT, which is also why it is held in the
+  page: the file viewer is keyed on the reference and remounts on every new
+  file.
 - **The four numbers, and why none of them is borrowed.** `SIDE_MIN` is 240 — a
   column dragged narrow is usually somebody keeping a file in the corner of their
   eye, which is not the same thing as reading it, and the 360 it started at was a
