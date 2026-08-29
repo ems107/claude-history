@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { GRIP_PX, RAIL_PX } from './inspector.ts';
-import { WIDTH_MIN } from './viewPrefs.ts';
 
 /**
  * The columns that open to the RIGHT of the session, beside it rather than over
@@ -18,10 +16,61 @@ import { WIDTH_MIN } from './viewPrefs.ts';
  * are, so a session with nothing open is unchanged to the pixel.
  */
 
-/** The narrowest either column may be dragged to. Below this the code stops being readable. */
-export const SIDE_MIN = 360;
+/**
+ * The rail's width, and the seam between two columns. They live here rather
+ * than with the inspector because they are the LAYOUT's, not one panel's: every
+ * column is measured against them, and so is `--conv-box`.
+ *
+ * 72 px and not the 44 an icon needs, because every rail item carries its LABEL.
+ * Six unlabelled glyphs down the side of the window is six things to learn and a
+ * tooltip to wait for; the words cost 28 px once. The seam is `w-1`, the session
+ * list's handle, and one value serves all three of them.
+ */
+export const RAIL_PX = 72;
+export const GRIP_PX = 4;
+
+/**
+ * The narrowest either column may be dragged to.
+ *
+ * 240, and it started at 360 — which turned out to be a limit nobody had asked
+ * for. The reasoning behind 360 was "below this the code stops being readable",
+ * and that is a judgement about what somebody wants to READ; a column dragged
+ * narrow is usually somebody keeping a file in the corner of their eye while
+ * they read the conversation, which is a different thing to want. 240 still
+ * shows the gutter, the name and a usable strip of code, and it is a floor
+ * rather than a recommendation.
+ */
+export const SIDE_MIN = 240;
 /** Wider than any screen this runs on, so the cap that bites is the window's. */
 const SIDE_MAX = 1600;
+
+/**
+ * The narrowest the conversation is squeezed to before the columns stop taking,
+ * and so also what caps how wide any of them can be dragged.
+ *
+ * It was `WIDTH_MIN` (480) on a "one home for the fact" argument, and that
+ * argument was wrong: `WIDTH_MIN` is the narrowest READING column somebody can
+ * choose in `View ▾`, a statement about line length, and this is the narrowest
+ * the conversation PANE may be squeezed to by something the reader deliberately
+ * opened beside it. Conflating the two made the split feel nailed down — at
+ * 1426 px a column could not go past 870, so "put the file on half the screen"
+ * was not reachable. They are different facts and they get different numbers.
+ *
+ * 400, and the number is measured rather than chosen: it is where the
+ * conversation stops scrolling SIDEWAYS. Its content floor was 524 px — the
+ * turn's fold strip, a `w-fit` flex row with no `flex-wrap`, drawn at
+ * `max-content` however little room it had — and wrapping that strip took it to
+ * 364. What holds it there is the message header's trailing run (model, cost,
+ * context), and that one stays: its `actions` appear on HOVER, so a header that
+ * wrapped could grow a line under the pointer, which is the one thing a hover
+ * toolbar may never do.
+ *
+ * The 36 px between 364 and 400 are not slack. The scroller reserves a scrollbar
+ * gutter on BOTH edges — that is what keeps the thread centred — so a 400 px
+ * column is a 380 px scroller, and the floor has to clear the content's 364 by
+ * that much before it clears it at all.
+ */
+export const CONV_MIN = 400;
 
 export const FILE_KEY = 'fileColumnWidth';
 export const AGENT_KEY = 'agentColumnWidth';
@@ -30,10 +79,14 @@ export const AGENT_DEFAULT = 560;
 
 /**
  * The inspector's own floor, and it is not `SIDE_MIN`: every one of its six
- * panels was written to read at 320 px, which is the work that turned the token
- * table into a stack of cards and made every file row wrap.
+ * panels was written to READ at 320 px, which is the work that turned the token
+ * table into a stack of cards and made every file row wrap. A file viewer at 240
+ * is still a file viewer; a token ledger at 240 is a broken table.
+ *
+ * Here rather than in `lib/inspector.ts` so the fit and the inspector's own drag
+ * clamp cannot drift apart — that module imports it back.
  */
-const INSPECTOR_FLOOR = 320;
+export const INSPECTOR_MIN = 320;
 
 export interface ColumnWidth {
   /** The width the reader chose. What is DRAWN can be less — see `fitColumns`. */
@@ -63,7 +116,7 @@ export function useColumnWidth(key: string, def: number): ColumnWidth {
       // A cap for the DRAG, not for the layout: `fitColumns` is what keeps the
       // conversation alive when several columns are open at once, and it runs
       // on every render rather than once per gesture.
-      const max = Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - RAIL_PX - GRIP_PX - WIDTH_MIN));
+      const max = Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - RAIL_PX - GRIP_PX - CONV_MIN));
       const onMove = (ev: MouseEvent) => {
         const w = Math.min(max, Math.max(SIDE_MIN, from + startX - ev.clientX));
         setWidth(w);
@@ -186,12 +239,12 @@ export function useSideLayout(stored: {
   return useMemo(() => {
     const open: Array<{ key: 'inspector' | 'agent' | 'file'; width: number; min: number }> = [];
     // Rail order, left to right — and the order `fitColumns` answers in.
-    if (inspector !== null) open.push({ key: 'inspector', width: inspector, min: INSPECTOR_FLOOR });
+    if (inspector !== null) open.push({ key: 'inspector', width: inspector, min: INSPECTOR_MIN });
     if (agent !== null) open.push({ key: 'agent', width: agent, min: SIDE_MIN });
     if (file !== null) open.push({ key: 'file', width: file, min: SIDE_MIN });
 
     const seams = RAIL_PX + open.length * GRIP_PX;
-    const available = Math.max(0, windowWidth - seams - WIDTH_MIN);
+    const available = Math.max(0, windowWidth - seams - CONV_MIN);
     const drawn = fitColumns(available, open);
 
     const out: SideLayout = { inspector: 0, agent: 0, file: 0, gutter: seams };

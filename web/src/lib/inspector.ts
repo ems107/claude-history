@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { WIDTH_MIN } from './viewPrefs.ts';
+import { CONV_MIN, GRIP_PX, INSPECTOR_MIN, RAIL_PX } from './sideColumns.ts';
 
 /**
  * Which panel is open beside the conversation, and how wide it is.
@@ -18,33 +18,15 @@ import { WIDTH_MIN } from './viewPrefs.ts';
  */
 
 /**
- * The rail's width. A constant rather than a class because the layout does
- * arithmetic with it: it is the first thing subtracted from the window when the
- * columns beside the conversation are fitted (`lib/sideColumns.ts`) and when
- * `--conv-box` is worked out.
- *
- * It used to be subtracted by the two overlays as well — the subagent drawer and
- * the file viewer were `position: fixed` at `right: RAIL_PX`, stepping around
- * the rail so as not to cover it. Both are columns in the flow now, to the right
- * of the rail, so "the rail is furniture and nothing covers it" holds by
- * construction rather than by subtraction.
- *
- * 72 px and not the 44 an icon needs, because every item carries its LABEL.
- * Six unlabelled glyphs down the side of the window is six things to learn and
- * a tooltip to wait for; the words cost 28 px once.
+ * `RAIL_PX` and `GRIP_PX` used to live here, and moved to `lib/sideColumns.ts`
+ * when the file viewer and the subagent transcript became columns: they are the
+ * layout's constants rather than the inspector's, and every column beside the
+ * conversation is measured against them. This module is the rail's own state —
+ * which panel is open, and how wide the inspector was dragged.
  */
-export const RAIL_PX = 72;
-
-/**
- * The seam between two columns — `w-1`, as in the list's sidebar. One value for
- * all three of them: the inspector's, the subagent column's and the file
- * column's are the same handle.
- */
-export const GRIP_PX = 4;
 
 const WIDTH_KEY = 'inspectorWidth';
 const INSPECTOR_DEFAULT = 400;
-const INSPECTOR_MIN = 320;
 const INSPECTOR_MAX = 900;
 
 export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'agents' | 'lineage';
@@ -170,10 +152,11 @@ export function useInspector({
     e.preventDefault();
     const startX = e.clientX;
     const from = readWidth();
-    // Never so wide that the conversation drops below the narrowest width the
-    // reader can choose for it. Read once, at the start of the drag: a window
-    // resized afterwards simply squeezes the column, exactly as it always has.
-    const max = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, window.innerWidth - RAIL_PX - GRIP_PX - WIDTH_MIN));
+    // Never so wide that the conversation drops below the narrowest a pane of it
+    // may be — `CONV_MIN`, the same floor the columns beside it are held to, so
+    // dragging any of the three feels like the same gesture. Read once, at the
+    // start of the drag: a window resized afterwards is `fitColumns`' problem.
+    const max = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, window.innerWidth - RAIL_PX - GRIP_PX - CONV_MIN));
     const onMove = (ev: MouseEvent) => {
       const w = Math.min(max, Math.max(INSPECTOR_MIN, from + startX - ev.clientX));
       setWidth(w);

@@ -209,11 +209,31 @@ inspector's are all consequences of one choice.
   the box, and nothing else.
 - **One function decides what every column is DRAWN at** (`fitColumns`, pure).
   Three can be open at once now, so their remembered widths are fitted together:
-  proportional, with a floor per column, and the conversation kept at `WIDTH_MIN`
-  — the same 480 the inspector's own drag already reserved, imported rather than
-  restated. The inspector goes in with them: fitting only the new two would let
-  an inspector dragged wide keep the room they were about to give up, and the
-  reader would be dragging one column to fix another.
+  proportional, with a floor per column, and the conversation kept at `CONV_MIN`.
+  The inspector goes in with them: fitting only the new two would let an
+  inspector dragged wide keep the room they were about to give up, and the reader
+  would be dragging one column to fix another.
+- **The four numbers, and why none of them is borrowed.** `SIDE_MIN` is 240 — a
+  column dragged narrow is usually somebody keeping a file in the corner of their
+  eye, which is not the same thing as reading it, and the 360 it started at was a
+  limit nobody had asked for. `INSPECTOR_MIN` stays 320 because its six panels
+  are WRITTEN for 320: a file viewer at 240 is still a file viewer, a token
+  ledger at 240 is a broken table. `CONV_MIN` is 400 — see below, it is measured.
+  And `WIDTH_MIN` is deliberately none of them: it is the narrowest reading
+  column somebody can choose in `View ▾`, a statement about line length, and
+  using it as the pane's floor (the first version did, on a "one home for the
+  fact" argument) nailed the split down — at 1426 px a column could not pass 870,
+  so "put the file on half the screen" was not reachable. Two facts, two numbers.
+- **`CONV_MIN` is measured, not chosen, and finding it moved a bug.** It is the
+  width at which the conversation stops scrolling SIDEWAYS. Its content floor was
+  524 px, all of it the turn's fold strip — `flex w-fit` with no `flex-wrap`, so
+  a row that could not fit was simply drawn too wide — and wrapping that strip
+  took the floor to 364. What holds it at 364 is the message header's trailing
+  run (model, cost, context), and that one stays: its `actions` appear on HOVER,
+  so a header that wrapped could grow a line under the pointer, which is the one
+  thing [a hover toolbar may never do](#invariants). The last 36 px are the
+  scroller's own doing — it reserves a scrollbar gutter on BOTH edges, which is
+  what keeps the thread centred, so a 400 px column is a 380 px scroller.
 - **Fitting never writes back.** A squeeze is what is drawn, not what is
   remembered — otherwise opening a third column would permanently shrink the
   other two, and every reader would end up at the minimum by attrition.
@@ -235,13 +255,10 @@ inspector's are all consequences of one choice.
   height](#nothing-above-the-conversation-may-change-height) forbids — it is the
   reader's own gesture, the same reflow a narrowed window has always caused, and
   it happens once. Opening a **rail** panel still changes nothing, because the
-  inspector is below the header rather than beside it. Below about 490 px of
-  conversation a second thing takes height: the thread has a min-content of 524
-  px and the scroller grows a horizontal scrollbar of its own. That is **not**
-  the columns' doing and predates them — a window narrowed to 580 with nothing
-  open at all does it (488 → 524, measured) — but a column is now the easy way to
-  reach that width, so it is the other half of the arithmetic when the numbers
-  fail to add up.
+  inspector is below the header rather than beside it. And nothing else takes
+  height any more: `CONV_MIN` is set above the thread's own content floor, so the
+  conversation never grows the horizontal scrollbar that used to eat another 10
+  px on the way down.
 - **Ctrl+F came back with them.** The find bar was switched off while either
   panel was up — searching what you cannot see, and stepping the page under a
   layer, is worse than no bar — and beside the conversation there is nothing left

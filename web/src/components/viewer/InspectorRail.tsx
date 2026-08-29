@@ -1,5 +1,5 @@
 import type { InspectorState, PanelKey } from '../../lib/inspector.ts';
-import { RAIL_PX } from '../../lib/inspector.ts';
+import { RAIL_PX } from '../../lib/sideColumns.ts';
 
 const base = {
   viewBox: '0 0 16 16',
