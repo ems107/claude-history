@@ -29,8 +29,25 @@ export interface SubagentContextValue {
   goToCall(toolUseId: string): void;
   /** A message (`?msg=`) — the report, from the panel. */
   goToMessage(uuid: string): void;
-  /** Whether that call is in this parse at all: a fork copies none of them. */
+  /**
+   * Whether that call is in this parse at all: a fork copies none of them, and a
+   * compaction can swallow the message that made it. **Any** call, not only an
+   * Agent one — the two agent-only callers pass ids that are a subset of the
+   * same set (`buildToolCallIndex`).
+   */
   hasCall(toolUseId: string): boolean;
+  /**
+   * The two halves of one pairing, and the two buttons that walk it — `↑ the
+   * call` on a notice panel, `↓ the answer` on the call it came from. Null means
+   * this parse does not hold the other end, and then neither button is drawn.
+   *
+   * Read off the SAME map in both directions (`buildToolCallIndex`, where the
+   * three joins that find a call are explained), so the round trip cannot
+   * disagree with itself: whatever `↑ the call` reaches is what offers the `↓`
+   * back to where you were.
+   */
+  callOf(noticeUuid: string): string | null;
+  answerTo(toolUseId: string): string | null;
 }
 
 export const SubagentContext = createContext<SubagentContextValue | null>(null);

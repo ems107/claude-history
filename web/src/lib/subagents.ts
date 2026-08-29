@@ -43,11 +43,9 @@ export interface SubagentIndex {
   rows: SubagentRow[];
   byId: Map<string, SubagentMeta>;
   byToolUse: Map<string, SubagentMeta>;
-  /** The `tool_use` ids of every Agent call actually rendered by this parse. */
-  calls: Set<string>;
 }
 
-const EMPTY: SubagentIndex = { rows: [], byId: new Map(), byToolUse: new Map(), calls: new Set() };
+const EMPTY: SubagentIndex = { rows: [], byId: new Map(), byToolUse: new Map() };
 
 /**
  * The brief an Agent call was given (`input.prompt`), which the three-word
@@ -131,7 +129,6 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
     // and has to agree with the list the reader is looking at.
     byId: new Map(rows.map((r) => [r.meta.agentId, r.meta])),
     byToolUse,
-    calls: new Set([...calls.values()].map((c) => c.toolUseId)),
   };
 }
 

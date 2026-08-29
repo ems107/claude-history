@@ -32,6 +32,13 @@ type Notice = Extract<ContentBlock, { kind: 'notice' }>;
  * back. That report exists nowhere else in this transcript, so it is shown
  * here, folded — and the row leads with the agent instead of with the word
  * "task notification", which says nothing about which of five agents this is.
+ *
+ * **The row of buttons under it is not an agent's, though**, and reading it as
+ * one is what used to hide `↑ the call` from every background command: the whole
+ * row was drawn only when there was a report or an agent to draw it for. A
+ * notification names the call it answers whoever produced it — 171 of the 175 on
+ * this machine do, and 56 of those are a `Bash` or `PowerShell` command, not an
+ * agent at all.
  */
 export function InjectedNotice({
   item,
@@ -50,6 +57,11 @@ export function InjectedNotice({
   // A `<task-id>` is an agent's only if the session has that transcript: a
   // background command notifies through the same channel with an id of its own.
   const agent = notice.taskId ? (subagents?.byId.get(notice.taskId) ?? null) : null;
+  // The call this is the answer to, when this parse drew it at all — and no
+  // privilege of an agent's: a background command names its `Bash` call in the
+  // very same tag, and 56 of the notices on this machine are one. Which of the
+  // three joins found it is `callOf`'s business, not this panel's.
+  const call = subagents?.callOf(item.uuid) ?? null;
   const failed = notice.status === 'failed';
 
   return (
@@ -116,9 +128,16 @@ export function InjectedNotice({
             sits in folded the turn: reading a report collapsed the conversation
             around it. The box takes no click at all now, so there is nothing
             left to stop. */}
-        {(notice.result || agent) && (
+        {(notice.result || agent || call) && (
           <div className="mt-1.5">
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Chrome, though it sits inside the searchable body — the report it
+                opens is the message here, these are the handles. Unmarked, a
+                search for `call` lit up the `↑ the call` button and one for
+                `transcript` the `⑂` one, words nobody wrote, counted among the
+                box's own hits. The report BELOW stays out of it: it is the only
+                copy of what the agent handed back, and the find bar indexes it
+                (`noticeUnit` folds `text` and `result`, and nothing else). */}
+            <div data-chrome className="flex flex-wrap items-center gap-2">
               {notice.result && (
                 <FoldHeader
                   open={showReport}
@@ -138,10 +157,12 @@ export function InjectedNotice({
                   ⑂ transcript
                 </button>
               )}
-              {notice.toolUseId && subagents?.hasCall(notice.toolUseId) && (
+              {call && subagents && (
                 <button
                   type="button"
-                  onClick={() => subagents.goToCall(notice.toolUseId!)}
+                  // Not a click on this panel: it is the panel being left.
+                  data-jump
+                  onClick={() => subagents.goToCall(call)}
                   className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
                   title="Go to the call that started it"
                 >

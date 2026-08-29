@@ -18,10 +18,11 @@ import { draftSessionDetail } from '../lib/draftSession.ts';
 import { FILE_PARAM, type FileRef, formatFileRef, normalisePath, parseFileRef } from '../lib/fileRefs.ts';
 import { collectMentionedFiles, filterMentions } from '../lib/mentionedFiles.ts';
 import { useFoldState } from '../lib/folding.ts';
-import { anchorOfKey, focusKeyAt, parseHighlight, setHighlightTerms, TOOL_PARAM } from '../lib/highlight.ts';
+import { anchorOfKey, focusKeyAt, isJumpControl, parseHighlight, setHighlightTerms, TOOL_PARAM } from '../lib/highlight.ts';
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
+import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { GRIP_PX, RAIL_PX, useInspector } from '../lib/inspector.ts';
@@ -456,9 +457,14 @@ export function SessionViewPage() {
    * what deselecting is — takes it out, along with the words it asked to mark.
    * Clicking the anchored box ITSELF changes nothing: it is still the place, and
    * the marks and the Ctrl+F seed still belong to that arrival.
+   *
+   * **A jump control is not a click on the box it sits in** — that box is the one
+   * being left — so it is asked nothing at all (`isJumpControl`, which carries
+   * what pressing one twice in a row used to cost).
    */
   const selectFromClick = useCallback(
     (e: React.MouseEvent) => {
+      if (isJumpControl(e.target)) return;
       const key = focusKeyAt(e.target);
       selectMessage(key);
       restoreSpent.current = id;
@@ -540,6 +546,16 @@ export function SessionViewPage() {
     () => buildSubagentIndex(session?.turns ?? EMPTY_TURNS, session?.subagents ?? EMPTY_AGENTS),
     [session],
   );
+  /**
+   * Every call this parse drew, which is what says a jump has somewhere to land,
+   * and which of them announced a task. A walk of its own rather than the
+   * subagent index's, because the notices that ask are mostly not agents' and
+   * half of their sessions hold no subagent at all.
+   */
+  const toolCalls = useMemo(
+    () => buildToolCallIndex(session?.turns ?? EMPTY_TURNS, session?.subagents ?? EMPTY_AGENTS),
+    [session],
+  );
   const subagentContext = useMemo<SubagentContextValue>(
     () => ({
       byId: subagentIndex.byId,
@@ -547,9 +563,11 @@ export function SessionViewPage() {
       openAgent,
       goToCall: (toolUseId) => jumpTo(TOOL_PARAM, toolUseId),
       goToMessage: (uuid) => jumpTo('msg', uuid),
-      hasCall: (toolUseId) => subagentIndex.calls.has(toolUseId),
+      hasCall: (toolUseId) => toolCalls.drawn.has(toolUseId),
+      callOf: (noticeUuid) => toolCalls.callOfNotice.get(noticeUuid) ?? null,
+      answerTo: (toolUseId) => toolCalls.answerOfCall.get(toolUseId) ?? null,
     }),
-    [subagentIndex, openAgent, jumpTo],
+    [subagentIndex, toolCalls, openAgent, jumpTo],
   );
 
   /**

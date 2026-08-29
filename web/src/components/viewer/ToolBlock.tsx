@@ -96,6 +96,11 @@ export function ToolBlock({
   // The agent's own type is a far better label than the word "subagent" when a
   // run holds five of them; it falls back to the generic one outside a session.
   const agentType = block.agentId ? subagents?.byId.get(block.agentId)?.agentType : null;
+  // The notice that reported back, when this call started something that did.
+  // Not an Agent's privilege and not read off this block at all: a background
+  // command, a Monitor and an MCP task all answer through the same channel, and
+  // which notice belongs to which call is one pairing held in one place.
+  const answer = block.toolUseId ? (subagents?.answerTo(block.toolUseId) ?? null) : null;
   const launched = !!block.agentId && !!result && !result.isError && result.text.startsWith(LAUNCH_NOTE);
   // The call's own wall time: its tool_use line's clock to its result line's.
   // Null while nothing has come back — a call with no result keeps its clock
@@ -173,6 +178,22 @@ export function ToolBlock({
             {costBadge}
           </span>
         )}
+        {/* The other half of the notice panel's `↑ the call`, and on the face
+            rather than inside the fold: arriving here from that button opens the
+            block, and the way back has to be visible where you land. */}
+        {answer && subagents && (
+          <button
+            type="button"
+            data-chrome
+            // Not a click on this block: it is the block being left.
+            data-jump
+            onClick={() => subagents.goToMessage(answer)}
+            className="shrink-0 cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+            title="Go to the notification this call was answered by"
+          >
+            ↓ the answer
+          </button>
+        )}
         {block.agentId && onOpenAgent && (
           <button
             type="button"
@@ -205,8 +226,9 @@ export function ToolBlock({
           )}
           {launched && (
             <div data-chrome className="mt-2 text-xs text-[var(--text-dim)]">
-              Sent out — nothing came back here. Its report arrives further down as a notification, and its own
-              transcript is behind the ⑂ button.
+              Sent out — nothing came back here. Its report arrives further down as a notification
+              {answer ? ', which ↓ the answer goes to' : ' (not in this transcript)'}, and its own transcript is behind
+              the ⑂ button.
             </div>
           )}
           {result && !launched && (
