@@ -564,7 +564,13 @@ function FoldStrip({
         onToggle={toggle}
         // `w-fit`, which a <button> gave for free: a block-level flex div would
         // stretch the click target across the whole column.
-        className="group/fold -mt-0.5 flex w-fit items-center gap-2 text-xs text-[var(--text-dim)]"
+        // `flex-wrap` because `w-fit` alone is `max-content` wherever the row
+        // fits and a row that CANNOT fit is simply drawn too wide: this strip
+        // was the whole of the conversation's 524 px min-content, and it is what
+        // put a horizontal scrollbar in the scroller whenever the column beside
+        // it was dragged wide. Wrapping costs nothing at every width where the
+        // strip already fitted.
+        className="group/fold -mt-0.5 flex w-fit flex-wrap items-center gap-2 text-xs text-[var(--text-dim)]"
       >
         <span className="text-emerald-400/70">▾</span>
         {counts}
@@ -576,7 +582,9 @@ function FoldStrip({
     <FoldHeader
       open={false}
       onToggle={toggle}
-      className="group/fold my-1.5 ml-6 flex w-fit items-center gap-2 rounded-full border border-dashed border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+      // `flex-wrap` for the reason the open one carries: the pill becomes two
+      // lines in a narrow column instead of running off the edge of it.
+      className="group/fold my-1.5 ml-6 flex w-fit flex-wrap items-center gap-2 rounded-full border border-dashed border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
     >
       <span>▸</span>
       {counts}

@@ -16,7 +16,28 @@ import type { InspectorState } from '../../lib/inspector.ts';
  * px, which is the work that made the token panel a list of cards instead of a
  * six-column table.
  */
-export function Inspector({ inspector, children }: { inspector: InspectorState; children: ReactNode }) {
+export function Inspector({
+  inspector,
+  width,
+  maxWidth,
+  children,
+}: {
+  inspector: InspectorState;
+  /**
+   * What it is DRAWN at, which is not always what it was dragged to: it gives
+   * way to a column being dragged beside it. The remembered width
+   * (`inspector.width`) is never rewritten by that, so closing the column brings
+   * this one back to the size it was left at.
+   */
+  width: number;
+  /**
+   * The widest a drag may take it right now — `SideLayout.maxInspector`, what
+   * is free once the column beside it has given way to its own floor. The stop
+   * is the conversation's floor.
+   */
+  maxWidth: number;
+  children: ReactNode;
+}) {
   const item = inspector.items.find((i) => i.key === inspector.open);
   if (!item) return null;
 
@@ -24,12 +45,12 @@ export function Inspector({ inspector, children }: { inspector: InspectorState; 
     <>
       <div
         className="h-full w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
-        onMouseDown={inspector.startResize}
+        onMouseDown={(e) => inspector.startResize(e, maxWidth)}
         title="Drag to resize"
       />
       <div
         data-inspector
-        style={{ width: inspector.width }}
+        style={{ width }}
         className="flex min-w-0 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-raised)]/50"
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-1.5">

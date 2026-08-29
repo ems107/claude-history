@@ -11,7 +11,6 @@ import { FollowBottomButton, useFollowBottom } from './FollowBottom.tsx';
 import { useSubagents } from './SubagentContext.ts';
 import { TurnList } from './TurnList.tsx';
 import { WorkingIndicator } from './WorkingIndicator.tsx';
-import { RAIL_PX } from '../../lib/inspector.ts';
 
 const NO_PRICES: PriceTable = {};
 /** Stable identity while the transcript loads. */
@@ -111,12 +110,17 @@ export function SubagentDrawer({
   const call = subagents?.byId.get(agentId)?.toolUseId;
 
   return (
-    <div
-      style={{ right: RAIL_PX }}
-      className="fixed inset-y-0 z-20 flex w-[44rem] max-w-[90vw] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl"
-    >
-      <div className="flex items-center gap-2 border-b border-[var(--border)] px-4 py-2">
-        <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-xs font-semibold text-sky-400">
+    // The contents of a `SideColumn`, which owns the width, the border and the
+    // seam — hence a fragment and not a box. This was a `fixed` overlay laid
+    // over the conversation and over the app's own header, stepping around the
+    // rail with `right: RAIL_PX`; beside the session there is nothing to step
+    // around and nothing covered.
+    <>
+      {/* Only the controls are `shrink-0`. Everything that is a fact about the
+          agent truncates instead, so the row still ends in its ✕ at the
+          narrowest this column can be dragged to. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2">
+        <span className="min-w-0 shrink truncate rounded bg-sky-500/15 px-1.5 py-0.5 text-xs font-semibold text-sky-400">
           ⑂ {query.data?.meta.agentType ?? 'subagent'}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm" title={query.data?.meta.description}>
@@ -125,7 +129,7 @@ export function SubagentDrawer({
         {/* Written down because it is what the URL carries and what a
             notification calls this agent — searchable now, and until it was on
             screen there was no way to go from the string back to the thing. */}
-        <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)] opacity-60 select-text" title="Subagent id — paste it into the search to come back here">
+        <span className="min-w-0 shrink truncate font-mono text-[10px] text-[var(--text-dim)] opacity-60 select-text" title="Subagent id — paste it into the search to come back here">
           {agentId}
         </span>
         <CostPill entries={entries} prices={prices} label="agent" variant="badge" />
@@ -177,8 +181,8 @@ export function SubagentDrawer({
           padding, so nothing — the last bubble's corner, the working row, a fold
           strip — can end up underneath it. The conversation's foot buys the same
           corner with arithmetic over its column width, which only works for a
-          column centred in the window; this one is a panel pinned to the right
-          edge, and emptying the band is the same fix with no arithmetic in it. */}
+          column centred in the window; this one is a column of its own down the
+          right, and emptying the band is the same fix with no arithmetic in it. */}
       <div className="relative min-h-0 flex-1">
         <div ref={follow.scrollRef} className="h-full overflow-y-auto px-4 pt-4 pb-14">
           <div ref={follow.contentRef}>
@@ -209,6 +213,6 @@ export function SubagentDrawer({
           workingWhat="This subagent is working"
         />
       </div>
-    </div>
+    </>
   );
 }

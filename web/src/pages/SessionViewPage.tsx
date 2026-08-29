@@ -25,7 +25,8 @@ import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
 import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
-import { GRIP_PX, RAIL_PX, useInspector } from '../lib/inspector.ts';
+import { useInspector } from '../lib/inspector.ts';
+import { useColumnWidth, useSideLayout } from '../lib/sideColumns.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { useWindowFocused } from '../lib/windowFocus.ts';
@@ -42,6 +43,7 @@ import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
+import { SideColumn } from '../components/viewer/SideColumn.tsx';
 import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
@@ -256,7 +258,10 @@ export function SessionViewPage() {
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
-  const agentId = searchParams.get('agent');
+  /** Read here rather than beside `fileRef`, because the drawer below defers to it. */
+  const fileParam = searchParams.get(FILE_PARAM);
+  /** `null` while a file is open — one column beside the session, never two (see `fileRef`). */
+  const agentId = fileParam ? null : searchParams.get('agent');
   /**
    * The subagent list, open from the URL rather than from state: the ⑂ badge in
    * the session list opens a session straight onto it, and the link can be
@@ -292,6 +297,9 @@ export function SessionViewPage() {
         (prev) => {
           const sp = new URLSearchParams(prev);
           sp.set('agent', aid);
+          // One column beside the session, never two: see `fileRef` below for
+          // the rule and what it costs.
+          sp.delete(FILE_PARAM);
           // Anchors INSIDE the drawer, and always rewritten together: one left
           // over from a previous jump would point into another agent's
           // transcript, where it resolves to nothing at all.
@@ -370,8 +378,21 @@ export function SessionViewPage() {
   /**
    * The file a link in the conversation opened. Parsed by the same function
    * that produced the parameter, so the URL is read by the code that wrote it.
+   *
+   * **One column beside the session, never two.** The file and a subagent's
+   * transcript are the same kind of thing in the same place, and two of them
+   * leave the conversation a strip between two panels — which is what the reader
+   * came for. Both writers clear the other (`openFile` below, `openAgent`
+   * above); this is the same rule at the reading end, so a URL carrying both —
+   * typed, or pasted from before the rule existed — still draws one thing. The
+   * file wins because it is the only one of the two that can be opened from
+   * inside the other, so where both are set it is the later intent.
+   *
+   * What it costs is stated here because it was once a reason not to do it: a
+   * path clicked inside a subagent's report closes the report, and the place you
+   * had in it. The list is still open in the rail, so the way back is one press
+   * — but it is a press, and the panel opens at the top.
    */
-  const fileParam = searchParams.get(FILE_PARAM);
   const fileRef = useMemo(() => (fileParam ? parseFileRef(fileParam) : null), [fileParam]);
 
   const closeFile = useCallback(() => {
@@ -399,6 +420,11 @@ export function SessionViewPage() {
           (prev) => {
             const sp = new URLSearchParams(prev);
             sp.set(FILE_PARAM, formatFileRef(ref));
+            // The other column goes, with the anchors that only mean anything
+            // inside it — one column beside the session, never two.
+            sp.delete('agent');
+            sp.delete(AGENT_TOOL_PARAM);
+            sp.delete(AGENT_MSG_PARAM);
             return sp;
           },
           { replace: true },
@@ -408,14 +434,18 @@ export function SessionViewPage() {
   );
 
   /**
-   * Ctrl+F. Off while a layer owns the screen: the file panel is a single <pre>
-   * the browser's own find handles perfectly well, and the subagent drawer holds
-   * another transcript, which this bar does not read (its `find` prop is already
-   * the right shape to serve that list when it does).
+   * Ctrl+F, and it is on whatever else is open.
+   *
+   * It used to be off while a file or a subagent was up, because both were
+   * layers laid OVER the conversation: searching what you cannot see, and
+   * stepping the page under a panel, is worse than no bar at all. Beside it
+   * instead, the conversation is right there — so the bar searches it, exactly
+   * as it does with an inspector panel open. It still reads only this
+   * transcript and not the drawer's (its `find` prop is already the right shape
+   * to serve that list when it does).
    */
   const finder = useFindBar(session?.turns ?? EMPTY_TURNS, id, {
     showThinking,
-    enabled: !fileRef && !agentId,
     // Read once, on open, and never written back: `hl` belongs to the search
     // that produced it, and a find is a gesture rather than a location.
     seed: highlight,
@@ -697,6 +727,37 @@ export function SessionViewPage() {
     agents: { open: agentsOpen, toggle: toggleAgents, close: closeAgents },
   });
 
+  /**
+   * The column that opens beside the session — a subagent's transcript, or the
+   * file a link pointed at. ONE width for both, because there is one slot: the
+   * reader sets a split, and swapping what is in the column is not a reason to
+   * change it.
+   *
+   * Held HERE and not inside the panels for the same reason it survives the
+   * swap: the file viewer is keyed on the reference, so it remounts on every new
+   * file, and a width in its own state would go back to the default each time a
+   * second path was clicked.
+   */
+  const column = useColumnWidth();
+  /**
+   * And how wide each thing beside the conversation is actually drawn. The
+   * inspector goes in with the column: fitting only the column would let an
+   * inspector dragged wide keep the room it was about to give up.
+   */
+  const sideLayout = useSideLayout({
+    inspector: inspector.open === null ? null : inspector.width,
+    column: agentId || fileRef ? column.width : null,
+    // Whichever seam is under the hand wins, and the other gives way to its
+    // floor — the pane you are dragging is the one you mean. At rest it is the
+    // column's, which is the thing just opened to be looked at.
+    priority: inspector.dragging ? 'inspector' : 'column',
+  });
+  /** One binding for the one seam, whichever of the two panels is in the slot. */
+  const startColumnResize = useCallback(
+    (e: React.MouseEvent) => column.startResize(e, sideLayout.maxColumn),
+    [column, sideLayout.maxColumn],
+  );
+
   const navigate = useNavigate();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -707,18 +768,21 @@ export function SessionViewPage() {
       // (The textarea check above already covers where xterm usually puts the
       // focus; this is the one that stays true when it moves.)
       if (isFromTerminal(e.target)) return;
-      // Innermost first: the file sits on top of the subagent drawer, which sits
-      // on top of the panel that opened it — a path is often clicked from inside
-      // a subagent report, and that whole stack has to unwind in order.
+      // Outermost first: the column beside the session, then the rail's panel
+      // inside it, then the page. Two of these four branches can no longer both
+      // be true — a file and a subagent transcript are one slot — so the order
+      // between them is only what it costs to read; the order that matters is
+      // that a column closes before the panel it was opened from.
       //
-      // The inspector is one branch for all six panels now, which is what makes
-      // this list honest: only the subagent list was ever in it, because putting
-      // one file panel in and not the other would have been worse than neither.
+      // The inspector is one branch for all six panels, which is what makes this
+      // list honest: only the subagent list was ever in it, because putting one
+      // file panel in and not the other would have been worse than neither.
       //
-      // The find bar comes after all three and before going back: those are
-      // layers drawn OVER the conversation, while the bar sits beside it. Its
-      // own input handles Escape itself and stops it here, so this branch is for
-      // an Escape pressed while reading, with the bar still open behind you.
+      // The find bar comes last before going back, and it is the one thing here
+      // that is not a pane: it belongs to the conversation's own column and
+      // closing it closes nothing you are looking at. Its own input handles
+      // Escape and stops it there, so this branch is for an Escape pressed while
+      // reading, with the bar still open behind you.
       if (fileRef) closeFile();
       else if (agentId) closeAgent();
       else if (inspector.open !== null) inspector.close();
@@ -1001,8 +1065,8 @@ export function SessionViewPage() {
     return null;
   })();
 
-  /** How much of the window the conversation does NOT get. */
-  const convGutter = RAIL_PX + (inspector.open === null ? 0 : inspector.width + GRIP_PX);
+  /** How much of the window the conversation does NOT get: the rail, every open column, every seam. */
+  const convGutter = sideLayout.gutter;
 
   /**
    * Whichever panel the rail has open. One node rather than six conditionals,
@@ -1066,7 +1130,24 @@ export function SessionViewPage() {
     // subagent's report is a path in this session too.
     <FileRefContext value={fileRefs}>
       <SubagentContext value={subagentContext}>
-        <div className="flex h-full flex-col">
+        {/* The page is a ROW: the session — its own header and everything under
+            it — and then the columns that open BESIDE it. That nesting is the
+            whole of why those columns run the full height: the session's header
+            is inside the box to their left, and the app's header, above all of
+            this, is never covered by either of them. */}
+        <div className="flex h-full min-w-0">
+        {/* `overflow-hidden`, which is the same promise `SideColumn` makes and
+            the other half of it: a pane is a BOX, and nothing in one may be
+            drawn in its neighbour. Without it the header's own controls — a
+            `shrink-0` row that simply runs out of room — were painted straight
+            across the seam and over the file beside it. Clipping them is the
+            right answer rather than a shame: a session squeezed that far is
+            being squeezed on purpose, and a button that is temporarily out of
+            reach costs one drag to get back. It clips nothing that matters:
+            `position: fixed` escapes it, so the hover cards, the image overlay
+            and the terminal's full screen are untouched, and the two header
+            menus open downward INSIDE the box. */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <SessionHeader
             detail={session}
             draft={isDraft}
@@ -1261,32 +1342,46 @@ export function SessionViewPage() {
                 />
               </div>
             </div>
-            <Inspector inspector={inspector}>{panel}</Inspector>
+            <Inspector inspector={inspector} width={sideLayout.inspector} maxWidth={sideLayout.maxInspector}>
+              {panel}
+            </Inspector>
             <InspectorRail inspector={inspector} />
           </div>
+        </div>
+          {/* A subagent's transcript, then the file — in that order, and it is
+              the old z-order restated as a position. A path is often clicked
+              from inside a subagent's report, so the report has to stay
+              readable while the file it named is read; the file panel used to
+              buy that by being drawn OVER the drawer, and buys it now by being
+              the column after it. */}
           {agentId && (
-            <SubagentDrawer
-              sessionId={id}
-              agentId={agentId}
-              showThinking={showThinking}
-              zoom={view.zoom}
-              scrollToTool={searchParams.get(AGENT_TOOL_PARAM)}
-              scrollToUuid={searchParams.get(AGENT_MSG_PARAM)}
-              jumpNonce={jumpNonce}
-              running={agentRunning}
-              onClose={closeAgent}
-            />
+            <SideColumn kind="agent" width={sideLayout.column} onResizeStart={startColumnResize}>
+              <SubagentDrawer
+                sessionId={id}
+                agentId={agentId}
+                showThinking={showThinking}
+                zoom={view.zoom}
+                scrollToTool={searchParams.get(AGENT_TOOL_PARAM)}
+                scrollToUuid={searchParams.get(AGENT_MSG_PARAM)}
+                jumpNonce={jumpNonce}
+                running={agentRunning}
+                onClose={closeAgent}
+              />
+            </SideColumn>
           )}
           {fileRef && (
-            <FileViewerPanel
-              // Keyed on the reference: opening another file starts a fresh panel
-              // rather than scrolling the previous one's state onto a new body.
-              key={formatFileRef(fileRef)}
-              sessionId={id}
-              projectPath={projectPath}
-              fileRef={fileRef}
-              onClose={closeFile}
-            />
+            <SideColumn kind="file" width={sideLayout.column} onResizeStart={startColumnResize}>
+              <FileViewerPanel
+                // Keyed on the reference: opening another file starts a fresh panel
+                // rather than scrolling the previous one's state onto a new body.
+                // The COLUMN is not keyed, so its width survives the remount.
+                key={formatFileRef(fileRef)}
+                sessionId={id}
+                projectPath={projectPath}
+                fileRef={fileRef}
+                onClose={closeFile}
+              />
+            </SideColumn>
           )}
         </div>
       </SubagentContext>

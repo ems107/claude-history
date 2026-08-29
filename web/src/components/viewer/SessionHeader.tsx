@@ -197,12 +197,20 @@ export function SessionHeader({
   const cost = sessionCostParts(s, prices.data?.prices ?? {});
 
   return (
-    <div className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">
+    // A measurement hook, like `data-conversation-scroller` and `data-inspector`:
+    // this header is inside the box that narrows when a column opens beside the
+    // session, so its facts row can rewrap — and whatever height it takes, the
+    // scroller under it gives up.
+    <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">
       <div className="flex items-center gap-2">
         <Link to={listUrl()} className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
           ←
         </Link>
-        <ProjectTag name={s.projectName} path={s.projectPath} color={color} />
+        {/* `shrink`, which the list deliberately does not pass: this header can
+            be squeezed to 320 px by a column opened beside the session, and a
+            tag that held its full width there pushed the row's own controls out
+            of the box — where the clip then ate them. */}
+        <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
         {draft ? (
           <h1 className="min-w-0 truncate text-base font-semibold text-[var(--text-dim)]" title={s.title}>
             {s.title}

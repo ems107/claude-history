@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { WIDTH_MIN } from './viewPrefs.ts';
+import { INSPECTOR_MAX, INSPECTOR_MIN, trackPointer } from './sideColumns.ts';
 
 /**
  * Which panel is open beside the conversation, and how wide it is.
@@ -18,23 +18,15 @@ import { WIDTH_MIN } from './viewPrefs.ts';
  */
 
 /**
- * The rail's width. A constant rather than a class because two overlays have to
- * step around it: the subagent drawer and the file viewer are `position: fixed`
- * against the right edge, and the rail is furniture — nothing covers it.
- *
- * 72 px and not the 44 an icon needs, because every item carries its LABEL.
- * Six unlabelled glyphs down the side of the window is six things to learn and
- * a tooltip to wait for; the words cost 28 px once.
+ * `RAIL_PX` and `GRIP_PX` used to live here, and moved to `lib/sideColumns.ts`
+ * when the file viewer and the subagent transcript became columns: they are the
+ * layout's constants rather than the inspector's, and every column beside the
+ * conversation is measured against them. This module is the rail's own state —
+ * which panel is open, and how wide the inspector was dragged.
  */
-export const RAIL_PX = 72;
-
-/** The seam between the conversation and the inspector — `w-1`, as in the list's sidebar. */
-export const GRIP_PX = 4;
 
 const WIDTH_KEY = 'inspectorWidth';
 const INSPECTOR_DEFAULT = 400;
-const INSPECTOR_MIN = 320;
-const INSPECTOR_MAX = 900;
 
 export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'agents' | 'lineage';
 
@@ -56,7 +48,13 @@ export interface InspectorState {
   items: PanelItem[];
   toggle: (key: PanelKey) => void;
   close: () => void;
-  startResize: (e: React.MouseEvent) => void;
+  startResize: (e: React.MouseEvent, max: number) => void;
+  /**
+   * Its seam is under the hand. The page turns this into `layoutColumns`'
+   * priority, which is what lets an inspector being dragged push the column
+   * beside it out of the way instead of stopping dead against it.
+   */
+  dragging: boolean;
 }
 
 function readWidth(): number {
@@ -106,6 +104,8 @@ export function useInspector({
    */
   const [local, setLocal] = useState<PanelKey | null>(agents.open ? 'agents' : null);
   const [width, setWidth] = useState(readWidth);
+  /** Its seam is under the hand — see `InspectorState.dragging`. */
+  const [dragging, setDragging] = useState(false);
 
   /**
    * What is open is what this says, full stop — and `?agents=1` is a mirror of
@@ -153,27 +153,21 @@ export function useInspector({
     setLocal(null);
   }, [agents]);
 
-  // Dragging the LEFT edge, so the sign is mirrored: the same shape as the
-  // session list's sidebar handle, which is the other one of these in the app.
-  const startResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const from = readWidth();
-    // Never so wide that the conversation drops below the narrowest width the
-    // reader can choose for it. Read once, at the start of the drag: a window
-    // resized afterwards simply squeezes the column, exactly as it always has.
-    const max = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, window.innerWidth - RAIL_PX - GRIP_PX - WIDTH_MIN));
-    const onMove = (ev: MouseEvent) => {
-      const w = Math.min(max, Math.max(INSPECTOR_MIN, from + startX - ev.clientX));
-      setWidth(w);
-      localStorage.setItem(WIDTH_KEY, String(w));
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+  // The same gesture as the column beside it, through the same function: the
+  // seam is anchored to the panel's right edge and follows the pointer, and
+  // `max` — `SideLayout.maxInspector`, passed down by `Inspector` — is where
+  // the column has yielded all it can and the conversation is on its floor.
+  const startResize = useCallback((e: React.MouseEvent, max: number) => {
+    trackPointer(
+      e,
+      INSPECTOR_MIN,
+      Math.min(INSPECTOR_MAX, max),
+      (w) => {
+        setWidth(w);
+        localStorage.setItem(WIDTH_KEY, String(w));
+      },
+      setDragging,
+    );
   }, []);
 
   const items = useMemo<PanelItem[]>(() => {
@@ -248,7 +242,8 @@ export function useInspector({
       toggle,
       close,
       startResize,
+      dragging,
     }),
-    [open, width, items, toggle, close, startResize],
+    [open, width, items, toggle, close, startResize, dragging],
   );
 }
