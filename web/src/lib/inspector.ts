@@ -18,9 +18,16 @@ import { WIDTH_MIN } from './viewPrefs.ts';
  */
 
 /**
- * The rail's width. A constant rather than a class because two overlays have to
- * step around it: the subagent drawer and the file viewer are `position: fixed`
- * against the right edge, and the rail is furniture — nothing covers it.
+ * The rail's width. A constant rather than a class because the layout does
+ * arithmetic with it: it is the first thing subtracted from the window when the
+ * columns beside the conversation are fitted (`lib/sideColumns.ts`) and when
+ * `--conv-box` is worked out.
+ *
+ * It used to be subtracted by the two overlays as well — the subagent drawer and
+ * the file viewer were `position: fixed` at `right: RAIL_PX`, stepping around
+ * the rail so as not to cover it. Both are columns in the flow now, to the right
+ * of the rail, so "the rail is furniture and nothing covers it" holds by
+ * construction rather than by subtraction.
  *
  * 72 px and not the 44 an icon needs, because every item carries its LABEL.
  * Six unlabelled glyphs down the side of the window is six things to learn and
@@ -28,7 +35,11 @@ import { WIDTH_MIN } from './viewPrefs.ts';
  */
 export const RAIL_PX = 72;
 
-/** The seam between the conversation and the inspector — `w-1`, as in the list's sidebar. */
+/**
+ * The seam between two columns — `w-1`, as in the list's sidebar. One value for
+ * all three of them: the inspector's, the subagent column's and the file
+ * column's are the same handle.
+ */
 export const GRIP_PX = 4;
 
 const WIDTH_KEY = 'inspectorWidth';

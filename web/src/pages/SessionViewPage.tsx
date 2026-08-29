@@ -25,7 +25,15 @@ import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
 import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
-import { GRIP_PX, RAIL_PX, useInspector } from '../lib/inspector.ts';
+import { useInspector } from '../lib/inspector.ts';
+import {
+  AGENT_DEFAULT,
+  AGENT_KEY,
+  FILE_DEFAULT,
+  FILE_KEY,
+  useColumnWidth,
+  useSideLayout,
+} from '../lib/sideColumns.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
 import { useWindowFocused } from '../lib/windowFocus.ts';
@@ -42,6 +50,7 @@ import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
+import { SideColumn } from '../components/viewer/SideColumn.tsx';
 import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
@@ -408,14 +417,18 @@ export function SessionViewPage() {
   );
 
   /**
-   * Ctrl+F. Off while a layer owns the screen: the file panel is a single <pre>
-   * the browser's own find handles perfectly well, and the subagent drawer holds
-   * another transcript, which this bar does not read (its `find` prop is already
-   * the right shape to serve that list when it does).
+   * Ctrl+F, and it is on whatever else is open.
+   *
+   * It used to be off while a file or a subagent was up, because both were
+   * layers laid OVER the conversation: searching what you cannot see, and
+   * stepping the page under a panel, is worse than no bar at all. Beside it
+   * instead, the conversation is right there — so the bar searches it, exactly
+   * as it does with an inspector panel open. It still reads only this
+   * transcript and not the drawer's (its `find` prop is already the right shape
+   * to serve that list when it does).
    */
   const finder = useFindBar(session?.turns ?? EMPTY_TURNS, id, {
     showThinking,
-    enabled: !fileRef && !agentId,
     // Read once, on open, and never written back: `hl` belongs to the search
     // that produced it, and a find is a gesture rather than a location.
     seed: highlight,
@@ -695,6 +708,26 @@ export function SessionViewPage() {
     agentCount: session?.subagents.length ?? 0,
     hasLineage: !!session && (session.ancestry.forkedFrom !== null || session.ancestry.descendants.length > 0),
     agents: { open: agentsOpen, toggle: toggleAgents, close: closeAgents },
+  });
+
+  /**
+   * The two columns that open beside the session — a subagent's transcript and
+   * the file a link pointed at. Their widths are held HERE and not inside the
+   * panels: the file viewer is keyed on the reference, so it remounts on every
+   * new file, and a width in its own state would go back to the default each
+   * time a second path was clicked.
+   */
+  const agentColumn = useColumnWidth(AGENT_KEY, AGENT_DEFAULT);
+  const fileColumn = useColumnWidth(FILE_KEY, FILE_DEFAULT);
+  /**
+   * And how wide each of the three is actually drawn. All three go in together,
+   * the inspector included: fitting only the two new ones would let an inspector
+   * dragged wide keep the room they were about to give up.
+   */
+  const sideLayout = useSideLayout({
+    inspector: inspector.open === null ? null : inspector.width,
+    agent: agentId ? agentColumn.width : null,
+    file: fileRef ? fileColumn.width : null,
   });
 
   const navigate = useNavigate();
@@ -1001,8 +1034,8 @@ export function SessionViewPage() {
     return null;
   })();
 
-  /** How much of the window the conversation does NOT get. */
-  const convGutter = RAIL_PX + (inspector.open === null ? 0 : inspector.width + GRIP_PX);
+  /** How much of the window the conversation does NOT get: the rail, every open column, every seam. */
+  const convGutter = sideLayout.gutter;
 
   /**
    * Whichever panel the rail has open. One node rather than six conditionals,
@@ -1066,7 +1099,13 @@ export function SessionViewPage() {
     // subagent's report is a path in this session too.
     <FileRefContext value={fileRefs}>
       <SubagentContext value={subagentContext}>
-        <div className="flex h-full flex-col">
+        {/* The page is a ROW: the session — its own header and everything under
+            it — and then the columns that open BESIDE it. That nesting is the
+            whole of why those columns run the full height: the session's header
+            is inside the box to their left, and the app's header, above all of
+            this, is never covered by either of them. */}
+        <div className="flex h-full min-w-0">
+        <div className="flex min-w-0 flex-1 flex-col">
           <SessionHeader
             detail={session}
             draft={isDraft}
@@ -1261,32 +1300,46 @@ export function SessionViewPage() {
                 />
               </div>
             </div>
-            <Inspector inspector={inspector}>{panel}</Inspector>
+            <Inspector inspector={inspector} width={sideLayout.inspector}>
+              {panel}
+            </Inspector>
             <InspectorRail inspector={inspector} />
           </div>
+        </div>
+          {/* A subagent's transcript, then the file — in that order, and it is
+              the old z-order restated as a position. A path is often clicked
+              from inside a subagent's report, so the report has to stay
+              readable while the file it named is read; the file panel used to
+              buy that by being drawn OVER the drawer, and buys it now by being
+              the column after it. */}
           {agentId && (
-            <SubagentDrawer
-              sessionId={id}
-              agentId={agentId}
-              showThinking={showThinking}
-              zoom={view.zoom}
-              scrollToTool={searchParams.get(AGENT_TOOL_PARAM)}
-              scrollToUuid={searchParams.get(AGENT_MSG_PARAM)}
-              jumpNonce={jumpNonce}
-              running={agentRunning}
-              onClose={closeAgent}
-            />
+            <SideColumn kind="agent" width={sideLayout.agent} onResizeStart={agentColumn.startResize}>
+              <SubagentDrawer
+                sessionId={id}
+                agentId={agentId}
+                showThinking={showThinking}
+                zoom={view.zoom}
+                scrollToTool={searchParams.get(AGENT_TOOL_PARAM)}
+                scrollToUuid={searchParams.get(AGENT_MSG_PARAM)}
+                jumpNonce={jumpNonce}
+                running={agentRunning}
+                onClose={closeAgent}
+              />
+            </SideColumn>
           )}
           {fileRef && (
-            <FileViewerPanel
-              // Keyed on the reference: opening another file starts a fresh panel
-              // rather than scrolling the previous one's state onto a new body.
-              key={formatFileRef(fileRef)}
-              sessionId={id}
-              projectPath={projectPath}
-              fileRef={fileRef}
-              onClose={closeFile}
-            />
+            <SideColumn kind="file" width={sideLayout.file} onResizeStart={fileColumn.startResize}>
+              <FileViewerPanel
+                // Keyed on the reference: opening another file starts a fresh panel
+                // rather than scrolling the previous one's state onto a new body.
+                // The COLUMN is not keyed, so its width survives the remount.
+                key={formatFileRef(fileRef)}
+                sessionId={id}
+                projectPath={projectPath}
+                fileRef={fileRef}
+                onClose={closeFile}
+              />
+            </SideColumn>
           )}
         </div>
       </SubagentContext>

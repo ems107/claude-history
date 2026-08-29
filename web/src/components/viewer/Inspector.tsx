@@ -16,7 +16,22 @@ import type { InspectorState } from '../../lib/inspector.ts';
  * px, which is the work that made the token panel a list of cards instead of a
  * six-column table.
  */
-export function Inspector({ inspector, children }: { inspector: InspectorState; children: ReactNode }) {
+export function Inspector({
+  inspector,
+  width,
+  children,
+}: {
+  inspector: InspectorState;
+  /**
+   * What it is DRAWN at, which is not always what it was dragged to: the page
+   * fits all three columns beside the conversation together, and this one gives
+   * way like the others when a file or a subagent is open beside it. The
+   * remembered width (`inspector.width`) is never rewritten by that, so closing
+   * the other column brings this one back to the size it was left at.
+   */
+  width: number;
+  children: ReactNode;
+}) {
   const item = inspector.items.find((i) => i.key === inspector.open);
   if (!item) return null;
 
@@ -29,7 +44,7 @@ export function Inspector({ inspector, children }: { inspector: InspectorState; 
       />
       <div
         data-inspector
-        style={{ width: inspector.width }}
+        style={{ width }}
         className="flex min-w-0 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-raised)]/50"
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-1.5">

@@ -94,7 +94,6 @@ export function useFindBar(
   sessionId: string,
   opts: {
     showThinking: boolean;
-    enabled: boolean;
     /**
      * The words a search link brought the reader here with. Opening the bar on
      * such a page starts from them — "the search sent me here, now walk all of
@@ -304,8 +303,11 @@ export function useFindBar(
     setAllPinned(false);
   }, [sessionId]);
 
+  // Always listening. It was gated on the page having no layer over the
+  // conversation, which stopped being a state the moment the file viewer and the
+  // subagent transcript became columns BESIDE it — there is nothing left that
+  // hides what this bar marks.
   useEffect(() => {
-    if (!opts.enabled) return;
     const onKey = (e: KeyboardEvent) => {
       // Ctrl+F belongs to whatever has the focus, and inside an embedded
       // terminal that is the CLI's own search, not this bar.
@@ -324,7 +326,7 @@ export function useFindBar(
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [opts.enabled, open, openBar, next, prev]);
+  }, [open, openBar, next, prev]);
 
   const rows = useMemo(() => {
     if (!highlight) return [];
