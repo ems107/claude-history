@@ -86,6 +86,32 @@ export function Field({ id, badge, children }: { id?: string; badge?: ReactNode;
   );
 }
 
+/**
+ * A block that is not a preference row but can still be linked to — the
+ * credentials form, the firewall rule, the list of copies, the paths.
+ *
+ * `Field` would have done the job and brought a flex row and a badge slot with
+ * it, neither of which any of these wants. What they share with a row is only
+ * this: an id search can aim at, and the flash that says it arrived.
+ */
+export function Anchored({
+  id,
+  className = '',
+  children,
+}: {
+  id: string;
+  /** Takes the box's own classes over, so anchoring one adds no wrapper. */
+  className?: string;
+  children: ReactNode;
+}) {
+  const { flashed } = useSettingsPage();
+  return (
+    <div id={id} className={`scroll-mt-16 rounded ${className} ${flashed === id ? 'anchor-flash' : ''}`}>
+      {children}
+    </div>
+  );
+}
+
 const asText = (v: boolean | number | string): string => {
   if (typeof v === 'boolean') return v ? 'on' : 'off';
   if (typeof v === 'string') return v || 'empty';
@@ -201,7 +227,8 @@ export function NumberField({
 }: {
   field: keyof AppSettings & string;
   before: string;
-  after?: string;
+  /** A node, not a string: one of these ends with a live count of what is running. */
+  after?: ReactNode;
   min?: number;
   max?: number;
   step?: number;
@@ -384,11 +411,17 @@ export function Readout({ children }: { children: ReactNode }) {
   return <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">{children}</div>;
 }
 
+/**
+ * `break-words` and not `break-all`: half these values are paths that must be
+ * allowed to break somewhere, and the other half are sentences with clocks in
+ * them that must not be broken mid-figure. The first only breaks what would
+ * otherwise overflow.
+ */
 export function ReadoutRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
       <span className="opacity-60">{label}</span>
-      <span className="break-all">{children}</span>
+      <span className="break-words">{children}</span>
     </>
   );
 }

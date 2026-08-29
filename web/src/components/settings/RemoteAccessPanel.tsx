@@ -1,11 +1,13 @@
-import type { ActiveConnection, AppSettings } from '@claude-history/shared';
+import type { ActiveConnection } from '@claude-history/shared';
 import { BIND_REASONS, MIN_PASSWORD_LENGTH } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../api/client.ts';
-import { useLocalOnly } from '../api/useLocal.ts';
-import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
-import { actionClass } from './controlClass.ts';
+import { api } from '../../api/client.ts';
+import { useLocalOnly } from '../../api/useLocal.ts';
+import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
+import { actionClass } from '../controlClass.ts';
+import { useSettingsPage } from './context.ts';
+import { Anchored } from './controls.tsx';
 
 const inputClass =
   'w-44 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
@@ -29,15 +31,8 @@ const inputClass =
  * it. Saying so is the panel's job: the alternative is a switch that reads "on"
  * beside a port nothing can reach.
  */
-export function RemoteAccessPanel({
-  settings,
-  save,
-  dev,
-}: {
-  settings: AppSettings;
-  save: (patch: Partial<AppSettings>) => void;
-  dev: boolean;
-}) {
+export function RemoteAccessPanel() {
+  const { settings, save, dev } = useSettingsPage();
   const queryClient = useQueryClient();
   const guard = useActiveSessionsGuard();
   const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
@@ -188,26 +183,28 @@ export function RemoteAccessPanel({
 
   return (
     <>
-      <label className={`flex items-start gap-2 ${credentials.disabled ? 'opacity-40' : 'cursor-pointer'}`}>
-        <input
-          type="checkbox"
-          checked={settings.remoteAccessEnabled}
-          disabled={credentials.disabled}
-          onChange={(e) => toggle(e.target.checked)}
-          className="mt-0.5 accent-[var(--accent)]"
-        />
-        <span>
-          Let other machines on this network use claude-history
-          <span className="block text-[11px] text-[var(--text-dim)]">
-            {credentials.disabled
-              ? credentials.reason
-              : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
+      <Anchored id="set-remoteAccessEnabled">
+        <label className={`flex items-start gap-2 ${credentials.disabled ? 'opacity-40' : 'cursor-pointer'}`}>
+          <input
+            type="checkbox"
+            checked={settings.remoteAccessEnabled}
+            disabled={credentials.disabled}
+            onChange={(e) => toggle(e.target.checked)}
+            className="mt-0.5 accent-[var(--accent)]"
+          />
+          <span>
+            Let other machines on this network use claude-history
+            <span className="block text-[11px] text-[var(--text-dim)]">
+              {credentials.disabled
+                ? credentials.reason
+                : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
+            </span>
           </span>
-        </span>
-      </label>
+        </label>
+      </Anchored>
 
       {(formOpen || configured) && !credentials.disabled && (
-        <div className="space-y-2 rounded border border-[var(--border)] p-2">
+        <Anchored id="act-credentials" className="space-y-2 border border-[var(--border)] p-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[var(--text-dim)]">{configured && !formOpen ? 'Signing in uses' : 'Set'}</span>
             {configured && !formOpen ? (
@@ -265,7 +262,7 @@ export function RemoteAccessPanel({
             No old password is ever asked for: being at this machine is already enough to run anything on it, so it is
             what gets you back in after forgetting one.
           </p>
-        </div>
+        </Anchored>
       )}
 
       {settings.remoteAccessEnabled && (
@@ -291,7 +288,7 @@ export function RemoteAccessPanel({
       )}
 
       {!firewallOnly.disabled && showBind && (
-        <div className="space-y-2 rounded border border-[var(--border)] p-2">
+        <Anchored id="act-firewall" className="space-y-2 border border-[var(--border)] p-2">
           {settings.remoteAccessEnabled && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[var(--text-dim)]">
@@ -473,11 +470,11 @@ export function RemoteAccessPanel({
             Turning this on does not open the port by itself, and that is the point: the server waits until Windows
             already allows it, so installing an update can never make Windows ask you for permission.
           </p>
-        </div>
+        </Anchored>
       )}
 
       {configured && (
-        <div className="flex flex-wrap items-center gap-2 pt-1">
+        <Anchored id="act-sign-out" className="flex flex-wrap items-center gap-2 pt-1">
           {remote && (
             <button
               type="button"
@@ -509,7 +506,7 @@ export function RemoteAccessPanel({
           >
             Sign out everywhere
           </button>
-        </div>
+        </Anchored>
       )}
 
       {note && <p className="text-[11px] text-[var(--text-dim)]">{note}</p>}

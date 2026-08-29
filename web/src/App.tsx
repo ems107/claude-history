@@ -214,7 +214,10 @@ export function App() {
           <Route path="/starred" element={<StarredPage />} />
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/stats" element={<StatsPage />} />
+          {/* Both, rather than an optional segment: `/settings` is in the README
+              and in every bookmark, and it goes on landing on the first area. */}
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/:area" element={<SettingsPage />} />
           {/* Diagnostics, reached from Settings — deliberately not in the nav. */}
           <Route path="/logs" element={<LogsPage />} />
         </Routes>

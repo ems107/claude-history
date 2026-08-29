@@ -46,6 +46,15 @@ export interface Group {
   id: string;
   area: AreaId;
   title: string;
+  /**
+   * What the rail calls it, where a title has to fit in 224 px minus its indent.
+   *
+   * Only where the heading is a sentence: "Which stops, and what each one sounds
+   * like" is the right heading over those switches and the wrong label to
+   * navigate by, and truncating it to "Which stops, and what each one s…" is
+   * neither. Same split `PanelItem.short` makes for the inspector rail.
+   */
+  short?: string;
 }
 
 export interface Entry {
@@ -115,18 +124,18 @@ export const AREAS: Area[] = [
 export const GROUPS: Group[] = [
   { id: 'notify-announce', area: 'notifications', title: 'Announcing a stop' },
   { id: 'notify-sound', area: 'notifications', title: 'Sound' },
-  { id: 'notify-kinds', area: 'notifications', title: 'Which stops, and what each one sounds like' },
+  { id: 'notify-kinds', area: 'notifications', title: 'Which stops, and what each one sounds like', short: 'Which stops' },
   { id: 'notify-voice', area: 'notifications', title: 'The narrator' },
 
   { id: 'usage', area: 'claude', title: 'Subscription usage' },
   { id: 'auto-reload', area: 'claude', title: 'The 5-hour window' },
-  { id: 'chat', area: 'claude', title: 'Sending prompts from the app' },
+  { id: 'chat', area: 'claude', title: 'Sending prompts from the app', short: 'Sending prompts' },
 
   { id: 'remote-access', area: 'access', title: 'Remote access' },
 
-  { id: 'backups', area: 'data', title: 'Your data, and how to get it back' },
+  { id: 'backups', area: 'data', title: 'Your data, and how to get it back', short: 'Backups' },
   { id: 'prices', area: 'data', title: 'Prices' },
-  { id: 'claude-retention', area: 'data', title: 'How long Claude keeps your history' },
+  { id: 'claude-retention', area: 'data', title: 'How long Claude keeps your history', short: "Claude's retention" },
 
   { id: 'updates', area: 'system', title: 'Updates' },
   { id: 'logs', area: 'system', title: 'Logs' },

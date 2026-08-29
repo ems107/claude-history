@@ -1,10 +1,11 @@
 import type { UserdataBackup } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { api } from '../api/client.ts';
-import { formatDateTime, relativeTime } from '../lib/format.ts';
-import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
-import { actionClass } from './controlClass.ts';
+import { api } from '../../api/client.ts';
+import { formatDateTime, relativeTime } from '../../lib/format.ts';
+import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
+import { actionClass } from '../controlClass.ts';
+import { Anchored } from './controls.tsx';
 
 /** Bytes, in the two digits that mean something at these sizes. */
 function size(bytes: number): string {
@@ -127,7 +128,7 @@ export function BackupsPanel() {
         </p>
       )}
 
-      <div className="flex items-center gap-2">
+      <Anchored id="act-backup-now" className="flex items-center gap-2">
         <button type="button" onClick={takeOne} disabled={busy} className={actionClass}>
           Back up now
         </button>
@@ -135,7 +136,7 @@ export function BackupsPanel() {
           {isFetching ? 'Reading…' : 'Refresh'}
         </button>
         <span className="ml-auto font-mono text-[11px] break-all text-[var(--text-dim)]">{data.backupsDir}</span>
-      </div>
+      </Anchored>
 
       {note && <p className="text-[var(--text-dim)]">{note}</p>}
       {error && <p className="rounded border border-red-500/40 px-2 py-1.5 text-red-300">{error}</p>}
@@ -145,7 +146,7 @@ export function BackupsPanel() {
           No copies yet. The first one is taken the next time anything in that file changes.
         </p>
       ) : (
-        <ul className="divide-y divide-[var(--border)]">
+        <ul id="act-restore" className="scroll-mt-16 divide-y divide-[var(--border)]">
           {data.backups.map((b, i) => (
             <li key={b.name} className="py-2">
               <div className="flex items-baseline gap-2">

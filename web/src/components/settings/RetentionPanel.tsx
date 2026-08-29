@@ -2,12 +2,12 @@ import type { RetentionSource } from '@claude-history/shared';
 import { CLAUDE_SWEEP_INTERVAL_HOURS } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
-import { api } from '../api/client.ts';
-import { useLocalOnly } from '../api/useLocal.ts';
-import { copyPlain } from '../lib/clipboard.ts';
-import { formatDateTime, relativeTime } from '../lib/format.ts';
-import { retentionLabel, retentionView } from '../lib/retention.ts';
-import { actionClass } from './controlClass.ts';
+import { api } from '../../api/client.ts';
+import { useLocalOnly } from '../../api/useLocal.ts';
+import { copyPlain } from '../../lib/clipboard.ts';
+import { formatDateTime, relativeTime } from '../../lib/format.ts';
+import { retentionLabel, retentionView } from '../../lib/retention.ts';
+import { actionClass } from '../controlClass.ts';
 
 /** What one settings file has to say, in the one word that matters. */
 function sourceValue(s: RetentionSource): { text: string; tone: string } {
@@ -45,7 +45,7 @@ export function RetentionPanel() {
 
   return (
     <>
-      <p>
+      <p id="info-retention" className="scroll-mt-16">
         Claude Code keeps your conversations for{' '}
         <span className={`font-semibold ${view.tone === 'warn' ? 'text-amber-400' : 'text-[var(--text)]'}`}>
           {retentionLabel(view, false)}
