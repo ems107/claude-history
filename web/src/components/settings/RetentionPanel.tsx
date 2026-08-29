@@ -46,7 +46,7 @@ export function RetentionPanel() {
 
   return (
     <>
-      <p id="info-retention" className="scroll-mt-16">
+      <p id="info-retention" className="max-w-prose scroll-mt-16">
         Claude Code keeps your conversations for{' '}
         <span className={`font-semibold ${view.tone === 'warn' ? 'text-amber-400' : 'text-[var(--text)]'}`}>
           {retentionLabel(view, false)}
@@ -74,14 +74,14 @@ export function RetentionPanel() {
       </p>
 
       {view.blocked && (
-        <p className="rounded border border-red-500/40 px-2 py-1.5 text-red-300">
+        <p className="max-w-prose rounded border border-red-500/40 px-2 py-1.5 text-red-300">
           Claude Code is not cleaning up <span className="font-semibold">at all</span> right now: {view.blocked}. It
           stays paused — nothing is deleted, and the figure above is what <em>would</em> apply, not what does — until
           that file is valid JSON again.
         </p>
       )}
 
-      <p className={!view.blocked && view.expired > 0 ? 'text-amber-400' : 'text-[var(--text-dim)]'}>
+      <p className={`max-w-prose ${!view.blocked && view.expired > 0 ? 'text-amber-400' : 'text-[var(--text-dim)]'}`}>
         {view.expired > 0 ? (
           <>
             {view.expired} of the {data.countedSessions} sessions listed here are already past that cutoff
@@ -100,8 +100,13 @@ export function RetentionPanel() {
 
       {/* Every file looked at, including the ones that are not there: "we checked
           and it does not exist" is an answer, and hiding it turns the winner
-          above into something the user has to take on trust. */}
-      <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 border-t border-[var(--border)] pt-3 font-mono text-[11px] text-[var(--text-dim)]">
+          above into something the user has to take on trust.
+
+          The slack goes to the LAST column, not the middle one. With `1fr` on
+          the path the values were flung to the far edge of a 975 px card, half a
+          screen from the file they belong to; `auto` on the path still sizes
+          that column to the longest of them, so the values line up anyway. */}
+      <div className="grid grid-cols-[auto_auto_1fr] gap-x-3 gap-y-1 border-t border-[var(--border)] pt-3 font-mono text-[11px] text-[var(--text-dim)]">
         {data.sources.map((s) => {
           const value = sourceValue(s);
           return (
@@ -125,11 +130,11 @@ export function RetentionPanel() {
 
       {data.projectOverrides.length > 0 && (
         <div className="space-y-1 border-t border-[var(--border)] pt-3">
-          <p className="text-amber-400">
+          <p className="max-w-prose text-amber-400">
             These projects have their own settings, and a project's settings beat yours whenever Claude Code is started
             inside it — the sweep is global, so the value in force is the one of wherever it happened to be launched.
           </p>
-          <div className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
+          <div className="grid grid-cols-[auto_auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
             {data.projectOverrides.map((o) => {
               const value = sourceValue(o);
               return (

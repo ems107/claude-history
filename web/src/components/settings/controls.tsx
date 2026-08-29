@@ -149,9 +149,13 @@ export function GroupCard({
       )}
 
       {/* Said once, beside the switch that would change it — never repeated over
-          the other groups the same switch happens to govern. */}
+          the other groups the same switch happens to govern.
+
+          The BOX takes the sentence's width rather than the card's. Capping the
+          text inside a full-width box was tried first and read worse than
+          either: three wrapped lines with 600 px of empty border beside them. */}
       {master && !on && offNote && (
-        <p className="mb-3 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
+        <p className="mb-3 max-w-prose rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
           {offNote}
         </p>
       )}
@@ -385,7 +389,7 @@ export function NumberField({
         />
         {after && <span>{after}</span>}
       </label>
-      {note && <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-dim)]">{note}</p>}
+      {note && <p className="mt-0.5 max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{note}</p>}
     </Field>
   );
 }
@@ -646,7 +650,7 @@ export function Explain({ label = 'How it works', children }: { label?: string; 
   return (
     <div className="pt-1">
       <Fold label={label}>
-        <div className="space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</div>
+        <div className="max-w-prose space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</div>
       </Fold>
     </div>
   );

@@ -101,7 +101,7 @@ export function SettingsPage() {
       <div className="flex h-full">
         <SettingsNav area={changedView ? null : area} scroller={scroller} />
         <div ref={setScroller} className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-4 px-6 py-5">
+          <div className="mx-auto max-w-5xl space-y-4 px-6 py-5">
             <header>
               <h1 className="text-lg font-semibold">{info?.title}</h1>
               <p className="text-xs text-[var(--text-dim)]">{info?.blurb}</p>

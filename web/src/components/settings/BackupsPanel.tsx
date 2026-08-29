@@ -113,7 +113,7 @@ export function BackupsPanel() {
   return (
     <>
       {data.recovered && (
-        <p className="rounded border border-amber-500/40 px-2 py-1.5 text-amber-300">
+        <p className="max-w-prose rounded border border-amber-500/40 px-2 py-1.5 text-amber-300">
           This start-up found <span className="font-mono">userdata.json</span> unreadable and restored{' '}
           <span className="font-mono break-all">{data.recovered.from}</span> ({relativeTime(data.recovered.at)}). The
           broken file was kept beside it as <span className="font-mono">userdata.json.corrupt-…</span>; the log says
