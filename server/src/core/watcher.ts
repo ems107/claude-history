@@ -35,7 +35,11 @@ export class Watcher {
       if (filename && !/\.(jsonl|json)$/.test(filename)) return;
       this.debounce('projects', 300, () => void this.index.rescan());
     });
-    const okSessions = this.tryWatch(this.config.sessionsDir, false, () => {
+    const okSessions = this.tryWatch(this.config.sessionsDir, false, (filename) => {
+      // `<pid>.json` is the whole of what this directory has to say; the `.key`
+      // files beside them are Claude Code's own business, and re-reading every
+      // running CLI because one of them was touched is work for nothing.
+      if (filename && !filename.endsWith('.json')) return;
       this.debounce('live', 300, () => void this.index.refreshLive());
     });
     this.tryWatch(this.config.dataRoot, false, (filename) => {
