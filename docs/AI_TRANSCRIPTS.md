@@ -126,7 +126,17 @@ The queued envelope *means* "a turn was running" — it is the same one a prompt
 
 The `user` envelope is the other half of the same fact: the session had gone quiet and the notification is what woke it, so a real exchange follows and the turn is real. **Except behind another notice** — agents that finish together are delivered back to back, and a turn each leaves all but the last holding nothing but the news.
 
-**The block carries eight fields and only one is noise**: `<task-id>`, `<tool-use-id>`, `<status>` (`completed`/`failed`), `<summary>`, `<result>`, `<usage>` (`subagent_tokens`, `tool_uses`, `duration_ms` — an agent's, and not to be confused with what the transcript bills), `<event>` and `<output-file>` — the last worth dropping (it points at a temp copy of the subagent's own JSONL). Not every producer writes every one: a background command's block is `<task-id>` + `<status>` + `<summary>` and nothing else, and a **`Monitor` event** carries `<event>` with no `<status>` and no `<tool-use-id>` at all ("Monitor event: … [Monitor timed out — re-arm if needed.]", `f3384d17`).
+**The block carries eight fields and only one is noise**: `<task-id>`, `<tool-use-id>`, `<status>` (`completed`/`failed`), `<summary>`, `<result>`, `<usage>` (`subagent_tokens`, `tool_uses`, `duration_ms` — an agent's, and not to be confused with what the transcript bills), `<event>` and `<output-file>` — the last worth dropping (it points at a temp copy of the subagent's own JSONL). Not every producer writes every one, and **`<tool-use-id>` is the field to be careful about, because it is the only link back to what started the task** — `?tool=` resolves it against any `data-tool-id`, so its presence is exactly whether the notice can offer `↑ the call`:
+
+| Producer | Notices | Names a `<tool-use-id>` | It resolves in the same transcript |
+| --- | --- | --- | --- |
+| Agent | 121 | 120 | 120, to the `Agent` call |
+| Background command | 56 | **56** | 56, to a `Bash` (50) or `PowerShell` (6) call |
+| `Monitor` event | 1 | 0 — `<event>` and no `<status>` either (`f3384d17`) | — |
+| MCP task | 1 | 0 (`670bfd31`) | — |
+| `<fork-source>` | 1 | 0 | — |
+
+So **171 of the 175 name a call, and all 171 resolve** — a background command is not the poor relation this used to claim ("`<task-id>` + `<status>` + `<summary>` and nothing else"): it carries `<tool-use-id>` and `<output-file>` too, in all 56 here. The three shapes at the foot are the ones with nothing to point at. An **MCP task** is a tool that outstayed its 120 s and was moved to the background (`<task-id>` of 9 characters, `<status>`, `<summary>` "MCP task … completed.", `<result>` a JSON blob); **`<fork-source>`** is the odd one out entirely — no `<task-id>`, no `<summary>`, no `<status>`, just a paragraph saying this session began as a copy of one still running, which leaves `parseNotification` holding the raw block as its `text`. The `task-id` of all three is still announced in the launching tool's own `result` **text** ("Command running in background with ID: …", "Monitor started (task …", "moved to the background as task …"), but that is a different sentence per producer, so nothing reads it.
 
 **`<result>` is the whole report an agent handed back, and this is its only copy in the parent transcript.** The tool result of the call itself is 1,084 characters of harness boilerplate ("Async agent launched successfully… never quote any part of it"), identical for every call. 53 reports here, 1,076 KB, p50 22.5 KB, max 56.7 KB — so `parseNotification` does not truncate them, where the tool-result limit would halve most.
 
