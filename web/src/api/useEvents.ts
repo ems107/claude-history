@@ -7,6 +7,19 @@ import { markUsageRead } from './usageReason.ts';
 /** Collapses the write burst of a single turn into one usage read. */
 const USAGE_DEBOUNCE_MS = 3_000;
 /**
+ * How long a refetch of the expensive queries waits for the rest of its burst.
+ *
+ * One line written by a working session produces two events, not one:
+ * `rescan()` emits `sessions-changed` and fires the enricher without waiting
+ * for it, and the enricher emits `session-updated` when it lands — measured 40
+ * to 200 ms later. Both mean "this session moved", both invalidate the same
+ * keys, and they are too far apart for TanStack to dedupe, so the list came
+ * back twice per line: ~600 KB and a re-sort of every row, for one row.
+ *
+ * Long enough to cover that gap, short enough that nobody sees it.
+ */
+const BURST_MS = 250;
+/**
  * A second above the server's own floor on purpose: the server measures it
  * from the moment it actually fetched, which is later than the moment we
  * asked, so asking at exactly the floor lands on the cached side of the
@@ -24,6 +37,9 @@ export function useEvents(): void {
   const usageAskedAt = useRef(0);
   /** Sessions Claude answered in while the debounce timer was running. */
   const pendingIds = useRef(new Set<string>());
+  const burstTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Keys asked for during the burst, by their serialised form, so each is refetched once. */
+  const burstKeys = useRef(new Map<string, readonly unknown[]>());
   useEffect(() => {
     /**
      * Subscription usage moves when Claude answers, and the server says which
@@ -58,6 +74,29 @@ export function useEvents(): void {
       }, wait);
     };
 
+    /**
+     * The keys a write burst would otherwise ask for twice: the 600 KB session
+     * list, the project colours derived from it, and the transcript of whatever
+     * moved — a full server-side parse each time.
+     *
+     * A THROTTLE, not a debounce: the first event of a burst schedules the
+     * refetch and the rest join it without pushing the timer back, so a session
+     * writing without pause cannot starve its own row of an update. Only the
+     * SSE goes through here. An invalidation that follows something the user
+     * just did — a rename, a pin — stays immediate, and so does `['live']`,
+     * which is small and is what moves the badge on the session page.
+     */
+    const burst = (...keys: readonly unknown[][]) => {
+      for (const k of keys) burstKeys.current.set(JSON.stringify(k), k);
+      if (burstTimer.current) return;
+      burstTimer.current = setTimeout(() => {
+        burstTimer.current = null;
+        const due = [...burstKeys.current.values()];
+        burstKeys.current.clear();
+        for (const queryKey of due) void queryClient.invalidateQueries({ queryKey });
+      }, BURST_MS);
+    };
+
     const es = new EventSource('/api/events');
     es.onmessage = (e) => {
       let event: ServerEvent;
@@ -68,9 +107,7 @@ export function useEvents(): void {
       }
       switch (event.type) {
         case 'sessions-changed':
-          void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-          void queryClient.invalidateQueries({ queryKey: ['projects'] });
-          for (const id of event.ids) void queryClient.invalidateQueries({ queryKey: ['session', id] });
+          burst(['sessions'], ['projects'], ...event.ids.map((id) => ['session', id]));
           /**
            * A subagent's transcript is a conversation of its own behind its own
            * key, and nothing else here reaches it: without this the drawer drew
@@ -93,13 +130,12 @@ export function useEvents(): void {
           kickUsage(event.assistantIds ?? []);
           break;
         case 'session-updated':
-          void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-          void queryClient.invalidateQueries({ queryKey: ['session', event.id] });
+          burst(['sessions'], ['session', event.id]);
           break;
         // Something registered under ~/.claude/sessions moved: a turn started or
         // ended, a CLI came up, a CLI is gone.
         case 'live-changed':
-          void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+          burst(['sessions']);
           void queryClient.invalidateQueries({ queryKey: ['live'] });
           /**
            * A CLI that is not ours took a session or let go of it, and the only
@@ -135,7 +171,7 @@ export function useEvents(): void {
           // The list shows these turns as busy, and its only source for that is
           // the chat state — so the badge moves with this event, not with
           // 'live-changed', which knows nothing about our processes.
-          void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+          burst(['sessions']);
           void queryClient.invalidateQueries({ queryKey: ['live'] });
           break;
         // A terminal opened, its CLI exited, or it was closed. Its own event
@@ -147,7 +183,7 @@ export function useEvents(): void {
           // The buttons that refuse while a terminal holds a session read this:
           // the composer's `blockedReason` and "Resume in terminal".
           void queryClient.invalidateQueries({ queryKey: ['chat', event.id] });
-          void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+          burst(['sessions']);
           void queryClient.invalidateQueries({ queryKey: ['live'] });
           break;
         // Only the stars. Never `['session', id]`: the transcript did not
@@ -202,6 +238,11 @@ export function useEvents(): void {
     return () => {
       es.close();
       if (usageTimer.current) clearTimeout(usageTimer.current);
+      if (burstTimer.current) {
+        clearTimeout(burstTimer.current);
+        burstTimer.current = null;
+        burstKeys.current.clear();
+      }
     };
   }, [queryClient]);
 }

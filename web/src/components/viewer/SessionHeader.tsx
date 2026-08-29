@@ -1,6 +1,6 @@
 import type { SessionDetail } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
@@ -174,33 +174,27 @@ export function SessionHeader({
 }) {
   const s = detail.summary;
   /**
-   * The figures survive their own recalculation. A transcript that grows
-   * invalidates the cached enrichment, so `GET /api/sessions/:id` answers
-   * WITHOUT it for as long as the enricher takes — measured at ~105 ms — and the
-   * counts are the only thing in this header that comes and goes. Losing them
-   * for that moment took 22 px out of the page, so every message a live session
-   * wrote shoved the whole conversation down and pulled it back: the shake.
-   * Keeping the last figures is stiller and no less true — they are one message
-   * stale for a tenth of a second instead of absent — and a session with no
-   * enrichment at all still draws no figures, because there is nothing to
-   * remember. They share a WRAPPING row with the rest of the facts now, where a
-   * chip coming and going can cost a whole line rather than 22 px.
+   * The figures survive their own recalculation, and this header no longer has
+   * to do anything about it. A transcript that grows invalidates the cached
+   * enrichment and the re-parse takes ~105 ms, during which the counts used to
+   * be absent — 22 px out of the page, so every message a live session wrote
+   * shoved the whole conversation down and pulled it back. This component kept
+   * the last figures in a ref to stand still; the server keeps them now, for
+   * every reader at once ([AI_ARCHITECTURE.md](../../../../docs/AI_ARCHITECTURE.md)),
+   * so `enrichment` is null here only when the session has never been enriched
+   * — and then there is nothing to draw, which is right. They share a WRAPPING
+   * row with the rest of the facts, where a chip coming and going can cost a
+   * whole line rather than 22 px.
    */
-  const lastEnrichment = useRef(s.enrichment);
-  if (s.enrichment) lastEnrichment.current = s.enrichment;
-  const e = s.enrichment ?? lastEnrichment.current;
+  const e = s.enrichment;
   const [editing, setEditing] = useState(false);
   const [details, setDetails] = useState(() => localStorage.getItem(KEY) === 'true');
   // One shared query with every other reader of the price table.
   const prices = useQuery({ queryKey: ['prices'], queryFn: api.prices });
   // The same figure, from the same function, as the list and the sort: a session
   // that delegated its work to eleven agents spent that money as surely as one
-  // that did the work itself. Remembered along with the counts, or it would
-  // blink out on every message a live session writes.
-  const cost = sessionCostParts(
-    e ? { ...s, enrichment: e } : s,
-    prices.data?.prices ?? {},
-  );
+  // that did the work itself.
+  const cost = sessionCostParts(s, prices.data?.prices ?? {});
 
   return (
     <div className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">

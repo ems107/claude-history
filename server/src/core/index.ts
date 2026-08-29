@@ -126,6 +126,37 @@ export interface TextEntry extends CacheKey {
 }
 
 /**
+ * Everything a reader can tell apart about what is running, in one string, so
+ * `refreshLive` can keep quiet when a rewritten status file says what the last
+ * one said.
+ *
+ * `updatedAt` is deliberately not in it on its own: it moves on every write,
+ * which is precisely the noise being filtered, and nothing shows it. What is
+ * shown is `statusUpdatedAt ?? updatedAt` — the clock under the idle and
+ * waiting badges — so that is what goes in, and a CLI too old to write a
+ * `statusUpdatedAt` still gets its clock moved.
+ */
+function liveFingerprint(live: readonly LiveSessionEntry[]): string {
+  return live
+    .map((l) =>
+      JSON.stringify([
+        l.pid,
+        l.sessionId,
+        l.cwd,
+        l.status,
+        l.waitingFor,
+        l.name,
+        l.startedAt,
+        l.statusUpdatedAt ?? l.updatedAt,
+        l.busySince,
+        l.entrypoint,
+      ]),
+    )
+    .sort()
+    .join();
+}
+
+/**
  * In-memory index of all sessions. Summaries come from a cheap head/tail scan
  * (disk-cached by size+mtime); enrichment runs in the background afterwards
  * and progressively fills token totals, PR links and resume ancestry.
@@ -345,7 +376,10 @@ export class SessionIndex {
    */
   async refreshLive(): Promise<void> {
     const before = new Set(this.live.map((l) => l.sessionId));
-    this.live = await readLiveSessions(this.config.sessionsDir);
+    const wasSaying = liveFingerprint(this.live);
+    // What we last read is what an unreadable file falls back to: a busy CLI
+    // rewrites its status file under us, and a dropped entry is a badge gone.
+    this.live = await readLiveSessions(this.config.sessionsDir, this.live);
     const after = new Set(this.live.map((l) => l.sessionId));
     // What the pid file cannot say: when the open TURN began. `statusUpdatedAt`
     // moves on every flip — answering a permission restarts it — so the moment
@@ -364,7 +398,14 @@ export class SessionIndex {
     for (const id of this.turnStarts.keys()) if (!after.has(id)) this.turnStarts.delete(id);
     const ids = [...new Set([...before, ...after])].filter((id) => before.has(id) !== after.has(id));
     this.applyLive();
-    this.events.emit('live-changed', ids);
+    // Silence when nothing moved. The event costs every browser a refetch of
+    // the whole list, and most of what wakes this method is not news: a CLI
+    // rewrites its status file to say the same thing it said a moment ago.
+    // `ids` alone cannot decide it — a busy/idle flip is real news and carries
+    // none — so the whole of what a reader can tell apart is compared instead.
+    if (ids.length > 0 || liveFingerprint(this.live) !== wasSaying) {
+      this.events.emit('live-changed', ids);
+    }
   }
 
   private applyLive(): void {
@@ -390,10 +431,33 @@ export class SessionIndex {
     this.history = await readHistoryData(this.config.historyFile);
   }
 
-  /** Re-summarize one session file (initial build and watcher updates). */
+  /**
+   * Re-summarize one session file (initial build and watcher updates).
+   *
+   * **A fresh summary knows nothing the file does not say, and two of its fields
+   * are not in the file.** `live` is put back by `applyLive()` and the overrides
+   * by `withOverride()` at serve time; `enrichment` and `descendants` have
+   * nothing behind them, so a summary rebuilt from scratch answers without them
+   * — and that gap is drawn. The enricher fills the first one back in ~100 ms
+   * later, which sounds like nothing until you watch a session work: every line
+   * it writes took the cost, the compaction count and the PR and fork badges out
+   * of its row and put them back, and the meta line shoved the LIVE and WORKING
+   * badges sideways twice a second. The second field is worse — only a CHILD
+   * being re-enriched restores `descendants`, which may never happen, so a
+   * parent that grew lost its "branched into" chips for good.
+   *
+   * So they are carried across: one message stale for a tenth of a second beats
+   * absent, which is the same call the session header used to make for itself
+   * before this made it unnecessary. A session that has never been enriched
+   * still has null here, because there is nothing to remember.
+   */
   async refreshSummary(s: ScannedSession): Promise<void> {
     try {
-      this.sessions.set(s.id, await summarizeSession(s, this.history.sessionProject));
+      const prev = this.sessions.get(s.id);
+      const next = await summarizeSession(s, this.history.sessionProject);
+      if (prev?.enrichment) next.enrichment = prev.enrichment;
+      if (prev && prev.descendants.length > 0) next.descendants = prev.descendants;
+      this.sessions.set(s.id, next);
       this.scanned.set(s.id, s);
     } catch (err) {
       log.warn(`failed to summarize ${s.filePath}`, err);

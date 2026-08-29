@@ -174,8 +174,17 @@ export function SessionListPage() {
 
   // Keyboard navigation: j/k or arrows move, Enter opens, / focuses search.
   const navigate = useNavigate();
-  const [selected, setSelected] = useState(-1);
-  useEffect(() => setSelected(-1), [rows]);
+  /**
+   * The selection is a SESSION, not a position. It used to be the index, reset
+   * to -1 whenever `rows` changed identity — which is every refetch, and with a
+   * live session that is every couple of seconds: the highlight under the row
+   * you had just moved to went out on its own while you looked at it. The index
+   * is derived instead, so the row keeps its highlight through a refetch that
+   * reordered it, and -1 comes back only when that session is genuinely no
+   * longer in the list.
+   */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId === null ? -1 : rows.findIndex((r) => r.kind === 'session' && r.id === selectedId);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -192,25 +201,21 @@ export function SessionListPage() {
       if (e.key === 'j' || e.key === 'ArrowDown' || e.key === 'k' || e.key === 'ArrowUp') {
         e.preventDefault();
         const step = e.key === 'j' || e.key === 'ArrowDown' ? 1 : -1;
-        setSelected((prev) => {
-          // Group headers are rows too, but never selectable.
-          let next = prev + step;
-          while (next >= 0 && next < rows.length && rows[next].kind === 'header') next += step;
-          if (next < 0 || next >= rows.length) return prev;
-          virtualizer.scrollToIndex(next);
-          return next;
-        });
+        // Group headers are rows too, but never selectable.
+        let next = selected + step;
+        while (next >= 0 && next < rows.length && rows[next].kind === 'header') next += step;
+        if (next < 0 || next >= rows.length) return;
+        virtualizer.scrollToIndex(next);
+        const row = rows[next];
+        if (row.kind === 'session') setSelectedId(row.id);
       } else if (e.key === 'Enter') {
-        setSelected((prev) => {
-          const row = rows[prev];
-          if (row?.kind === 'session') navigate(`/session/${row.id}`);
-          return prev;
-        });
+        const row = rows[selected];
+        if (row?.kind === 'session') navigate(`/session/${row.id}`);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [rows, searchActive, navigate, virtualizer]);
+  }, [rows, searchActive, navigate, virtualizer, selected]);
 
   if (sessions.isLoading) {
     return <div className="p-8 text-[var(--text-dim)]">Scanning sessions…</div>;
