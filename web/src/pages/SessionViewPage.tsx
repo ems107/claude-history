@@ -22,7 +22,7 @@ import { anchorOfKey, focusKeyAt, parseHighlight, setHighlightTerms, TOOL_PARAM 
 import { selectMessage, useRestoredSelection } from '../lib/selectedMessage.ts';
 import { collectSessionFiles } from '../lib/sessionFiles.ts';
 import { buildSubagentIndex, runningAgents } from '../lib/subagents.ts';
-import { toolCallIds } from '../lib/toolCalls.ts';
+import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { GRIP_PX, RAIL_PX, useInspector } from '../lib/inspector.ts';
@@ -542,11 +542,12 @@ export function SessionViewPage() {
     [session],
   );
   /**
-   * Every call this parse drew, which is what says a jump has somewhere to land.
-   * A walk of its own rather than the subagent index's, because the notices that
-   * ask are mostly not agents' and half of their sessions hold no subagent at all.
+   * Every call this parse drew, which is what says a jump has somewhere to land,
+   * and which of them announced a task. A walk of its own rather than the
+   * subagent index's, because the notices that ask are mostly not agents' and
+   * half of their sessions hold no subagent at all.
    */
-  const toolCalls = useMemo(() => toolCallIds(session?.turns ?? EMPTY_TURNS), [session]);
+  const toolCalls = useMemo(() => buildToolCallIndex(session?.turns ?? EMPTY_TURNS), [session]);
   const subagentContext = useMemo<SubagentContextValue>(
     () => ({
       byId: subagentIndex.byId,
@@ -554,7 +555,16 @@ export function SessionViewPage() {
       openAgent,
       goToCall: (toolUseId) => jumpTo(TOOL_PARAM, toolUseId),
       goToMessage: (uuid) => jumpTo('msg', uuid),
-      hasCall: (toolUseId) => toolCalls.has(toolUseId),
+      hasCall: (toolUseId) => toolCalls.drawn.has(toolUseId),
+      callOf: (notice) => {
+        if (notice.toolUseId && toolCalls.drawn.has(notice.toolUseId)) return notice.toolUseId;
+        // An agent that was RESUMED files a report naming no call, and the one
+        // that sent it out is on its `meta.json` — the join the drawer header
+        // already makes, reused rather than guessed at.
+        const meta = notice.taskId ? subagentIndex.byId.get(notice.taskId) : null;
+        if (meta?.toolUseId && toolCalls.drawn.has(meta.toolUseId)) return meta.toolUseId;
+        return (notice.taskId && toolCalls.byTaskId.get(notice.taskId)) || null;
+      },
     }),
     [subagentIndex, toolCalls, openAgent, jumpTo],
   );

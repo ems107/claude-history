@@ -59,8 +59,9 @@ export function InjectedNotice({
   const agent = notice.taskId ? (subagents?.byId.get(notice.taskId) ?? null) : null;
   // The call this is the answer to, when this parse drew it at all — and no
   // privilege of an agent's: a background command names its `Bash` call in the
-  // very same tag, and 56 of the notices on this machine are one.
-  const call = notice.toolUseId && subagents?.hasCall(notice.toolUseId) ? notice.toolUseId : null;
+  // very same tag, and 56 of the notices on this machine are one. Which of the
+  // three joins found it is `callOf`'s business, not this panel's.
+  const call = subagents?.callOf(notice) ?? null;
   const failed = notice.status === 'failed';
 
   return (

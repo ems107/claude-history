@@ -32,11 +32,25 @@ export interface SubagentContextValue {
   /**
    * Whether that call is in this parse at all: a fork copies none of them, and a
    * compaction can swallow the message that made it. **Any** call, not only an
-   * Agent one — a notice panel asks it about the `Bash` call a background
-   * command reported back from (`toolCallIds`), and the two agent-only callers
-   * pass ids that are a subset of the same set.
+   * Agent one — the two agent-only callers pass ids that are a subset of the
+   * same set (`buildToolCallIndex`).
    */
   hasCall(toolUseId: string): boolean;
+  /**
+   * The call a task notification is the answer to, or null when this parse does
+   * not hold it. Three joins, strongest first, because a notice does not always
+   * name its own call:
+   *
+   * 1. its `<tool-use-id>` — 171 of the 175 here;
+   * 2. the `toolUseId` on the agent's `meta.json`, when the `<task-id>` is an
+   *    agent's, which is the same join the drawer header makes;
+   * 3. the call that ANNOUNCED the `<task-id>` in its own result — see
+   *    `ToolCallIndex.byTaskId` for why that is exact rather than a guess.
+   *
+   * One accessor and not three, because the order between them is the answer:
+   * asked separately, a caller would have to know it.
+   */
+  callOf(notice: { taskId: string | null; toolUseId: string | null }): string | null;
 }
 
 export const SubagentContext = createContext<SubagentContextValue | null>(null);
