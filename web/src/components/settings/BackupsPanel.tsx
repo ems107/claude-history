@@ -5,7 +5,7 @@ import { api } from '../../api/client.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
-import { Anchored, Explain } from './controls.tsx';
+import { Anchored, Explain, Readout, ReadoutRow } from './controls.tsx';
 
 /** Bytes, in the two digits that mean something at these sizes. */
 function size(bytes: number): string {
@@ -128,8 +128,17 @@ export function BackupsPanel() {
         <button type="button" onClick={refresh} disabled={isFetching} className={actionClass}>
           {isFetching ? 'Reading…' : 'Refresh'}
         </button>
-        <span className="ml-auto font-mono text-[11px] break-all text-[var(--text-dim)]">{data.backupsDir}</span>
+        <span className="text-[11px] text-[var(--text-dim)]">
+          {data.backups.length} {data.backups.length === 1 ? 'copy' : 'copies'} kept
+        </span>
       </Anchored>
+
+      {/* The folder is a readout, not something crowding the end of a button
+          row: at a narrow width that path used to push the buttons together and
+          then wrap under them. */}
+      <Readout>
+        <ReadoutRow label="folder">{data.backupsDir}</ReadoutRow>
+      </Readout>
 
       {note && <p className="text-[var(--text-dim)]">{note}</p>}
       {error && <p className="rounded border border-red-500/40 px-2 py-1.5 text-red-300">{error}</p>}

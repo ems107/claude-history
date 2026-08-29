@@ -7,7 +7,7 @@ import { useLocalOnly } from '../../api/useLocal.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
-import { Anchored } from './controls.tsx';
+import { Anchored, Switch } from './controls.tsx';
 
 const inputClass =
   'w-44 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
@@ -183,24 +183,26 @@ export function RemoteAccessPanel() {
 
   return (
     <>
-      <Anchored id="set-remoteAccessEnabled">
-        <label className={`flex items-start gap-2 ${credentials.disabled ? 'opacity-40' : 'cursor-pointer'}`}>
-          <input
-            type="checkbox"
+      {/* The same switch every other feature on this page wears — this one is a
+          feature master too, and the fact that its `toggle` does more than save
+          (it opens the credentials form when there are none) is a reason for it
+          to look MORE like the others, not less. */}
+      <Anchored id="set-remoteAccessEnabled" className="border-b border-[var(--border)] pb-3">
+        <div className={`flex items-start gap-2.5 ${credentials.disabled ? 'opacity-70' : ''}`}>
+          <Switch
             checked={settings.remoteAccessEnabled}
             disabled={credentials.disabled}
-            onChange={(e) => toggle(e.target.checked)}
-            className="mt-0.5 accent-[var(--accent)]"
+            onChange={(v) => toggle(v)}
           />
           <span>
             Let other machines on this network use claude-history
-            <span className="block text-[11px] text-[var(--text-dim)]">
+            <span className="mt-0.5 block max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">
               {credentials.disabled
                 ? credentials.reason
                 : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
             </span>
           </span>
-        </label>
+        </div>
       </Anchored>
 
       {(formOpen || configured) && !credentials.disabled && (

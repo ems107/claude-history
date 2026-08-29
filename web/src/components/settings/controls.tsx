@@ -21,16 +21,98 @@ export const selectClass =
   'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
 
 /**
- * One group of settings, as a card with its heading.
+ * A switch, for the one setting a whole block hangs off.
+ *
+ * A checkbox is what every OTHER setting here wears, and that was the problem:
+ * the control that turns a feature off looked exactly like the eight controls it
+ * turns off with it. This one is a different shape, so the hierarchy is visible
+ * before a word of it is read.
+ *
+ * `role="switch"` and not a checkbox, because that is what it is: a screen
+ * reader says "on/off" rather than "checked", which is the same distinction the
+ * shape is making.
+ */
+export function Switch({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative mt-0.5 h-[15px] w-[26px] shrink-0 rounded-full border transition-colors disabled:cursor-default disabled:opacity-40 ${
+        checked ? 'cursor-pointer border-[var(--accent-dim)] bg-[var(--accent)]/25' : 'cursor-pointer border-[var(--border)] bg-[var(--bg)]'
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`absolute top-[2px] h-[9px] w-[9px] rounded-full transition-all ${
+          checked ? 'left-[14px] bg-[var(--accent)]' : 'left-[2px] bg-[var(--text-dim)]'
+        }`}
+      />
+    </button>
+  );
+}
+
+/**
+ * One group of settings, as a card with its heading — and, where the group is a
+ * FEATURE, the switch that turns it on.
  *
  * The heading comes from the catalogue, not from a prop: the rail draws the same
  * words to navigate by, and two copies would be two chances to disagree about
  * what this block is called. The `id` is what a deep link and a search hit land
  * on, and `scroll-mt` keeps the heading clear of the panel's top edge.
+ *
+ * **`master` is what stops a dead block from being a mystery.** Before it, the
+ * switch was the first of nine identical checkboxes and the other eight simply
+ * went pale — a wall of unreadable grey with nothing saying why. Now the switch
+ * is a switch, a rule separates it from what it governs, and `offNote` says in
+ * one line what "off" actually means. Nothing is hidden: everything stays
+ * readable and stays findable, which is what a deep link and the search box need
+ * of it.
  */
-export function GroupCard({ id, children, aside }: { id: string; children: ReactNode; aside?: ReactNode }) {
-  const { flashed } = useSettingsPage();
+export function GroupCard({
+  id,
+  children,
+  aside,
+  master,
+  masterHint,
+  offNote,
+  inactive,
+}: {
+  id: string;
+  children: ReactNode;
+  aside?: ReactNode;
+  /** The boolean this whole group hangs off, drawn as a switch above the rule. */
+  master?: keyof AppSettings & string;
+  /** The master's own line of explanation. */
+  masterHint?: string;
+  /** What "off" means, in one line. Shown only while it is off. */
+  offNote?: string;
+  /**
+   * This group is governed by a switch in ANOTHER group, and that switch is off.
+   *
+   * A boolean and not a sentence, deliberately: the sentence belongs beside the
+   * switch, once. Repeating it over every group it governs was the first cut of
+   * this and it read worse than the wall it replaced — three identical boxes
+   * saying the same thing, none of them next to the control that would fix it.
+   * What a governed group needs is a MARK, and the explanation is one group up.
+   */
+  inactive?: boolean;
+}) {
+  const { settings, save, flashed } = useSettingsPage();
   const group = findGroup(id);
+  const entry = master ? entryForField(master) : undefined;
+  const on = master ? settings[master] === true : true;
+  const dead = inactive || (master !== undefined && !on);
   return (
     <section
       id={id}
@@ -40,10 +122,41 @@ export function GroupCard({ id, children, aside }: { id: string; children: React
       }`}
     >
       <div className="mb-3 flex items-baseline gap-2">
-        <h2 className="text-sm font-semibold">{group?.title ?? id}</h2>
+        <h2 className={`text-sm font-semibold ${dead ? 'text-[var(--text-dim)]' : ''}`}>{group?.title ?? id}</h2>
+        {/* Only where the switch is somewhere else. A group holding its own
+            master says "off" three times otherwise — the switch, this chip and
+            the note under it — and the switch is the one that can be acted on. */}
+        {inactive && (
+          <span className="rounded border border-[var(--border)] px-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">
+            off
+          </span>
+        )}
         {aside}
       </div>
-      <div className="space-y-3 text-xs">{children}</div>
+
+      {master && (
+        <div className="mb-3 border-b border-[var(--border)] pb-3 text-xs">
+          <Field id={entry?.id} badge={<DefaultBadge field={master} />}>
+            <div className="flex items-start gap-2.5">
+              <Switch checked={on} onChange={(v) => save({ [master]: v } as Partial<AppSettings>)} />
+              <span>
+                <span className={on ? 'text-[var(--text)]' : ''}>{entry?.label ?? master}</span>
+                {masterHint && <Hint>{masterHint}</Hint>}
+              </span>
+            </div>
+          </Field>
+        </div>
+      )}
+
+      {/* Said once, beside the switch that would change it — never repeated over
+          the other groups the same switch happens to govern. */}
+      {master && !on && offNote && (
+        <p className="mb-3 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
+          {offNote}
+        </p>
+      )}
+
+      <div className="space-y-4 text-xs">{children}</div>
     </section>
   );
 }
@@ -80,7 +193,11 @@ export function Field({ id, badge, children }: { id?: string; badge?: ReactNode;
         flashed === id ? 'anchor-flash' : ''
       }`}
     >
-      <div className="min-w-0">{children}</div>
+      {/* `flex-1`, or a `w-full` input inside shrinks to its own content: the
+          text fields came out 160 px wide the first time this was written. The
+          badge still sits at the right edge — that is `justify-between`'s job
+          and it does not need this side to be content-sized to do it. */}
+      <div className="min-w-0 flex-1">{children}</div>
       {badge}
     </div>
   );
@@ -144,15 +261,42 @@ export function DefaultBadge<K extends keyof AppSettings>({ field }: { field: K 
   );
 }
 
+/**
+ * A setting's line of explanation.
+ *
+ * **One line is the rule.** They were paragraphs — two and three sentences each
+ * — and ten paragraphs of small grey text under ten switches is a wall you read
+ * past rather than read. What was cut is not gone: it moved into the group's own
+ * `Explain`, one click away and no longer standing in front of the control you
+ * came for. `max-w-prose` stops a long one running the full width of the card,
+ * which is most of what makes a column of them scannable.
+ */
+export function Hint({ children }: { children: ReactNode }) {
+  return <span className="mt-0.5 block max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</span>;
+}
+
 /** The label and hint of a preference, in the shape a checkbox wants them. */
-function LabelText({ label, hint }: { label: string; hint?: string }) {
+function LabelText({ label, hint }: { label: string; hint?: ReactNode }) {
   return (
     <span>
       {label}
-      {hint && <span className="block text-[11px] text-[var(--text-dim)]">{hint}</span>}
+      {hint && <Hint>{hint}</Hint>}
     </span>
   );
 }
+
+/**
+ * What a row wears while the switch above it is off.
+ *
+ * `opacity-40` was the old answer and it was the wrong one: at 40 % the label
+ * text lands near the background and a block of them reads as broken rather than
+ * as inactive. At 70 % it is plainly not active and still plainly readable —
+ * which matters, because this is a settings page and knowing what a switch would
+ * turn on is the reason to turn it on. The controls themselves still go to 40 %
+ * through their own `disabled:` variants, so the CONTROLS look dead and the
+ * WORDS do not.
+ */
+const inactiveRow = 'opacity-70';
 
 /**
  * A boolean preference. One prop names it; the label and the id come from the
@@ -179,7 +323,7 @@ export function ToggleField({
   const checked = settings[field] === true;
   return (
     <Field id={entry?.id} badge={<DefaultBadge field={field} />}>
-      <label className={`flex items-start gap-2 ${disabled ? 'opacity-40' : 'cursor-pointer'}`}>
+      <label className={`flex items-start gap-2 ${disabled ? inactiveRow : 'cursor-pointer'}`}>
         <input
           type="checkbox"
           checked={checked}
@@ -226,7 +370,7 @@ export function NumberField({
   const entry = entryForField(field);
   return (
     <Field id={entry?.id} badge={<DefaultBadge field={field} />}>
-      <label className={`flex items-center gap-2 ${disabled ? 'opacity-40' : ''}`}>
+      <label className={`flex items-center gap-2 ${disabled ? inactiveRow : ''}`}>
         <span>{before}</span>
         <input
           type="number"
@@ -241,6 +385,68 @@ export function NumberField({
         {after && <span>{after}</span>}
       </label>
       {note && <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-dim)]">{note}</p>}
+    </Field>
+  );
+}
+
+/**
+ * A number you set by FEEL rather than by typing: the volume, and nothing else
+ * on this page.
+ *
+ * Every other number here is a threshold with a right answer somewhere — a
+ * cadence in seconds, a count of days — and typing one is how you set those.
+ * Loudness is not that: it is the only setting whose value you judge by hearing
+ * it, so it gets the control you can sweep while the tone plays, with the figure
+ * beside it because "70 %" is still worth being able to read and to restore.
+ */
+export function RangeField({
+  field,
+  min,
+  max,
+  step,
+  unit,
+  hint,
+  disabled,
+  after,
+}: {
+  field: keyof AppSettings & string;
+  min: number;
+  max: number;
+  step?: number;
+  unit?: string;
+  hint?: ReactNode;
+  disabled?: boolean;
+  /** Something to try it with — the play button, for the volume. */
+  after?: ReactNode;
+}) {
+  const { settings, save } = useSettingsPage();
+  const entry = entryForField(field);
+  const value = settings[field] as number;
+  return (
+    <Field id={entry?.id} badge={<DefaultBadge field={field} />}>
+      <div className={disabled ? inactiveRow : ''}>
+        <div className="flex items-center gap-2.5">
+          <label className="flex items-center gap-2.5">
+            <span className="w-14 shrink-0">{entry?.label ?? field}</span>
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={step}
+              value={value}
+              disabled={disabled}
+              onChange={(e) => save({ [field]: Number(e.target.value) } as Partial<AppSettings>)}
+              className="h-1 w-40 cursor-pointer accent-[var(--accent)] disabled:cursor-default disabled:opacity-40"
+            />
+            <span className="w-10 shrink-0 text-right font-mono text-[11px] text-[var(--text-dim)]">
+              {value}
+              {unit}
+            </span>
+          </label>
+          {after}
+        </div>
+        {hint && <Hint>{hint}</Hint>}
+      </div>
     </Field>
   );
 }
@@ -263,7 +469,7 @@ export function SelectField({
   const entry = entryForField(field);
   return (
     <Field id={entry?.id} badge={<DefaultBadge field={field} />}>
-      <label className={`flex items-center gap-2 ${disabled ? 'opacity-40' : ''}`}>
+      <label className={`flex items-center gap-2 ${disabled ? inactiveRow : ''}`}>
         <span>{before}</span>
         <select
           value={settings[field] as string}
@@ -295,6 +501,8 @@ export function TextField({
   placeholder,
   mono,
   disabled,
+  hint,
+  after,
 }: {
   field: keyof AppSettings & string;
   /** Overrides the catalogue's name, for the one row whose label carries a note. */
@@ -302,6 +510,13 @@ export function TextField({
   placeholder?: string;
   mono?: boolean;
   disabled?: boolean;
+  hint?: ReactNode;
+  /**
+   * A row under the box — the folder browser, for the one field that names a
+   * place on disk. A SIBLING of the label rather than a child of it: a button
+   * inside a `<label>` has its click taken by the label's own control.
+   */
+  after?: ReactNode;
 }) {
   const { settings, save } = useSettingsPage();
   const entry = entryForField(field);
@@ -313,7 +528,7 @@ export function TextField({
   };
   return (
     <Field id={entry?.id} badge={<DefaultBadge field={field} />}>
-      <label className={`block ${disabled ? 'opacity-40' : ''}`}>
+      <label className={`block ${disabled ? inactiveRow : ''}`}>
         <span className="mb-1 block">{label ?? entry?.label ?? field}</span>
         <input
           type="text"
@@ -333,6 +548,12 @@ export function TextField({
           className={`w-full ${inputClass} ${mono ? 'font-mono text-[11px]' : ''}`}
         />
       </label>
+      {(after || hint) && (
+        <div className={`mt-1.5 flex flex-wrap items-center gap-2 ${disabled ? inactiveRow : ''}`}>
+          {after}
+          {hint && <span className="max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</span>}
+        </div>
+      )}
     </Field>
   );
 }
@@ -361,7 +582,7 @@ export function RadioField<T extends string>({
   const value = settings[field] as T;
   return (
     <Field id={entry?.id} badge={<DefaultBadge field={field} />}>
-      <div className={disabled ? 'opacity-40' : ''}>
+      <div className={disabled ? inactiveRow : ''}>
         {options.map((option) => (
           <label
             key={option.value}

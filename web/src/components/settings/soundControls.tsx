@@ -22,6 +22,38 @@ import { selectClass } from './controls.tsx';
 /** The catalogue's own word for a tone — what the "general tone" option shows. */
 export const toneLabel = (id: ToneId): string => NOTIFICATION_TONES.find((t) => t.id === id)?.label ?? id;
 
+/**
+ * Hear it.
+ *
+ * **Not decoration.** A list of names for sounds nobody has heard is not a
+ * choice, and these are drawn by an oscillator rather than taken from a folder,
+ * so there is nowhere else to go and listen to them. It earns its place twice
+ * over: a browser refuses to make a noise until something on the page has been
+ * clicked, and a session stopping is not a click — so this is also the gesture
+ * that unlocks the audio for the whole page (`primeAudio`).
+ *
+ * Its own export because the volume wants one as well: a slider you cannot hear
+ * while you move it is a slider you set by guessing.
+ */
+export function PlayButton({ tone, volume, disabled }: { tone: ToneId; volume: number; disabled?: boolean }) {
+  const silent = tone === TONE_NONE || volume <= 0;
+  return (
+    <button
+      type="button"
+      disabled={disabled || silent}
+      onClick={() => {
+        primeAudio();
+        playTone(tone, volume);
+      }}
+      // A disabled button that does not say why is a button that looks broken.
+      title={volume <= 0 ? 'The volume is 0' : silent ? 'Silent — there is nothing to play' : 'Play it'}
+      aria-label="Play the tone"
+      className={actionClass}
+    >
+      ▶
+    </button>
+  );
+}
 
 /**
  * A notification tone, with something that plays it.
@@ -75,9 +107,10 @@ export function ToneSelect({
   onChange: (v: ToneChoice) => void;
 }) {
   const resolved = resolveTone(value, general);
-  const silent = resolved === TONE_NONE || volume <= 0;
   return (
-    <div className={disabled ? 'opacity-40' : ''}>
+    // 70 % and not 40 %: the words stay readable while the controls go pale,
+    // which is the whole of what "inactive" should look like on a settings page.
+    <div className={disabled ? 'opacity-70' : ''}>
       <div className="flex items-center gap-2">
         <label className="flex items-center gap-2">
           <span>{label}</span>
@@ -98,22 +131,9 @@ export function ToneSelect({
             </option>
           </select>
         </label>
-        <button
-          type="button"
-          disabled={disabled || silent}
-          onClick={() => {
-            primeAudio();
-            playTone(resolved, volume);
-          }}
-          // A disabled button that does not say why is a button that looks broken.
-          title={volume <= 0 ? 'The volume is 0' : silent ? 'Silent — there is nothing to play' : 'Play it'}
-          aria-label="Play the tone"
-          className={actionClass}
-        >
-          ▶
-        </button>
+        <PlayButton tone={resolved} volume={volume} disabled={disabled} />
       </div>
-      {hint && <p className="mt-0.5 text-[11px] text-[var(--text-dim)]">{hint}</p>}
+      {hint && <p className="mt-0.5 max-w-prose text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</p>}
     </div>
   );
 }

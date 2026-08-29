@@ -8,7 +8,7 @@ import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
-import { Anchored, Explain, GroupCard, NumberField, Readout, ReadoutRow, SelectField, ToggleField } from './controls.tsx';
+import { Anchored, Explain, GroupCard, NumberField, Readout, ReadoutRow, SelectField } from './controls.tsx';
 
 /**
  * The instance itself: what it checks for, what it writes down, and where.
@@ -43,11 +43,12 @@ export function SystemArea() {
 
   return (
     <>
-      <GroupCard id="updates">
-        <ToggleField
-          field="updateAutoCheck"
-          hint="A small request to the GitHub releases API. Updates are never downloaded or installed without your confirmation."
-        />
+      <GroupCard
+        id="updates"
+        master="updateAutoCheck"
+        masterHint="A small conditional request to the GitHub releases API — one of this app's only two automatic network calls."
+        offNote="Nothing is checked and nothing is offered. The Check now button in the header still works whenever you press it."
+      >
         <NumberField
           field="updateIntervalMinutes"
           before="Check every"
@@ -55,6 +56,7 @@ export function SystemArea() {
           min={5}
           max={1440}
           disabled={!settings.updateAutoCheck}
+          note="An update is never downloaded or installed without your confirmation."
         />
         <Readout>
           <ReadoutRow label="last check">
@@ -71,18 +73,44 @@ export function SystemArea() {
       </GroupCard>
 
       <GroupCard id="logs">
-        <SelectField field="logLevel" before="Write everything from" options={LOG_LEVEL_CHOICES} after={<span>upwards</span>} />
-        <NumberField field="logRetentionDays" before="Keep" after="days of daily log files" min={1} max={365} />
-        <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
-          One file per day in <span className="font-mono">{meta.paths.logsDir}</span>, written by every way of running
-          the app so the trail is never split. <span className="text-[var(--text)]">debug</span> is worth turning on
-          while chasing something — it records each decision the background jobs take, not just their outcomes.
-        </p>
+        <SelectField
+          field="logLevel"
+          before="Write everything from"
+          options={LOG_LEVEL_CHOICES}
+          after={<span>upwards</span>}
+        />
+        <NumberField
+          field="logRetentionDays"
+          before="Keep"
+          after="days of daily log files"
+          min={1}
+          max={365}
+          note="Anything older is deleted automatically."
+        />
+        {/* The folder is a fact about this instance, so it is a readout — the
+            same shape the paths below use — rather than a path buried in a
+            sentence, which is where it was and where nothing could be read off
+            it at a glance. */}
+        <Readout>
+          <ReadoutRow label="folder">{meta.paths.logsDir}</ReadoutRow>
+        </Readout>
         <Anchored id="act-log-viewer">
           <Link to="/logs" className={`inline-block ${actionClass}`}>
             Open the log viewer →
           </Link>
         </Anchored>
+        <Explain label="When debug is worth turning on">
+          <p>
+            One file per day, written by every way of running the app — installed, from source, portable — so the trail
+            is never split across builds.
+          </p>
+          <p>
+            <span className="text-[var(--text)]">debug</span> records each decision the background jobs take rather than
+            just their outcomes: which trigger asked for a usage read, why the auto-reload slept until a given moment,
+            what the scanner decided about a file. It is what to turn on while chasing something, and to turn back down
+            afterwards — the files are bigger, not slower.
+          </p>
+        </Explain>
       </GroupCard>
 
       <GroupCard id="paths">
