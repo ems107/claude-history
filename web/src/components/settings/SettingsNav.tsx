@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router';
-import { AREAS, type AreaId, changedByArea, groupsOf, searchSettings } from '../../lib/settingsCatalog.ts';
+import {
+  type Area,
+  AREAS,
+  type AreaId,
+  CHANGED_VIEW,
+  changedByArea,
+  groupsOf,
+  searchSettings,
+} from '../../lib/settingsCatalog.ts';
 import { useSettingsPage } from './context.ts';
 
 /**
@@ -20,15 +28,45 @@ export function SettingsNav({
   area,
   scroller,
 }: {
-  area: AreaId;
+  /** Null on the changed-list, which is a route but not an area. */
+  area: AreaId | null;
   /** The panel that actually scrolls, which is what the spy has to watch. */
   scroller: HTMLElement | null;
 }) {
   const { settings, defaults } = useSettingsPage();
   const [query, setQuery] = useState('');
   const counts = changedByArea(settings, defaults);
-  const groups = groupsOf(area);
+  const totalChanged = [...counts.values()].reduce((a, b) => a + b, 0);
+  const groups = area ? groupsOf(area) : [];
   const here = useVisibleGroup(scroller, area);
+
+  const item = (a: Area) => {
+    const changed = counts.get(a.id) ?? 0;
+    const open = a.id === area;
+    return (
+      <div key={a.id} className={a.danger ? 'mt-auto border-t border-[var(--border)] pt-3' : ''}>
+        <RailLink to={`/settings/${a.id}`} open={open} danger={a.danger} label={a.title} count={changed} />
+        {/* Only the open area's groups, and only when it has more than one: a
+            single-group area would list its own name back at you. */}
+        {open && groups.length > 1 && (
+          <div className="mb-1 flex flex-col">
+            {groups.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => document.getElementById(g.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
+                className={`cursor-pointer truncate py-0.5 pr-3 pl-[1.4rem] text-left text-xs ${
+                  here === g.id ? 'text-[var(--accent)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+                }`}
+              >
+                {g.short ?? g.title}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] py-3">
@@ -36,65 +74,68 @@ export function SettingsNav({
       {query.trim() ? (
         <SearchResults query={query} clear={() => setQuery('')} />
       ) : (
-        AREAS.map((a) => {
-          const changed = counts.get(a.id) ?? 0;
-          const open = a.id === area;
-          return (
-            <div key={a.id} className={a.danger ? 'mt-auto border-t border-[var(--border)] pt-3' : ''}>
-              <NavLink
-                to={`/settings/${a.id}`}
-                className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
-                  open
-                    ? 'text-[var(--text)]'
-                    : a.danger
-                      ? 'text-red-300/70 hover:text-red-300'
-                      : 'text-[var(--text-dim)] hover:text-[var(--text)]'
-                }`}
-              >
-                {/* The bar says which area you are in without indenting the
-                    label, so every row starts on the same column and the list
-                    reads as a list rather than as a tree. */}
-                <span
-                  aria-hidden="true"
-                  className={`h-4 w-0.5 shrink-0 rounded ${
-                    open ? (a.danger ? 'bg-red-400' : 'bg-[var(--accent)]') : 'bg-transparent'
-                  }`}
-                />
-                <span className="min-w-0 flex-1 truncate">{a.title}</span>
-                {changed > 0 && (
-                  <span
-                    title={`${changed} setting${changed === 1 ? '' : 's'} changed from the default`}
-                    className="shrink-0 text-[10px] text-[var(--text-dim)]"
-                  >
-                    ●{changed}
-                  </span>
-                )}
-              </NavLink>
-              {/* Only the open area's groups, and only when it has more than
-                  one: a single-group area would list its own name back at you. */}
-              {open && groups.length > 1 && (
-                <div className="mb-1 flex flex-col">
-                  {groups.map((g) => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      onClick={() =>
-                        document.getElementById(g.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-                      }
-                      className={`cursor-pointer truncate py-0.5 pr-3 pl-[1.4rem] text-left text-xs ${
-                        here === g.id ? 'text-[var(--accent)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
-                      }`}
-                    >
-                      {g.short ?? g.title}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })
+        <>
+          {AREAS.filter((a) => !a.danger).map(item)}
+          {/* After the areas it summarises and before the danger zone, and only
+              when there is anything to summarise. A rail item that comes and
+              goes must not be the first one, or the list moves under the
+              pointer as you change a setting. */}
+          {totalChanged > 0 && (
+            <RailLink
+              to={`/settings/${CHANGED_VIEW.id}`}
+              open={area === null}
+              label={CHANGED_VIEW.title}
+              count={totalChanged}
+            />
+          )}
+          {AREAS.filter((a) => a.danger).map(item)}
+        </>
       )}
     </nav>
+  );
+}
+
+/** One row of the rail: the bar that says you are here, a label, and a tally. */
+function RailLink({
+  to,
+  open,
+  danger,
+  label,
+  count,
+}: {
+  to: string;
+  open: boolean;
+  danger?: true;
+  label: string;
+  count: number;
+}) {
+  return (
+    <NavLink
+      to={to}
+      className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
+        open
+          ? 'text-[var(--text)]'
+          : danger
+            ? 'text-red-300/70 hover:text-red-300'
+            : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+      }`}
+    >
+      {/* The bar says where you are without indenting the label, so every row
+          starts on the same column and the list reads as a list, not a tree. */}
+      <span
+        aria-hidden="true"
+        className={`h-4 w-0.5 shrink-0 rounded ${open ? (danger ? 'bg-red-400' : 'bg-[var(--accent)]') : 'bg-transparent'}`}
+      />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {count > 0 && (
+        <span
+          title={`${count} setting${count === 1 ? '' : 's'} changed from the default`}
+          className="shrink-0 text-[10px] text-[var(--text-dim)]"
+        >
+          ●{count}
+        </span>
+      )}
+    </NavLink>
   );
 }
 
@@ -215,7 +256,7 @@ function SearchResults({ query, clear }: { query: string; clear: () => void }) {
  * because a group taller than the viewport must go on being the answer while you
  * read through it, which "closest to the top edge" stops doing halfway down.
  */
-function useVisibleGroup(scroller: HTMLElement | null, area: AreaId): string | null {
+function useVisibleGroup(scroller: HTMLElement | null, area: AreaId | null): string | null {
   const [here, setHere] = useState<string | null>(null);
   useEffect(() => {
     if (!scroller) return;

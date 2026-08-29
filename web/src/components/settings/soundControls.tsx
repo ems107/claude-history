@@ -22,8 +22,6 @@ import { selectClass } from './controls.tsx';
 /** The catalogue's own word for a tone — what the "general tone" option shows. */
 export const toneLabel = (id: ToneId): string => NOTIFICATION_TONES.find((t) => t.id === id)?.label ?? id;
 
-/** The same, for a value that may be the deferral rather than a tone. */
-export const toneChoiceText = (v: ToneChoice): string => (v === TONE_INHERIT ? 'general tone' : v);
 
 /**
  * A notification tone, with something that plays it.

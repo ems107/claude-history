@@ -1,6 +1,6 @@
 import type { AppSettings } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
-import { entryForField, findGroup } from '../../lib/settingsCatalog.ts';
+import { entryForField, findGroup, valueText } from '../../lib/settingsCatalog.ts';
 import { Fold } from '../Fold.tsx';
 import { useSettingsPage } from './context.ts';
 
@@ -112,39 +112,25 @@ export function Anchored({
   );
 }
 
-const asText = (v: boolean | number | string): string => {
-  if (typeof v === 'boolean') return v ? 'on' : 'off';
-  if (typeof v === 'string') return v || 'empty';
-  return String(v);
-};
-
 /**
  * Shown only beside a setting that no longer holds its default, and clicking it
  * puts the default back. It spells the default out because that is the question
  * the marker raises ("changed from what?"), which also saves documenting the
  * defaults anywhere else.
+ *
+ * How the value is spelled comes from the catalogue rather than from a prop, so
+ * this and the changed-list cannot disagree about what `inherit` is called.
  */
-export function DefaultBadge<K extends keyof AppSettings>({
-  field,
-  format,
-}: {
-  field: K;
-  /**
-   * For a field whose STORED value is not what the UI calls it. `asText` spells
-   * the default out, which is the whole job of this badge — but `inherit` is a
-   * word the settings page shows nowhere else, and "default inherit" would be
-   * the same jargon that had to come out of the tone dropdown.
-   */
-  format?: (v: AppSettings[K]) => string;
-}) {
+export function DefaultBadge<K extends keyof AppSettings>({ field }: { field: K }) {
   const { settings, defaults, save } = useSettingsPage();
+  const entry = entryForField(field);
   const value = settings[field];
   const fallback = defaults[field];
   // The two fields whose default cannot be restored by a click say so in the
   // catalogue, and the marker is the thing that must not appear for them.
-  if (entryForField(field)?.noDefault) return null;
+  if (entry?.noDefault) return null;
   if (value === fallback) return null;
-  const shown = format ? format(fallback) : asText(fallback);
+  const shown = (entry?.format ?? valueText)(fallback);
   return (
     <button
       type="button"

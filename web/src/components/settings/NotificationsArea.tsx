@@ -1,7 +1,7 @@
 import { NOTIFY_VOLUME_MAX, NOTIFY_VOLUME_MIN, type ToneId } from '@claude-history/shared';
 import { Anchored, DefaultBadge, Explain, Field, GroupCard, NumberField, ToggleField } from './controls.tsx';
 import { useSettingsPage } from './context.ts';
-import { ToneSelect, VoiceSelect, toneChoiceText } from './soundControls.tsx';
+import { ToneSelect, VoiceSelect } from './soundControls.tsx';
 
 /**
  * What happens when a session stops.
@@ -76,7 +76,7 @@ export function NotificationsArea() {
               disabled={off || !s.notifyOnNeedsYou}
               onChange={(v) => save({ notifyToneNeedsYou: v })}
             />
-            <DefaultBadge field="notifyToneNeedsYou" format={toneChoiceText} />
+            <DefaultBadge field="notifyToneNeedsYou" />
           </Anchored>
         </ToggleField>
 
@@ -95,7 +95,7 @@ export function NotificationsArea() {
               disabled={off || !s.notifyOnFinished}
               onChange={(v) => save({ notifyToneFinished: v })}
             />
-            <DefaultBadge field="notifyToneFinished" format={toneChoiceText} />
+            <DefaultBadge field="notifyToneFinished" />
           </Anchored>
         </ToggleField>
       </GroupCard>

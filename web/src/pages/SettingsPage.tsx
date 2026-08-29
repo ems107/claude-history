@@ -5,6 +5,7 @@ import { useLocation, useParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
 import { useActiveSessionsGuard } from '../components/ActiveSessionsDialog.tsx';
+import { ChangedView } from '../components/settings/ChangedView.tsx';
 import { ClaudeArea } from '../components/settings/ClaudeArea.tsx';
 import { SettingsContext } from '../components/settings/context.ts';
 import { DangerArea } from '../components/settings/DangerArea.tsx';
@@ -13,7 +14,7 @@ import { NotificationsArea } from '../components/settings/NotificationsArea.tsx'
 import { RemoteAccessArea } from '../components/settings/RemoteAccessArea.tsx';
 import { SettingsNav } from '../components/settings/SettingsNav.tsx';
 import { SystemArea } from '../components/settings/SystemArea.tsx';
-import { type AreaId, DEFAULT_AREA, findArea, resolveAnchor } from '../lib/settingsCatalog.ts';
+import { type AreaId, CHANGED_VIEW, DEFAULT_AREA, findArea, resolveAnchor } from '../lib/settingsCatalog.ts';
 
 /** Must match the `anchor-flash` animation in styles.css. */
 const ANCHOR_FLASH_MS = 2_500;
@@ -50,6 +51,8 @@ export function SettingsPage() {
 
   const params = useParams();
   const { hash } = useLocation();
+  /** The one route that is a list rather than an area. */
+  const changedView = params.area === CHANGED_VIEW.id;
   /**
    * Which area is on screen, and the hash gets a say.
    *
@@ -88,15 +91,15 @@ export function SettingsPage() {
       });
   };
 
-  const info = findArea(area);
-  const Content = AREA_CONTENT[area];
+  const info = changedView ? CHANGED_VIEW : findArea(area);
+  const Content = changedView ? ChangedView : AREA_CONTENT[area];
 
   return (
     <SettingsContext.Provider
       value={{ settings: data.settings, defaults: defaultSettings(dev), meta: data, dev, save, flashed }}
     >
       <div className="flex h-full">
-        <SettingsNav area={area} scroller={scroller} />
+        <SettingsNav area={changedView ? null : area} scroller={scroller} />
         <div ref={setScroller} className="min-w-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-4 px-6 py-5">
             <header>

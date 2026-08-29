@@ -1,5 +1,5 @@
 import type { AppSettings } from '@claude-history/shared';
-import { foldText } from '@claude-history/shared';
+import { foldText, TONE_INHERIT } from '@claude-history/shared';
 
 /**
  * What settings exist, and where each one lives.
@@ -85,7 +85,27 @@ export interface Entry {
    * page as a comment; here it is a fact the tally reads.
    */
   noDefault?: true;
+  /**
+   * How this field's value is SPELLED, where the stored value is not what the UI
+   * calls it.
+   *
+   * Here rather than at the call site because two things say a value out loud —
+   * the "changed from default" marker and the changed-list — and `inherit` is a
+   * word the settings page shows nowhere else. "default inherit" would be the
+   * same jargon that had to come out of the tone dropdown in the first place.
+   */
+  format?: (value: unknown) => string;
 }
+
+/** The plain spelling of a stored value, for the two places that show one. */
+export function valueText(v: unknown): string {
+  if (typeof v === 'boolean') return v ? 'on' : 'off';
+  if (typeof v === 'string') return v || 'empty';
+  return String(v);
+}
+
+/** A tone that defers to the general one, said in words rather than in a key. */
+const toneChoice = (v: unknown): string => (v === TONE_INHERIT ? 'general tone' : valueText(v));
 
 export const AREAS: Area[] = [
   {
@@ -194,6 +214,7 @@ export const ENTRIES: Entry[] = [
     field: 'notifyToneNeedsYou',
     label: 'Tone for a session waiting for you',
     keywords: 'sound chime alert',
+    format: toneChoice,
   },
   {
     id: 'set-notifyOnFinished',
@@ -208,6 +229,7 @@ export const ENTRIES: Entry[] = [
     field: 'notifyToneFinished',
     label: 'Tone for a session that finished',
     keywords: 'sound chime',
+    format: toneChoice,
   },
   {
     id: 'set-notifyVoice',
@@ -485,6 +507,21 @@ const AREA_BY_ID = new Map(AREAS.map((a) => [a.id, a]));
 
 /** The area `/settings` with nothing after it lands on. */
 export const DEFAULT_AREA: AreaId = 'notifications';
+
+/**
+ * The one view in the rail that is not an area: a list of what you have changed,
+ * computed rather than housed.
+ *
+ * Not an `AreaId`, because it holds no settings of its own — every row in it
+ * lives somewhere else and links back there. It is a route and a rail item, and
+ * that is all, so it appears here as its own small thing rather than as a
+ * seventh member of a list whose every other member has groups.
+ */
+export const CHANGED_VIEW = {
+  id: 'changed',
+  title: 'Changed',
+  blurb: 'Every setting that no longer holds the value this server starts from.',
+} as const;
 
 export const findArea = (id: string): Area | undefined => AREA_BY_ID.get(id as AreaId);
 export const findGroup = (id: string): Group | undefined => GROUP_BY_ID.get(id);
