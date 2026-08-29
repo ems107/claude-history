@@ -8,6 +8,7 @@ import { copyPlain } from '../../lib/clipboard.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { retentionLabel, retentionView } from '../../lib/retention.ts';
 import { actionClass } from '../controlClass.ts';
+import { Explain } from './controls.tsx';
 
 /** What one settings file has to say, in the one word that matters. */
 function sourceValue(s: RetentionSource): { text: string; tone: string } {
@@ -143,7 +144,12 @@ export function RetentionPanel() {
         </div>
       )}
 
-      <div className="space-y-2 border-t border-[var(--border)] pt-3 text-[11px] leading-relaxed text-[var(--text-dim)]">
+      {/* Three essays, and the reason they fold: this panel's JOB is the figure
+          at the top — how long Claude Code keeps things, and what is already
+          past the cutoff. How to change it by hand, why this app will not do it
+          for you, and what the sweep takes with it are all true and all worth
+          keeping, and none of them is what you came to read. */}
+      <Explain label="How to change it, and what the sweep really deletes">
         <p className="text-[var(--text)]">To change it, edit that file by hand:</p>
         <ol className="ml-4 list-decimal space-y-1 marker:text-[var(--text-dim)]/50">
           <li>
@@ -193,7 +199,7 @@ export function RetentionPanel() {
             </>
           )}
         </p>
-      </div>
+      </Explain>
 
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
         <button

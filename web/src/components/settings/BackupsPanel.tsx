@@ -5,7 +5,7 @@ import { api } from '../../api/client.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
-import { Anchored } from './controls.tsx';
+import { Anchored, Explain } from './controls.tsx';
 
 /** Bytes, in the two digits that mean something at these sizes. */
 function size(bytes: number): string {
@@ -112,13 +112,6 @@ export function BackupsPanel() {
 
   return (
     <>
-      <p>
-        Renames, pins, starred messages, your price table and these settings all live in one file, and it is the only
-        thing here that cannot be rebuilt from <span className="font-mono">~/.claude</span>. A dated copy is kept on the
-        first change of each day, whenever the version changes, before an update, and before any write that would empty
-        one of those lists — never two copies of the same bytes.
-      </p>
-
       {data.recovered && (
         <p className="rounded border border-amber-500/40 px-2 py-1.5 text-amber-300">
           This start-up found <span className="font-mono">userdata.json</span> unreadable and restored{' '}
@@ -193,6 +186,18 @@ export function BackupsPanel() {
           ))}
         </ul>
       )}
+
+      {/* At the foot rather than at the head, where it used to be: what you come
+          to this group for is the list of copies and the button that takes one,
+          and four lines about which file this is stood in front of both. */}
+      <Explain label="What is in this file, and when a copy is taken">
+        <p>
+          Renames, pins, starred messages, your price table and these settings all live in one file, and it is the only
+          thing here that cannot be rebuilt from <span className="font-mono">~/.claude</span>. A dated copy is kept on
+          the first change of each day, whenever the version changes, before an update, and before any write that would
+          empty one of those lists — never two copies of the same bytes.
+        </p>
+      </Explain>
     </>
   );
 }
