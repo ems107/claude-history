@@ -484,6 +484,16 @@ reach.
 click away rather than standing between the reader and the control. Ten
 paragraphs of small grey text under ten switches is a wall people read past.
 
+**The column is wide and the prose is not.** The panel is `max-w-5xl` — a 976 px
+card, because what fills it is tables: the paths, the copies, the retention
+sources, the auto-reload readout. Every run of prose inside it is capped at
+`max-w-prose` all the same, so a line stays 65 characters however wide the window
+gets (measured at 1920 / 1600 / 1440 / 1280: 65 at all four), and a notice box
+takes its SENTENCE's width rather than the card's — text capped inside a
+full-width box reads worse than either. The same rule settles a grid: **give the
+slack to the last column, never to a middle one**, or the values end up half a
+screen from the paths they describe.
+
 **Only what cannot be undone is in the danger zone** — stop the server, uninstall
 — and both are also local-only, so over the network it is one explanation rather
 than greyed buttons scattered through other groups.

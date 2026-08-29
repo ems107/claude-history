@@ -691,9 +691,15 @@ up as several failures at once rather than as a setting nobody notices is gone.
   wrap and overflows ~88 px at 700 px on every page of the app (and `/` overflows
   245 px in its own content), which is real, pre-existing, and not this page's.
   The rail is a fixed 224 px and does not fold; the panel is what gives. While
-  you are there: a text field must FILL its card (686 px inside 720 px at
-  1440 px) — `Field` sized its content to fit once, and every box came out
-  160 px wide.
+  you are there: a text field must FILL its card — `Field` sized its content to
+  fit once, and every box came out 160 px wide.
+- **The measure, which is the half a wider column breaks.** The card is 976 px
+  (`max-w-5xl`), but a line of prose in it must stay between **45 and 90
+  characters** at 1920 / 1600 / 1440 / 1280 — it is 65 at all four. Measure it by
+  probing the element's own font rather than by eye, because "it looks fine on
+  mine" is what this kind of thing always passes. In the same pass: a grid gives
+  its slack to the LAST column (the retention values must sit ~12 px from their
+  path, not ~350), and a notice box is as wide as its sentence, not as its card.
 
 ## Platform and plumbing
 
