@@ -44,6 +44,15 @@ const BOX_SELECTOR = '[data-bubble-body], [data-tool-id]';
  */
 export const CHROME_ATTR = 'data-chrome';
 
+/**
+ * A control inside the conversation whose click is a JUMP — `↑ the call` on a
+ * notice panel, `↓ the answer` on the call it came from. See `isJumpControl`
+ * for what turns on it. Only the ones that write the conversation's own anchor
+ * wear it; a button that opens a panel is an ordinary click on the box it sits
+ * in, and moving the ring there is right.
+ */
+export const JUMP_ATTR = 'data-jump';
+
 /** The querystring a link into a session carries so the hit can be marked there. */
 export function highlightSearchParams(query: SearchQueryEcho): URLSearchParams {
   const params = new URLSearchParams();
@@ -241,6 +250,27 @@ export function anchorOfKey(key: string | null): { uuid: string | null; toolUseI
 export function focusKeyAt(node: EventTarget | null): string | null {
   const start = node instanceof Element ? node : node instanceof Node ? (node.parentElement ?? null) : null;
   return boxKeyOf(start);
+}
+
+/**
+ * Whether a click asked to GO somewhere rather than to stand somewhere.
+ *
+ * `focusKeyAt` answers "which box was clicked", and for a jump control that is
+ * the wrong question: the box it sits in is the box you are LEAVING. It makes no
+ * selection of its own either — the arrival does, with its own `selectMessage` —
+ * so the rule that retires an anchor when the ring moves has nothing to act on.
+ *
+ * Asked anyway, it undid the jump's own work in the same click, because the
+ * button had already set the anchor by the time the click reached the scroller:
+ * the page still scrolled to the target, but the flash was cut from 2.5 s to
+ * 220 ms and the link was gone from the address bar. Only pressing the SAME
+ * button twice in a row could reach it — alternating `↑` and `↓` never does,
+ * since each press lands on the box that IS the anchor and the rule steps aside
+ * of its own accord.
+ */
+export function isJumpControl(node: EventTarget | null): boolean {
+  const start = node instanceof Element ? node : node instanceof Node ? (node.parentElement ?? null) : null;
+  return !!start?.closest(`[${JUMP_ATTR}]`);
 }
 
 /**

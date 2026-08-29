@@ -153,6 +153,8 @@ export function InjectedNotice({
               {call && subagents && (
                 <button
                   type="button"
+                  // Not a click on this panel: it is the panel being left.
+                  data-jump
                   onClick={() => subagents.goToCall(call)}
                   className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
                   title="Go to the call that started it"

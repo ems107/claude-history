@@ -185,6 +185,8 @@ export function ToolBlock({
           <button
             type="button"
             data-chrome
+            // Not a click on this block: it is the block being left.
+            data-jump
             onClick={() => subagents.goToMessage(answer)}
             className="shrink-0 cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
             title="Go to the notification this call was answered by"
