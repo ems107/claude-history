@@ -57,7 +57,10 @@ export function SettingsNav({
                   select(g.id);
                   document.getElementById(g.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
                 }}
-                className={`cursor-pointer truncate py-0.5 pr-3 pl-[1.4rem] text-left text-xs ${
+                // An area's label starts at 22 px — `px-3` plus the 2 px bar plus
+                // its gap — and these used to start at 22.4, which is not an
+                // indent, it is the same column. 36 px is a step you can see.
+                className={`cursor-pointer truncate py-0.5 pr-3 pl-9 text-left text-xs ${
                   selected === g.id ? 'text-[var(--accent)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
                 }`}
               >

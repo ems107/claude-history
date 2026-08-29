@@ -721,6 +721,11 @@ up as several failures at once rather than as a setting nobody notices is gone.
   once the panel is scrolled (dispatch the click on the column instead), and a
   scroll test parked at a FRACTION of the page proves nothing if that fraction
   happens not to cross a heading.
+- **A sub-item is INDENTED past its area**, and this is a measurement rather than
+  an eye: they used to start at 22.4 px against an area label's 22, which is the
+  same column and not an indent at all. At least 12 px to the right of the area
+  label, in each of the four areas that have sub-items, with none of them
+  truncating at the deeper indent.
 
 ## Platform and plumbing
 
