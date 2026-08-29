@@ -3,6 +3,7 @@ import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
 import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
 import { systemChars } from '../../lib/findInSession.ts';
+import { parseFindings } from '../../lib/findings.ts';
 import { formatDateTime, formatDateTimeFull, formatDuration, relativeTime, shortModel } from '../../lib/format.ts';
 import { anythingToFold, type FoldCounts, foldedCounts } from '../../lib/folding.ts';
 import { parsePlan } from '../../lib/plans.ts';
@@ -15,6 +16,7 @@ import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
 import { CompactBoundaryPanel, CompactSummaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
 import { CostPill } from './CostPill.tsx';
+import { FindingsCard } from './FindingsCard.tsx';
 import { FoldHeader } from './FoldHeader.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { InjectedNotice } from './InjectedNotice.tsx';
@@ -645,11 +647,12 @@ function userNode(item: MessageItem, models: TurnModel[], badge: ReactNode | und
  * The card a call is lifted out of the run and drawn as, or null for the calls
  * that are ordinary tool traffic.
  *
- * Three tools earn one, and each is a turn of the conversation in miniature
+ * Four tools earn one, and each is a turn of the conversation in miniature
  * rather than plumbing: a question put to the user, a plan submitted for
- * approval, and files handed over. Every parser is guarded by its own tool name,
- * so the order here is presentation and never correctness — and one place to add
- * the fourth beats a ternary chain in the two loops below.
+ * approval, files handed over, and what a code review found. Every parser is
+ * guarded by its own tool name, so the order here is presentation and never
+ * correctness — and one place to add the fifth beats a ternary chain in the two
+ * loops below.
  */
 function toolCard(block: ToolContentBlock, key: string): ReactNode | null {
   const asked = parseAskUserQuestion(block);
@@ -658,6 +661,8 @@ function toolCard(block: ToolContentBlock, key: string): ReactNode | null {
   if (plan) return <PlanCard key={`plan-${key}`} parsed={plan} />;
   const sent = parseSentFiles(block);
   if (sent) return <SentFilesCard key={`sent-${key}`} parsed={sent} />;
+  const found = parseFindings(block);
+  if (found) return <FindingsCard key={`found-${key}`} parsed={found} />;
   return null;
 }
 

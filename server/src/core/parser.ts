@@ -395,6 +395,22 @@ function summarizeInput(toolName: string, input: unknown): string {
         .filter((n) => n.length > 0);
       return names.join(', ');
     }
+    // The fourth of the same trap, and the widest of them: a code review's
+    // whole product is the `findings` array, and the default stringified all of
+    // it — 14,348 characters of minified JSON on one truncated line for the 12
+    // findings of `c483a438`. What names the call is the first finding, which is
+    // also the worst one: the tool's contract ranks them most-severe first.
+    case 'ReportFindings': {
+      const findings = Array.isArray(input.findings) ? input.findings : [];
+      // An empty array is a REAL answer here — "nothing survived verification" —
+      // and saying so is the whole of what that call reported.
+      if (findings.length === 0) return 'no findings';
+      const worst = findings[0];
+      const name = isRec(worst) ? (str(worst.short_summary) ?? str(worst.summary) ?? str(worst.file) ?? '') : '';
+      const rest = findings.length - 1;
+      if (!name) return `${String(findings.length)} findings`;
+      return rest === 0 ? name : `${name} (+${String(rest)} more)`;
+    }
     default: {
       const s = first('description', 'command', 'file_path', 'pattern', 'query', 'url', 'prompt');
       if (s) return s;

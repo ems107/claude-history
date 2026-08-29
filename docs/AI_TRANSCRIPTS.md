@@ -96,6 +96,11 @@ Seven exist in this corpus, and **only three ever carry `content`** — the rest
 - The bytes live only in the session's temp scratchpad (`%TEMP%\claude\<project-encoded>\<session>\scratchpad`), which is swept. `f3384d17`'s three PNGs are already gone while `fbc2e20c`'s three are still there, so **"the file no longer exists" is an ordinary state of a delivery**, not a failure — and any check that wants to see a picture has to find its own fixture ([AI_TESTING.md](AI_TESTING.md)).
 - The same PNG can be in the transcript twice over and still not through this: `fbc2e20c` also `Read` those files, and a `Read` of an image writes its base64 into `tool_result.content[]` **and** again into `toolUseResult.file.base64` — ~145 KB per line, for one screenshot.
 
+**`ReportFindings` carries a code review's whole product in the CALL** — the fourth shape, and the one where the result is worth nothing at all. A `/code-review` reports through it and is told not to print the findings as text as well, so `input.findings[]` is the only copy: `file` (repo-relative), `line`, `category`, `short_summary` (capped at 60 characters), `summary`, `failure_scenario`, and optionally `verdict` and `outcome`, plus a `level` on the call. **The order is the ranking** — "most-severe first", and there is no severity field to sort on afterwards. The `tool_result.content` is the string `N findings reported.` and the carrying line's `toolUseResult` is `{count, findings}`, a normalised copy of what was already sent; nothing is joined from either.
+
+- **A rejected report is an ordinary event, and it duplicates the review.** The harness validates the schema and answers `is_error` with a Zod `InputValidationError` (760 characters of it in `c483a438`, for three `short_summary` over the cap), and the model retries with almost the same list — so one review is two calls carrying 24 findings between them where there were 12. Only the result tells them apart.
+- **One session in the corpus uses the tool** (`c483a438`, 2 calls, 12 findings), and `verdict`, `outcome` and `level` appear in none of it. They are read as optional rather than defaulted: a verdict nobody reached must not draw as one that was.
+
 ## Who wrote a `user` line
 
 `user` `message.content` is a **string** or an **array** (the tool_result carrier) — always distinguish. But a string is NOT proof a human typed it:

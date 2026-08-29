@@ -1,6 +1,7 @@
 import type { ContentBlock, MessageItem, SessionDetail } from '@claude-history/shared';
 import { parseAskUserQuestion } from '../components/viewer/AnsweredQuestion.tsx';
 import { parseSentFiles } from './sentFiles.ts';
+import { parseFindings } from './findings.ts';
 import { formatDateTime, shortModel } from './format.ts';
 import { parsePlan, parsePlanFeedback } from './plans.ts';
 import { systemLabel } from './systemLines.ts';
@@ -184,6 +185,44 @@ function contentLines(
             out.push(`> - \`${f.path}\`${detail ? ` — ${detail}` : ''}`);
           }
           out.push('', '> *The files themselves are on disk, not in this export.*', '');
+          break;
+        }
+        // And the fourth: what a review found is the review. `ReportFindings`
+        // is the only place the findings exist — the tool tells the model not
+        // to print them as text as well — so an export that dropped this
+        // exported a code review as a line saying a tool was called.
+        const found = parseFindings(block);
+        if (found) {
+          writeHeader();
+          const title = `🔎 Code review — ${String(found.findings.length)} finding${
+            found.findings.length === 1 ? '' : 's'
+          }${found.rejected ? ' — rejected, never reported' : ''}${found.level ? ` — ${found.level} effort` : ''}`;
+          const rows: string[] = [];
+          if (found.findings.length === 0) {
+            rows.push('> *Nothing survived verification — the review found nothing to report.*', '');
+          }
+          // Numbered because the order is the ranking: the tool sorts them
+          // most-severe first and carries no severity to sort on afterwards.
+          for (const [n, f] of found.findings.entries()) {
+            const where = f.line === null ? f.file : `${f.file}:${String(f.line)}`;
+            const tags = [f.category, f.verdict?.toLowerCase(), f.outcome?.replace(/_/g, ' ')]
+              .filter((t): t is string => !!t)
+              .join(' · ');
+            rows.push(`> ${String(n + 1)}. \`${where}\`${tags ? ` — *${tags}*` : ''}`);
+            if (f.shortSummary) rows.push(`>    **${f.shortSummary.replace(/\n/g, ' ')}**`);
+            if (f.summary) rows.push(`>    ${f.summary.replace(/\n/g, ' ')}`);
+            if (f.failureScenario) rows.push(`>    *Failure scenario:* ${f.failureScenario.replace(/\n/g, ' ')}`);
+            rows.push('>');
+          }
+          // A rejected report goes behind a `<details>`, which is this format's
+          // version of the fold the card gives it: the model retries with almost
+          // the same list, and two open ones in a row read as twice as many
+          // findings as the review actually made.
+          if (found.rejected) {
+            out.push('<details>', `<summary>${title}</summary>`, '', ...rows, '', '</details>', '');
+          } else {
+            out.push(`> **${title}**`, '', ...rows, '');
+          }
           break;
         }
         if (!opts.includeTools) break;
