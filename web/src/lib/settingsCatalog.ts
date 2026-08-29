@@ -570,13 +570,23 @@ export interface SearchHit {
   area: Area;
 }
 
+/** Does the query start a word in this text? */
+const startsWord = (text: string, query: string) => text.startsWith(query) || text.includes(` ${query}`);
+
 /**
  * The rank a hit gets, lowest first — or `null` for no hit at all.
  *
- * Deliberately a handful of tiers rather than a score: with forty entries the
- * only thing that matters is that a word in the NAME beats the same word buried
- * in somebody's keywords. Typing "tone" has to put `General tone` above the four
- * rows that merely list "tone" among the words they answer to.
+ * Deliberately a handful of tiers rather than a score: with forty-six entries
+ * the only thing that has to be true is that a word in the NAME beats the same
+ * word buried in somebody's keywords.
+ *
+ * **A word at the START of a label is NOT its own tier**, and that is the one
+ * decision here worth stating. It was, and typing "tone" then answered with
+ * `Tone for a session waiting for you` ahead of `General tone` — the setting the
+ * other two defer to, and the one anybody typing that word means. Both are the
+ * same kind of hit; what separates them is the page's own order, which is what
+ * breaks every tie below and is a rule that can be explained: the answers come
+ * back in the order you would meet them reading the page.
  *
  * Folded with `foldText`, the same folding the transcript search uses on both
  * sides of the wire — so "tono" and "tonó" behave here exactly as they do there.
@@ -584,14 +594,13 @@ export interface SearchHit {
 function rank(entry: Entry, group: Group, area: Area, query: string): number | null {
   const label = foldText(entry.label);
   if (label === query) return 0;
-  if (label.startsWith(query)) return 1;
-  if (label.includes(` ${query}`)) return 2;
-  if (label.includes(query)) return 3;
+  if (startsWord(label, query)) return 1;
+  if (label.includes(query)) return 2;
   const keywords = entry.keywords ? foldText(entry.keywords) : '';
-  if (keywords.startsWith(query) || keywords.includes(` ${query}`)) return 4;
-  if (keywords.includes(query)) return 5;
-  if (foldText(group.title).includes(query)) return 6;
-  if (foldText(area.title).includes(query)) return 7;
+  if (startsWord(keywords, query)) return 3;
+  if (keywords.includes(query)) return 4;
+  if (foldText(group.title).includes(query)) return 5;
+  if (foldText(area.title).includes(query)) return 6;
   return null;
 }
 
