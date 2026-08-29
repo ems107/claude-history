@@ -515,10 +515,8 @@ export const CHANGED_VIEW = {
 
 export const findArea = (id: string): Area | undefined => AREA_BY_ID.get(id as AreaId);
 export const findGroup = (id: string): Group | undefined => GROUP_BY_ID.get(id);
-export const findEntry = (id: string): Entry | undefined => ENTRY_BY_ID.get(id);
 
 export const groupsOf = (area: AreaId): Group[] => GROUPS.filter((g) => g.area === area);
-export const entriesOf = (group: string): Entry[] => ENTRIES.filter((e) => e.group === group);
 
 const ENTRY_BY_FIELD = new Map<keyof AppSettings, Entry>(
   ENTRIES.flatMap((e) => (e.field ? [[e.field, e] as const] : [])),

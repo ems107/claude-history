@@ -8,7 +8,7 @@ import {
 import { useEffect, useState } from 'react';
 import { localVoices, playTone, primeAudio, resolveTone, speak } from '../../lib/notificationSound.ts';
 import { actionClass } from '../controlClass.ts';
-import { selectClass } from './controls.tsx';
+import { Hint, selectClass } from './controls.tsx';
 
 /**
  * The two controls that make a noise, and the words that go with them.
@@ -133,7 +133,7 @@ export function ToneSelect({
         </label>
         <PlayButton tone={resolved} volume={volume} disabled={disabled} />
       </div>
-      {hint && <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</p>}
+      {hint && <Hint>{hint}</Hint>}
     </div>
   );
 }

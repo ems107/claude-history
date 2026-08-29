@@ -7,10 +7,10 @@ import { useLocalOnly } from '../../api/useLocal.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
-import { Anchored, Switch } from './controls.tsx';
+import { Anchored, inputClass, Switch } from './controls.tsx';
 
-const inputClass =
-  'w-44 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
+/** The shared box, at the width three credentials fields want. */
+const credentialClass = `w-44 ${inputClass}`;
 
 /**
  * Turning remote access on, and the three things that have to be true for it to
@@ -219,14 +219,14 @@ export function RemoteAccessPanel() {
             ) : (
               <>
                 <input
-                  className={inputClass}
+                  className={credentialClass}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Username"
                   autoComplete="username"
                 />
                 <input
-                  className={inputClass}
+                  className={credentialClass}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -234,7 +234,7 @@ export function RemoteAccessPanel() {
                   autoComplete="new-password"
                 />
                 <input
-                  className={inputClass}
+                  className={credentialClass}
                   type="password"
                   value={repeat}
                   onChange={(e) => setRepeat(e.target.value)}

@@ -16,9 +16,18 @@ import { useSettingsPage } from './context.ts';
 /** Classes three kinds of input share, so a rework touches one line. */
 export const inputClass =
   'rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
-export const numberClass = `w-20 text-right ${inputClass}`;
+const numberClass = `w-20 text-right ${inputClass}`;
 export const selectClass =
   'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
+
+/**
+ * What an explanation under a control looks like — the class, for the two places
+ * that cannot use the component below.
+ *
+ * It was written out by hand in four of them, which is four chances to drift on
+ * a line-height nobody would notice.
+ */
+export const hintClass = 'text-[11px] leading-relaxed text-[var(--text-dim)]';
 
 /**
  * A switch, for the one setting a whole block hangs off.
@@ -160,7 +169,7 @@ export function GroupCard({
           text inside a full-width box was tried first and read worse than
           either: three wrapped lines with 600 px of empty border beside them. */}
       {master && !on && offNote && (
-        <p className="mb-3 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--text-dim)]">
+        <p className={`mb-3 max-w-prose rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 ${hintClass}`}>
           {offNote}
         </p>
       )}
@@ -301,7 +310,7 @@ export function DefaultBadge<K extends keyof AppSettings>({ field }: { field: K 
  * not wrapping.
  */
 export function Hint({ children }: { children: ReactNode }) {
-  return <span className="mt-0.5 block text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</span>;
+  return <span className={`mt-0.5 block ${hintClass}`}>{children}</span>;
 }
 
 /** The label and hint of a preference, in the shape a checkbox wants them. */
@@ -414,7 +423,7 @@ export function NumberField({
         />
         {after && <span>{after}</span>}
       </label>
-      {note && <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-dim)]">{note}</p>}
+      {note && <Hint>{note}</Hint>}
     </Field>
   );
 }
@@ -581,7 +590,7 @@ export function TextField({
       {(after || hint) && (
         <div className={`mt-1.5 flex flex-wrap items-center gap-2 ${disabled ? inactiveRow : ''}`}>
           {after}
-          {hint && <span className="text-[11px] leading-relaxed text-[var(--text-dim)]">{hint}</span>}
+          {hint && <span className={hintClass}>{hint}</span>}
         </div>
       )}
     </Field>
@@ -675,7 +684,7 @@ export function Explain({ label = 'How it works', children }: { label?: string; 
   return (
     <div className="pt-1">
       <Fold label={label}>
-        <div className="space-y-2 text-[11px] leading-relaxed text-[var(--text-dim)]">{children}</div>
+        <div className={`space-y-2 ${hintClass}`}>{children}</div>
       </Fold>
     </div>
   );
