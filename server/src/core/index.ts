@@ -390,10 +390,33 @@ export class SessionIndex {
     this.history = await readHistoryData(this.config.historyFile);
   }
 
-  /** Re-summarize one session file (initial build and watcher updates). */
+  /**
+   * Re-summarize one session file (initial build and watcher updates).
+   *
+   * **A fresh summary knows nothing the file does not say, and two of its fields
+   * are not in the file.** `live` is put back by `applyLive()` and the overrides
+   * by `withOverride()` at serve time; `enrichment` and `descendants` have
+   * nothing behind them, so a summary rebuilt from scratch answers without them
+   * — and that gap is drawn. The enricher fills the first one back in ~100 ms
+   * later, which sounds like nothing until you watch a session work: every line
+   * it writes took the cost, the compaction count and the PR and fork badges out
+   * of its row and put them back, and the meta line shoved the LIVE and WORKING
+   * badges sideways twice a second. The second field is worse — only a CHILD
+   * being re-enriched restores `descendants`, which may never happen, so a
+   * parent that grew lost its "branched into" chips for good.
+   *
+   * So they are carried across: one message stale for a tenth of a second beats
+   * absent, which is the same call the session header used to make for itself
+   * before this made it unnecessary. A session that has never been enriched
+   * still has null here, because there is nothing to remember.
+   */
   async refreshSummary(s: ScannedSession): Promise<void> {
     try {
-      this.sessions.set(s.id, await summarizeSession(s, this.history.sessionProject));
+      const prev = this.sessions.get(s.id);
+      const next = await summarizeSession(s, this.history.sessionProject);
+      if (prev?.enrichment) next.enrichment = prev.enrichment;
+      if (prev && prev.descendants.length > 0) next.descendants = prev.descendants;
+      this.sessions.set(s.id, next);
       this.scanned.set(s.id, s);
     } catch (err) {
       log.warn(`failed to summarize ${s.filePath}`, err);
