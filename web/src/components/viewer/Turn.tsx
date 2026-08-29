@@ -491,6 +491,7 @@ function countWords(c: FoldCounts): { n: number; word: string; className: string
   return [
     { n: c.responses, word: 'response', className: 'text-emerald-300/80' },
     { n: c.tools, word: 'tool call', className: 'text-sky-300/80' },
+    { n: c.planMode, word: 'plan mode marker', className: 'text-zinc-300/70' },
     { n: c.notices, word: 'notice', className: 'text-zinc-300/70' },
     { n: c.recaps, word: 'recap', className: 'text-zinc-300/70' },
   ].filter((x) => x.n > 0);
@@ -853,8 +854,16 @@ export function TurnView({
         // be the one thing left standing on a folded turn, which read as the
         // turn having been about it. Every other system line stays: a `Command`
         // is the user's own action and a panel is what happened to the
-        // conversation (`foldedCounts`).
+        // conversation (`foldedCounts`) — plan mode excepted, below.
         if (item.systemSubtype === RECAP_SUBTYPE) {
+          markFold();
+          continue;
+        }
+        // A plan-mode marker is the one panel that goes with the thread too:
+        // entering plan mode is a moment of THIS turn, not a fact about the
+        // conversation. Folded, its entry and its exit were left standing above
+        // and below the strip with the eight hours between them hidden.
+        if (item.blocks[0]?.kind === 'plan-mode') {
           markFold();
           continue;
         }
@@ -903,6 +912,12 @@ export function TurnView({
         promptShown = true;
         continue;
       }
+      // The entry is written with the prompt's own timestamp, so it lands
+      // BEFORE the first answer — and `foldAt` is a position, so left unmarked
+      // it stayed at the prompt's own margin, reading as a sibling of the
+      // question rather than as the first thing it produced. Marking here puts
+      // the rail's head at the marker, which is where the fold now starts.
+      if (item.blocks[0]?.kind === 'plan-mode') markFold();
       nodes.push(<SystemItem key={item.uuid} item={item} />);
       continue;
     }
