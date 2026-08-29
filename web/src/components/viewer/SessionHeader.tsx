@@ -197,7 +197,11 @@ export function SessionHeader({
   const cost = sessionCostParts(s, prices.data?.prices ?? {});
 
   return (
-    <div className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">
+    // A measurement hook, like `data-conversation-scroller` and `data-inspector`:
+    // this header is inside the box that narrows when a column opens beside the
+    // session, so its facts row can rewrap — and whatever height it takes, the
+    // scroller under it gives up.
+    <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">
       <div className="flex items-center gap-2">
         <Link to={listUrl()} className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
           ←

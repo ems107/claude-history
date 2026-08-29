@@ -33,10 +33,17 @@ export function SideColumn({
         onMouseDown={onResizeStart}
         title="Drag to resize"
       />
+      {/* `overflow-hidden` is the structural half of the promise, and the rows
+          inside truncate so it never has to be used: a column is a BOX, and
+          nothing in it may grow the page. An overlay could overflow harmlessly —
+          it was already floating over everything — but a column that overflows
+          puts a horizontal scrollbar under the whole app, which is this
+          layout's one way of failing badly. `position: fixed` descendants are
+          unaffected, so the hover cards and the image overlay still escape. */}
       <div
         data-side-column={kind}
         style={{ width }}
-        className="flex min-w-0 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]"
+        className="flex min-w-0 shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--bg)]"
       >
         {children}
       </div>

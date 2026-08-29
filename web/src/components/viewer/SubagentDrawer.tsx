@@ -116,8 +116,11 @@ export function SubagentDrawer({
     // rail with `right: RAIL_PX`; beside the session there is nothing to step
     // around and nothing covered.
     <>
+      {/* Only the controls are `shrink-0`. Everything that is a fact about the
+          agent truncates instead, so the row still ends in its ✕ at the
+          narrowest this column can be dragged to. */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2">
-        <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-xs font-semibold text-sky-400">
+        <span className="min-w-0 shrink truncate rounded bg-sky-500/15 px-1.5 py-0.5 text-xs font-semibold text-sky-400">
           ⑂ {query.data?.meta.agentType ?? 'subagent'}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm" title={query.data?.meta.description}>
@@ -126,7 +129,7 @@ export function SubagentDrawer({
         {/* Written down because it is what the URL carries and what a
             notification calls this agent — searchable now, and until it was on
             screen there was no way to go from the string back to the thing. */}
-        <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)] opacity-60 select-text" title="Subagent id — paste it into the search to come back here">
+        <span className="min-w-0 shrink truncate font-mono text-[10px] text-[var(--text-dim)] opacity-60 select-text" title="Subagent id — paste it into the search to come back here">
           {agentId}
         </span>
         <CostPill entries={entries} prices={prices} label="agent" variant="badge" />

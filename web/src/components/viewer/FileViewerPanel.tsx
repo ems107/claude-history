@@ -186,8 +186,14 @@ export function FileViewerPanel({
     // often clicked from inside a subagent report, and the report has to stay
     // readable while the file it named is read.
     <>
+      {/* Everything here truncates except the two buttons, which is what makes
+          the row survive the narrowest the column can be dragged to. `shrink-0`
+          on the name and the size read fine at 832 px of overlay and pushed the
+          ✕ past the window's edge the moment this became a column somebody can
+          squeeze — a button 12 px off the screen, and a horizontal scrollbar
+          under the whole app to reach it. */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2">
-        <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-300">
+        <span className="min-w-0 shrink truncate rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-semibold text-amber-300">
           {isImagePath(fileRef.path) ? '🖼' : '📄'} {refBasename(fileRef.path)}
           {fileRef.line ? `:${fileRef.line}` : ''}
         </span>
@@ -198,7 +204,7 @@ export function FileViewerPanel({
           {data?.path ?? fileRef.path}
         </span>
         {data?.exists && (
-          <span className="shrink-0 text-[11px] text-[var(--text-dim)]">
+          <span className="min-w-0 shrink truncate text-[11px] text-[var(--text-dim)]">
             {formatBytes(data.sizeBytes)}
             {data.modifiedAt ? ` · ${formatDateTime(data.modifiedAt)}` : ''}
           </span>
