@@ -57,8 +57,8 @@ const SIDE_MAX = 1600;
  * 1426 px a column could not go past 870, so "put the file on half the screen"
  * was not reachable. They are different facts and they get different numbers.
  *
- * 320 — the same floor every panel in this app has, and the second number this
- * has had. It was 400, measured: 384 is where the conversation stops scrolling
+ * 320 — the inspector's own floor, and the second number this has had. It was
+ * 400, measured: 384 is where the conversation stops scrolling
  * SIDEWAYS (a content floor of 364, plus the 20 px of scrollbar gutter the
  * scroller reserves on both edges to keep the thread centred), and 400 was that
  * rounded up. Which is a fine number for a floor nobody chose and a bad one for
@@ -110,35 +110,37 @@ export const INSPECTOR_MIN = 320;
 export const INSPECTOR_MAX = 900;
 
 export interface ColumnWidth {
-  /** The width the reader chose. What is DRAWN can be less — see `fitColumns`. */
+  /** The width the reader chose. What is DRAWN can be less — see `layoutColumns`. */
   width: number;
-  /** `max` is `SideLayout.maxColumn`: what is free with everything else where it is. */
+  /** `max` is `SideLayout.maxColumn`: what is free once the other has yielded. */
   startResize: (e: React.MouseEvent, max: number) => void;
 }
 
 /**
- * The seam follows the pointer, and both halves of that are load-bearing.
+ * The seam follows the pointer, and the way it does is the whole of the fix.
  *
  * **The width is read off the pointer's position, not off a delta.** A drag used
  * to be `from + startX - clientX`, which is only the same thing while the width
  * it accumulates onto is the width being drawn. It was not: with two things open
- * beside the conversation their remembered widths rarely fit, so `fitColumns`
- * was scaling both, and 100 px of mouse became ~92 px of column — the seam
- * drifting away from the pointer, and the OTHER seam moving too. One thing open
- * felt right for exactly the same reason: nothing to scale.
+ * beside the conversation their remembered widths rarely fit, so the layout was
+ * scaling both proportionally, and 100 px of mouse became ~92 px of column —
+ * the seam drifting away from the pointer, and the OTHER seam moving too. One
+ * thing open felt right for exactly the same reason: nothing to scale.
  *
- * So the anchor is the panel's own right edge, which cannot move during the
- * drag, and the grab offset is kept so the pixel you took hold of stays under
- * the pointer. Nothing accumulates, so nothing can drift.
+ * So the anchor is the panel's own right edge and the grab offset is kept, so
+ * the pixel you took hold of stays under the pointer. Nothing accumulates, so
+ * nothing can drift.
  *
- * **And a drag may never make the fit bite**, or the edge it is anchored to
- * would move underneath it. That is what `max` is for: what is free with
- * everything else exactly where it is. The trade is a hard stop instead of a
- * soft one — with a panel open, a column can no longer be dragged past what is
- * left by squeezing that panel; drag the panel first, or close it. A stop you
- * can feel beats a seam that lags.
+ * **That edge has to hold still, and `layoutColumns` is what makes it.** The
+ * panel being dragged has priority, so it is drawn at exactly what it asks for
+ * and its right edge stays where it is while the one yielding moves. `max` is
+ * the far end of that: what is free once the other has given way to its floor,
+ * which is where the conversation reaches its own and the drag stops.
+ *
+ * The panel is found as the seam's next sibling, which is the one thing this
+ * asks of the markup — `SideColumn` and `Inspector` both draw the seam first.
  */
-function trackPointer(
+export function trackPointer(
   e: React.MouseEvent,
   min: number,
   max: number,
@@ -164,18 +166,14 @@ function trackPointer(
   document.addEventListener('mouseup', onUp);
 }
 
-export { trackPointer };
-
 function readWidth(): number {
   const n = Number(localStorage.getItem(COLUMN_KEY));
   return Number.isFinite(n) && n > 0 ? Math.min(SIDE_MAX, Math.max(SIDE_MIN, n)) : COLUMN_DEFAULT;
 }
 
 /**
- * The column's remembered width, dragged from the seam on its LEFT — so the
- * sign is mirrored, exactly as in `useInspector`. The same `mousedown` →
- * document `mousemove`/`mouseup` shape as the session list's sidebar, which is
- * the original of all three.
+ * The column's remembered width, dragged from the seam on its LEFT, through the
+ * same `trackPointer` the inspector uses.
  *
  * It takes no key: there is one width, and it belongs to the SLOT rather than to
  * whatever is currently in it. That is what makes walking from a file into a
@@ -284,9 +282,10 @@ export interface SideLayout {
   /** Everything the conversation does not get: the rail, what is open, and their seams. */
   gutter: number;
   /**
-   * How wide each may be DRAGGED right now — what is free with the other one
-   * exactly where it is. A drag capped here can never make `fitColumns` bite,
-   * which is what keeps the seam under the pointer (`trackPointer`).
+   * How wide each may be DRAGGED right now — what is free once the OTHER has
+   * given way to its floor, since dragging one is what makes it yield. The stop
+   * is therefore the conversation's own floor, which is a limit somebody can
+   * feel and act on rather than one that arrives early.
    */
   maxInspector: number;
   maxColumn: number;

@@ -155,8 +155,8 @@ export function useInspector({
 
   // The same gesture as the column beside it, through the same function: the
   // seam is anchored to the panel's right edge and follows the pointer, and
-  // `max` — `SideLayout.maxInspector`, passed down by `Inspector` — is what
-  // stops a drag from making the fit bite and moving that edge underneath it.
+  // `max` — `SideLayout.maxInspector`, passed down by `Inspector` — is where
+  // the column has yielded all it can and the conversation is on its floor.
   const startResize = useCallback((e: React.MouseEvent, max: number) => {
     trackPointer(
       e,

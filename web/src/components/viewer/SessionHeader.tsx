@@ -206,7 +206,11 @@ export function SessionHeader({
         <Link to={listUrl()} className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
           ←
         </Link>
-        <ProjectTag name={s.projectName} path={s.projectPath} color={color} />
+        {/* `shrink`, which the list deliberately does not pass: this header can
+            be squeezed to 320 px by a column opened beside the session, and a
+            tag that held its full width there pushed the row's own controls out
+            of the box — where the clip then ate them. */}
+        <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
         {draft ? (
           <h1 className="min-w-0 truncate text-base font-semibold text-[var(--text-dim)]" title={s.title}>
             {s.title}

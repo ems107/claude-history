@@ -24,18 +24,16 @@ export function Inspector({
 }: {
   inspector: InspectorState;
   /**
-   * What it is DRAWN at, which is not always what it was dragged to: the page
-   * fits all three columns beside the conversation together, and this one gives
-   * way like the others when a file or a subagent is open beside it. The
-   * remembered width (`inspector.width`) is never rewritten by that, so closing
-   * the other column brings this one back to the size it was left at.
+   * What it is DRAWN at, which is not always what it was dragged to: it gives
+   * way to a column being dragged beside it. The remembered width
+   * (`inspector.width`) is never rewritten by that, so closing the column brings
+   * this one back to the size it was left at.
    */
   width: number;
   /**
-   * The widest a drag may take it right now — `SideLayout.maxInspector`, which
-   * is what is free with the column beside it exactly where it is. Capping the
-   * drag there is what keeps the seam under the pointer: a drag that made the
-   * fit bite would move the very edge the drag is anchored to.
+   * The widest a drag may take it right now — `SideLayout.maxInspector`, what
+   * is free once the column beside it has given way to its own floor. The stop
+   * is the conversation's floor.
    */
   maxWidth: number;
   children: ReactNode;

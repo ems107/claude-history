@@ -752,6 +752,11 @@ export function SessionViewPage() {
     // column's, which is the thing just opened to be looked at.
     priority: inspector.dragging ? 'inspector' : 'column',
   });
+  /** One binding for the one seam, whichever of the two panels is in the slot. */
+  const startColumnResize = useCallback(
+    (e: React.MouseEvent) => column.startResize(e, sideLayout.maxColumn),
+    [column, sideLayout.maxColumn],
+  );
 
   const navigate = useNavigate();
   useEffect(() => {
@@ -763,18 +768,21 @@ export function SessionViewPage() {
       // (The textarea check above already covers where xterm usually puts the
       // focus; this is the one that stays true when it moves.)
       if (isFromTerminal(e.target)) return;
-      // Innermost first: the file sits on top of the subagent drawer, which sits
-      // on top of the panel that opened it — a path is often clicked from inside
-      // a subagent report, and that whole stack has to unwind in order.
+      // Outermost first: the column beside the session, then the rail's panel
+      // inside it, then the page. Two of these four branches can no longer both
+      // be true — a file and a subagent transcript are one slot — so the order
+      // between them is only what it costs to read; the order that matters is
+      // that a column closes before the panel it was opened from.
       //
-      // The inspector is one branch for all six panels now, which is what makes
-      // this list honest: only the subagent list was ever in it, because putting
-      // one file panel in and not the other would have been worse than neither.
+      // The inspector is one branch for all six panels, which is what makes this
+      // list honest: only the subagent list was ever in it, because putting one
+      // file panel in and not the other would have been worse than neither.
       //
-      // The find bar comes after all three and before going back: those are
-      // layers drawn OVER the conversation, while the bar sits beside it. Its
-      // own input handles Escape itself and stops it here, so this branch is for
-      // an Escape pressed while reading, with the bar still open behind you.
+      // The find bar comes last before going back, and it is the one thing here
+      // that is not a pane: it belongs to the conversation's own column and
+      // closing it closes nothing you are looking at. Its own input handles
+      // Escape and stops it there, so this branch is for an Escape pressed while
+      // reading, with the bar still open behind you.
       if (fileRef) closeFile();
       else if (agentId) closeAgent();
       else if (inspector.open !== null) inspector.close();
@@ -1347,7 +1355,7 @@ export function SessionViewPage() {
               buy that by being drawn OVER the drawer, and buys it now by being
               the column after it. */}
           {agentId && (
-            <SideColumn kind="agent" width={sideLayout.column} onResizeStart={(e) => column.startResize(e, sideLayout.maxColumn)}>
+            <SideColumn kind="agent" width={sideLayout.column} onResizeStart={startColumnResize}>
               <SubagentDrawer
                 sessionId={id}
                 agentId={agentId}
@@ -1362,7 +1370,7 @@ export function SessionViewPage() {
             </SideColumn>
           )}
           {fileRef && (
-            <SideColumn kind="file" width={sideLayout.column} onResizeStart={(e) => column.startResize(e, sideLayout.maxColumn)}>
+            <SideColumn kind="file" width={sideLayout.column} onResizeStart={startColumnResize}>
               <FileViewerPanel
                 // Keyed on the reference: opening another file starts a fresh panel
                 // rather than scrolling the previous one's state onto a new body.

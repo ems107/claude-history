@@ -9,9 +9,10 @@ import type { ReactNode } from 'react';
  * size, four launcher buttons; an agent type, a clock, two jumps — so what is
  * shared is only the seam, the width and the box.
  *
- * The handle is the session list's, mirrored, exactly as the inspector's is:
- * `w-1`, `cursor-col-resize`, and the seam is what you drag rather than the
- * panel's edge.
+ * The handle is the inspector's, through the same `trackPointer`: `w-1`,
+ * `cursor-col-resize`, and the seam is what you drag rather than the panel's
+ * edge — it is also what that function looks for the panel next to, so the
+ * seam must stay the sibling BEFORE it.
  */
 export function SideColumn({
   kind,
