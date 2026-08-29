@@ -51,23 +51,35 @@ function RowContent({
   // cluster beside LIVE and working: there it read as something happening,
   // and it was the only thing inside a row that is entirely a link that could
   // be clicked on its own.
-  const meta: Array<string | null> = [
-    entrypointLabel(session.entrypoint),
-    shortModel(session.model),
-    session.gitBranch ? `⎇ ${session.gitBranch}` : null,
-    session.enrichment
-      ? `${session.enrichment.userMessageCount} prompts`
-      : session.messageCount !== null
-        ? `~${session.messageCount} msgs`
-        : null,
+  // Each item carries its own key rather than its position: three of the seven
+  // are conditional, and keying on the index makes every item after one of them
+  // a different element the moment it appears.
+  const meta: Array<[key: string, text: string | null]> = [
+    ['entrypoint', entrypointLabel(session.entrypoint)],
+    ['model', shortModel(session.model)],
+    ['branch', session.gitBranch ? `⎇ ${session.gitBranch}` : null],
+    [
+      'prompts',
+      session.enrichment
+        ? `${session.enrichment.userMessageCount} prompts`
+        : session.messageCount !== null
+          ? `~${session.messageCount} msgs`
+          : null,
+    ],
     // Only when it happened: every session would otherwise carry a "0".
-    session.subagentCount > 0
-      ? `${session.subagentCount} subagent${session.subagentCount === 1 ? '' : 's'}`
-      : null,
-    session.enrichment && session.enrichment.compactionCount > 0
-      ? `${session.enrichment.compactionCount} compaction${session.enrichment.compactionCount === 1 ? '' : 's'}`
-      : null,
-    formatBytes(session.sizeBytes),
+    [
+      'subagents',
+      session.subagentCount > 0
+        ? `${session.subagentCount} subagent${session.subagentCount === 1 ? '' : 's'}`
+        : null,
+    ],
+    [
+      'compactions',
+      session.enrichment && session.enrichment.compactionCount > 0
+        ? `${session.enrichment.compactionCount} compaction${session.enrichment.compactionCount === 1 ? '' : 's'}`
+        : null,
+    ],
+    ['size', formatBytes(session.sizeBytes)],
   ];
 
   return (
@@ -121,11 +133,13 @@ function RowContent({
           </button>
         </div>
         <div className="mt-1 flex items-center gap-3 text-xs text-[var(--text-dim)]">
-          {meta.filter(Boolean).map((m, i) => (
-            <span key={i} className="shrink-0">
-              {m}
-            </span>
-          ))}
+          {meta.map(([key, text]) =>
+            text === null ? null : (
+              <span key={key} className="shrink-0">
+                {text}
+              </span>
+            ),
+          )}
           {/* Right after the size, and only when it can be priced: a missing
               cost stays blank instead of claiming the session was free. It is
               the whole of what the session spent, subagents included — they can

@@ -84,8 +84,10 @@ Remembered in `localStorage`, like the reading preferences.
 The cost is `sessionCostParts(…).total` with the split on the hover — **the same
 figure from the same function as the list and the sort**, agents included,
 because a session that delegated its work spent that money as surely as one that
-did it itself. It reads the REMEMBERED enrichment along with the counts, or it
-would blink out on every message a live session writes.
+did it itself. It and the counts used to blink out on every message a live
+session wrote, and this header remembered the last enrichment to stand still;
+that is now the summary's own guarantee, made once for every reader
+([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)), and nothing here remembers anything.
 
 **Two duplications went with the rewrite**: the subagent count was the `⑂ N`
 badge AND a button, and five panels wrote their own name at the top of a column
