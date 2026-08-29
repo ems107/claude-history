@@ -24,6 +24,8 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **What is drawn inside a marking box and is not the message's own words carries `data-chrome`** — the marking walk rejects it and the formatted copy cuts it out.
 - **A find is a gesture, not a location**: the bar never writes to the URL.
 - **A button that acts on the server's own desktop is disabled when the page is remote**, with the reason from `shared/src/localOnly.ts` as its tooltip — `useLocalOnly()`, never a hostname check ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
+- **What settings exist lives in `lib/settingsCatalog.ts` and nowhere else** — the rail, the search, the changed tally and the anchors all read it, and a row's NAME is the catalogue's while its SHAPE is the area file's.
+- **A settings hash resolves to an AREA before it resolves to an element**, or the page renders one area and scrolls for something in another.
 - **Typing never moves the page** — a step unfolds things that do not fold back.
 - **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
 - **The ring survives F5**: remembered per conversation in `sessionStorage`, never in the URL, and restored by travelling the deep link's road back to it.
@@ -422,6 +424,50 @@ in `viewPrefs.ts` — not in the URL, because the nav link carries no parameters
 and would reset it on every click. The session list keeps its own machinery
 (`filters.ts`: five sort fields, day/project grouping, all of it in the URL) and
 shares nothing with this but the look of the controls.
+
+## The settings page is a catalogue and six areas
+
+`pages/SettingsPage.tsx` is the shell alone — which area is showing, what a save
+does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
+672 px scroll, holding four different kinds of thing at once: preferences, live
+state, actions and read-only information, all wearing the same card.
+
+**What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
+list.** Six areas → fifteen groups → forty-six rows, data only, no JSX. Four
+readers depend on it and that is why it is data: the rail, the search box, the
+changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
+the field in `AppSettings`, an `Entry` here, the row in its area file — and
+missing the middle one leaves the setting working but unfindable and uncounted,
+which is the failure mode worth having.
+
+**The catalogue holds the row's NAME; the area file holds its SHAPE.** Where a
+row is "label + control" it reads its label from the catalogue through
+`entryForField`, so `<ToggleField field="notifyEnabled">` carries its own DOM id
+and its own words and there is one copy. Where a row is a sentence with a box in
+the middle ("Ask Anthropic at most once every `[60]` seconds") the sentence is
+the JSX's and the name is the catalogue's — two different facts about one row,
+neither derived from the other. `format` on the entry is the third: how a stored
+value is SPELLED, read by both the `default …` marker and the changed-list, so
+they cannot disagree about what `inherit` is called.
+
+**An id resolves to an area before it resolves to an element.** `/settings#backups`
+is a bookmark and a README link and it names a row in an area the path does not,
+so the hash gets a say in which area renders (`resolveAnchor`) — the path still
+wins when it names one. Getting this wrong renders the default area and then
+hunts for an element that is in a different one, which is silence.
+`remote-access`, `backups` and `claude-retention` keep their exact ids: they are
+in the README and `RetentionFooter` links to one.
+
+**State is not drawn like a preference.** `Readout` is mono and dim, `Explain`
+folds the long explanations to the foot of their group, and a `Field` is a
+control. Ten cards in one column with no way to tell what you could CHANGE from
+what you were being TOLD was half of what made the old page unreadable. The
+exception is deliberate: **remote access keeps all its prose in the flow**,
+because a security statement nobody has opened is not a statement.
+
+**Only what cannot be undone is in the danger zone** — stop the server, uninstall
+— and both are also local-only, so over the network it is one explanation rather
+than greyed buttons scattered through other groups.
 
 ## What folds
 

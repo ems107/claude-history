@@ -44,7 +44,7 @@ The read policy itself — who may ask, how often, what a failure means — is i
 - Retention is `logRetentionDays` (default 14), pruned at startup, on every settings save and at the midnight rollover. A single day is also capped at 16 MB: a warning firing in a loop must not be able to fill the disk.
 - **"Delete all logs" closes the stream *before* deleting**, then lets the next record reopen it — otherwise today's file is locked on Windows and "clear" would silently keep it.
 - `logReader` caches what it parsed per day and, when a file has only grown, reads only the appended bytes. Those offsets are **byte** offsets: the first non-ASCII character in a message would desynchronise character counts. An unparseable line becomes a visible `warn` record rather than being skipped — a truncated file should show its damage.
-- The viewer lives at `/logs`, reachable from Settings and deliberately NOT in the main nav: it is diagnostics, not a feature of the tool.
+- The viewer lives at `/logs`, reachable from *Settings → System → Logs* and deliberately NOT in the main nav: it is diagnostics, not a feature of the tool.
 
 ## Verify
 
