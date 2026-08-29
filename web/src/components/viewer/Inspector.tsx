@@ -19,6 +19,7 @@ import type { InspectorState } from '../../lib/inspector.ts';
 export function Inspector({
   inspector,
   width,
+  maxWidth,
   children,
 }: {
   inspector: InspectorState;
@@ -30,6 +31,13 @@ export function Inspector({
    * the other column brings this one back to the size it was left at.
    */
   width: number;
+  /**
+   * The widest a drag may take it right now — `SideLayout.maxInspector`, which
+   * is what is free with the column beside it exactly where it is. Capping the
+   * drag there is what keeps the seam under the pointer: a drag that made the
+   * fit bite would move the very edge the drag is anchored to.
+   */
+  maxWidth: number;
   children: ReactNode;
 }) {
   const item = inspector.items.find((i) => i.key === inspector.open);
@@ -39,7 +47,7 @@ export function Inspector({
     <>
       <div
         className="h-full w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
-        onMouseDown={inspector.startResize}
+        onMouseDown={(e) => inspector.startResize(e, maxWidth)}
         title="Drag to resize"
       />
       <div

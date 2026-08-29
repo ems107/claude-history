@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CONV_MIN, GRIP_PX, INSPECTOR_MIN, RAIL_PX } from './sideColumns.ts';
+import { INSPECTOR_MAX, INSPECTOR_MIN, trackPointer } from './sideColumns.ts';
 
 /**
  * Which panel is open beside the conversation, and how wide it is.
@@ -27,7 +27,6 @@ import { CONV_MIN, GRIP_PX, INSPECTOR_MIN, RAIL_PX } from './sideColumns.ts';
 
 const WIDTH_KEY = 'inspectorWidth';
 const INSPECTOR_DEFAULT = 400;
-const INSPECTOR_MAX = 900;
 
 export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'agents' | 'lineage';
 
@@ -49,7 +48,13 @@ export interface InspectorState {
   items: PanelItem[];
   toggle: (key: PanelKey) => void;
   close: () => void;
-  startResize: (e: React.MouseEvent) => void;
+  startResize: (e: React.MouseEvent, max: number) => void;
+  /**
+   * Its seam is under the hand. The page turns this into `layoutColumns`'
+   * priority, which is what lets an inspector being dragged push the column
+   * beside it out of the way instead of stopping dead against it.
+   */
+  dragging: boolean;
 }
 
 function readWidth(): number {
@@ -99,6 +104,8 @@ export function useInspector({
    */
   const [local, setLocal] = useState<PanelKey | null>(agents.open ? 'agents' : null);
   const [width, setWidth] = useState(readWidth);
+  /** Its seam is under the hand — see `InspectorState.dragging`. */
+  const [dragging, setDragging] = useState(false);
 
   /**
    * What is open is what this says, full stop — and `?agents=1` is a mirror of
@@ -146,28 +153,21 @@ export function useInspector({
     setLocal(null);
   }, [agents]);
 
-  // Dragging the LEFT edge, so the sign is mirrored: the same shape as the
-  // session list's sidebar handle, which is the other one of these in the app.
-  const startResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const from = readWidth();
-    // Never so wide that the conversation drops below the narrowest a pane of it
-    // may be — `CONV_MIN`, the same floor the columns beside it are held to, so
-    // dragging any of the three feels like the same gesture. Read once, at the
-    // start of the drag: a window resized afterwards is `fitColumns`' problem.
-    const max = Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, window.innerWidth - RAIL_PX - GRIP_PX - CONV_MIN));
-    const onMove = (ev: MouseEvent) => {
-      const w = Math.min(max, Math.max(INSPECTOR_MIN, from + startX - ev.clientX));
-      setWidth(w);
-      localStorage.setItem(WIDTH_KEY, String(w));
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+  // The same gesture as the column beside it, through the same function: the
+  // seam is anchored to the panel's right edge and follows the pointer, and
+  // `max` — `SideLayout.maxInspector`, passed down by `Inspector` — is what
+  // stops a drag from making the fit bite and moving that edge underneath it.
+  const startResize = useCallback((e: React.MouseEvent, max: number) => {
+    trackPointer(
+      e,
+      INSPECTOR_MIN,
+      Math.min(INSPECTOR_MAX, max),
+      (w) => {
+        setWidth(w);
+        localStorage.setItem(WIDTH_KEY, String(w));
+      },
+      setDragging,
+    );
   }, []);
 
   const items = useMemo<PanelItem[]>(() => {
@@ -242,7 +242,8 @@ export function useInspector({
       toggle,
       close,
       startResize,
+      dragging,
     }),
-    [open, width, items, toggle, close, startResize],
+    [open, width, items, toggle, close, startResize, dragging],
   );
 }

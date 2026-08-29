@@ -57,21 +57,29 @@ const SIDE_MAX = 1600;
  * 1426 px a column could not go past 870, so "put the file on half the screen"
  * was not reachable. They are different facts and they get different numbers.
  *
- * 400, and the number is measured rather than chosen: it is where the
- * conversation stops scrolling SIDEWAYS. Its content floor was 524 px — the
- * turn's fold strip, a `w-fit` flex row with no `flex-wrap`, drawn at
- * `max-content` however little room it had — and wrapping that strip took it to
- * 364. What holds it there is the message header's trailing run (model, cost,
- * context), and that one stays: its `actions` appear on HOVER, so a header that
- * wrapped could grow a line under the pointer, which is the one thing a hover
- * toolbar may never do.
+ * 320 — the same floor every panel in this app has, and the second number this
+ * has had. It was 400, measured: 384 is where the conversation stops scrolling
+ * SIDEWAYS (a content floor of 364, plus the 20 px of scrollbar gutter the
+ * scroller reserves on both edges to keep the thread centred), and 400 was that
+ * rounded up. Which is a fine number for a floor nobody chose and a bad one for
+ * a floor that costs the reader the split they asked for: on a 1426 px window
+ * with a panel open it left the column 626 px, six from its own default, so the
+ * seam had nowhere to go and reads as stuck.
  *
- * The 36 px between 364 and 400 are not slack. The scroller reserves a scrollbar
- * gutter on BOTH edges — that is what keeps the thread centred — so a 400 px
- * column is a 380 px scroller, and the floor has to clear the content's 364 by
- * that much before it clears it at all.
+ * A floor is protection against the layout squeezing the conversation on its
+ * own. It is not a veto over what somebody deliberately drags. Below ~384 the
+ * conversation grows a horizontal scrollbar of its own — the same one a window
+ * narrowed that far has always given it — and that is a consequence of a
+ * gesture, one Escape from being undone.
+ *
+ * (What made 384 that low in the first place is worth keeping: the content floor
+ * was 524 until the turn's fold strip learned to wrap — `flex w-fit` with no
+ * `flex-wrap` is drawn at `max-content` however little room it has. What holds
+ * it at 364 now is the message header's trailing run, and that one stays: its
+ * `actions` appear on HOVER, so a header that wrapped could grow a line under
+ * the pointer, which is the one thing a hover toolbar may never do.)
  */
-export const CONV_MIN = 400;
+export const CONV_MIN = 320;
 
 /**
  * ONE width for the column, whatever is in it — the inspector's rule, and it
@@ -98,12 +106,65 @@ export const COLUMN_DEFAULT = 620;
  * clamp cannot drift apart — that module imports it back.
  */
 export const INSPECTOR_MIN = 320;
+/** And its ceiling, here for the same reason: the fit and its own drag both cap against it. */
+export const INSPECTOR_MAX = 900;
 
 export interface ColumnWidth {
   /** The width the reader chose. What is DRAWN can be less — see `fitColumns`. */
   width: number;
-  startResize: (e: React.MouseEvent) => void;
+  /** `max` is `SideLayout.maxColumn`: what is free with everything else where it is. */
+  startResize: (e: React.MouseEvent, max: number) => void;
 }
+
+/**
+ * The seam follows the pointer, and both halves of that are load-bearing.
+ *
+ * **The width is read off the pointer's position, not off a delta.** A drag used
+ * to be `from + startX - clientX`, which is only the same thing while the width
+ * it accumulates onto is the width being drawn. It was not: with two things open
+ * beside the conversation their remembered widths rarely fit, so `fitColumns`
+ * was scaling both, and 100 px of mouse became ~92 px of column — the seam
+ * drifting away from the pointer, and the OTHER seam moving too. One thing open
+ * felt right for exactly the same reason: nothing to scale.
+ *
+ * So the anchor is the panel's own right edge, which cannot move during the
+ * drag, and the grab offset is kept so the pixel you took hold of stays under
+ * the pointer. Nothing accumulates, so nothing can drift.
+ *
+ * **And a drag may never make the fit bite**, or the edge it is anchored to
+ * would move underneath it. That is what `max` is for: what is free with
+ * everything else exactly where it is. The trade is a hard stop instead of a
+ * soft one — with a panel open, a column can no longer be dragged past what is
+ * left by squeezing that panel; drag the panel first, or close it. A stop you
+ * can feel beats a seam that lags.
+ */
+function trackPointer(
+  e: React.MouseEvent,
+  min: number,
+  max: number,
+  onWidth: (w: number) => void,
+  onActive?: (active: boolean) => void,
+): void {
+  e.preventDefault();
+  const panel = (e.currentTarget as HTMLElement).nextElementSibling;
+  if (!panel) return;
+  const rect = panel.getBoundingClientRect();
+  // Where inside the seam it was grabbed, so the drag has no jump at the start.
+  const grab = rect.left - e.clientX;
+  onActive?.(true);
+  const onMove = (ev: MouseEvent) => {
+    onWidth(Math.min(max, Math.max(min, Math.round(rect.right - (ev.clientX + grab)))));
+  };
+  const onUp = () => {
+    onActive?.(false);
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+export { trackPointer };
 
 function readWidth(): number {
   const n = Number(localStorage.getItem(COLUMN_KEY));
@@ -123,25 +184,11 @@ function readWidth(): number {
 export function useColumnWidth(): ColumnWidth {
   const [width, setWidth] = useState(readWidth);
 
-  const startResize = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const from = readWidth();
-    // A cap for the DRAG, not for the layout: `fitColumns` is what keeps the
-    // conversation alive when the inspector is open beside this, and it runs on
-    // every render rather than once per gesture.
-    const max = Math.max(SIDE_MIN, Math.min(SIDE_MAX, window.innerWidth - RAIL_PX - GRIP_PX - CONV_MIN));
-    const onMove = (ev: MouseEvent) => {
-      const w = Math.min(max, Math.max(SIDE_MIN, from + startX - ev.clientX));
+  const startResize = useCallback((e: React.MouseEvent, max: number) => {
+    trackPointer(e, SIDE_MIN, max, (w) => {
       setWidth(w);
       localStorage.setItem(COLUMN_KEY, String(w));
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    });
   }, []);
 
   return useMemo(() => ({ width, startResize }), [width, startResize]);
@@ -170,24 +217,37 @@ export function useWindowWidth(): number {
   return w;
 }
 
-export interface FitColumn {
-  /** The remembered width — what the reader asked for. */
-  width: number;
-  /** The floor for this column. */
-  min: number;
+/** Which of the two gets what it asks for when they cannot both have it. */
+export type Priority = 'inspector' | 'column';
+
+export interface Wanted {
+  /** The remembered width, or `null` when it is closed. */
+  inspector: number | null;
+  column: number | null;
 }
 
 /**
- * How wide each column is actually DRAWN, given what is left for all of them.
+ * How wide each is actually DRAWN. Pure, so it can be reasoned about without a
+ * browser — like `fold.ts` and `match.ts`.
  *
- * Proportional, with a floor per column: everything shrinks by the same factor
- * until a column would go under its own minimum, at which point that one stops
- * and gives the rest of the shortfall to the others. Pure, so it can be reasoned
- * about without a browser — like `fold.ts` and `match.ts`.
+ * **One of them has priority and the other yields**, rather than both shrinking
+ * by the same factor. Proportional scaling was the first version and it made
+ * every drag feel broken: with two things open their remembered widths rarely
+ * fit, so both were being scaled, and 100 px of mouse became ~92 px of column
+ * while the OTHER seam moved too. Neither can happen here — the one with
+ * priority is drawn at exactly what it asks for (down to the other's floor), so
+ * a drag on it moves pixel for pixel, and the one that yields is the only thing
+ * that moves.
  *
- * It never writes back: closing one column must return the others to the size
- * they were dragged to, and a fit that edited the remembered width would have
- * quietly made every squeeze permanent.
+ * **Priority follows the drag**: whichever seam is under the hand wins, and the
+ * other gives way to its floor. That is the whole of "the pane you are dragging
+ * is the one you mean". At rest it is the column's, because the column is the
+ * thing just opened to be looked at.
+ *
+ * It never writes back: yielding changes what is DRAWN and never what is
+ * remembered, so closing one returns the other to the size it was dragged to. A
+ * layout that edited the remembered width would have made every squeeze
+ * permanent.
  *
  * When not even the floors fit, the total returned is larger than `available`
  * and the conversation goes under its own floor. That is deliberate: it is the
@@ -195,33 +255,26 @@ export interface FitColumn {
  * than the window — a horizontal scrollbar across the whole app, which is this
  * layout's one way of failing badly.
  */
-export function fitColumns(available: number, columns: FitColumn[]): number[] {
-  let widths = columns.map((c) => c.width);
-  const floored = columns.map(() => false);
+export function layoutColumns(
+  available: number,
+  want: Wanted,
+  priority: Priority,
+): { inspector: number; column: number } {
+  const min = { inspector: INSPECTOR_MIN, column: SIDE_MIN };
+  const first = priority;
+  const second: Priority = priority === 'inspector' ? 'column' : 'inspector';
+  const out = { inspector: 0, column: 0 };
 
-  // At most one pass per column can newly hit its floor, plus one to settle.
-  for (let pass = 0; pass <= columns.length; pass++) {
-    const fixed = widths.reduce((a, w, i) => a + (floored[i] ? w : 0), 0);
-    const flex = widths.reduce((a, w, i) => a + (floored[i] ? 0 : w), 0);
-    const room = Math.max(0, available - fixed);
-    if (flex <= room) break;
-    const k = flex === 0 ? 0 : room / flex;
-    let hitFloor = false;
-    widths = widths.map((w, i) => {
-      if (floored[i]) return w;
-      const next = w * k;
-      if (next < columns[i].min) {
-        floored[i] = true;
-        hitFloor = true;
-        return columns[i].min;
-      }
-      return next;
-    });
-    // Nothing newly floored means the scale above was enough.
-    if (!hitFloor) break;
-  }
+  const a = want[first];
+  const b = want[second];
+  if (a === null && b === null) return out;
+  // Alone, it takes what it asks for and the conversation keeps the rest.
+  if (b === null) return { ...out, [first]: Math.max(min[first], Math.min(a as number, available)) };
+  if (a === null) return { ...out, [second]: Math.max(min[second], Math.min(b, available)) };
 
-  return widths.map(Math.round);
+  out[first] = Math.max(min[first], Math.min(a, available - min[second]));
+  out[second] = Math.max(min[second], Math.min(b, available - out[first]));
+  return out;
 }
 
 export interface SideLayout {
@@ -230,6 +283,13 @@ export interface SideLayout {
   column: number;
   /** Everything the conversation does not get: the rail, what is open, and their seams. */
   gutter: number;
+  /**
+   * How wide each may be DRAGGED right now — what is free with the other one
+   * exactly where it is. A drag capped here can never make `fitColumns` bite,
+   * which is what keeps the seam under the pointer (`trackPointer`).
+   */
+  maxInspector: number;
+  maxColumn: number;
 }
 
 /**
@@ -244,25 +304,33 @@ export function useSideLayout(stored: {
   inspector: number | null;
   /** The file or the subagent transcript, whichever is open — never both. */
   column: number | null;
+  /** Which seam is under the hand right now. See `layoutColumns`. */
+  priority: Priority;
 }): SideLayout {
   const windowWidth = useWindowWidth();
-  const { inspector, column } = stored;
+  const { inspector, column, priority } = stored;
 
   return useMemo(() => {
-    const open: Array<{ key: 'inspector' | 'column'; width: number; min: number }> = [];
-    // Left to right — and the order `fitColumns` answers in.
-    if (inspector !== null) open.push({ key: 'inspector', width: inspector, min: INSPECTOR_MIN });
-    if (column !== null) open.push({ key: 'column', width: column, min: SIDE_MIN });
-
-    const seams = RAIL_PX + open.length * GRIP_PX;
+    const openCount = (inspector === null ? 0 : 1) + (column === null ? 0 : 1);
+    const seams = RAIL_PX + openCount * GRIP_PX;
     const available = Math.max(0, windowWidth - seams - CONV_MIN);
-    const drawn = fitColumns(available, open);
+    const drawn = layoutColumns(available, { inspector, column }, priority);
 
-    const out: SideLayout = { inspector: 0, column: 0, gutter: seams };
-    open.forEach((c, i) => {
-      out[c.key] = drawn[i];
-      out.gutter += drawn[i];
-    });
-    return out;
-  }, [windowWidth, inspector, column]);
+    // The ceiling for a DRAG, and it is what the other one can be pushed to
+    // rather than where it happens to be: dragging one is what makes it yield.
+    // Its own floor is the stop, and it is the conversation's floor that puts
+    // it there — which is a limit somebody can feel and act on.
+    const maxInspector =
+      column === null ? available : Math.max(INSPECTOR_MIN, available - SIDE_MIN);
+    const maxColumn =
+      inspector === null ? available : Math.max(SIDE_MIN, available - INSPECTOR_MIN);
+
+    return {
+      inspector: drawn.inspector,
+      column: drawn.column,
+      gutter: seams + drawn.inspector + drawn.column,
+      maxInspector: Math.min(INSPECTOR_MAX, maxInspector),
+      maxColumn: Math.min(SIDE_MAX, maxColumn),
+    };
+  }, [windowWidth, inspector, column, priority]);
 }

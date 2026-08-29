@@ -747,6 +747,10 @@ export function SessionViewPage() {
   const sideLayout = useSideLayout({
     inspector: inspector.open === null ? null : inspector.width,
     column: agentId || fileRef ? column.width : null,
+    // Whichever seam is under the hand wins, and the other gives way to its
+    // floor — the pane you are dragging is the one you mean. At rest it is the
+    // column's, which is the thing just opened to be looked at.
+    priority: inspector.dragging ? 'inspector' : 'column',
   });
 
   const navigate = useNavigate();
@@ -1330,7 +1334,7 @@ export function SessionViewPage() {
                 />
               </div>
             </div>
-            <Inspector inspector={inspector} width={sideLayout.inspector}>
+            <Inspector inspector={inspector} width={sideLayout.inspector} maxWidth={sideLayout.maxInspector}>
               {panel}
             </Inspector>
             <InspectorRail inspector={inspector} />
@@ -1343,7 +1347,7 @@ export function SessionViewPage() {
               buy that by being drawn OVER the drawer, and buys it now by being
               the column after it. */}
           {agentId && (
-            <SideColumn kind="agent" width={sideLayout.column} onResizeStart={column.startResize}>
+            <SideColumn kind="agent" width={sideLayout.column} onResizeStart={(e) => column.startResize(e, sideLayout.maxColumn)}>
               <SubagentDrawer
                 sessionId={id}
                 agentId={agentId}
@@ -1358,7 +1362,7 @@ export function SessionViewPage() {
             </SideColumn>
           )}
           {fileRef && (
-            <SideColumn kind="file" width={sideLayout.column} onResizeStart={column.startResize}>
+            <SideColumn kind="file" width={sideLayout.column} onResizeStart={(e) => column.startResize(e, sideLayout.maxColumn)}>
               <FileViewerPanel
                 // Keyed on the reference: opening another file starts a fresh panel
                 // rather than scrolling the previous one's state onto a new body.

@@ -221,12 +221,25 @@ inspector's are all consequences of one choice.
   two arrive with a header of their own — a path, a size, four launchers; an
   agent type, a clock, two jumps — so what is shared is the seam, the width and
   the box, and nothing else.
-- **One function decides what every column is DRAWN at** (`fitColumns`, pure).
-  Three can be open at once now, so their remembered widths are fitted together:
-  proportional, with a floor per column, and the conversation kept at `CONV_MIN`.
-  The inspector goes in with them: fitting only the new two would let an
-  inspector dragged wide keep the room they were about to give up, and the reader
-  would be dragging one column to fix another.
+- **One function decides what each is DRAWN at** (`layoutColumns`, pure), and the
+  rule is **one has priority and the other yields** — not both shrinking by the
+  same factor. Proportional was the first version, and it made every drag feel
+  broken: with two things open their remembered widths rarely fit, so both were
+  being scaled, and 100 px of mouse became ~92 px of column while the other seam
+  moved as well. One thing open felt right for exactly the same reason — nothing
+  to scale. **Priority follows the drag**: whichever seam is under the hand wins
+  and the other gives way to its floor (`InspectorState.dragging` exists for that
+  one fact). At rest it is the column's, the thing just opened to be looked at.
+- **Yielding is DRAWN, never remembered.** A panel squeezed by the column beside
+  it keeps the width it was dragged to and gets it back when the column closes. A
+  layout that wrote back would make every squeeze permanent, and every reader
+  would end up at the minimum by attrition.
+- **The seam is anchored, not accumulated** (`trackPointer`). The width comes off
+  the pointer's position against the panel's own right edge, with the grab offset
+  kept so the pixel you took hold of stays under the pointer; nothing accumulates
+  and nothing can drift. That edge cannot move during the drag, which is the
+  other half of why priority follows the hand: the panel being dragged is drawn
+  at exactly what it asks for, so the one yielding is the only thing that moves.
 - **One width for the column, whatever is in it** (`sideColumnWidth`) — the
   inspector's own rule, and it became the right one here the moment only one
   column could be open at a time. A key each described a split that cannot
@@ -242,36 +255,40 @@ inspector's are all consequences of one choice.
   eye, which is not the same thing as reading it, and the 360 it started at was a
   limit nobody had asked for. `INSPECTOR_MIN` stays 320 because its six panels
   are WRITTEN for 320: a file viewer at 240 is still a file viewer, a token
-  ledger at 240 is a broken table. `CONV_MIN` is 400 — see below, it is measured.
+  ledger at 240 is a broken table. `CONV_MIN` is 320, the same floor — see below.
   And `WIDTH_MIN` is deliberately none of them: it is the narrowest reading
   column somebody can choose in `View ▾`, a statement about line length, and
   using it as the pane's floor (the first version did, on a "one home for the
   fact" argument) nailed the split down — at 1426 px a column could not pass 870,
   so "put the file on half the screen" was not reachable. Two facts, two numbers.
-- **`CONV_MIN` is measured, not chosen, and finding it moved a bug.** It is the
-  width at which the conversation stops scrolling SIDEWAYS. Its content floor was
-  524 px, all of it the turn's fold strip — `flex w-fit` with no `flex-wrap`, so
-  a row that could not fit was simply drawn too wide — and wrapping that strip
+- **`CONV_MIN` is 320, and the number it was before is why.** It was 400, and
+  400 was measured: 384 is where the conversation stops scrolling SIDEWAYS, and
+  that was rounded up. Finding it moved a bug — the content floor was 524 px,
+  all of it the turn's fold strip (`flex w-fit` with no `flex-wrap`, so a row
+  that could not fit was simply drawn too wide), and teaching that strip to wrap
   took the floor to 364. What holds it at 364 is the message header's trailing
-  run (model, cost, context), and that one stays: its `actions` appear on HOVER,
-  so a header that wrapped could grow a line under the pointer, which is the one
-  thing [a hover toolbar may never do](#invariants). The last 36 px are the
-  scroller's own doing — it reserves a scrollbar gutter on BOTH edges, which is
-  what keeps the thread centred, so a 400 px column is a 380 px scroller.
-- **Fitting never writes back.** A squeeze is what is drawn, not what is
-  remembered — otherwise opening a third column would permanently shrink the
-  other two, and every reader would end up at the minimum by attrition.
+  run, and that one stays: its `actions` appear on HOVER, so a header that
+  wrapped could grow a line under the pointer, which is the one thing [a hover
+  toolbar may never do](#invariants). The last 20 px are the scroller's own — a
+  gutter reserved on BOTH edges to keep the thread centred, so a 384 px column
+  is a 364 px scroller.
+  **But 400 was the wrong floor to hold the reader to.** A floor is protection
+  against the LAYOUT squeezing the conversation on its own; it is not a veto over
+  what somebody deliberately drags. At 400, a 1426 px window with a panel open
+  left the column 626 px — six from its own default — so the seam had nowhere to
+  go and read as stuck, which is the second time these numbers were reported as
+  too tight. At 320 there is room to drag, and below ~384 the conversation grows
+  a sideways scrollbar of its own, which a window narrowed that far has always
+  given it. That one is a consequence of a gesture and one Escape from undone.
 - **When not even the floors fit, the conversation goes under its own floor.**
   It is `flex-1 min-w-0`, so it absorbs the impossible case; the alternative is a
   row wider than the window, and a horizontal scrollbar under the whole app is
-  this layout's one way of failing badly. Measured at 1426 px with all three
-  open: 302 px of conversation, which is narrow and reachable — and one Escape
-  from being wide again.
+  this layout's one way of failing badly.
 - **The window is read from state, which the inspector never needed.** Its drag
   could read `window.innerWidth` once and never again, because a window narrowed
-  afterwards simply squeezed the conversation. With three `shrink-0` columns
-  beside it that stops being true — the conversation reaches zero and the ROW
-  overflows — so `useWindowWidth` re-fits on resize.
+  afterwards simply squeezed the conversation. With two `shrink-0` columns and
+  the rail beside it that stops being true — the conversation reaches zero and
+  the ROW overflows — so `useWindowWidth` re-lays-out on resize.
 - **The session header now moves, and it is the one height that may.** It is
   inside the box that narrows, so its facts row rewraps: 697 → 677 px of
   scroller on opening a file at 1440×900, all 20 of them the header's. That is
@@ -280,9 +297,9 @@ inspector's are all consequences of one choice.
   reader's own gesture, the same reflow a narrowed window has always caused, and
   it happens once. Opening a **rail** panel still changes nothing, because the
   inspector is below the header rather than beside it. And nothing else takes
-  height any more: `CONV_MIN` is set above the thread's own content floor, so the
-  conversation never grows the horizontal scrollbar that used to eat another 10
-  px on the way down.
+  height any more at the widths opening a panel reaches; only a drag taken below
+  ~384 px gives the conversation a horizontal scrollbar of its own, and that
+  takes another 10 px with it.
 - **Ctrl+F came back with them.** The find bar was switched off while either
   panel was up — searching what you cannot see, and stepping the page under a
   layer, is worse than no bar — and beside the conversation there is nothing left
