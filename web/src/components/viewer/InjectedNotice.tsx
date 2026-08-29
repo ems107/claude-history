@@ -130,7 +130,14 @@ export function InjectedNotice({
             left to stop. */}
         {(notice.result || agent || call) && (
           <div className="mt-1.5">
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Chrome, though it sits inside the searchable body — the report it
+                opens is the message here, these are the handles. Unmarked, a
+                search for `call` lit up the `↑ the call` button and one for
+                `transcript` the `⑂` one, words nobody wrote, counted among the
+                box's own hits. The report BELOW stays out of it: it is the only
+                copy of what the agent handed back, and the find bar indexes it
+                (`noticeUnit` folds `text` and `result`, and nothing else). */}
+            <div data-chrome className="flex flex-wrap items-center gap-2">
               {notice.result && (
                 <FoldHeader
                   open={showReport}
