@@ -791,17 +791,18 @@ the same frame, and the sticky composer never left the foot of the window. What
 moved was the **scroller's own height**: 762 → 784 → 762 px, twice per message,
 about 105 ms apart.
 
-The 22 px was the header's counts row (`9 prompts · 227 responses · …`), which was
-drawn as `{e && …}` over `summary.enrichment` — and a session that has just grown
-answers without its enrichment while the background parse catches up
-([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)). So the row fell out of the page and
-came back on every message, shoving the conversation down 22 px and pulling it
-back. **`SessionHeader` remembers the last figures** and draws those while the new
-ones are being computed: one message stale for a tenth of a second instead of
-absent, and a session with no enrichment at all still draws no row, because there
-is nothing to remember. The `resumed ×N` chip reads the remembered value for the
-same reason — it sits in a wrapping row, where a chip coming and going can cost a
-whole line.
+The 22 px was the header's counts row (`9 prompts · 227 responses · …`), drawn as
+`{e && …}` over `summary.enrichment` — and a session that had just grown used to
+answer without its enrichment while the background parse caught up. So the row
+fell out of the page and came back on every message, shoving the conversation down
+22 px and pulling it back. `SessionHeader` remembered the last figures to stand
+still; **the summary keeps them itself now**, for every reader at once
+([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)), so nothing in this header remembers
+anything and the counts are simply always there — one message stale for a tenth of
+a second instead of absent. A session with no enrichment at all still draws no
+row, because it has none to draw. The `resumed ×N` chip is steady for the same
+reason, and needs to be: it sits in a wrapping row, where a chip coming and going
+can cost a whole line rather than 22 px.
 
 The rule generalises past this one row: **anything above the conversation that
 appears and disappears is a shake**, because the scroller is the flexible one and
