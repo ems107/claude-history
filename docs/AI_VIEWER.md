@@ -26,6 +26,8 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A button that acts on the server's own desktop is disabled when the page is remote**, with the reason from `shared/src/localOnly.ts` as its tooltip — `useLocalOnly()`, never a hostname check ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
 - **What settings exist lives in `lib/settingsCatalog.ts` and nowhere else** — the rail, the search, the changed tally and the anchors all read it, and a row's NAME is the catalogue's while its SHAPE is the area file's.
 - **A settings hash resolves to an AREA before it resolves to an element**, or the page renders one area and scrolls for something in another.
+- **A feature's master is a `Switch`, its reason is said once, and what it governs stays readable** — 70 %, never hidden: a collapsed block is one no deep link can reach.
+- **A settings hint is one line**; anything longer goes in the group's `Explain`.
 - **Typing never moves the page** — a step unfolds things that do not fold back.
 - **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
 - **The ring survives F5**: remembered per conversation in `sessionStorage`, never in the URL, and restored by travelling the deep link's road back to it.
@@ -464,6 +466,23 @@ control. Ten cards in one column with no way to tell what you could CHANGE from
 what you were being TOLD was half of what made the old page unreadable. The
 exception is deliberate: **remote access keeps all its prose in the flow**,
 because a security statement nobody has opened is not a statement.
+
+**A feature's switch is a `Switch`, and everything it governs stays readable.**
+`GroupCard master=` draws it above a rule, `offNote` says in one line what off
+means, and that line appears ONCE — beside the switch that would change it, never
+repeated over the other groups the same switch governs, which get an `OFF` chip
+on the heading instead (and the group holding the switch gets no chip: it would
+say "off" three times in one card). Inactive rows are **70 %, not 40 %**: the
+words stay readable, because knowing what a switch would turn on is the reason to
+turn it on, while the controls read as dead on their own — the boxes and selects
+through the `disabled:` variants in their shared classes, a checkbox through the
+browser's native disabled rendering, which is why it carries none. Nothing is
+ever hidden: a collapsed block is a block a deep link and the search box cannot
+reach.
+
+**A hint is one line.** Anything longer belongs in the group's `Explain`, one
+click away rather than standing between the reader and the control. Ten
+paragraphs of small grey text under ten switches is a wall people read past.
 
 **Only what cannot be undone is in the danger zone** — stop the server, uninstall
 — and both are also local-only, so over the network it is one explanation rather

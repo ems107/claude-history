@@ -292,9 +292,10 @@ function LabelText({ label, hint }: { label: string; hint?: ReactNode }) {
  * text lands near the background and a block of them reads as broken rather than
  * as inactive. At 70 % it is plainly not active and still plainly readable —
  * which matters, because this is a settings page and knowing what a switch would
- * turn on is the reason to turn it on. The controls themselves still go to 40 %
- * through their own `disabled:` variants, so the CONTROLS look dead and the
- * WORDS do not.
+ * turn on is the reason to turn it on. The controls read as dead on their own —
+ * the boxes and selects through the `disabled:` variants in `inputClass` and
+ * `selectClass`, a checkbox through the browser's native disabled rendering,
+ * which is why it carries none — so the CONTROLS look dead and the WORDS do not.
  */
 const inactiveRow = 'opacity-70';
 

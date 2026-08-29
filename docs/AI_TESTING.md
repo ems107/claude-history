@@ -679,8 +679,21 @@ up as several failures at once rather than as a setting nobody notices is gone.
   flashes it; changing a setting adds a row and *restore* puts the default back
   on the server. Put anything you changed back afterwards — this is the dev
   instance's real `userdata.json`.
+- **The off state, which is the half that used to look broken.** With a feature's
+  master switched off: its own group shows the switch (`[role="switch"]`, not a
+  checkbox) and ONE `offNote`; every other group the same switch governs shows an
+  `OFF` chip and NO note; the group holding the switch shows no chip. Then the
+  assertion the whole thing exists for — the dependent labels must still be
+  **readable**: computed opacity 0.7 rather than 0.4, and no text at the
+  background's own colour.
 - **No horizontal overflow** at 1440 / 1100 / 900 / 700 px on the three widest
-  areas. The rail is a fixed 224 px and does not fold; the panel is what gives.
+  areas — measured on **`main`**, not on the document: the app header does not
+  wrap and overflows ~88 px at 700 px on every page of the app (and `/` overflows
+  245 px in its own content), which is real, pre-existing, and not this page's.
+  The rail is a fixed 224 px and does not fold; the panel is what gives. While
+  you are there: a text field must FILL its card (686 px inside 720 px at
+  1440 px) — `Field` sized its content to fit once, and every box came out
+  160 px wide.
 
 ## Platform and plumbing
 
