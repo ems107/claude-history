@@ -345,7 +345,9 @@ export class SessionIndex {
    */
   async refreshLive(): Promise<void> {
     const before = new Set(this.live.map((l) => l.sessionId));
-    this.live = await readLiveSessions(this.config.sessionsDir);
+    // What we last read is what an unreadable file falls back to: a busy CLI
+    // rewrites its status file under us, and a dropped entry is a badge gone.
+    this.live = await readLiveSessions(this.config.sessionsDir, this.live);
     const after = new Set(this.live.map((l) => l.sessionId));
     // What the pid file cannot say: when the open TURN began. `statusUpdatedAt`
     // moves on every flip — answering a permission restarts it — so the moment
