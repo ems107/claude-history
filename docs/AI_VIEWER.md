@@ -34,8 +34,9 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 - **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
-- **A panel opens BESIDE the conversation, never above it**, and only one is open at a time.
-- **The rail is furniture**: it is always drawn, and nothing — drawer, file viewer — may cover it.
+- **A panel opens BESIDE the conversation, never above it and never over it**, and only one rail panel is open at a time.
+- **The rail is furniture**: it is always drawn, and nothing may cover it — which nothing can, now that everything that opens is a column to one side of it.
+- **A column is a BOX**: nothing inside one may grow the page. Every fact in a panel's header truncates; only its controls are `shrink-0`.
 - **The find bar belongs to the conversation's column**, not to the page.
 - **Anything that measures the column measures `--conv-box`**, never `100vw`.
 - **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
@@ -180,6 +181,74 @@ arriving, now true of a panel opening too.
   which is what makes the new-session page's thread work unchanged.
 - **`data-inspector` and `data-inspector-rail`** are measurement hooks, like
   `data-conversation-scroller` and `data-sticky-bottom`.
+
+### The two columns beside the session
+
+The file viewer and a subagent's transcript were the last of the old generation:
+`position: fixed` panels 832 px and 704 px wide, anchored at `right: RAIL_PX` so
+as not to cover the rail, laid over the conversation and — because `inset-y-0`
+starts at the top of the WINDOW — over the app's own header too. They are
+columns now (`lib/sideColumns.ts`, `SideColumn`), and the differences from the
+inspector's are all consequences of one choice.
+
+- **They are siblings of the whole session view, not of the conversation**, and
+  that is the whole of why they run the full height: the session's own header is
+  inside the box to their left, and the app's header, above all of it, is never
+  covered. The rail and the inspector stay inside the session, so a session with
+  nothing open is unchanged to the pixel.
+- **The order is conversation · inspector · rail · subagent · file**, and the
+  file being last is the old z-order restated as a position. It used to be
+  `z-30` over the drawer's `z-20` for a stated reason — a path is often clicked
+  from inside a subagent's report, and closing the report to read the file would
+  lose the reader's place in it. Beside it instead of over it, the same thing
+  holds without a stacking context.
+- **`SideColumn` is not `Inspector`**, and the split is where the header lives.
+  The inspector hosts six interchangeable panels and owns their title bar; these
+  two arrive with a header of their own — a path, a size, four launchers; an
+  agent type, a clock, two jumps — so what is shared is the seam, the width and
+  the box, and nothing else.
+- **One function decides what every column is DRAWN at** (`fitColumns`, pure).
+  Three can be open at once now, so their remembered widths are fitted together:
+  proportional, with a floor per column, and the conversation kept at `WIDTH_MIN`
+  — the same 480 the inspector's own drag already reserved, imported rather than
+  restated. The inspector goes in with them: fitting only the new two would let
+  an inspector dragged wide keep the room they were about to give up, and the
+  reader would be dragging one column to fix another.
+- **Fitting never writes back.** A squeeze is what is drawn, not what is
+  remembered — otherwise opening a third column would permanently shrink the
+  other two, and every reader would end up at the minimum by attrition.
+- **When not even the floors fit, the conversation goes under its own floor.**
+  It is `flex-1 min-w-0`, so it absorbs the impossible case; the alternative is a
+  row wider than the window, and a horizontal scrollbar under the whole app is
+  this layout's one way of failing badly. Measured at 1426 px with all three
+  open: 302 px of conversation, which is narrow and reachable — and one Escape
+  from being wide again.
+- **The window is read from state, which the inspector never needed.** Its drag
+  could read `window.innerWidth` once and never again, because a window narrowed
+  afterwards simply squeezed the conversation. With three `shrink-0` columns
+  beside it that stops being true — the conversation reaches zero and the ROW
+  overflows — so `useWindowWidth` re-fits on resize.
+- **The session header now moves, and it is the one height that may.** It is
+  inside the box that narrows, so its facts row rewraps: 697 → 677 px of
+  scroller on opening a file at 1440×900, all 20 of them the header's. That is
+  not the shake [Nothing above the conversation may change
+  height](#nothing-above-the-conversation-may-change-height) forbids — it is the
+  reader's own gesture, the same reflow a narrowed window has always caused, and
+  it happens once. Opening a **rail** panel still changes nothing, because the
+  inspector is below the header rather than beside it. Below about 490 px of
+  conversation a second thing takes height: the thread has a min-content of 524
+  px and the scroller grows a horizontal scrollbar of its own. That is **not**
+  the columns' doing and predates them — a window narrowed to 580 with nothing
+  open at all does it (488 → 524, measured) — but a column is now the easy way to
+  reach that width, so it is the other half of the arithmetic when the numbers
+  fail to add up.
+- **Ctrl+F came back with them.** The find bar was switched off while either
+  panel was up — searching what you cannot see, and stepping the page under a
+  layer, is worse than no bar — and beside the conversation there is nothing left
+  to hide it. `useFindBar`'s `enabled` had no caller that could pass false and is
+  gone.
+- **`data-side-column="file|agent"` and `data-session-header`** join the
+  measurement hooks above.
 
 ## The star on a message
 
@@ -626,6 +695,11 @@ The `100%` keyframe names no `border-color`: an omitted property takes the eleme
 
 ## File references
 
+The panel this opens is a **column beside the session**, not a layer over it —
+its geometry, its width and why it is the rightmost of them are in [The two
+columns beside the session](#the-two-columns-beside-the-session). Everything
+below is what it draws once it is there.
+
 **A file path in an answer opens a panel, and `parseFileRef` is the only thing that decides what a path is** (`lib/fileRefs.ts`, pure and checkable without a browser). It reads the shapes this corpus really holds — `:12`, `:12:5`, `#L12-L20`, percent-encoded paths with spaces, `C:\…` and `\\srv\…` — and two orderings in it are load-bearing:
 
 1. **The drive letter is tested before the scheme**, or every absolute path on Windows is discarded as "protocol `c:`".
@@ -642,6 +716,7 @@ The `100%` keyframe names no `border-color`: an omitted property takes the eleme
 - A `~/...` reference is expanded against the home directory **server-side**: resolved against the project it becomes `<project>\~\.claude\settings.json`, a "not found" for a file that is right there. The panel sends the **path**, never the formatted reference — `frmActualizador.frm:1068` as a filename finds nothing.
 - The target line is a stripe positioned by arithmetic on one `LINE_H`, so the body must stay `whitespace-pre`: one wrapped line and the gutter, the stripe and the text disagree from there down. **Everything neutralising `.hljs` on the highlighted `<code>` is a style, not a class** — `github-dark.css` loads after Tailwind and wins every tie. Its background covered the stripe; its `padding: 1em` then pushed the text 12 px below its own line number, so the highlight sat two thirds of a line off, and only where highlighting happened at all, which made it look intermittent.
 - **The copy buttons float over the code, and they live OUTSIDE the scroller.** Inside it `absolute` scrolls away with the file, and there is no sticky corner to be had either: the row they would sit in is `min-w-max`, as wide as the longest line. Out there they cost no layout, so appearing on hover cannot resize what they appear in — the hover-toolbar rule above, obeyed by construction — and two offsets are the whole of their placement: clear of the scrollbar they now float over, and above the gutter's sticky `z-10`. They stay lit while the flash lasts, because moving the pointer away right after the click would otherwise take the confirmation with it.
+- **The header truncates everything except its two buttons.** The name and the size were `shrink-0`, which reads fine across 832 px of overlay and put the ✕ 12 px off the screen the moment this became a column somebody can drag to 360 — a horizontal scrollbar under the whole app to reach a button. A column is a box: the facts give way, the controls do not.
 - **What a copy button says is what it copied.** The whole-file one reads `Copy what was read` on a truncated read: the endpoint stops at 2 MB, and a button offering “contents” over half a file contradicts the `truncated — N total` notice three rows above it. The range one is drawn only where the stripe is and slices from the same `target`/`targetEnd`, so the band and the clipboard cannot disagree about which lines the link meant. Neither takes the gutter with it — the numbers are their own column, which is what makes copying the text possible at all — and **one state serves all three buttons**, the path included, so a second copy neither flashes its neighbours nor loses its own confirmation to the timer the first one started.
 
 ## The three file panels
@@ -811,8 +886,12 @@ appears and disappears is a shake**, because the scroller is the flexible one an
 takes the difference. Which is the other half of why the panels moved to the side
 ([the rail](#the-rail-and-the-inspector)): every one of them was a row above the
 conversation that appeared and disappeared, 300 px of it rather than 22. What is
-left up there is the header, and the two things in it that can change height do
-so because they were clicked — `more` and the find bar. And the follow's `ResizeObserver` watches the scroller
+left up there is the header, and the three things in it that can change height do
+so because they were clicked — `more`, the find bar, and the facts row rewrapping
+when a column opens beside the session and narrows the header
+([the two columns](#the-two-columns-beside-the-session)); the last of those is a
+reflow of a box the reader just resized, not a row coming and going.
+And the follow's `ResizeObserver` watches the scroller
 itself as well as the content, so if the end does leave the view that way — a
 window being resized is the honest case — being pinned still means being at the
 end.
