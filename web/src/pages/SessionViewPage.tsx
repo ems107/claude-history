@@ -265,7 +265,10 @@ export function SessionViewPage() {
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
-  const agentId = searchParams.get('agent');
+  /** Read here rather than beside `fileRef`, because the drawer below defers to it. */
+  const fileParam = searchParams.get(FILE_PARAM);
+  /** `null` while a file is open — one column beside the session, never two (see `fileRef`). */
+  const agentId = fileParam ? null : searchParams.get('agent');
   /**
    * The subagent list, open from the URL rather than from state: the ⑂ badge in
    * the session list opens a session straight onto it, and the link can be
@@ -301,6 +304,9 @@ export function SessionViewPage() {
         (prev) => {
           const sp = new URLSearchParams(prev);
           sp.set('agent', aid);
+          // One column beside the session, never two: see `fileRef` below for
+          // the rule and what it costs.
+          sp.delete(FILE_PARAM);
           // Anchors INSIDE the drawer, and always rewritten together: one left
           // over from a previous jump would point into another agent's
           // transcript, where it resolves to nothing at all.
@@ -379,8 +385,21 @@ export function SessionViewPage() {
   /**
    * The file a link in the conversation opened. Parsed by the same function
    * that produced the parameter, so the URL is read by the code that wrote it.
+   *
+   * **One column beside the session, never two.** The file and a subagent's
+   * transcript are the same kind of thing in the same place, and two of them
+   * leave the conversation a strip between two panels — which is what the reader
+   * came for. Both writers clear the other (`openFile` below, `openAgent`
+   * above); this is the same rule at the reading end, so a URL carrying both —
+   * typed, or pasted from before the rule existed — still draws one thing. The
+   * file wins because it is the only one of the two that can be opened from
+   * inside the other, so where both are set it is the later intent.
+   *
+   * What it costs is stated here because it was once a reason not to do it: a
+   * path clicked inside a subagent's report closes the report, and the place you
+   * had in it. The list is still open in the rail, so the way back is one press
+   * — but it is a press, and the panel opens at the top.
    */
-  const fileParam = searchParams.get(FILE_PARAM);
   const fileRef = useMemo(() => (fileParam ? parseFileRef(fileParam) : null), [fileParam]);
 
   const closeFile = useCallback(() => {
@@ -408,6 +427,11 @@ export function SessionViewPage() {
           (prev) => {
             const sp = new URLSearchParams(prev);
             sp.set(FILE_PARAM, formatFileRef(ref));
+            // The other column goes, with the anchors that only mean anything
+            // inside it — one column beside the session, never two.
+            sp.delete('agent');
+            sp.delete(AGENT_TOOL_PARAM);
+            sp.delete(AGENT_MSG_PARAM);
             return sp;
           },
           { replace: true },
@@ -1105,7 +1129,18 @@ export function SessionViewPage() {
             is inside the box to their left, and the app's header, above all of
             this, is never covered by either of them. */}
         <div className="flex h-full min-w-0">
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* `overflow-hidden`, which is the same promise `SideColumn` makes and
+            the other half of it: a pane is a BOX, and nothing in one may be
+            drawn in its neighbour. Without it the header's own controls — a
+            `shrink-0` row that simply runs out of room — were painted straight
+            across the seam and over the file beside it. Clipping them is the
+            right answer rather than a shame: a session squeezed that far is
+            being squeezed on purpose, and a button that is temporarily out of
+            reach costs one drag to get back. It clips nothing that matters:
+            `position: fixed` escapes it, so the hover cards, the image overlay
+            and the terminal's full screen are untouched, and the two header
+            menus open downward INSIDE the box. */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <SessionHeader
             detail={session}
             draft={isDraft}

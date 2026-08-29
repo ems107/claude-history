@@ -36,7 +36,8 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
 - **A panel opens BESIDE the conversation, never above it and never over it**, and only one rail panel is open at a time.
 - **The rail is furniture**: it is always drawn, and nothing may cover it — which nothing can, now that everything that opens is a column to one side of it.
-- **A column is a BOX**: nothing inside one may grow the page. Every fact in a panel's header truncates; only its controls are `shrink-0`.
+- **A pane is a BOX**: nothing inside one may grow the page or be drawn in its neighbour. Every fact in a panel's header truncates; only its controls are `shrink-0`.
+- **One column beside the session, never two** — the file viewer and a subagent's transcript swap places, they do not stack. The rail's panel is not part of that rule.
 - **The find bar belongs to the conversation's column**, not to the page.
 - **Anything that measures the column measures `--conv-box`**, never `100vw`.
 - **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
@@ -196,12 +197,25 @@ inspector's are all consequences of one choice.
   inside the box to their left, and the app's header, above all of it, is never
   covered. The rail and the inspector stay inside the session, so a session with
   nothing open is unchanged to the pixel.
-- **The order is conversation · inspector · rail · subagent · file**, and the
-  file being last is the old z-order restated as a position. It used to be
-  `z-30` over the drawer's `z-20` for a stated reason — a path is often clicked
-  from inside a subagent's report, and closing the report to read the file would
-  lose the reader's place in it. Beside it instead of over it, the same thing
-  holds without a stacking context.
+- **One column, never two.** The file and a subagent's transcript are the same
+  kind of thing in the same place, and two of them leave the conversation a strip
+  between two panels — which is what the reader came for. Both writers clear the
+  other, AND the reading end enforces it (`agentId` is `null` while a file is
+  open), so a URL carrying both — typed, or pasted from before the rule existed —
+  still draws one thing. The file wins there because it is the only one of the
+  two that can be opened from inside the other, so where both are set it is the
+  later intent.
+  What it costs was once the reason not to do it: a path clicked inside a
+  subagent's report closes the report and the place you had in it. The list is
+  still open in the rail, so the way back is one press — but it is a press, and
+  the panel opens at the top. That is the trade, made deliberately, and it is why
+  the old design drew the file panel at `z-30` OVER the drawer's `z-20`.
+  The rail's own panel is not part of this rule: it is where a file is often
+  clicked FROM — the Changed, Sent and Mentioned lists — and closing the list you
+  are walking would be the same bug in a smaller place.
+- **The order is conversation · inspector · rail · subagent · file.** Only one of
+  the last two is ever drawn, so the order is what the reader sees when they swap
+  one for the other: the column stays where it was.
 - **`SideColumn` is not `Inspector`**, and the split is where the header lives.
   The inspector hosts six interchangeable panels and owns their title bar; these
   two arrive with a header of their own — a path, a size, four launchers; an
@@ -264,6 +278,17 @@ inspector's are all consequences of one choice.
   layer, is worse than no bar — and beside the conversation there is nothing left
   to hide it. `useFindBar`'s `enabled` had no caller that could pass false and is
   gone.
+- **A pane is a BOX, on both sides of the seam.** `SideColumn` carries
+  `overflow-hidden` and so does the session's own box, and the second one is
+  there because the session header's controls — a `shrink-0` row that simply
+  runs out of room — were being painted straight across the seam and over the
+  file beside it. Nothing may be drawn in its neighbour, and clipping is the
+  right answer rather than a shame: a session squeezed that far is being squeezed
+  on purpose, and a control temporarily out of reach costs one drag to get back.
+  It eats nothing that matters — `position: fixed` is not clipped by an
+  ancestor's overflow, so the hover cards, the image overlay and the terminal's
+  full screen still escape, and the two header menus open downward inside the
+  box (checked: 240×240, entirely within it).
 - **`data-side-column="file|agent"` and `data-session-header`** join the
   measurement hooks above.
 
