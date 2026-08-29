@@ -562,6 +562,18 @@ export function resolveAnchor(hash: string): { area: AreaId; id: string } | null
   return entryGroup ? { area: entryGroup.area, id } : null;
 }
 
+/**
+ * Which group an anchor id belongs to — it may BE a group, or a row inside one.
+ *
+ * What a deep link and a search hit need in order to leave the block they landed
+ * in SELECTED: the flash says "this row" for two seconds, and the ring says
+ * "this block" until you click somewhere else.
+ */
+export function groupIdOf(id: string): string | null {
+  if (GROUP_BY_ID.has(id)) return id;
+  return ENTRY_BY_ID.get(id)?.group ?? null;
+}
+
 export interface ChangedSetting {
   entry: Entry;
   field: keyof AppSettings;

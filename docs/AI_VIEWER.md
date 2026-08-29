@@ -28,6 +28,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A settings hash resolves to an AREA before it resolves to an element**, or the page renders one area and scrolls for something in another.
 - **A feature's master is a `Switch`, its reason is said once, and what it governs stays readable** — 70 %, never hidden: a collapsed block is one no deep link can reach.
 - **A settings hint is one line**; anything longer goes in the group's `Explain`.
+- **The settings rail marks what was clicked, never what you scrolled past** — nothing by default, and clicking beside a block clears it.
 - **Typing never moves the page** — a step unfolds things that do not fold back.
 - **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
 - **The ring survives F5**: remembered per conversation in `sessionStorage`, never in the URL, and restored by travelling the deep link's road back to it.
@@ -483,6 +484,18 @@ reach.
 **A hint is one line.** Anything longer belongs in the group's `Explain`, one
 click away rather than standing between the reader and the control. Ten
 paragraphs of small grey text under ten switches is a wall people read past.
+
+**The rail marks what was CLICKED, never what you scrolled past.** A block is
+selected the way a message is ([the selected message](#the-selected-message)) —
+click it and it takes the ring, click another and the ring moves, click the
+column beside them and it goes; a deep link leaves the block it landed in marked,
+and it is the same `[data-selected]` outline, which is an outline rather than a
+box-shadow precisely so an arriving flash fades to reveal it. A scroll-spy was
+tried here twice and is the wrong shape for this page: something is always lit,
+it is whatever you happened to scroll past rather than anything you chose, and
+nothing can be un-lit. The state is plain React — three cards, not three hundred
+bubbles, so there is no render to protect and no need for the viewer's module
+store.
 
 **The column is wide, and nothing inside it is capped narrower than the card.**
 The panel is `max-w-5xl` — a 976 px card. Capping the prose to a reading measure

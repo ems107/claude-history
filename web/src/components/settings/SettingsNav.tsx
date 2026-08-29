@@ -26,19 +26,15 @@ import { useSettingsPage } from './context.ts';
  */
 export function SettingsNav({
   area,
-  scroller,
 }: {
   /** Null on the changed-list, which is a route but not an area. */
   area: AreaId | null;
-  /** The panel that actually scrolls, which is what the spy has to watch. */
-  scroller: HTMLElement | null;
 }) {
-  const { settings, defaults } = useSettingsPage();
+  const { settings, defaults, selected, select } = useSettingsPage();
   const [query, setQuery] = useState('');
   const counts = changedByArea(settings, defaults);
   const totalChanged = [...counts.values()].reduce((a, b) => a + b, 0);
   const groups = area ? groupsOf(area) : [];
-  const here = useVisibleGroup(scroller, area);
 
   const item = (a: Area) => {
     const changed = counts.get(a.id) ?? 0;
@@ -54,9 +50,15 @@ export function SettingsNav({
               <button
                 key={g.id}
                 type="button"
-                onClick={() => document.getElementById(g.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
+                // Go there AND mark it. Scrolling alone was what the rail did
+                // before, and with a scroll-spy deciding the mark it meant
+                // clicking an item lit whatever you happened to land beside.
+                onClick={() => {
+                  select(g.id);
+                  document.getElementById(g.id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                }}
                 className={`cursor-pointer truncate py-0.5 pr-3 pl-[1.4rem] text-left text-xs ${
-                  here === g.id ? 'text-[var(--accent)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+                  selected === g.id ? 'text-[var(--accent)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
                 }`}
               >
                 {g.short ?? g.title}
@@ -246,56 +248,4 @@ function SearchResults({ query, clear }: { query: string; clear: () => void }) {
       ))}
     </div>
   );
-}
-
-/** How far below the panel's top edge a heading counts as "the one you are on". */
-const SPY_LINE_PX = 90;
-
-/**
- * Which group you are reading — the LAST one whose heading has passed the line
- * near the top of the panel.
- *
- * **This was an `IntersectionObserver` and it was wrong in a way that looked
- * like a design decision.** It kept the topmost intersecting heading, chosen by
- * the smallest `boundingClientRect.top` — which is the most NEGATIVE one, so a
- * tall first group that you had scrolled well past went on winning for ever.
- * The first sub-item of every area stayed lit, clicking any other did nothing
- * visible, and nothing about it read as a bug rather than as a rail that simply
- * marked its area.
- *
- * Reading the positions on scroll is both correct and something you can check by
- * eye: walk the headings in order, keep the last one at or above the line. At the
- * top of the panel that is the first group; scrolled to the very bottom it is
- * forced to the last, because a short final group never reaches the line on its
- * own and would otherwise leave the previous one lit at the end of the page.
- */
-function useVisibleGroup(scroller: HTMLElement | null, area: AreaId | null): string | null {
-  const [here, setHere] = useState<string | null>(null);
-  useEffect(() => {
-    if (!scroller) return;
-    const read = () => {
-      const groups = [...scroller.querySelectorAll('[data-settings-group]')];
-      if (groups.length === 0) return;
-      const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4;
-      if (atBottom) {
-        setHere(groups[groups.length - 1].getAttribute('data-settings-group'));
-        return;
-      }
-      const line = scroller.getBoundingClientRect().top + SPY_LINE_PX;
-      let current = groups[0];
-      for (const el of groups) {
-        if (el.getBoundingClientRect().top <= line) current = el;
-      }
-      setHere(current.getAttribute('data-settings-group'));
-    };
-    read();
-    scroller.addEventListener('scroll', read, { passive: true });
-    window.addEventListener('resize', read);
-    return () => {
-      scroller.removeEventListener('scroll', read);
-      window.removeEventListener('resize', read);
-    };
-    // Re-read when the area changes: the groups on screen are different ones.
-  }, [scroller, area]);
-  return here;
 }

@@ -38,6 +38,22 @@ export interface SettingsContextValue {
    */
   flashed: string | null;
   /**
+   * The group the reader has clicked, and nothing by default.
+   *
+   * The same idea as the ring on a message in the viewer (`lib/selectedMessage.ts`)
+   * and it behaves the same way: clicking a block marks it, clicking another
+   * moves the mark, clicking the empty space beside them takes it off. It
+   * replaced a scroll-spy that lit whichever group you happened to be scrolled
+   * past — which meant something was always lit, was often the wrong thing, and
+   * could not be turned off.
+   *
+   * Plain React state, unlike the viewer's module store: a settings area holds
+   * three cards, not three hundred bubbles, so there is no render to protect.
+   */
+  selected: string | null;
+  /** Null deselects — which is what a click beside a block is. */
+  select: (groupId: string | null) => void;
+  /**
    * Save a patch. Fire-and-forget by design: it puts the answer straight into
    * the query cache, and the two refusals it can meet — the app running Claude,
    * and anything else — are handled at the one place it lives rather than by

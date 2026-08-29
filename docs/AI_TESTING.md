@@ -702,15 +702,22 @@ up as several failures at once rather than as a setting nobody notices is gone.
   wider column existed to fix. A hint that wraps here wants CUTTING, and what is
   cut belongs in the group's `Explain`. Also: a grid gives its slack to the LAST
   column — the retention values must sit ~12 px from their path, not ~350.
-- **The rail follows what you are reading.** Park each group's heading one pixel
-  ABOVE the spy line and the rail's sub-item must be that group; the very bottom
-  must light the LAST one (a short final group never reaches the line on its
-  own); clicking a sub-item must scroll there and light it; and exactly one is
-  ever lit. The bug this replaces looked like a design decision rather than a
-  fault: an `IntersectionObserver` keeping the smallest `boundingClientRect.top`
-  keeps the most NEGATIVE one, so the first group of every area stayed lit for
-  ever and clicking any other did nothing. **Off-by-one in the harness, not the
-  page**: at `line + 1` the heading has not arrived yet and must NOT count.
+- **The rail marks what you CLICKED, and nothing by default.** On arrival, and
+  after scrolling to any position including the very bottom, **no** rail item and
+  **no** block may be marked. Clicking a rail sub-item must mark it in the rail
+  AND put `data-selected` on its block; clicking a block must move both to it;
+  clicking the column beside the cards must clear both; a deep link must leave
+  the block it landed in marked; and changing area must start clean.
+  **This replaced a scroll-spy twice**, which is why it is worth the paragraph.
+  The first kept the smallest `boundingClientRect.top` — the most NEGATIVE — so
+  the first group of every area stayed lit for ever and clicking any other did
+  nothing. The second read positions correctly and was still wrong as a design:
+  something was always lit, it was whatever you had scrolled past rather than
+  anything you had chosen, and there was no way to have nothing lit. Two harness
+  traps went with it, both of which cost a run: `elementFromPoint` returns null
+  once the panel is scrolled (dispatch the click on the column instead), and a
+  scroll test parked at a FRACTION of the page proves nothing if that fraction
+  happens not to cross a heading.
 
 ## Platform and plumbing
 

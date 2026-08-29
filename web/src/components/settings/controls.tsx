@@ -108,7 +108,7 @@ export function GroupCard({
    */
   inactive?: boolean;
 }) {
-  const { settings, save, flashed } = useSettingsPage();
+  const { settings, save, flashed, selected } = useSettingsPage();
   const group = findGroup(id);
   const entry = master ? entryForField(master) : undefined;
   const on = master ? settings[master] === true : true;
@@ -117,6 +117,11 @@ export function GroupCard({
     <section
       id={id}
       data-settings-group={id}
+      // `data-selected` is the viewer's own ring, from `styles.css`, and it is an
+      // OUTLINE where the flash is a box-shadow — deliberately, so a link's
+      // flash fades to reveal the steady ring underneath instead of taking it
+      // away with it.
+      {...(selected === id ? { 'data-selected': '' } : {})}
       className={`scroll-mt-4 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 ${
         flashed === id ? 'anchor-flash' : ''
       }`}
