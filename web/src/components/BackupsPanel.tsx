@@ -4,9 +4,7 @@ import { useState } from 'react';
 import { api } from '../api/client.ts';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
 import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
-
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
+import { actionClass } from './controlClass.ts';
 
 /** Bytes, in the two digits that mean something at these sizes. */
 function size(bytes: number): string {
@@ -130,10 +128,10 @@ export function BackupsPanel() {
       )}
 
       <div className="flex items-center gap-2">
-        <button type="button" onClick={takeOne} disabled={busy} className={btn}>
+        <button type="button" onClick={takeOne} disabled={busy} className={actionClass}>
           Back up now
         </button>
-        <button type="button" onClick={refresh} disabled={isFetching} className={btn}>
+        <button type="button" onClick={refresh} disabled={isFetching} className={actionClass}>
           {isFetching ? 'Reading…' : 'Refresh'}
         </button>
         <span className="ml-auto font-mono text-[11px] break-all text-[var(--text-dim)]">{data.backupsDir}</span>
@@ -157,10 +155,10 @@ export function BackupsPanel() {
                 <span className="ml-auto text-[11px] text-[var(--text-dim)]">{size(b.sizeBytes)}</span>
                 {confirming === b.name ? (
                   <>
-                    <button type="button" onClick={() => restore(b.name)} disabled={busy} className={`${btn} border-amber-500/60 text-amber-300`}>
+                    <button type="button" onClick={() => restore(b.name)} disabled={busy} className={`${actionClass} border-amber-500/60 text-amber-300`}>
                       Replace everything
                     </button>
-                    <button type="button" onClick={() => setConfirming(null)} className={btn}>
+                    <button type="button" onClick={() => setConfirming(null)} className={actionClass}>
                       Cancel
                     </button>
                   </>
@@ -170,7 +168,7 @@ export function BackupsPanel() {
                     onClick={() => setConfirming(b.name)}
                     // A copy that does not parse has nothing to put back.
                     disabled={busy || b.contents === null}
-                    className={btn}
+                    className={actionClass}
                     title={
                       b.contents === null
                         ? 'This copy is unreadable — there is nothing in it to restore'

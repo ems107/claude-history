@@ -5,9 +5,8 @@ import { useState } from 'react';
 import { api } from '../api/client.ts';
 import { useLocalOnly } from '../api/useLocal.ts';
 import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
+import { actionClass } from './controlClass.ts';
 
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 const inputClass =
   'w-44 rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
 
@@ -214,7 +213,7 @@ export function RemoteAccessPanel({
             {configured && !formOpen ? (
               <>
                 <span className="font-mono">a username and password</span>
-                <button type="button" className={btn} onClick={() => setSettingUp(true)}>
+                <button type="button" className={actionClass} onClick={() => setSettingUp(true)}>
                   Change them
                 </button>
               </>
@@ -245,7 +244,7 @@ export function RemoteAccessPanel({
                 />
                 <button
                   type="button"
-                  className={btn}
+                  className={actionClass}
                   disabled={busy !== null || !username.trim() || password.length < MIN_PASSWORD_LENGTH}
                   onClick={submitCredentials}
                 >
@@ -255,7 +254,7 @@ export function RemoteAccessPanel({
                   <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent text-[var(--text-dim)]" />
                 )}
                 {settingUp && configured && (
-                  <button type="button" className={btn} onClick={() => setSettingUp(false)}>
+                  <button type="button" className={actionClass} onClick={() => setSettingUp(false)}>
                     Cancel
                   </button>
                 )}
@@ -328,7 +327,7 @@ export function RemoteAccessPanel({
                   "not now" — visibly unusable, and it claims nothing. */}
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy !== null || rule === undefined || rule.ruleExists === null}
                 title={firewallOnly.reason ?? 'Windows will ask for administrator approval'}
                 onClick={() => setFirewallRule(!rule?.ruleExists)}
@@ -347,7 +346,7 @@ export function RemoteAccessPanel({
                   </span>
                   <button
                     type="button"
-                    className={btn}
+                    className={actionClass}
                     disabled={busy !== null}
                     title={firewallOnly.reason ?? 'Replaces them with a single rule. Windows will ask for approval'}
                     onClick={() => setFirewallRule(true)}
@@ -405,7 +404,7 @@ export function RemoteAccessPanel({
             {rule?.restartNeeded && busy !== 'restart' && (
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy !== null}
                 title="Where the server listens is decided when it starts, so this is what applies the change."
                 onClick={restart}
@@ -445,7 +444,7 @@ export function RemoteAccessPanel({
               </ul>
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy !== null}
                 title={firewallOnly.reason ?? 'Windows will ask for administrator approval'}
                 onClick={() => {
@@ -482,7 +481,7 @@ export function RemoteAccessPanel({
           {remote && (
             <button
               type="button"
-              className={btn}
+              className={actionClass}
               onClick={() => {
                 void api.logout().then(() => queryClient.invalidateQueries({ queryKey: ['auth'] }));
               }}
@@ -492,7 +491,7 @@ export function RemoteAccessPanel({
           )}
           <button
             type="button"
-            className={btn}
+            className={actionClass}
             disabled={busy !== null}
             title="Replaces the signing key, so every device that is signed in has to sign in again — this one included."
             onClick={() => {

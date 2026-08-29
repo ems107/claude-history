@@ -7,9 +7,7 @@ import { useLocalOnly } from '../api/useLocal.ts';
 import { copyPlain } from '../lib/clipboard.ts';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
 import { retentionLabel, retentionView } from '../lib/retention.ts';
-
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
+import { actionClass } from './controlClass.ts';
 
 /** What one settings file has to say, in the one word that matters. */
 function sourceValue(s: RetentionSource): { text: string; tone: string } {
@@ -200,7 +198,7 @@ export function RetentionPanel() {
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
         <button
           type="button"
-          className={btn}
+          className={actionClass}
           onClick={() => void api.openClaudeSettingsFolder()}
           disabled={claudeFolder.disabled}
           title={claudeFolder.reason ?? undefined}
@@ -209,7 +207,7 @@ export function RetentionPanel() {
         </button>
         <button
           type="button"
-          className={btn}
+          className={actionClass}
           onClick={() => {
             void copyPlain(data.userSettingsFile).then(
               () => setNote('Path copied.'),
@@ -221,7 +219,7 @@ export function RetentionPanel() {
         </button>
         <button
           type="button"
-          className={btn}
+          className={actionClass}
           disabled={isFetching}
           title="Read the settings files again, after editing them"
           onClick={() => {

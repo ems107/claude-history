@@ -26,6 +26,7 @@ import { useActiveSessions } from '../api/useActiveSessions.ts';
 import { useLocalOnly } from '../api/useLocal.ts';
 import { useActiveSessionsGuard } from '../components/ActiveSessionsDialog.tsx';
 import { BackupsPanel } from '../components/BackupsPanel.tsx';
+import { actionClass } from '../components/controlClass.ts';
 import { RemoteAccessPanel } from '../components/RemoteAccessPanel.tsx';
 import { RetentionPanel } from '../components/RetentionPanel.tsx';
 import { formatDateTime, relativeTime, timeUntil } from '../lib/format.ts';
@@ -85,9 +86,6 @@ function Toggle({
     </label>
   );
 }
-
-const btn =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
 
 /** Must match the `anchor-flash` animation in styles.css. */
 const ANCHOR_FLASH_MS = 2_500;
@@ -357,7 +355,7 @@ function AutoReloadStatusPanel() {
             what clears one. */}
         <button
           type="button"
-          className={btn}
+          className={actionClass}
           disabled={testing || blocked !== null}
           title={blocked ?? 'Sends the message right now, exactly as the schedule would'}
           onClick={runTest}
@@ -516,7 +514,7 @@ function ToneSelect({
           // A disabled button that does not say why is a button that looks broken.
           title={volume <= 0 ? 'The volume is 0' : silent ? 'Silent — there is nothing to play' : 'Play it'}
           aria-label="Play the tone"
-          className={btn}
+          className={actionClass}
         >
           ▶
         </button>
@@ -587,7 +585,7 @@ function VoiceSelect({
           disabled={disabled || volume <= 0}
           onClick={() => speak('Claude needs you', value, volume)}
           title={volume <= 0 ? 'The volume is 0' : 'Say it'}
-          className={btn}
+          className={actionClass}
         >
           Test
         </button>
@@ -1315,7 +1313,7 @@ export function SettingsPage() {
           <div className="flex flex-wrap gap-1.5 pt-1">
             <button
               type="button"
-              className={btn}
+              className={actionClass}
               disabled={dataFolder.disabled}
               title={dataFolder.reason ?? undefined}
               onClick={() => void api.openDataFolder()}
@@ -1324,7 +1322,7 @@ export function SettingsPage() {
             </button>
             <button
               type="button"
-              className={btn}
+              className={actionClass}
               disabled={!data.paths.installRoot || installFolder.disabled}
               title={installFolder.reason ?? data.paths.installRoot ?? 'Not a managed install'}
               onClick={() => void api.openInstallFolder()}
@@ -1333,7 +1331,7 @@ export function SettingsPage() {
             </button>
             <button
               type="button"
-              className={btn}
+              className={actionClass}
               disabled={busy !== null}
               onClick={clearCacheNow}
               title="Deletes the derived cache only. Your renames, pins, starred messages and prices live elsewhere and are kept."
@@ -1342,7 +1340,7 @@ export function SettingsPage() {
             </button>
             <button
               type="button"
-              className={`${btn} border-red-500/40 text-red-300 hover:border-red-400`}
+              className={`${actionClass} border-red-500/40 text-red-300 hover:border-red-400`}
               disabled={stopped || stopServer.disabled}
               title={stopServer.reason ?? undefined}
               onClick={() => {
@@ -1364,7 +1362,7 @@ export function SettingsPage() {
             </button>
             <button
               type="button"
-              className={`${btn} border-red-500/40 text-red-300 hover:border-red-400`}
+              className={`${actionClass} border-red-500/40 text-red-300 hover:border-red-400`}
               disabled={!data.paths.installRoot || stopped || uninstall.disabled}
               title={uninstall.reason ?? data.paths.installRoot ?? 'Not a managed install — nothing to uninstall'}
               onClick={() => setUninstalling(true)}
@@ -1432,7 +1430,7 @@ export function SettingsPage() {
               {!uninstalled && (
                 <button
                   type="button"
-                  className={`${btn} border-red-500/50 text-red-300 hover:border-red-400`}
+                  className={`${actionClass} border-red-500/50 text-red-300 hover:border-red-400`}
                   onClick={() => {
                     setUninstalled(true);
                     void api.uninstall(wipeData).catch((e) => setNote(`Uninstall failed: ${String(e)}`));
@@ -1443,7 +1441,7 @@ export function SettingsPage() {
               )}
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 onClick={() => {
                   setUninstalling(false);
                   setUninstalled(false);

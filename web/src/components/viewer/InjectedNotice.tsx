@@ -2,7 +2,7 @@ import type { ContentBlock, MessageItem } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 import { formatTokens } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime } from '../../lib/format.ts';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useFoldable } from './RevealContext.ts';
 import { useSubagents } from './SubagentContext.ts';

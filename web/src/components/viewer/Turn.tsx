@@ -17,7 +17,7 @@ import { ContextPill } from './ContextPill.tsx';
 import { CompactBoundaryPanel, CompactSummaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
 import { CostPill } from './CostPill.tsx';
 import { FindingsCard } from './FindingsCard.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { InjectedNotice } from './InjectedNotice.tsx';
 import { InterruptMarker } from './InterruptMarker.tsx';

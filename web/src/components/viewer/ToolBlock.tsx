@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes, formatDateTime, formatMs, formatTimeOfDay, msBetween } from '../../lib/format.ts';
 import { FileRefChip } from './FileRefLink.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { CardLine, HoverCard } from './HoverCard.tsx';
 import { useFoldable, useRevealed } from './RevealContext.ts';
 import { useSubagents } from './SubagentContext.ts';

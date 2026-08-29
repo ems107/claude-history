@@ -1,7 +1,7 @@
 import type { CompactBoundary, ContextSnapshot } from '@claude-history/shared';
 import { useMemo, useRef, useState } from 'react';
 import { formatContextTokens } from '../../lib/context.ts';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
 import { CopyActions } from './MessageActions.tsx';
 import { useFoldable } from './RevealContext.ts';

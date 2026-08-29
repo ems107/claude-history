@@ -1,4 +1,4 @@
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { useFoldable } from './RevealContext.ts';
 
 export function ThinkingBlock({ text, owner }: { text: string; owner?: string }) {

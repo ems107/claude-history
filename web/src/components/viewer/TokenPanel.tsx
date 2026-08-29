@@ -9,7 +9,7 @@ import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
 import { computeCost, computeMessageCost, formatUsd, summariseRecache } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
-import { Fold } from './Fold.tsx';
+import { Fold } from '../Fold.tsx';
 
 function fmt(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(1)}k` : String(n);

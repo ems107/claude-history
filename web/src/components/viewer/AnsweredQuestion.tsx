@@ -1,6 +1,6 @@
 import type { ContentBlock } from '@claude-history/shared';
 import { useState } from 'react';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { Sketch } from './Sketch.tsx';
 
 type ToolBlockType = Extract<ContentBlock, { kind: 'tool' }>;

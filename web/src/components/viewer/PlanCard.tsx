@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { formatTokens } from '../../lib/cost.ts';
 import { type ParsedPlan, parsePlanFeedback } from '../../lib/plans.ts';
 import { FileRefChip } from './FileRefLink.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { Markdown } from './Markdown.tsx';
 import { PlanCommentRef } from './PlanReview.tsx';
 

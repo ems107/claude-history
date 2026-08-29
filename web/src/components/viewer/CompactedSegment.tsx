@@ -4,7 +4,7 @@ import { formatContextTokens } from '../../lib/context.ts';
 import { costEntries, formatUsd, sumCost } from '../../lib/cost.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { type Segment, summarizeSegment } from '../../lib/segments.ts';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 
 /**
  * A stretch of conversation the model no longer sees, folded into one line.

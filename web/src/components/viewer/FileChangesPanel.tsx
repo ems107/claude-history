@@ -2,7 +2,7 @@ import type { FileChange } from '@claude-history/shared';
 import { useState } from 'react';
 import { formatDateTime } from '../../lib/format.ts';
 import { FileRefChip } from './FileRefLink.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 
 function EditBlock({ edit }: { edit: FileChange['edits'][number] }) {
   return (

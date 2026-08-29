@@ -5,7 +5,7 @@ import { type CostEntry, costEntries, formatTokens, formatUsd, sumCost, sumUsage
 import { durationBetween, formatDateTime, formatDateTimeFull } from '../../lib/format.ts';
 import { promptOf, rowStatus, subagentStatus, type SubagentRow } from '../../lib/subagents.ts';
 import { CostPill } from './CostPill.tsx';
-import { Fold } from './Fold.tsx';
+import { Fold } from '../Fold.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useSubagents } from './SubagentContext.ts';
 
