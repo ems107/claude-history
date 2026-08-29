@@ -547,7 +547,10 @@ export function SessionViewPage() {
    * subagent index's, because the notices that ask are mostly not agents' and
    * half of their sessions hold no subagent at all.
    */
-  const toolCalls = useMemo(() => buildToolCallIndex(session?.turns ?? EMPTY_TURNS), [session]);
+  const toolCalls = useMemo(
+    () => buildToolCallIndex(session?.turns ?? EMPTY_TURNS, session?.subagents ?? EMPTY_AGENTS),
+    [session],
+  );
   const subagentContext = useMemo<SubagentContextValue>(
     () => ({
       byId: subagentIndex.byId,
@@ -556,15 +559,8 @@ export function SessionViewPage() {
       goToCall: (toolUseId) => jumpTo(TOOL_PARAM, toolUseId),
       goToMessage: (uuid) => jumpTo('msg', uuid),
       hasCall: (toolUseId) => toolCalls.drawn.has(toolUseId),
-      callOf: (notice) => {
-        if (notice.toolUseId && toolCalls.drawn.has(notice.toolUseId)) return notice.toolUseId;
-        // An agent that was RESUMED files a report naming no call, and the one
-        // that sent it out is on its `meta.json` — the join the drawer header
-        // already makes, reused rather than guessed at.
-        const meta = notice.taskId ? subagentIndex.byId.get(notice.taskId) : null;
-        if (meta?.toolUseId && toolCalls.drawn.has(meta.toolUseId)) return meta.toolUseId;
-        return (notice.taskId && toolCalls.byTaskId.get(notice.taskId)) || null;
-      },
+      callOf: (noticeUuid) => toolCalls.callOfNotice.get(noticeUuid) ?? null,
+      answerTo: (toolUseId) => toolCalls.answerOfCall.get(toolUseId) ?? null,
     }),
     [subagentIndex, toolCalls, openAgent, jumpTo],
   );

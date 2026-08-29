@@ -37,20 +37,17 @@ export interface SubagentContextValue {
    */
   hasCall(toolUseId: string): boolean;
   /**
-   * The call a task notification is the answer to, or null when this parse does
-   * not hold it. Three joins, strongest first, because a notice does not always
-   * name its own call:
+   * The two halves of one pairing, and the two buttons that walk it — `↑ the
+   * call` on a notice panel, `↓ the answer` on the call it came from. Null means
+   * this parse does not hold the other end, and then neither button is drawn.
    *
-   * 1. its `<tool-use-id>` — 171 of the 175 here;
-   * 2. the `toolUseId` on the agent's `meta.json`, when the `<task-id>` is an
-   *    agent's, which is the same join the drawer header makes;
-   * 3. the call that ANNOUNCED the `<task-id>` in its own result — see
-   *    `ToolCallIndex.byTaskId` for why that is exact rather than a guess.
-   *
-   * One accessor and not three, because the order between them is the answer:
-   * asked separately, a caller would have to know it.
+   * Read off the SAME map in both directions (`buildToolCallIndex`, where the
+   * three joins that find a call are explained), so the round trip cannot
+   * disagree with itself: whatever `↑ the call` reaches is what offers the `↓`
+   * back to where you were.
    */
-  callOf(notice: { taskId: string | null; toolUseId: string | null }): string | null;
+  callOf(noticeUuid: string): string | null;
+  answerTo(toolUseId: string): string | null;
 }
 
 export const SubagentContext = createContext<SubagentContextValue | null>(null);

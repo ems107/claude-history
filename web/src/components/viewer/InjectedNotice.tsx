@@ -61,7 +61,7 @@ export function InjectedNotice({
   // privilege of an agent's: a background command names its `Bash` call in the
   // very same tag, and 56 of the notices on this machine are one. Which of the
   // three joins found it is `callOf`'s business, not this panel's.
-  const call = subagents?.callOf(notice) ?? null;
+  const call = subagents?.callOf(item.uuid) ?? null;
   const failed = notice.status === 'failed';
 
   return (
