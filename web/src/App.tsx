@@ -126,48 +126,51 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2">
-        {/* The mark sits OUTSIDE the baseline group on purpose: it has no
-            baseline of its own, so putting it inside would make the group take
-            its bottom edge as the baseline and drop the version text. It gets a
-            tighter gap than the header's own — the mark and the words are one
-            thing, and the nav beside them is another. */}
-        <span className="flex items-center gap-1.5">
-          <Brandmark className="h-5 w-auto shrink-0" />
-          {/* Title and version share a baseline, so the small version text sits
-              on the title's bottom edge instead of floating at its mid-height. */}
-          <span className="flex items-baseline gap-2">
-            <Link
-              to="/"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate(listUrl()); // computed at click time: restores saved filters
-              }}
-              className="text-lg font-semibold tracking-tight"
-            >
+        {/* Title and version share a baseline, so the small version text sits
+            on the title's bottom edge instead of floating at its mid-height. */}
+        <span className="flex items-baseline gap-2">
+          {/* The mark is INSIDE the link — the mark and the words are one
+              thing, so they are one target — but it stays OUT of the baseline
+              group that carries the version text: it has no baseline of its
+              own, so left to participate it would hand the group its own
+              bottom edge and drop the version text with it. self-center keeps
+              it out of that group, and centres it on the title exactly where
+              it already sat. The link's gap is tighter than the header's own:
+              the nav beside it is another thing. */}
+          <Link
+            to="/"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate(listUrl()); // computed at click time: restores saved filters
+            }}
+            className="flex items-baseline gap-1.5 text-lg font-semibold tracking-tight"
+          >
+            <Brandmark className="h-5 w-auto shrink-0 self-center" />
+            <span>
               <span className="text-[var(--accent)]">claude</span> history
-            </Link>
-            {dev ? (
+            </span>
+          </Link>
+          {dev ? (
+            <span
+              className="rounded border border-amber-500/40 px-1 font-mono text-[11px] text-amber-400"
+              title={`Development instance on port ${window.location.port} — its own data folder, beside the installed release on 7433, which it never touches.`}
+            >
+              dev
+            </span>
+          ) : (
+            update && (
               <span
-                className="rounded border border-amber-500/40 px-1 font-mono text-[11px] text-amber-400"
-                title={`Development instance on port ${window.location.port} — its own data folder, beside the installed release on 7433, which it never touches.`}
+                className="font-mono text-[11px] text-[var(--text-dim)]"
+                title={
+                  update.installed
+                    ? `Installed version ${update.currentVersion}`
+                    : 'Running from source (not an installed release)'
+                }
               >
-                dev
+                {update.currentVersion === 'dev' ? 'dev' : `v${update.currentVersion}`}
               </span>
-            ) : (
-              update && (
-                <span
-                  className="font-mono text-[11px] text-[var(--text-dim)]"
-                  title={
-                    update.installed
-                      ? `Installed version ${update.currentVersion}`
-                      : 'Running from source (not an installed release)'
-                  }
-                >
-                  {update.currentVersion === 'dev' ? 'dev' : `v${update.currentVersion}`}
-                </span>
-              )
-            )}
-          </span>
+            )
+          )}
         </span>
         <nav className="ml-4 flex items-center gap-1">
           {/* Not a NavItem: everything else in this bar goes to a list of things
