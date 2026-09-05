@@ -509,15 +509,24 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       const top = await visit(root, 0);
       // Gone is the ordinary end of a scratchpad — Windows sweeps it — so it is
       // a 200 the panel draws rather than a 404, and `root` is answered either
-      // way because it is what the panel's own button opens. Anything OTHER
-      // than gone is a finding and says so in the log: the listing comes back
-      // empty for both, and only one of them is unremarkable.
+      // way because it is what the panel's own button opens.
+      //
+      // Three outcomes and not two, which is why `exists` is not simply "the
+      // walk succeeded": a root that is THERE but refuses to open is neither
+      // gone nor listed, and saying `exists: false` about it would be the one
+      // untrue answer this endpoint can give. It reports the folder as present
+      // with nothing in it, and the log carries the reason — because that case
+      // is a finding, where a swept folder is not.
       const gone = top.error !== null && /ENOENT|ENOTDIR|no such file/i.test(top.error);
       if (top.error !== null && !gone) log.warn(`could not list scratchpad ${root}: ${top.error}`);
-      const exists = top.error === null;
+      const exists = !gone;
       log.debug(
         `scratchpad ${id}: ${
-          exists ? `${String(entries.length)} entr${entries.length === 1 ? 'y' : 'ies'}` : 'not there'
+          top.error === null
+            ? `${String(entries.length)} entr${entries.length === 1 ? 'y' : 'ies'}`
+            : gone
+              ? 'not there'
+              : 'there but unreadable'
         }${truncated ? ' (capped)' : ''}`,
       );
       return { root, exists, entries, truncated };
