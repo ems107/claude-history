@@ -139,7 +139,7 @@ Measured on `f3384d17`: opening a panel leaves the scroller's `clientHeight`
 unchanged, which is the assertion [check 27](AI_TESTING.md) makes about a message
 arriving, now true of a panel opening too.
 
-- **72 px, and every item carries its label.** Not the 44 an icon needs: six
+- **72 px, and every item carries its label.** Not the 44 an icon needs: seven
   unlabelled glyphs down the side of a window is six things to learn and a
   tooltip to wait for.
 - **An item exists only when its panel has something in it** — the rule the six
@@ -149,7 +149,7 @@ arriving, now true of a panel opening too.
   inspector holding a title with nothing under it.
 - **One at a time, which is what gives Escape one meaning.** The unwind is
   `file → agent → inspector → find bar → back`, and the inspector is one branch
-  for all six panels — see [the three file panels](#the-three-file-panels) for
+  for all seven panels — see [the three file panels](#the-three-file-panels) for
   the objection this answers.
 - **What is open is ONE value, and `?agents=1` is a mirror of it** — not half of
   the answer. The parameter has to stay, because the link can be copied and
@@ -258,7 +258,7 @@ inspector's are all consequences of one choice.
 - **The four numbers, and why none of them is borrowed.** `SIDE_MIN` is 240 — a
   column dragged narrow is usually somebody keeping a file in the corner of their
   eye, which is not the same thing as reading it, and the 360 it started at was a
-  limit nobody had asked for. `INSPECTOR_MIN` stays 320 because its six panels
+  limit nobody had asked for. `INSPECTOR_MIN` stays 320 because its seven panels
   are WRITTEN for 320: a file viewer at 240 is still a file viewer, a token
   ledger at 240 is a broken table. `CONV_MIN` is 320, the same floor — see below.
   And `WIDTH_MIN` is deliberately none of them: it is the narrowest reading
@@ -883,7 +883,7 @@ below is what it draws once it is there.
 
 ## The three file panels
 
-The header carries three, and the words are the feature: **`Changed Files`** is what the session EDITED (`detail.fileChanges`, built server-side from `Edit`/`Write`/`NotebookEdit`/`MultiEdit`), **`Sent Files`** is what it HANDED OVER, and **`Mentioned`** is what it only TALKED about. While the first was called plain `Files` the second had no name left to take, and none of the three is another's superset — a delivered screenshot was never edited, an edited source was never delivered, and a file merely named was neither.
+The rail carries three of them, and the words are the feature: **`Changed Files`** is what the session EDITED (`detail.fileChanges`, built server-side from `Edit`/`Write`/`NotebookEdit`/`MultiEdit`), **`Sent Files`** is what it HANDED OVER, and **`Mentioned`** is what it only TALKED about. While the first was called plain `Files` the second had no name left to take, and none of the three is another's superset — a delivered screenshot was never edited, an edited source was never delivered, and a file merely named was neither. All three read the CONVERSATION, which is what makes [the scratchpad](#the-scratchpad-is-the-fourth-file-question) a fourth question rather than a fourth answer to this one: it reads the disk.
 
 The third is the weakest of them by nature and says so on every row that needs it, because **a path in prose is written for a person**: `core/git.ts` for the real thing, `<pid>.json` for a naming scheme, `~/.claude` for a folder, `vX.Y.Z` for nothing at all. Measured over five sessions, 14 of 64 such paths pointed at a file that is really there.
 
@@ -910,8 +910,22 @@ The third is the weakest of them by nature and says so on every row that needs i
 - **The answer is joined on the `ref` the server echoed back**, normalised — never on the resolved path, which is the server's answer and not the key any row was built with, and never positionally.
 - **One state column, one meaning: `on disk` / `changed since` / `no longer on disk`.** The raw `modifiedAt` was in that column for one draft and had to come out: beside the row's own timestamp it was a second unlabelled date, and two dates that mean different things read as neither. What is interesting about it is computed instead — `changed since` is earned by a size that differs from what was sent OR, for a row that records no size, by an mtime later than the line that named it, which is the one thing worth knowing about a file holding only the LATEST plan for its slug.
 - **The jump names what it lands on**: `↑ the call` for a delivery or a publish, `↑ the line` for a plan file, which no call handed over. Both go through the page's `jumpTo`, so they clear the other anchor and bump `jumpNonce` — pressing the same row twice must jump twice.
-- **All six panels are one value now** (`useInspector`), which answers the objection that kept these two out of the Escape unwind — putting one in and not the other would have been worse than neither. There is one thing open and one thing to close. `?agents=1` is still the only one in the URL, because the session list links straight onto it.
+- **All seven panels are one value now** (`useInspector`), which answers the objection that kept these two out of the Escape unwind — putting one in and not the other would have been worse than neither. There is one thing open and one thing to close. `?agents=1` is still the only one in the URL, because the session list links straight onto it.
 - **Their rows wrap.** Each is a flex line of `shrink-0` columns — a name, a type, a size, a state chip, a date, a folder tail, a jump — and six of those do not fit the 320 px the inspector can be dragged to, however small the type: `Sent files` wanted 789 px and scrolled sideways. `flex-wrap` with a row gap leaves them unchanged wherever there is room.
+
+## The scratchpad is the fourth file question
+
+The three above it read the CONVERSATION. This one reads the disk: what the session left in the temp folder Claude Code hands it to work in, which is where the scripts, the pile of `.out` files, the screenshots and the odd 138 MB download actually live. Most of it was never named in a message, so none of the other three panels could ever have shown it — a session that wrote 415 files in there mentions a handful.
+
+- **The folder is DERIVED, and that is what pays for the listing.** Every other read outside `~/.claude` follows a path a transcript named; enumerating a directory is the app looking around on its own. So the client sends no path at all: `GET /api/sessions/:id/scratchpad` builds the root from `os.tmpdir()`, the session's `encodedDir` and its id, and there is nothing in the request for a `..` to hide in. Where that folder is and why it is temporary is written down once, in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#everything-here-has-an-expiry-date-cleanupperioddays); what matters here is that **Claude Code names the temp folder with the same slug it names the `~/.claude/projects` one**, so the index already holds the string and nothing re-implements its encoding. Verified across every temp folder on this machine, the nested ones included — a session launched INSIDE a scratchpad gets a slug built from that path, and both sides spell it identically.
+- **One request, capped, and never silently.** `MAX_SCRATCHPAD_ENTRIES` is to a listing what `MAX_STAT_PATHS` is to the stat batch, and the reason is not hypothetical: the scratchpads in this corpus hold an unpacked `gradle-8.14.5` and eight Chrome profiles, and one of them crosses the cap. The walk is depth-first through a sorted listing, so what a cap costs is always the deep end of the tree rather than a name at the top of it; the panel says it stopped, and the folder is one button away.
+- **Gone is a state, not a failure.** Windows sweeps this folder, so `exists: false` is the ordinary answer for an old session — a 200 rather than a 404. `root` is answered either way, because it is what the panel's own button opens. Anything OTHER than gone earns a `warn`: both come back empty, and only one of them is unremarkable.
+- **The item is absent on an empty scratchpad**, which is the rail's ordinary rule and not an exception to it — but it is worth saying why this one does not go the way `Mentioned (0)` went. There, empty means something specific and surprising: every path the answers named turned out to be a folder. Here it means the session never wrote anything, which is true of most sessions, and a seventh permanent button reading `nothing` is a button nobody presses twice.
+- **The count is the walk's, so the walk has to run before the panel is opened.** Eager for the reason the mention stats are eager: the rail decides whether the item exists from the number, so a lazy fetch would leave one item in that strip unable to say what it holds — or absent until pressed, which is worse. Nothing waits for it.
+- **A row BUILDS its ref, it does not parse one.** `parseFileRef` reads a `:12` or a `#L12` off the end of a string, which is right for a path a person wrote in prose and wrong for one that came out of a `readdir`: there every character is really in the name, and a file called `notes#L2.md` has to open rather than resolve to one that is not there.
+- **The tree is flat.** Entries arrive in walk order carrying their own `depth`, so a fold is a linear pass — a directory's contents are exactly the rows after it that are deeper than it — and the indent is capped like the subagent panel's, because every level of it is width taken off the name at 320 px. Everything starts folded: `595fa12d` opens on 74 rows and holds 415.
+- **A directory says how many children it has, counted rather than listed.** So a folded row is honest about what is under it, and a row the cap cut short still says how much was there. An unreadable one says `cannot be read` where its number would be — the row is still true, and the count is the part that is not knowable.
+- **Opening the folder is the panel's one local-only control**, and it greys out under `openFile` rather than `openFolder`: the key has to name the endpoint the button calls (`/api/files/open`), or the tooltip and the 409 become two sentences about one fact.
 
 ## The end of the conversation
 
@@ -1348,4 +1362,4 @@ An agent's transcript is a conversation and gets watched like one, so the drawer
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator, waiting mode included), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page), 26 (the find bar), 27 (the foot of the conversation), 28 (delivered files and the panel's pictures), 43 (the fold strip's duration).
+[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator, waiting mode included), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page), 26 (the find bar), 27 (the foot of the conversation), 28 (delivered files and the panel's pictures), 43 (the fold strip's duration), 48 (the scratchpad panel).
