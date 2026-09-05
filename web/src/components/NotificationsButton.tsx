@@ -80,7 +80,7 @@ export function NotificationsButton() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10 max-md:px-3"
+        className="relative inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-9 max-md:px-2.5"
         title={
           count > 0
             ? `${count} session${count !== 1 ? 's' : ''} stopped and waiting for you`
@@ -88,7 +88,7 @@ export function NotificationsButton() {
         }
         aria-label="Notifications"
       >
-        <BellIcon className="h-3.5 w-3.5 max-md:h-5 max-md:w-5" />
+        <BellIcon className="h-3.5 w-3.5 max-md:h-4 max-md:w-4" />
         <CountBadge count={count} />
       </button>
 

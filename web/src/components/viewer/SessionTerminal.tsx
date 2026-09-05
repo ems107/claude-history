@@ -131,6 +131,72 @@ function PasteBox({ onSend, onCancel }: { onSend: (text: string) => void; onCanc
   );
 }
 
+/**
+ * How far a finger may travel between going down and coming up and still be a
+ * tap rather than a scroll. The row is wider than the screen, so the commonest
+ * gesture over these buttons is a drag ACROSS them; firing on `pointerdown`
+ * meant every attempt to reach `/` typed an `Esc` on the way.
+ */
+const TAP_SLOP_PX = 10;
+
+/**
+ * One key on the accessory bar.
+ *
+ * **It fires on the way UP, not on the way down**, and only if the finger has
+ * not travelled — see `TAP_SLOP_PX`. `preventDefault` still goes on the way
+ * down, and that is what it is for: it stops the press taking focus off the
+ * terminal, which on Android closes the keyboard. It does not stop the row
+ * scrolling; `touch-action` decides that, and this row is left free to pan.
+ *
+ * **One width for one kind of key.** A glyph key is a fixed square, so ↑ and ←
+ * are the same size however differently the font draws them — the arrows came
+ * out three pixels apart when the width was left to the text. A word key takes
+ * the same height and floor with padding around its label.
+ */
+function TerminalKey({
+  label,
+  title,
+  active,
+  onPress,
+}: {
+  label: string;
+  title: string;
+  active?: boolean;
+  onPress: () => void;
+}) {
+  const from = useRef<{ id: number; x: number; y: number } | null>(null);
+  // Two characters or fewer is a glyph: a fixed square. Anything longer is a
+  // word, and gets the same floor with room around it.
+  const shape = label.length <= 2 ? 'w-11' : 'min-w-11 px-3';
+  return (
+    <button
+      type="button"
+      title={title}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        from.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        const start = from.current;
+        from.current = null;
+        if (!start || start.id !== e.pointerId) return;
+        if (Math.abs(e.clientX - start.x) > TAP_SLOP_PX || Math.abs(e.clientY - start.y) > TAP_SLOP_PX) return;
+        onPress();
+      }}
+      onPointerCancel={() => {
+        from.current = null;
+      }}
+      className={`flex h-10 shrink-0 items-center justify-center rounded border font-mono text-sm active:bg-[var(--bg-hover)] active:text-[var(--text)] ${shape} ${
+        active
+          ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]'
+          : 'border-[var(--border)] text-[var(--text-dim)]'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 function TerminalKeys({
   onKey,
   ctrlArmed,
@@ -142,46 +208,22 @@ function TerminalKeys({
   onCtrl: () => void;
   onPaste: () => void;
 }) {
-  const cls =
-    'flex min-h-10 shrink-0 items-center justify-center rounded border border-[var(--border)] px-2.5 font-mono text-sm text-[var(--text-dim)] active:bg-[var(--bg-hover)] active:text-[var(--text)]';
   return (
-    <div className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-t border-[var(--border)] bg-[var(--bg-raised)] px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <button
-        type="button"
+    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[var(--border)] bg-[var(--bg-raised)] px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <TerminalKey
+        label="Ctrl"
         title="Ctrl — the next key goes through as a control code"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          onCtrl();
-        }}
-        className={`${cls} ${ctrlArmed ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]' : ''}`}
-      >
-        Ctrl
-      </button>
+        active={ctrlArmed}
+        onPress={onCtrl}
+      />
       {TERMINAL_KEYS.map((k) => (
-        <button
-          key={k.label}
-          type="button"
-          title={k.title}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            onKey(k.data);
-          }}
-          className={cls}
-        >
-          {k.label}
-        </button>
+        <TerminalKey key={k.label} label={k.label} title={k.title} onPress={() => onKey(k.data)} />
       ))}
-      <button
-        type="button"
+      <TerminalKey
+        label="Paste"
         title="Paste — opens a box to paste into, because a page served over plain HTTP cannot read the clipboard"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          onPaste();
-        }}
-        className={cls}
-      >
-        Paste
-      </button>
+        onPress={onPaste}
+      />
     </div>
   );
 }
@@ -310,9 +352,12 @@ export function SessionTerminal({
   // A terminal filling a phone's screen is the top layer of the page, so Back
   // has to mean "out of this" before it means "out of the session" — otherwise
   // the one control every Android user reaches for first would leave the
-  // conversation while a terminal was covering it. It brings the panel back to
-  // its inline height, which is exactly what its own ⤡ does.
-  useBackDismiss(mobile && fullNow, () => setFull(false));
+  // conversation while a terminal was covering it. It does exactly what the
+  // panel's own ▾ does: puts it away as a title bar, still running. Through a
+  // ref because `leaveFull` is declared with the rest of the callbacks, far
+  // below, and this has to be registered with the other layers.
+  const leaveFullRef = useRef<() => void>(() => undefined);
+  useBackDismiss(mobile && fullNow, () => leaveFullRef.current());
 
   /**
    * Held open on purpose: the one way to switch the focus rule off.
@@ -1074,10 +1119,23 @@ export function SessionTerminal({
   }, [minimised]);
   const leaveFull = useCallback(() => {
     setFull(false);
+    // **On a phone there are only two states: filling the window, or a title
+    // bar.** An inline panel there is eight rows under a header and a chip
+    // strip, which is not a terminal you can work in — so the way out of full
+    // screen is the way back to the bar, and the way out of the terminal is the
+    // × on that bar. The desktop keeps its third state and its own rule: full
+    // screen puts back whatever opening it interrupted.
+    if (mobileRef.current) {
+      collapsedBeforeFull.current = false;
+      setMinimised(true);
+      return;
+    }
     if (!collapsedBeforeFull.current) return;
     collapsedBeforeFull.current = false;
     setMinimised(true);
   }, []);
+  // What Android's Back calls. See the registration far above.
+  leaveFullRef.current = leaveFull;
 
   // What went WRONG, and nothing else: a `blocked` session takes the place of
   // the start bar instead ([BlockedBar]), because a greyed-out button with a
@@ -1212,13 +1270,23 @@ export function SessionTerminal({
             // Opens the panel on the way in, puts it back on the way out, and
             // takes the focus into the terminal ([enterFull]).
             onClick={full ? leaveFull : enterFull}
-            // It says *full screen* on the way out too, and never "close": one
-            // word for two different things is how a button that gives the
-            // conversation back gets read as the one that ends a CLI mid-turn.
-            title={full ? 'Leave full screen — the terminal is not closed' : 'Fill the window'}
-            className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+            // It never says "close": one word for two different things is how a
+            // button that gives the conversation back gets read as the one that
+            // ends a CLI mid-turn. On a phone it says *minimise*, because that
+            // is what it now does — there is no inline state to return to.
+            title={
+              full
+                ? mobile
+                  ? 'Put it away — the terminal keeps running, and × is what closes it'
+                  : 'Leave full screen — the terminal is not closed'
+                : 'Fill the window'
+            }
+            className={`rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] ${
+              // Redundant on a phone while it is a bar: the bar IS the way in.
+              !full && mobile ? 'hidden' : ''
+            }`}
           >
-            {full ? '⤡ exit full screen' : '⤢ full screen'}
+            {full ? (mobile ? '▾ minimise' : '⤡ exit full screen') : '⤢ full screen'}
           </button>
           {/* Not offered while the panel is filling the window. Ending the CLI
               is not a way out of a view, and the only × on a screen with nothing

@@ -215,7 +215,12 @@ export function ViewMenu({
         title="What is shown in the conversation, what is folded, and how big it is drawn"
       >
         <EyeIcon />
-        View{view.isDefault ? '' : ` (${view.zoom}%${full ? ' · full' : ''})`}
+        {/* The eye says it on a phone; the word is 34px of a 360px row that has
+            a title to fit. What it can never drop is the reading it carries when
+            it is NOT at its default, which is the only sign that the
+            conversation is being shown at something other than its own size. */}
+        <span className="max-md:hidden">View</span>
+        {view.isDefault ? '' : ` ${view.zoom}%${full ? ' · full' : ''}`}
         <span aria-hidden className="text-[9px] opacity-70">
           ▾
         </span>

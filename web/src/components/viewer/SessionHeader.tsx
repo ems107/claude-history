@@ -202,15 +202,27 @@ export function SessionHeader({
     // session, so its facts row can rewrap — and whatever height it takes, the
     // scroller under it gives up.
     <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2 max-md:px-3">
-      <div className="flex items-center gap-2 max-md:flex-wrap max-md:gap-y-1.5">
-        <Link to={listUrl()} className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
+      {/* ONE row on a phone, and everything in it earns its width: the way
+          back, the name, and the three controls — which is all that is left once
+          Find and View have dropped their labels for the icons that already say
+          the same thing. The project tag and the badges move down to the facts
+          line; they are what this session IS rather than what it is called, and
+          the name is the reason anybody is looking at this row. */}
+      <div className="flex items-center gap-2 max-md:gap-1.5">
+        <Link
+          to={listUrl()}
+          className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)] max-md:mr-0 max-md:px-1 max-md:text-lg"
+          title="Back to list (Esc)"
+        >
           ←
         </Link>
         {/* `shrink`, which the list deliberately does not pass: this header can
             be squeezed to 320 px by a column opened beside the session, and a
             tag that held its full width there pushed the row's own controls out
             of the box — where the clip then ate them. */}
-        <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
+        <span className="contents max-md:hidden">
+          <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
+        </span>
         {draft ? (
           <h1 className="min-w-0 truncate text-base font-semibold text-[var(--text-dim)]" title={s.title}>
             {s.title}
@@ -235,7 +247,7 @@ export function SessionHeader({
             this size is exactly enough to look wrong. `gap-1` is the gap
             `SessionBadges` uses inside itself, so the mark below joins that row
             rather than sitting slightly apart from it. */}
-        <span className="flex shrink-0 items-center gap-1">
+        <span className="flex shrink-0 items-center gap-1 max-md:hidden">
           {/* Renamed: a STATE, so it belongs with the other states rather than in
               the menu that changes it — and wearing the same `Badge` the pin
               does, because the two are the same kind of thing and one component
@@ -255,12 +267,8 @@ export function SessionHeader({
           )}
           <SessionBadges session={s} omitPr omitNews live={live} />
         </span>
-        {/* On a desktop this is the gap that pushes the controls right; on a
-            phone it is a full-width break that puts them on the next line, so
-            the title above keeps the whole width instead of the sixty pixels
-            left over. One element, two jobs, no second copy of the controls. */}
-        <span className="flex-1 max-md:basis-full" />
-        <span className="flex shrink-0 items-center gap-2 max-md:w-full max-md:gap-1.5">
+        <span className="flex-1" />
+        <span className="flex shrink-0 items-center gap-2 max-md:gap-1">
           {actions}
           <SessionMenu detail={detail} draft={draft} onRename={() => setEditing(true)} />
         </span>
@@ -349,8 +357,27 @@ export function SessionHeader({
       {/* The phone's version of the row above while it is collapsed: what a
           session IS at a glance, and the same button to open the rest. */}
       {!details && (
-        <div className="mt-1.5 hidden flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[var(--text-dim)] max-md:flex">
-          {s.model && <span className="font-mono">{shortModel(s.model)}</span>}
+        <div className="mt-1 hidden flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--text-dim)] max-md:flex">
+          {/* The tag and the badges, down from the title row: what this session
+              IS, beside what it cost and when it last moved. */}
+          {/* Capped, because a wrapped row does not shrink its items: a project
+              called `OrchardCore.DistribWebAPI_2` took the line on its own and
+              pushed the cost onto a second one. */}
+          <span className="flex max-w-32 min-w-0">
+            <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
+          </span>
+          {s.titleSource === 'local' && (
+            <Badge
+              label="✎"
+              title={`Renamed locally — original title: “${s.originalTitle ?? ''}”`}
+              className="bg-amber-500/15 text-amber-400"
+            />
+          )}
+          <SessionBadges session={s} omitPr omitNews live={live} />
+          {/* The model is deliberately NOT here, and it is the only fact dropped
+              from this line: every message in the conversation below prints the
+              model that answered it, so the session-level one is the same string
+              said again a few pixels higher — and it is under `more` regardless. */}
           {!draft && <span>{relativeTime(s.lastActivityAt)}</span>}
           {cost.total !== null && <span className="font-semibold text-[var(--text)]">{formatUsd(cost.total)}</span>}
           <span className="ml-auto" />

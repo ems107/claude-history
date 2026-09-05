@@ -407,8 +407,10 @@ export function FindButton({ open, onToggle }: { open: boolean; onToggle: () => 
         <circle cx="7" cy="7" r="4.3" />
         <path d="M10.3 10.3 13.8 13.8" />
       </svg>
-      Find
-      <span className="rounded border border-[var(--border)] px-1 text-[10px] leading-4 opacity-60">Ctrl+F</span>
+      <span className="max-md:hidden">Find</span>
+      <span className="rounded border border-[var(--border)] px-1 text-[10px] leading-4 opacity-60 max-md:hidden">
+        Ctrl+F
+      </span>
     </button>
   );
 }

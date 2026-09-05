@@ -8,6 +8,7 @@ import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RemoteDisabledPage } from './pages/RemoteDisabledPage.tsx';
+import { MobileHeaderMenu } from './components/MobileHeaderMenu.tsx';
 import { MobileTabBar } from './components/MobileTabBar.tsx';
 import { NotificationsButton } from './components/NotificationsButton.tsx';
 import { NotificationToasts } from './components/NotificationToasts.tsx';
@@ -137,7 +138,7 @@ export function App() {
           widget goes to the More page, and what is left is the mark, which
           instance this is, and the two controls that answer "is anything waiting
           for me" and "where are the settings". */}
-      <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3">
+      <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1">
         {/* Title and version share a baseline, so the small version text sits
             on the title's bottom edge instead of floating at its mid-height. */}
         <span className="flex items-baseline gap-2">
@@ -155,9 +156,9 @@ export function App() {
               e.preventDefault();
               navigate(listUrl()); // computed at click time: restores saved filters
             }}
-            className="flex items-baseline gap-1.5 text-lg font-semibold tracking-tight"
+            className="flex items-baseline gap-1.5 text-lg font-semibold tracking-tight max-md:gap-1 max-md:text-base"
           >
-            <Brandmark className="h-5 w-auto shrink-0 self-center" />
+            <Brandmark className="h-5 w-auto shrink-0 self-center max-md:h-4" />
             <span>
               <span className="text-[var(--accent)]">claude</span> history
             </span>
@@ -215,19 +216,27 @@ export function App() {
             <UsageWidget />
           </span>
           <NotificationsButton />
-          <UpdateButton />
+          {/* Both come off the row on a phone and go behind the three dots:
+              this header is on screen on every page, so what it takes it takes
+              from all of them, and on the session view it was helping to spend
+              half the window on chrome. The bell is the exception and stays —
+              a count you cannot see is not telling you anything. */}
+          <span className="max-md:hidden">
+            <UpdateButton />
+          </span>
           <NavLink
             to="/settings"
             title="Settings"
             aria-label="Settings"
             className={({ isActive }) =>
-              `inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10 max-md:px-3 ${
+              `inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:hidden ${
                 isActive ? 'text-[var(--accent)]' : 'text-[var(--text-dim)]'
               }`
             }
           >
-            <GearIcon className="h-3.5 w-3.5 max-md:h-5 max-md:w-5" />
+            <GearIcon />
           </NavLink>
+          <MobileHeaderMenu />
         </span>
       </header>
       {/* Above the routes and outside `main`: the cards are `fixed`, they
