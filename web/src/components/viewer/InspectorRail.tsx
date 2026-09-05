@@ -13,11 +13,12 @@ const base = {
 };
 
 /**
- * Six shapes that have to be told apart at 16 px, so each one says what its
+ * Seven shapes that have to be told apart at 16 px, so each one says what its
  * panel is ABOUT rather than what kind of thing it is: three bars for the
  * ledger, a pencil for what was edited, an arrow leaving a tray for what was
- * handed over, a link for a path merely named, a fork for the agents, a graph
- * for the lineage. Same stroke and same grid as `components/icons.tsx`.
+ * handed over, a link for a path merely named, an open folder for the
+ * workspace it wrote in, a fork for the agents, a graph for the lineage. Same
+ * stroke and same grid as `components/icons.tsx`.
  */
 const ICONS: Record<PanelKey, () => import('react').ReactElement> = {
   tokens: () => (
@@ -44,6 +45,12 @@ const ICONS: Record<PanelKey, () => import('react').ReactElement> = {
       <path d="M6.5 9.5 9.5 6.5" />
       <path d="M7.6 4.8 9 3.4a2.4 2.4 0 0 1 3.4 3.4l-1.4 1.4" />
       <path d="M8.4 11.2 7 12.6a2.4 2.4 0 0 1-3.4-3.4l1.4-1.4" />
+    </svg>
+  ),
+  scratchpad: () => (
+    <svg {...base}>
+      <path d="M2 12.5V4a1 1 0 0 1 1-1h3.2l1.4 1.6H13a1 1 0 0 1 1 1v1.4" />
+      <path d="m2 12.5 1.9-4.3a1 1 0 0 1 .92-.6h9.4a.6.6 0 0 1 .55.84L13 12.5Z" />
     </svg>
   ),
   agents: () => (

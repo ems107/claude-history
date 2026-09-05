@@ -461,6 +461,83 @@ export interface FileOpenResponse {
   selected?: boolean;
 }
 
+/**
+ * How much of a scratchpad `GET /api/sessions/:id/scratchpad` will walk.
+ *
+ * The same job `MAX_STAT_PATHS` does for the stat batch: it is what keeps a
+ * directory listing from being a filesystem scanner. The cap is generous
+ * because the interesting scratchpads are small — notes, scripts, screenshots —
+ * and it exists for the other kind, which is real and is why a number is here
+ * at all: an unpacked `gradle-8.14.5`, a Chrome profile, a `node_modules`. The
+ * walk is depth-first through a sorted listing, so what a cap costs is always
+ * the deep end of the tree rather than a name at the top of it.
+ *
+ * Crossing it is never silent: the answer says `truncated`, the panel says so
+ * in words, and the folder itself is one button away.
+ */
+export const MAX_SCRATCHPAD_ENTRIES = 2000;
+
+/**
+ * One thing inside a session's scratchpad.
+ *
+ * The array these arrive in is FLAT and in walk order — depth-first,
+ * directories before files, alphabetical within a level — so `depth` is what
+ * makes it a tree again, the same shape `SubagentsPanel` flattens its nesting
+ * into. A directory's contents are exactly the entries after it whose depth is
+ * greater, which is all a fold needs to know.
+ */
+export interface ScratchpadEntry {
+  /** Absolute. It is what a row hands to the file column and to `/api/files/open`. */
+  path: string;
+  /** The name on its own, which is what the row draws: the rest of it is the indent. */
+  name: string;
+  /** 0 for the root's own children. */
+  depth: number;
+  isDirectory: boolean;
+  /** Files only. A directory's size is not a number anybody means by it. */
+  sizeBytes: number | null;
+  /** ISO-8601. Files only, for the same reason. */
+  modifiedAt: string | null;
+  /**
+   * Directories only: how many children it has. Counted even where they were
+   * not listed, so a folded row is honest about what is under it and a row the
+   * cap cut off still says how much was there.
+   */
+  childCount: number | null;
+  /** Why this row says less than the others: an unreadable directory, a failed stat. */
+  error?: string;
+}
+
+/**
+ * What is in one session's scratchpad (`GET /api/sessions/:id/scratchpad`).
+ *
+ * `root` is answered even when there is nothing at it, because it is what the
+ * panel's own button opens — and "there is nothing at it" is the ordinary end
+ * of an old session rather than a failure, so a swept scratchpad is a 200 with
+ * `exists: false` and never a 404. Where that folder is, and why it is
+ * temporary, is written down in
+ * [AI_TRANSCRIPTS.md](../../docs/AI_TRANSCRIPTS.md).
+ *
+ * The client sends no path at all: the root is composed on the server from the
+ * session id and the index, which is stricter than the references the rest of
+ * `routes/files.ts` resolves.
+ */
+export interface ScratchpadResponse {
+  root: string;
+  /**
+   * Whether the folder is THERE — not whether it could be listed, which is a
+   * different question with a third answer. A root that exists and refuses to
+   * open (an ACL, a lock) comes back `true` with no entries and a `warn` in the
+   * server log; only a swept or never-created one comes back `false`. Saying
+   * `false` about a folder still sitting on disk would be the one untrue thing
+   * this endpoint could say.
+   */
+  exists: boolean;
+  entries: ScratchpadEntry[];
+  /** The walk stopped at `MAX_SCRATCHPAD_ENTRIES`; there is more down there. */
+  truncated: boolean;
+}
+
 export interface PromptEntry {
   display: string; // full typed prompt text
   timestamp: number; // epoch ms

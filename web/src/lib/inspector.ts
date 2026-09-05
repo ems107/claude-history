@@ -28,7 +28,7 @@ import { INSPECTOR_MAX, INSPECTOR_MIN, trackPointer } from './sideColumns.ts';
 const WIDTH_KEY = 'inspectorWidth';
 const INSPECTOR_DEFAULT = 400;
 
-export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'agents' | 'lineage';
+export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'scratchpad' | 'agents' | 'lineage';
 
 export interface PanelItem {
   key: PanelKey;
@@ -67,6 +67,7 @@ export function useInspector({
   sent,
   mentionCandidates,
   mentionCount,
+  scratchpadCount,
   agentCount,
   hasLineage,
   agents,
@@ -77,6 +78,13 @@ export function useInspector({
   mentionCandidates: number;
   /** What survived being checked against the disk, or null until it has been. */
   mentionCount: number | null;
+  /**
+   * How much is in the session's scratchpad, 0 while the walk is in flight.
+   * Unlike the four above it this is not a fact of the transcript at all: it
+   * is what the disk still holds, so it falls to 0 the day Windows sweeps the
+   * folder and the item goes with it.
+   */
+  scratchpadCount: number;
   agentCount: number;
   hasLineage: boolean;
   /**
@@ -209,6 +217,19 @@ export function useInspector({
             hint: 'Files this session only talked about: the paths its own answers named. Most of what an answer names is written for a person to read — a partial path, a placeholder — so a row that finds nothing is listed and marked rather than hidden.',
           }
         : null,
+      // The fourth file question, and the only one the transcript cannot
+      // answer: not what the session edited, handed over or merely named, but
+      // what it LEFT in the workspace it was given. Most of a scratchpad is
+      // never mentioned anywhere in the conversation.
+      scratchpadCount > 0
+        ? {
+            key: 'scratchpad',
+            short: 'Scratch',
+            title: 'Scratchpad',
+            count: scratchpadCount,
+            hint: 'What this session left in its temp working folder: the scripts, notes, screenshots and downloads it wrote while it worked. Windows sweeps this folder, so it is what is there NOW rather than everything the session ever wrote.',
+          }
+        : null,
       agentCount > 0
         ? {
             key: 'agents',
@@ -229,7 +250,7 @@ export function useInspector({
         : null,
     ];
     return all.filter((p): p is PanelItem => p !== null);
-  }, [changed, sent, mentionCandidates, mentionCount, agentCount, hasLineage]);
+  }, [changed, sent, mentionCandidates, mentionCount, scratchpadCount, agentCount, hasLineage]);
 
   return useMemo(
     // A panel that stopped existing cannot stay open: a session whose last

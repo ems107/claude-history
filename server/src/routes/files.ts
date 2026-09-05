@@ -2,6 +2,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  MAX_SCRATCHPAD_ENTRIES,
   MAX_STAT_PATHS,
   type FileOpenRequest,
   type FileOpenResponse,
@@ -9,6 +10,8 @@ import {
   type FileStatEntry,
   type FileStatsRequest,
   type FileStatsResponse,
+  type ScratchpadEntry,
+  type ScratchpadResponse,
 } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
@@ -402,4 +405,132 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       }
     },
   );
+
+  /**
+   * Everything in one session's scratchpad, as a flat depth-first walk.
+   *
+   * The other reads here follow a path a TRANSCRIPT named. This one enumerates
+   * a directory, which is the app looking around on its own initiative, so it
+   * is the strictest resolution in this file rather than the loosest: the
+   * client sends no path at all. The root is composed from `os.tmpdir()`, the
+   * session's `encodedDir` — Claude Code names the temp folder with the same
+   * slug it names the `~/.claude/projects` one, so this is the index's own
+   * string rather than a re-implementation of its encoding — and the session
+   * id. There is nothing in the request for a `..` to hide in.
+   *
+   * The walk is capped (`MAX_SCRATCHPAD_ENTRIES`) for the reason the stat batch
+   * is: real scratchpads hold unpacked toolchains and browser profiles, and a
+   * listing with no ceiling is a filesystem scanner with a friendly name.
+   *
+   * A GET, so it carries its own `isSameOrigin` — the hook in `app.ts` guards
+   * only the methods that change state. It opens nothing on this desktop, so it
+   * is NOT in `localOnlyRoutes` and answers a signed-in browser anywhere, like
+   * every other read here.
+   */
+  app.get<{ Params: { id: string } }>(
+    '/api/sessions/:id/scratchpad',
+    async (request, reply): Promise<ScratchpadResponse | void> => {
+      if (!isSameOrigin(request)) {
+        log.warn('refused a cross-origin scratchpad listing', { session: request.params.id });
+        return reply.code(403).send({ error: 'Cross-origin requests are not allowed.' });
+      }
+      const id = request.params.id;
+      if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
+      const summary = ctx.index.get(id);
+      if (!summary) return reply.code(404).send({ error: 'Session not found' });
+
+      const root = path.join(os.tmpdir(), 'claude', summary.encodedDir, id, 'scratchpad');
+      const entries: ScratchpadEntry[] = [];
+      let truncated = false;
+
+      /**
+       * One directory, then each of its subdirectories.
+       *
+       * `count` is what `readdir` saw, not what the walk listed, so a folded row
+       * and a row the cap cut short both say how much is really under them.
+       * `error` is hung on the row ABOVE by the caller: a folder that refuses to
+       * open is a fact about that folder, and it has no row of its own to carry.
+       */
+      const visit = async (dir: string, depth: number): Promise<{ error: string | null; count: number }> => {
+        let dirents;
+        try {
+          dirents = await fsp.readdir(dir, { withFileTypes: true });
+        } catch (err) {
+          return { error: err instanceof Error ? err.message : String(err), count: 0 };
+        }
+        // Folders first, then by name — what a file manager does, and what puts
+        // the thing a person came looking for above the noise.
+        dirents.sort((a, b) => {
+          const da = a.isDirectory() ? 0 : 1;
+          const db = b.isDirectory() ? 0 : 1;
+          if (da !== db) return da - db;
+          return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        });
+        for (const d of dirents) {
+          if (entries.length >= MAX_SCRATCHPAD_ENTRIES) {
+            truncated = true;
+            break;
+          }
+          const full = path.join(dir, d.name);
+          // A junction or a symlink is listed and never walked: Windows temp
+          // folders collect them, and one cycle would spend the whole cap going
+          // round it. `isDirectory()` is already false for a link (a Dirent
+          // reflects `lstat`), so this is the belt to that braces.
+          const isDirectory = d.isDirectory() && !d.isSymbolicLink();
+          const entry: ScratchpadEntry = {
+            path: full,
+            name: d.name,
+            depth,
+            isDirectory,
+            sizeBytes: null,
+            modifiedAt: null,
+            childCount: null,
+          };
+          if (!isDirectory) {
+            try {
+              const s = await fsp.lstat(full);
+              entry.sizeBytes = s.size;
+              entry.modifiedAt = new Date(s.mtimeMs).toISOString();
+            } catch (err) {
+              // The row stays: something IS there, we just cannot measure it.
+              entry.error = err instanceof Error ? err.message : String(err);
+            }
+          }
+          entries.push(entry);
+          if (isDirectory) {
+            const below = await visit(full, depth + 1);
+            entry.childCount = below.error === null ? below.count : null;
+            if (below.error !== null) entry.error = below.error;
+          }
+        }
+        return { error: null, count: dirents.length };
+      };
+
+      const top = await visit(root, 0);
+      // Gone is the ordinary end of a scratchpad — Windows sweeps it — so it is
+      // a 200 the panel draws rather than a 404, and `root` is answered either
+      // way because it is what the panel's own button opens.
+      //
+      // Three outcomes and not two, which is why `exists` is not simply "the
+      // walk succeeded": a root that is THERE but refuses to open is neither
+      // gone nor listed, and saying `exists: false` about it would be the one
+      // untrue answer this endpoint can give. It reports the folder as present
+      // with nothing in it, and the log carries the reason — because that case
+      // is a finding, where a swept folder is not.
+      const gone = top.error !== null && /ENOENT|ENOTDIR|no such file/i.test(top.error);
+      if (top.error !== null && !gone) log.warn(`could not list scratchpad ${root}: ${top.error}`);
+      const exists = !gone;
+      log.debug(
+        `scratchpad ${id}: ${
+          top.error === null
+            ? `${String(entries.length)} entr${entries.length === 1 ? 'y' : 'ies'}`
+            : gone
+              ? 'not there'
+              : 'there but unreadable'
+        }${truncated ? ' (capped)' : ''}`,
+      );
+      return { root, exists, entries, truncated };
+    },
+  );
+
 }

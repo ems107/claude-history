@@ -55,4 +55,4 @@ PowerShell encoding rules for the installer scripts are in [AI_DISTRIBUTION.md](
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — check 13 (executable resolution), the Explorer half of check 21, and the folder browser in check 37.
+[AI_TESTING.md](AI_TESTING.md) — check 13 (executable resolution), the Explorer halves of checks 21 and 48, and the folder browser in check 37.
