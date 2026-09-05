@@ -62,7 +62,7 @@ function NumberField({
           setDraft(String(value));
         }
       }}
-      className="w-12 rounded border border-[var(--border)] bg-[var(--bg)] px-1 py-0.5 text-right font-mono text-xs tabular-nums focus:border-[var(--accent-dim)] focus:outline-none disabled:opacity-50"
+      className="w-12 rounded border border-[var(--border)] bg-[var(--bg)] px-1 py-0.5 text-right font-mono text-xs tabular-nums focus:border-[var(--accent-dim)] focus:outline-none disabled:opacity-50 max-md:min-h-9"
     />
   );
 }
@@ -73,7 +73,7 @@ function Stepper({ onClick, disabled, label }: { onClick: () => void; disabled?:
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="w-5 shrink-0 cursor-pointer rounded border border-[var(--border)] text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40"
+      className="w-5 shrink-0 cursor-pointer rounded border border-[var(--border)] text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40 max-md:min-h-9 max-md:w-9"
     >
       {label}
     </button>
@@ -220,8 +220,11 @@ export function ViewMenu({
           ▾
         </span>
       </button>
+      {/* 256px fits a 360px screen, but not when the button it hangs off sits
+          near the right edge of a header that clips its overflow. Capped to the
+          window with a margin either side. */}
       {pop.open && (
-        <div className="absolute right-0 z-30 mt-1 w-64 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 text-xs shadow-xl">
+        <div className="absolute right-0 z-30 mt-1 w-64 max-w-[calc(100vw-1.5rem)] rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 text-xs shadow-xl">
           {reading && counts && (
             <>
               <Section label="Shown in the conversation" />

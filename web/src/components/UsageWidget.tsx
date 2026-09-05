@@ -250,7 +250,10 @@ export function UsageWidget() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-50 mt-1 w-84 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl">
+          {/* 336px is most of a 360px screen and it hangs off the right edge
+              when the widget it is anchored to is near it. Clamped and pinned
+              to the window on a phone, like the bell beside it. */}
+          <div className="absolute right-0 z-50 mt-1 w-84 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl max-md:fixed max-md:inset-x-2 max-md:max-h-[80dvh] max-md:w-auto max-md:overflow-y-auto">
             <div className="mb-2 flex items-center gap-2">
               {/* The provenance ("same figures as /usage, read-only") is a
                   tooltip, not a paragraph: it answers a question asked once. */}

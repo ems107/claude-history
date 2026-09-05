@@ -98,7 +98,12 @@ export function NotificationsButton() {
           {/* Wider than the usage panel's `w-84`, and wider again since the rows
               started carrying a quote: at 26rem a three-line clamp of anything
               real was five words a line. */}
-          <div className="absolute right-0 z-50 mt-1 w-[30rem] rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl">
+          {/* 480px anchored to the right edge of a 360px screen is a panel
+              two thirds of which is off the side. On a phone it is a sheet
+              instead: fixed to the window, inset by a margin, capped at four
+              fifths of the height and scrolling inside — the rows carry a
+              quote and there can be a dozen of them. */}
+          <div className="absolute right-0 z-50 mt-1 w-[30rem] rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl max-md:fixed max-md:inset-x-2 max-md:top-14 max-md:max-h-[80dvh] max-md:w-auto max-md:overflow-y-auto">
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-xs font-semibold" title="Sessions seen to stop while this app was watching">
                 Notifications
@@ -120,7 +125,7 @@ export function NotificationsButton() {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="ml-auto cursor-pointer rounded px-1.5 text-[var(--text-dim)] hover:text-[var(--text)]"
+                className="ml-auto cursor-pointer rounded px-1.5 text-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10 max-md:px-3 max-md:text-lg"
               >
                 ✕
               </button>

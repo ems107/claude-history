@@ -259,7 +259,10 @@ export function NotificationToasts() {
     // A polite live region, announced once per card. The bar inside is
     // `aria-hidden` — a countdown read out ten times would drown the sentence.
     <div
-      className="pointer-events-none fixed top-[3.25rem] right-3 z-[35] flex w-[22rem] flex-col gap-2"
+      // `top-[3.25rem]` assumes the desktop header's height, and `w-[22rem]`
+      // is 352 of a 360px screen. On a phone the cards span the window with a
+      // margin either side and start below the shorter header.
+      className="pointer-events-none fixed top-[3.25rem] right-3 z-[35] flex w-[22rem] flex-col gap-2 max-md:inset-x-2 max-md:top-13 max-md:w-auto"
       role="region"
       aria-label="Recent session stops"
       aria-live="polite"

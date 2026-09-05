@@ -18,8 +18,11 @@ export function UninstallDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-32">
-      <div className="w-[520px] max-w-[92vw] rounded-lg border border-red-500/40 bg-[var(--bg-raised)] p-4 shadow-xl">
+    // 128px of dead space above a card with no height limit put its buttons
+    // off the bottom of a short window. It starts near the top on a phone, and
+    // scrolls rather than overflowing.
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 pt-32 max-md:px-3 max-md:pt-6">
+      <div className="my-auto max-h-[90dvh] w-[520px] max-w-[92vw] overflow-y-auto rounded-lg border border-red-500/40 bg-[var(--bg-raised)] p-4 shadow-xl">
         <h2 className="mb-2 text-sm font-semibold text-red-300">Uninstall claude-history</h2>
         {done ? (
           <p className="text-xs">

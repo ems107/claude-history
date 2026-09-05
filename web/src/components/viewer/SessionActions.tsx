@@ -276,7 +276,7 @@ export function SessionMenu({
         <DotsIcon />
       </button>
       {pop.open && (
-        <div className="absolute right-0 z-30 mt-1 w-60 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 shadow-xl">
+        <div className="absolute right-0 z-30 mt-1 w-60 max-w-[calc(100vw-1.5rem)] rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 shadow-xl">
           {exporting ? (
             <>
               <Section label="What goes in the file" />
