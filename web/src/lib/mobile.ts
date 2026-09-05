@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 /**
  * The one threshold that says "this is a phone", and the three things that read it.
@@ -107,4 +107,42 @@ export function useKeyboardInset(): void {
       root.style.removeProperty('--kb-inset');
     };
   }, []);
+}
+
+/**
+ * Is the caret in something you type into?
+ *
+ * Which is the only reliable way to ask "is the on-screen keyboard up".
+ * `--kb-inset` cannot answer it: where `interactive-widget=resizes-content` is
+ * honoured the layout viewport shrinks instead, so the two viewports agree and
+ * the inset is correctly 0 — the keyboard is there and nothing measures it.
+ *
+ * What it is for is the bottom bar. With the keyboard open the window is barely
+ * 300px tall, and a row of navigation between the field and the keys is 56px of
+ * the wrong thing: nobody reaches for another tab in the middle of typing a
+ * search. `focusin`/`focusout` on the document rather than a React handler
+ * because the fields are in a dozen components and the bar is in none of them.
+ */
+export function useIsTyping(): boolean {
+  const [typing, setTyping] = useState(false);
+  useEffect(() => {
+    const editable = () => {
+      const el = document.activeElement;
+      if (!(el instanceof HTMLElement)) return false;
+      return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
+    };
+    const update = () => setTyping(editable());
+    // `focusout` fires before the new element has focus, so the answer is read
+    // on the next frame — otherwise every move from one field to the next would
+    // flash the bar back for a frame.
+    const onOut = () => requestAnimationFrame(update);
+    document.addEventListener('focusin', update);
+    document.addEventListener('focusout', onOut);
+    update();
+    return () => {
+      document.removeEventListener('focusin', update);
+      document.removeEventListener('focusout', onOut);
+    };
+  }, []);
+  return typing;
 }

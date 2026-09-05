@@ -8,6 +8,7 @@ import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RemoteDisabledPage } from './pages/RemoteDisabledPage.tsx';
+import { MobileTabBar } from './components/MobileTabBar.tsx';
 import { NotificationsButton } from './components/NotificationsButton.tsx';
 import { NotificationToasts } from './components/NotificationToasts.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
@@ -15,6 +16,7 @@ import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
 import { useKeyboardInset } from './lib/mobile.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
+import { MorePage } from './pages/MorePage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
 import { PlansPage } from './pages/PlansPage.tsx';
 import { PromptsPage } from './pages/PromptsPage.tsx';
@@ -130,7 +132,12 @@ export function App() {
   }, [dev]);
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2">
+      {/* The one row that had to give. It needs about 900px and a phone has 360,
+          so on a phone the five destinations go to the bottom bar, the usage
+          widget goes to the More page, and what is left is the mark, which
+          instance this is, and the two controls that answer "is anything waiting
+          for me" and "where are the settings". */}
+      <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3">
         {/* Title and version share a baseline, so the small version text sits
             on the title's bottom edge instead of floating at its mid-height. */}
         <span className="flex items-baseline gap-2">
@@ -177,7 +184,7 @@ export function App() {
             )
           )}
         </span>
-        <nav className="ml-4 flex items-center gap-1">
+        <nav className="ml-4 flex items-center gap-1 max-md:hidden">
           {/* Not a NavItem: everything else in this bar goes to a list of things
               that already exist, and this one makes something. The border says
               so before the label is read. */}
@@ -202,7 +209,11 @@ export function App() {
           <NavItem to="/stats" label="Stats" />
         </nav>
         <span className="ml-auto flex items-center gap-2">
-          <UsageWidget />
+          {/* Not on a phone: it is a five-figure readout that needs its own row,
+              and it has one on the More page. */}
+          <span className="max-md:hidden">
+            <UsageWidget />
+          </span>
           <NotificationsButton />
           <UpdateButton />
           <NavLink
@@ -210,12 +221,12 @@ export function App() {
             title="Settings"
             aria-label="Settings"
             className={({ isActive }) =>
-              `cursor-pointer rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] ${
+              `inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10 max-md:px-3 ${
                 isActive ? 'text-[var(--accent)]' : 'text-[var(--text-dim)]'
               }`
             }
           >
-            <GearIcon />
+            <GearIcon className="h-3.5 w-3.5 max-md:h-5 max-md:w-5" />
           </NavLink>
         </span>
       </header>
@@ -231,6 +242,9 @@ export function App() {
           <Route path="/starred" element={<StarredPage />} />
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/stats" element={<StatsPage />} />
+          {/* Phone only, and a real route rather than a sheet so the hardware
+              Back button needs nothing invented for it. It sends a desktop home. */}
+          <Route path="/more" element={<MorePage />} />
           {/* Both, rather than an optional segment: `/settings` is in the README
               and in every bookmark, and it goes on landing on the first area. */}
           <Route path="/settings" element={<SettingsPage />} />
@@ -239,6 +253,7 @@ export function App() {
           <Route path="/logs" element={<LogsPage />} />
         </Routes>
       </main>
+      <MobileTabBar chatEnabled={chatEnabled} />
     </div>
   );
 }
