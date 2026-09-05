@@ -2,13 +2,23 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` so the page reaches under a phone's gesture bar and
+         `env(safe-area-inset-*)` becomes a real number; `interactive-widget` so
+         the on-screen keyboard SHRINKS the layout instead of covering it, which
+         is what keeps the composer and the terminal reachable while typing. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <!-- The SVG is what every current browser takes; the .ico is the fallback,
          and is also the file the Start Menu shortcut points at, so a release
          carries one icon rather than two copies of the same drawing. -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Added to a phone's home screen this opens without the browser's own bars,
+         which on a 360x720 screen is two rows of the conversation back. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0f1115" />
     <title>Claude History</title>
   </head>

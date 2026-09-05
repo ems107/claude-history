@@ -13,6 +13,7 @@ import { NotificationToasts } from './components/NotificationToasts.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
+import { useKeyboardInset } from './lib/mobile.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
 import { PlansPage } from './pages/PlansPage.tsx';
@@ -106,6 +107,10 @@ export function AppGate() {
 
 export function App() {
   useEvents();
+  // One listener for the whole app: how much of the window the on-screen
+  // keyboard is covering, published as `--kb-inset` for whatever has to sit
+  // above it. Nothing writes it on a desktop, where it stays 0.
+  useKeyboardInset();
   const navigate = useNavigate();
   // Same query the UpdateButton uses — deduped by TanStack, no extra request.
   const { data: update } = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });

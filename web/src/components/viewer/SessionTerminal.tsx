@@ -733,26 +733,38 @@ export function SessionTerminal({
   }, []);
 
   // Dragging the TOP edge, because the bottom one is the window. Same shape as
-  // the session list's sidebar handle, turned on its side.
+  // the session list's sidebar handle, turned on its side — and on the same
+  // POINTER events, so the one drag in this panel is reachable with a finger.
   const startResize = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.PointerEvent) => {
       e.preventDefault();
+      const grip = e.currentTarget as HTMLElement;
+      const id = e.pointerId;
       const startY = e.clientY;
       // Once, here: nobody resizes the window in the middle of a drag, and a
       // ceiling that moved under the pointer would make the panel fight it.
       const room = roomFor(rootRef.current);
       const from = clamp(readHeight(), room);
-      const onMove = (ev: MouseEvent) => {
+      try {
+        grip.setPointerCapture(id);
+      } catch {
+        // The pointer has already gone; the listeners below still tidy up.
+      }
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== id) return;
         const next = clamp(from + startY - ev.clientY, room);
         setHeight(next);
         localStorage.setItem(HEIGHT_KEY, String(next));
       };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== id) return;
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
       };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
     },
     [roomFor],
   );
@@ -1078,9 +1090,9 @@ export function SessionTerminal({
             // catch on either side of it. A 1 px target four pixels clear of
             // the thing it resizes is a target you have to aim at.
             <div
-              className="group relative -mb-1 h-2 cursor-row-resize"
+              className="group relative -mb-1 h-2 cursor-row-resize touch-none max-md:h-4"
               style={bleed ? { width: bleed.width, marginLeft: bleed.marginLeft } : undefined}
-              onMouseDown={startResize}
+              onPointerDown={startResize}
               title="Drag to resize"
             >
               <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded transition-colors group-hover:bg-[var(--accent-dim)]" />

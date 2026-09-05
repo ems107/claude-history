@@ -7,6 +7,17 @@
  */
 
 /**
+ * **Both carry their own touch size, in `max-md:` variants, and that is why
+ * they are worth having.** At the desktop's 22 px and 26 px these are fine
+ * targets for a pointer and impossible ones for a thumb; fifteen files draw one
+ * of these, so the phone's floor is set here once rather than fifteen times.
+ * `toggleClass` grows by a minimum height, because it is already `inline-flex`
+ * and centres its own label; `actionClass` grows by padding, because it is put
+ * on plain `<button>`s that would not centre a taller box. Above 768 px neither
+ * variant applies and both are the strings they always were.
+ */
+
+/**
  * The look of every control in the session header, wherever it is rendered.
  *
  * Its own export because four files draw one of these — the header, the two
@@ -17,7 +28,7 @@
  * and a text-only control looks the same either way.
  */
 export function toggleClass(active: boolean, disabled = false): string {
-  return `inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs ${
+  return `inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs max-md:min-h-9 max-md:gap-2 max-md:px-2.5 max-md:text-[13px] ${
     disabled
       ? 'cursor-default border-[var(--border)] text-[var(--text-dim)]/50'
       : active
@@ -39,4 +50,4 @@ export function toggleClass(active: boolean, disabled = false): string {
  * access, by a request in flight, or by a Claude of ours still running.
  */
 export const actionClass =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40';
+  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40 max-md:px-3 max-md:py-2 max-md:text-sm';

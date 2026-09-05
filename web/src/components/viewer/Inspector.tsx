@@ -44,8 +44,8 @@ export function Inspector({
   return (
     <>
       <div
-        className="h-full w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
-        onMouseDown={(e) => inspector.startResize(e, maxWidth)}
+        className="h-full w-1 shrink-0 cursor-col-resize touch-none hover:bg-[var(--accent-dim)]"
+        onPointerDown={(e) => inspector.startResize(e, maxWidth)}
         title="Drag to resize"
       />
       <div

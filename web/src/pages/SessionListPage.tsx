@@ -35,21 +35,38 @@ export function SessionListPage() {
   // restores the list exactly as it was.
   useEffect(() => saveListParams(searchParams.toString()), [searchParams]);
 
-  const startResize = useCallback((e: React.MouseEvent) => {
+  // Pointer events rather than mouse ones, for the same reason as the seams on
+  // the other side of the app (`trackPointer`): one gesture covers a mouse, a
+  // pen and a finger, and the capture keeps the drag alive when the pointer
+  // wanders off a 4px target. This particular seam is never reachable on a
+  // phone — the sidebar is a sheet there, not a column — but a narrow window on
+  // a touchscreen laptop is the same handle, and it used to be dead.
+  const startResize = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
+    const seam = e.currentTarget as HTMLElement;
+    const id = e.pointerId;
     const startX = e.clientX;
     const startWidth = Number(localStorage.getItem('sidebarWidth')) || 256;
-    const onMove = (ev: MouseEvent) => {
+    try {
+      seam.setPointerCapture(id);
+    } catch {
+      // The pointer is already gone; the listeners below still tidy themselves.
+    }
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
       const w = Math.min(520, Math.max(180, startWidth + ev.clientX - startX));
       setSidebarWidth(w);
       localStorage.setItem('sidebarWidth', String(w));
     };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
   }, []);
 
   const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
@@ -237,8 +254,8 @@ export function SessionListPage() {
             />
           </div>
           <div
-            className="h-full w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
-            onMouseDown={startResize}
+            className="h-full w-1 shrink-0 cursor-col-resize touch-none hover:bg-[var(--accent-dim)]"
+            onPointerDown={startResize}
             title="Drag to resize"
           />
         </>

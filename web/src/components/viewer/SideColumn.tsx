@@ -24,14 +24,14 @@ export function SideColumn({
   kind: 'file' | 'agent';
   /** What is DRAWN, which the layout may have squeezed below what was remembered. */
   width: number;
-  onResizeStart: (e: React.MouseEvent) => void;
+  onResizeStart: (e: React.PointerEvent) => void;
   children: ReactNode;
 }) {
   return (
     <>
       <div
-        className="h-full w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
-        onMouseDown={onResizeStart}
+        className="h-full w-1 shrink-0 cursor-col-resize touch-none hover:bg-[var(--accent-dim)]"
+        onPointerDown={onResizeStart}
         title="Drag to resize"
       />
       {/* `overflow-hidden` is the structural half of the promise, and the rows

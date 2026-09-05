@@ -113,7 +113,7 @@ export interface ColumnWidth {
   /** The width the reader chose. What is DRAWN can be less — see `layoutColumns`. */
   width: number;
   /** `max` is `SideLayout.maxColumn`: what is free once the other has yielded. */
-  startResize: (e: React.MouseEvent, max: number) => void;
+  startResize: (e: React.PointerEvent, max: number) => void;
 }
 
 /**
@@ -141,29 +141,50 @@ export interface ColumnWidth {
  * asks of the markup — `SideColumn` and `Inspector` both draw the seam first.
  */
 export function trackPointer(
-  e: React.MouseEvent,
+  e: React.PointerEvent,
   min: number,
   max: number,
   onWidth: (w: number) => void,
   onActive?: (active: boolean) => void,
 ): void {
   e.preventDefault();
-  const panel = (e.currentTarget as HTMLElement).nextElementSibling;
+  const seam = e.currentTarget as HTMLElement;
+  const panel = seam.nextElementSibling;
   if (!panel) return;
   const rect = panel.getBoundingClientRect();
   // Where inside the seam it was grabbed, so the drag has no jump at the start.
   const grab = rect.left - e.clientX;
   onActive?.(true);
-  const onMove = (ev: MouseEvent) => {
+  // POINTER events, not mouse ones, and that is the whole of what a finger
+  // needed: a `pointerdown` covers a mouse, a pen and a touch, and the capture
+  // means the seam goes on receiving them even when the finger wanders off it —
+  // which on a 4px target is every drag. `touch-action: none` on the seam itself
+  // is the other half: without it the browser claims the gesture as a scroll
+  // before the first `pointermove` is ever delivered.
+  const id = e.pointerId;
+  try {
+    seam.setPointerCapture(id);
+  } catch {
+    // A pointer that has already gone (a tap that ended in the same frame).
+    // Nothing to capture and nothing to drag; the listeners below still tidy up.
+  }
+  const onMove = (ev: PointerEvent) => {
+    if (ev.pointerId !== id) return;
     onWidth(Math.min(max, Math.max(min, Math.round(rect.right - (ev.clientX + grab)))));
   };
-  const onUp = () => {
+  const onUp = (ev: PointerEvent) => {
+    if (ev.pointerId !== id) return;
     onActive?.(false);
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
   };
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+  // A pointer the system takes away — a phone call arriving, the gesture being
+  // reinterpreted — never sends `pointerup`, and without this the seam would
+  // stay stuck to a finger that is no longer there.
+  document.addEventListener('pointercancel', onUp);
 }
 
 function readWidth(): number {
@@ -182,7 +203,7 @@ function readWidth(): number {
 export function useColumnWidth(): ColumnWidth {
   const [width, setWidth] = useState(readWidth);
 
-  const startResize = useCallback((e: React.MouseEvent, max: number) => {
+  const startResize = useCallback((e: React.PointerEvent, max: number) => {
     trackPointer(e, SIDE_MIN, max, (w) => {
       setWidth(w);
       localStorage.setItem(COLUMN_KEY, String(w));

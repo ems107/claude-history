@@ -293,14 +293,76 @@ body {
   border-color: color-mix(in srgb, var(--accent) 65%, transparent);
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* A styled scrollbar is a CLASSIC scrollbar: naming `::-webkit-scrollbar` at all
+   opts the whole app out of the overlay bars a touch device draws, and takes a
+   10 px gutter out of every scroller for good. On a 360 px screen that is 3 % of
+   the width, in each of the three or four scrollers that nest inside one
+   another. So the look is the desktop's, and a phone keeps the bars its own
+   platform gives it — which take no room and fade when nothing is moving. */
+@media (width >= 48rem) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a323e;
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
-::-webkit-scrollbar-thumb {
-  background: #2a323e;
-  border-radius: 5px;
+
+/* ---------------------------------------------------------------------------
+   The phone.
+
+   One threshold for the whole app — `48rem`, which is Tailwind v4's own `md`,
+   written in the same units the `max-md:` variant compiles to so the two cannot
+   drift. `web/src/lib/mobile.ts` holds the same string for the components that
+   have to swap rather than restyle, and explains why it is a width rather than
+   a pointer type.
+
+   Nothing below reaches a desktop: every rule is inside the query, and
+   everything the markup adds for a phone is a `max-md:` variant.
+   --------------------------------------------------------------------------- */
+
+html {
+  /* Chrome on Android inflates the text of any block it decides is a column,
+     which in this app means a bubble at one size and a code block at another,
+     neither of them chosen. The viewport meta already tells it the real width,
+     so the guess is unwanted everywhere. */
+  -webkit-text-size-adjust: 100%;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+:root {
+  /* How much of the window the on-screen keyboard is covering. Written by
+     `useKeyboardInset`, and declared here so the `calc()`s that read it are
+     valid on the very first paint — and so it is 0 on every desktop, where
+     nothing ever writes it. */
+  --kb-inset: 0px;
+  /* The gesture bar at the foot of the screen, and 0 wherever there is none.
+     A separate quantity from the keyboard: a phone can be showing both. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (width < 48rem) {
+  body {
+    /* Pull-to-refresh is a page reload, and this page holds an unsent prompt,
+       a scroll position and an open terminal. Nothing in the app scrolls the
+       document itself, so the only way to reach the gesture is by overscrolling
+       a conversation that has hit its top — which is to say, by accident. */
+    overscroll-behavior: none;
+  }
+
+  /* Something happened where the finger went down. The app draws its own hover
+     and active states, but none of them fire before the tap is resolved, and a
+     360 px screen full of small controls needs the acknowledgement more than a
+     desktop does. */
+  button,
+  a,
+  [role='button'],
+  summary,
+  label {
+    -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
 }

@@ -5,6 +5,17 @@
 #   .\dev.ps1 -Restart     stop whatever is on the dev port, then start
 #   .\dev.ps1 -Stop        stop the dev instance and leave
 #   .\dev.ps1 -Foreground  run in this window (Ctrl+C stops it)
+#   .\dev.ps1 -Remote      listen on every interface instead of 127.0.0.1, so a
+#                          phone on the LAN can reach the dev instance. This is
+#                          "--host 0.0.0.0", the ONE input that skips the bind
+#                          gate, and it is meant to be typed on purpose: it does
+#                          not consult the firewall, so it is also the one thing
+#                          that can still make Windows ask permission. The port
+#                          still needs an inbound rule for anything to arrive,
+#                          and the browser still has to sign in - a request from
+#                          the LAN is remote here exactly as it is on a release.
+#                          The bind GATE is not exercised this way; that is what
+#                          preview.ps1 is for.
 #   .\dev.ps1 -Seed        first run only: copy the release's cache and DATA
 #                          (renames, pins, stars, prices) into the dev folder,
 #                          so it opens warm and realistic. Settings are NOT
@@ -22,6 +33,7 @@ param(
   [switch]$Stop,
   [switch]$Foreground,
   [switch]$Seed,
+  [switch]$Remote,
   [switch]$NoBrowser,
   [int]$Port = 7434
 )
@@ -117,12 +129,28 @@ $env:PORT = "$Port"
 try {
   Push-Location $repo
   try {
+    # "pnpm start" is the ordinary path and stays exactly as it was. -Remote
+    # cannot go through it: the flags reaching the server are fixed inside
+    # server/package.json, and an extra argument does not survive two levels of
+    # pnpm filtering. So it launches tsx directly with the same flags plus the
+    # host - which is what preview.ps1 already does, for the same reason.
+    $serverDir = Join-Path $repo 'server'
+    $tsxArgs = @('exec', 'tsx', 'src/main.ts', '--dev-instance', '--serve-static', '../web/dist', '--host', '0.0.0.0')
     if ($Foreground) {
       Write-Host "claude-history dev on $appUrl - Ctrl+C to stop."
-      pnpm start
+      if ($Remote) {
+        Push-Location $serverDir
+        try { pnpm @tsxArgs } finally { Pop-Location }
+      } else {
+        pnpm start
+      }
       return
     }
-    Start-Process -FilePath 'pnpm' -ArgumentList 'start' -WindowStyle Hidden -WorkingDirectory $repo
+    if ($Remote) {
+      Start-Process -FilePath 'pnpm' -ArgumentList $tsxArgs -WindowStyle Hidden -WorkingDirectory $serverDir
+    } else {
+      Start-Process -FilePath 'pnpm' -ArgumentList 'start' -WindowStyle Hidden -WorkingDirectory $repo
+    }
   } finally { Pop-Location }
 } finally {
   if ($null -eq $previousPort) { Remove-Item Env:\PORT -ErrorAction SilentlyContinue } else { $env:PORT = $previousPort }
@@ -147,4 +175,21 @@ if (-not $meta.devInstance) {
 Write-Host "claude-history dev ($($meta.version)) on $appUrl"
 Write-Host "  data:    $devData"
 Write-Host "  release: untouched on http://127.0.0.1:7433"
+if ($Remote) {
+  # Where a phone would point. Link-local dropped, which is the only part of the
+  # app's own ordering that can be reproduced without asking the app for it.
+  $addresses = @(
+    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+      Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+      Select-Object -ExpandProperty IPAddress -Unique
+  )
+  $ruleName = "claude-history (port $Port)"
+  $hasRule = $null -ne (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)
+  Write-Host "  bind:    0.0.0.0 (--host, so the firewall was never consulted)"
+  foreach ($a in $addresses) { Write-Host "  phone:   http://$($a):$Port" }
+  if (-not $hasRule) {
+    Write-Host "  WARNING: no inbound rule named '$ruleName', so nothing will arrive."
+    Write-Host "           POST http://127.0.0.1:$Port/api/firewall from this machine makes one (one UAC prompt)."
+  }
+}
 if (-not $NoBrowser) { Start-Process $appUrl }

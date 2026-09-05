@@ -771,7 +771,7 @@ export function SessionViewPage() {
   });
   /** One binding for the one seam, whichever of the two panels is in the slot. */
   const startColumnResize = useCallback(
-    (e: React.MouseEvent) => column.startResize(e, sideLayout.maxColumn),
+    (e: React.PointerEvent) => column.startResize(e, sideLayout.maxColumn),
     [column, sideLayout.maxColumn],
   );
 
