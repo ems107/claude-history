@@ -1536,6 +1536,54 @@ export interface ActiveSessionsResponse {
 export type StopKind = 'needs-you' | 'finished';
 
 /**
+ * How much of the causing message the server keeps.
+ *
+ * Far more than the three lines the panel draws, and on purpose: the row's
+ * hover carries the whole of it, and a figure the UI can raise without the
+ * server having to be taught a new one is a figure that stays out of the way.
+ * Nowhere near `STAR_TEXT_MAX` either — a star is something you asked to keep,
+ * this is something that will be gone the next time the app restarts.
+ */
+export const STOP_PREVIEW_MAX = 600;
+
+/**
+ * Which shape a preview is, which is what decides how it is DRESSED — a command
+ * is monospaced and a paragraph is not, and that is a fact about the content
+ * rather than a choice the panel gets to make.
+ *
+ * `error` is not a sixth flavour of `answer`: it is the composer's `lastError`,
+ * the only one of these that never comes out of a transcript.
+ */
+export type StopPreviewKind = 'tool' | 'plan' | 'question' | 'answer' | 'error';
+
+/**
+ * The message that caused a stop, as much of it as is kept.
+ *
+ * It is CAPTURED when the row is raised rather than read when the row is
+ * listed, because it is what the session said as it STOPPED. That it would
+ * still be there later is true and beside the point: a stopped session writes
+ * nothing more until it is resumed, and resuming it withdraws the row.
+ *
+ * The three fields around the text are `StarredMessage`'s, deliberately — the
+ * text cut with `.slice`, the real length beside it, and a flag rather than an
+ * ellipsis baked into the string, so whoever draws it decides how to say that
+ * it was cut.
+ */
+export interface StopPreview {
+  kind: StopPreviewKind;
+  /**
+   * The headline: the tool's name, the plan's title, the question that was
+   * asked. Null on a plain answer, which is its own headline.
+   */
+  label: string | null;
+  /** The text, already cut to `STOP_PREVIEW_MAX`. */
+  text: string;
+  /** The real length, before the cut. */
+  chars: number;
+  truncated: boolean;
+}
+
+/**
  * One session that stopped while we were watching.
  *
  * **A stop is a transition, not a state**, and that is the whole reason this is
@@ -1563,6 +1611,20 @@ export interface StoppedSession {
    * — whether the notification outlives the process (see `stillOpen`).
    */
   source: 'cli' | 'app';
+  /**
+   * What the session said as it stopped — the pending call, the plan, the
+   * question, the answer.
+   *
+   * Null is a real answer and the UI has to draw it: a transcript that could
+   * not be read, a stop whose causing line is not in the tail, a session with
+   * no transcript at all yet. A row without one says exactly what it said
+   * before this existed, which is why nothing here is load-bearing.
+   *
+   * It arrives a beat AFTER the row does (`fillPreview`), so a row is briefly
+   * listed without it. That is the price of the row itself being instant, and
+   * the row being instant is what keeps `at` honest.
+   */
+  preview: StopPreview | null;
 }
 
 /** A row of the panel: the stop, plus what it takes to draw it without a second read. */

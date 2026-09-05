@@ -337,8 +337,16 @@ function buildResult(
   };
 }
 
-/** One-line human summary of a tool invocation for the collapsed header. */
-function summarizeInput(toolName: string, input: unknown): string {
+/**
+ * One-line human summary of a tool invocation for the collapsed header.
+ *
+ * Exported for `core/stopPreview.ts`, which names the call a session is waiting
+ * on permission for. That is the same sentence this draws on the tool block and
+ * the same one the enricher indexes, so it is read from here rather than
+ * derived again — three readers of one rule, which is what stops the bell
+ * calling a stop something the conversation calls something else.
+ */
+export function summarizeInput(toolName: string, input: unknown): string {
   if (!isRec(input)) return '';
   const first = (...keys: string[]): string => {
     for (const k of keys) {

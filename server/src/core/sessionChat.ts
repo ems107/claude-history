@@ -8,7 +8,6 @@ import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type {
   AppSettings,
@@ -29,6 +28,7 @@ import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
 import { createLogger, localIso } from './logger.ts';
+import { resolvePlan } from './planFile.ts';
 import {
   appHolderOf,
   atActiveSessionLimit,
@@ -999,37 +999,16 @@ export class SessionChatService implements TranscriptWriter {
   }
 
   /**
-   * The plan awaiting approval, and where it was saved.
-   *
-   * Two sources, because neither is guaranteed. Claude Code up to 2.1.229 put
-   * the whole markdown in `input.plan`; from 2.1.233 the tool takes no plan at
-   * all — its own description says the model should have "finished writing your
-   * plan to the plan file" first — so it has to be read from
-   * `~/.claude/plans/<slug>.md`. Failing to find either is not fatal: the panel
-   * falls back to showing the raw input, which is what it did for every tool
-   * before this existed.
+   * The plan awaiting approval, and where it was saved. The rule about WHERE a
+   * plan lives is `core/planFile.ts` — the bell asks it the same question when
+   * it has to name what a session stopped for, and one of those two answers
+   * going stale would be the whole point of keeping it in one place.
    */
-  private async planFor(
+  private planFor(
     sessionId: string,
     input: Record<string, unknown>,
   ): Promise<{ plan: string | null; planFilePath: string | null }> {
-    const fromInput = typeof input.plan === 'string' && input.plan.trim() ? input.plan : null;
-    // 2.1.233 sends the path in the input beside the plan, which beats deriving
-    // it: the slug is only where the file WOULD be, and the CLI knows where it
-    // is. The derivation stays for the versions that send neither.
-    const slug = this.index.get(sessionId)?.slug;
-    const planFilePath =
-      (typeof input.planFilePath === 'string' && input.planFilePath) ||
-      (slug ? path.join(this.config.plansDir, `${slug}.md`) : null);
-    if (fromInput) return { plan: fromInput, planFilePath };
-    if (!planFilePath) return { plan: null, planFilePath: null };
-    try {
-      const text = await fsp.readFile(planFilePath, 'utf8');
-      return { plan: text.trim() ? text : null, planFilePath };
-    } catch (err) {
-      log.debug(`no plan file for ${sessionId} at ${planFilePath}`, err);
-      return { plan: null, planFilePath };
-    }
+    return resolvePlan(this.config.plansDir, this.index.get(sessionId)?.slug, input);
   }
 
   private write(p: ChatProcess, prompt: string): void {

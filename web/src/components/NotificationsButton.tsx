@@ -5,7 +5,7 @@ import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
 import { CountBadge } from './CountBadge.tsx';
 import { BellIcon } from './icons.tsx';
-import { DismissCross, FALLBACK_COLOR, NotificationRow } from './NotificationRow.tsx';
+import { FALLBACK_COLOR, MarkRead, NotificationRow } from './NotificationRow.tsx';
 
 /**
  * The bell: sessions that have stopped, and what they stopped for.
@@ -95,16 +95,26 @@ export function NotificationsButton() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          {/* Wider than the usage panel's `w-84`: a row carries a session title
-              and a project tag on one line, and at that width every title wrapped. */}
-          <div className="absolute right-0 z-50 mt-1 w-[26rem] rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl">
+          {/* Wider than the usage panel's `w-84`, and wider again since the rows
+              started carrying a quote: at 26rem a three-line clamp of anything
+              real was five words a line. */}
+          <div className="absolute right-0 z-50 mt-1 w-[30rem] rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl">
             <div className="mb-2 flex items-center gap-2">
               <h3 className="text-xs font-semibold" title="Sessions seen to stop while this app was watching">
                 Notifications
               </h3>
-              {count > 0 && (
+              {/* The two kinds counted apart rather than totalled. `6 stopped`
+                  answered the question nobody asks — what you want off a badge
+                  is how many of them want something from you, which is the same
+                  split the groups below are built on. */}
+              {needsYou.length > 0 && (
                 <span className="rounded bg-amber-400/15 px-1.5 py-px text-[10px] font-semibold text-amber-400 uppercase">
-                  {count} stopped
+                  {needsYou.length} needs you
+                </span>
+              )}
+              {finished.length > 0 && (
+                <span className="rounded bg-[var(--bg-hover)] px-1.5 py-px text-[10px] font-semibold text-[var(--text-dim)] uppercase">
+                  {finished.length} finished
                 </span>
               )}
               <button
@@ -147,12 +157,16 @@ export function NotificationsButton() {
 
             {count > 0 && (
               <div className="mt-3 flex justify-end border-t border-[var(--border)] pt-2">
+                {/* `Clear all` said what the map does; this says what the person
+                    is doing, and it is the row button's own words one scale up —
+                    two controls that empty the same list should not be named by
+                    two different metaphors. */}
                 <button
                   type="button"
                   onClick={clearAll}
                   className="cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
                 >
-                  Clear all
+                  ✓ Mark all as read
                 </button>
               </div>
             )}
@@ -192,7 +206,7 @@ function Group({
       >
         {label} · {rows.length}
       </div>
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {rows.map((s) => (
           <Row key={s.sessionId} stop={s} color={colorOf(s.projectKey)} onDismiss={onDismiss} onOpen={onOpen} />
         ))}
@@ -212,13 +226,32 @@ function Row({
   onDismiss: (sessionId: string) => void;
   onOpen: () => void;
 }) {
-  // Everything inside is shared with the toast — see `NotificationRow` for why
-  // the whole area is the link and the cross is its sibling. What is local to
-  // the panel is the chrome: a hover fill, and no border of its own.
+  // Everything inside is shared with the toast — see `NotificationRow` for what
+  // the link covers, what the quote does instead, and why the button is a
+  // sibling of both. What is local to the panel is the chrome.
+  //
+  // **A row is a CARD**: a border all the way round, a corner and its own
+  // padding. A left rule on its own was not enough to make a row an object —
+  // with a title, a tag and three lines of quote, the eye had nothing to tell
+  // it where one stop ended and the next began, and the panel read as one
+  // column of text with stripes down the side of it.
+  //
+  // The left edge is the one that carries the colour, and it is the group
+  // heading said again at the one moment it is needed: a row scrolled far
+  // enough down the panel has its own heading off screen, and amber against
+  // grey is the whole distinction the bell makes.
   return (
-    <div className="group flex items-stretch gap-1 rounded hover:bg-[var(--bg-hover)]">
-      <NotificationRow stop={stop} color={color} onNavigate={onOpen} />
-      <DismissCross label={stop.title ?? stop.sessionId} onClick={() => onDismiss(stop.sessionId)} />
+    <div
+      className={`group rounded border border-l-2 border-[var(--border)] p-2 hover:bg-[var(--bg-hover)] ${
+        stop.kind === 'needs-you' ? 'border-l-amber-400/70' : ''
+      }`}
+    >
+      <NotificationRow stop={stop} color={color} onNavigate={onOpen} className="" />
+      {/* Under the quote and hard right, where the panel's own button is: the
+          two do the same thing at two scales, and they line up. */}
+      <div className="mt-1.5 flex justify-end">
+        <MarkRead label={stop.title ?? stop.sessionId} onClick={() => onDismiss(stop.sessionId)} />
+      </div>
     </div>
   );
 }

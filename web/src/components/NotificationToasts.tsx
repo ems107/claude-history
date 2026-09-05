@@ -33,16 +33,20 @@ export const TOAST_MS = 10_000;
 const BACKSTOP_MS = TOAST_MS * 12;
 
 /**
- * A hard ceiling, not a budget — every stop that happens together should be on
- * screen together, so this is set where the column still fits the shortest
- * window worth caring about rather than where the list looks tidy. Measured: a
- * card is 76 px and the gaps are 8, so six of them end 548 px down, inside a
- * 600 px window. Four fitted twice over and would have bitten first.
+ * **There is no ceiling on the stack, and that is a decision.**
  *
- * When it does bite, what is dropped is only the ANNOUNCEMENT: the bell holds
- * every one of them, with the count on the badge right above the stack.
+ * There was one — six, set where a card of 76 px still fitted a 600 px window
+ * with its gaps. Then the cards started carrying two lines of what the session
+ * said, the arithmetic stopped working, and the honest question turned out not
+ * to be "how many fit" at all: a card that does not fit is simply not seen,
+ * exactly like the seventh one a ceiling would have dropped — except that
+ * nothing had to decide it, and the ones that fall off the bottom are the
+ * OLDEST, because new cards arrive at the top.
+ *
+ * So every stop gets a card and the window decides how many of them anybody
+ * looks at. Nothing leaks: each card still ends on its own bar, and the bell
+ * holds every row whatever the screen did with it.
  */
-const MAX_VISIBLE = 6;
 
 /** What makes a stop THIS stop: a later one for the same session is a new card. */
 const keyOf = (s: StoppedSessionEntry): string => `${s.sessionId}:${s.at}`;
@@ -195,16 +199,32 @@ export function NotificationToasts() {
           .filter((s) => s.sessionId !== inFront)
           .filter((s) => (s.kind === 'needs-you' ? settings.notifyOnNeedsYou : settings.notifyOnFinished))
       : [];
-    // A card whose row has gone is announcing something that is no longer true —
-    // the session went back to work, or it was cleared, or it was read in the
-    // panel. Dropping it keeps the two halves saying the same thing.
-    const live = new Set(stopped.map(keyOf));
-    listed.current = live;
+    /**
+     * A card whose row has gone is announcing something that is no longer true —
+     * the session went back to work, or it was cleared, or it was read in the
+     * panel. Dropping it keeps the two halves saying the same thing.
+     *
+     * **And a card that is still listed is re-read rather than merely kept.**
+     * A card holds its own copy of the row, taken when the stop was news; the
+     * quote arrives on a LATER answer, because the server raises the row before
+     * it has read the transcript (`core/notifications.ts`). Filtering the old
+     * copies through kept exactly that — the copy from before the quote existed
+     * — so every card was drawn without one, for ever. Mapping through the
+     * newest list instead is the whole fix, and it costs nothing: React Query
+     * shares structure between answers, so an unchanged row comes back as the
+     * same object and the comparison below still sees no change at all.
+     */
+    const byKey = new Map(stopped.map((s) => [keyOf(s), s]));
+    listed.current = new Set(byKey.keys());
     setToasts((current) => {
-      const kept = current.filter((t) => live.has(keyOf(t)));
-      if (fresh.length === 0) return kept.length === current.length ? current : kept;
-      // Newest first, nearest the bell.
-      return [...fresh, ...kept.filter((t) => !fresh.some((f) => keyOf(f) === keyOf(t)))].slice(0, MAX_VISIBLE);
+      const kept = current.map((t) => byKey.get(keyOf(t))).filter((t) => t !== undefined);
+      if (fresh.length === 0) {
+        const same = kept.length === current.length && kept.every((t, i) => t === current[i]);
+        return same ? current : kept;
+      }
+      // Newest first, nearest the bell — which is also what makes an unbounded
+      // stack safe: what runs off the bottom of the window is the oldest.
+      return [...fresh, ...kept.filter((t) => !fresh.some((f) => keyOf(f) === keyOf(t)))];
     });
 
     /**
@@ -365,7 +385,10 @@ function Toast({
           >
             {needsYou ? 'Needs you' : 'Finished'}
           </div>
-          <NotificationRow stop={stop} color={color} onNavigate={onClose} className="px-2.5 pt-0.5 pb-2" />
+          {/* Two lines of quote where the panel gives three: a card has ten
+              seconds and a corner of the screen, and what it has to answer is
+              only "is this worth going to". */}
+          <NotificationRow stop={stop} color={color} onNavigate={onClose} className="px-2.5 pt-0.5 pb-2" quoteLines={2} />
         </div>
         {/* Outside the link, and given the card's own top-right corner. */}
         <div className="pr-1">
