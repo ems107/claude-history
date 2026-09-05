@@ -58,7 +58,9 @@ export function NotificationRow({
 }) {
   const name = stop.title ?? stop.sessionId;
   return (
-    <div className={`min-w-0 flex-1 ${className}`}>
+    // `min-w-0` and nothing else: both callers give this a block of its own to
+    // fill, so a `flex-1` here would be a rule with no flex parent to answer to.
+    <div className={`min-w-0 ${className}`}>
       <Link to={`/session/${stop.sessionId}`} onClick={onNavigate} className="block cursor-pointer" title={name}>
         {/* The line worth reading first, and dressed like it: bigger and semibold
             against the 10 px dim row under it, so a glance lands on WHICH session

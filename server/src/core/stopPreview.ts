@@ -49,18 +49,24 @@ export interface StopPreviewSource {
  */
 export async function readStopPreview(src: StopPreviewSource, kind: StopKind): Promise<StopPreview | null> {
   for (const n of [TAIL_N, TAIL_WIDE_N]) {
-    let lines: RawLine[];
+    let raw: string[];
     try {
-      lines = (await tailLines(src.filePath, n)).map(safeParse).filter((o): o is RawLine => o !== null);
+      raw = await tailLines(src.filePath, n);
     } catch (err) {
       log.debug(`could not read the tail of ${src.filePath}`, err);
       return null;
     }
+    const lines = raw.map(safeParse).filter((o): o is RawLine => o !== null);
     const found = await (kind === 'needs-you' ? pendingCall(lines, src) : lastAnswer(lines));
     if (found) return found;
-    // Nothing found and the file is smaller than the window we just asked for:
-    // there is no wider look to take.
-    if (lines.length < n) return null;
+    // The whole file was already inside the window we asked for, so there is no
+    // wider look to take. Counted on the RAW lines and never on the parsed ones:
+    // an active transcript's last line is regularly a half-written append that
+    // `safeParse` drops, and counting after the parse turned a full 40-of-40
+    // read into 39 — skipping the second look on exactly the files most likely
+    // to need it, since a session being appended to is a session that just
+    // stopped.
+    if (raw.length < n) return null;
   }
   return null;
 }
