@@ -199,14 +199,29 @@ export function NotificationToasts() {
           .filter((s) => s.sessionId !== inFront)
           .filter((s) => (s.kind === 'needs-you' ? settings.notifyOnNeedsYou : settings.notifyOnFinished))
       : [];
-    // A card whose row has gone is announcing something that is no longer true —
-    // the session went back to work, or it was cleared, or it was read in the
-    // panel. Dropping it keeps the two halves saying the same thing.
-    const live = new Set(stopped.map(keyOf));
-    listed.current = live;
+    /**
+     * A card whose row has gone is announcing something that is no longer true —
+     * the session went back to work, or it was cleared, or it was read in the
+     * panel. Dropping it keeps the two halves saying the same thing.
+     *
+     * **And a card that is still listed is re-read rather than merely kept.**
+     * A card holds its own copy of the row, taken when the stop was news; the
+     * quote arrives on a LATER answer, because the server raises the row before
+     * it has read the transcript (`core/notifications.ts`). Filtering the old
+     * copies through kept exactly that — the copy from before the quote existed
+     * — so every card was drawn without one, for ever. Mapping through the
+     * newest list instead is the whole fix, and it costs nothing: React Query
+     * shares structure between answers, so an unchanged row comes back as the
+     * same object and the comparison below still sees no change at all.
+     */
+    const byKey = new Map(stopped.map((s) => [keyOf(s), s]));
+    listed.current = new Set(byKey.keys());
     setToasts((current) => {
-      const kept = current.filter((t) => live.has(keyOf(t)));
-      if (fresh.length === 0) return kept.length === current.length ? current : kept;
+      const kept = current.map((t) => byKey.get(keyOf(t))).filter((t) => t !== undefined);
+      if (fresh.length === 0) {
+        const same = kept.length === current.length && kept.every((t, i) => t === current[i]);
+        return same ? current : kept;
+      }
       // Newest first, nearest the bell — which is also what makes an unbounded
       // stack safe: what runs off the bottom of the window is the oldest.
       return [...fresh, ...kept.filter((t) => !fresh.some((f) => keyOf(f) === keyOf(t)))];
