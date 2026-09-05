@@ -365,4 +365,40 @@ html {
   label {
     -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 22%, transparent);
   }
+
+  /* The one thing that makes a conversation scroll sideways at 360px: a string
+     with nowhere to break in it. A path in a code span, a URL, a 60-character
+     identifier — at 900px they fit and nobody notices, at 360 they push the
+     whole scroller out. `anywhere` rather than `break-word` because these are
+     not words: breaking `PCCOM.Distrib.ModuloVentas.Application` mid-token is
+     exactly what a reader wants when the alternative is not seeing the end of
+     it at all. Only in prose, so nothing else in the app is touched. */
+  .prose :is(code, a) {
+    overflow-wrap: anywhere;
+  }
+
+  /* Text laid out verbatim — a prompt, a plan note, a finding, an injected
+     notice — keeps every line break its writer made and every unbreakable run
+     they typed. At 900px a 60-character path fits; at 292px it pushes the
+     bubble past the window and the whole conversation scrolls sideways.
+
+     Matched on the utility rather than on a component because CSS has no
+     selector for "is laid out pre-wrap", and a dozen places are: one rule beats
+     a dozen edits, and the thirteenth component added later is covered without
+     anybody remembering. The `~=` is an exact token match, so a variant like
+     `md:whitespace-pre-wrap` is not caught by accident, and <pre> is excluded
+     because those scroll on purpose. */
+  [class~='whitespace-pre-wrap']:not(pre) {
+    overflow-wrap: anywhere;
+  }
+
+  /* A table cannot be made narrow, so it is made scrollable. `display: block`
+     is what gives it a scroll container of its own; the alternative is the
+     table setting the width of the page. */
+  .prose table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }

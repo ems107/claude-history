@@ -37,8 +37,15 @@ type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
  * fold yet, and the working indicator has to line up with the replies all the
  * same — at the root level it read as a sibling of the prompt rather than as
  * the answer arriving.
+ *
+ * Half the indent on a phone. 12px of margin plus a 2px line plus 12px of
+ * padding is 26px a level, and nesting runs three deep in an ordinary turn:
+ * 78px of a 360px screen spent on saying which level you are at, taken from the
+ * text that says what happened. The line itself is what carries the meaning and
+ * it is unchanged; only the air around it gives way.
  */
-export const RAIL = 'ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3';
+export const RAIL =
+  'ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3 max-md:ml-1 max-md:pl-1.5';
 
 /**
  * A tool call plus the assistant message that made it. `costOwner` is false when
@@ -104,7 +111,14 @@ function UserItem({
       id={item.uuid}
       bodyRef={body}
       header={
-        <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
+        // Wrapped on a phone, and only there. The rule this breaks is a real
+        // one — a header that can grow a line must never do it under the
+        // pointer, because `MessageActions` appear on hover and the whole
+        // thread would jump as the mouse swept down it. On a phone there is no
+        // pointer and no hover: those buttons are drawn always, the row's
+        // height is settled before anybody touches it, and the alternative was
+        // `ctx 480k` hanging off the side of the screen.
+        <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase max-md:flex-wrap max-md:gap-x-1.5 max-md:gap-y-0.5">
           <span>user</span>
           {item.timestamp && (
             <span className="font-normal text-[var(--text-dim)] normal-case" title={formatDateTimeFull(item.timestamp)}>
@@ -137,7 +151,7 @@ function UserItem({
           <span className="flex-1" />
           <MessageActions item={item} blocks={item.blocks} body={body} />
           {/* Same trailing run as the assistant's: model, cost, context. */}
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 max-md:flex-wrap max-md:gap-x-1.5">
             {models.length > 0 && (
               <span
                 className="font-mono font-normal text-[var(--text-dim)] normal-case"
@@ -337,7 +351,8 @@ function ToolGroup({
 function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: CostContext; actions?: ReactNode }) {
   const entry = costEntry(item, costs.prices);
   return (
-    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+    // Wraps on a phone, for the reason spelled out on the prompt's header.
+    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase max-md:flex-wrap max-md:gap-x-1.5 max-md:gap-y-0.5">
       <span className="text-emerald-400/80">assistant</span>
       {item.timestamp && (
         <span className="font-normal normal-case" title={formatDateTimeFull(item.timestamp)}>
@@ -347,7 +362,7 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
       <span className="flex-1" />
       {actions}
       {/* Same trailing run as the prompt's: model, cost, context. */}
-      <span className="flex items-center gap-2">
+      <span className="flex items-center gap-2 max-md:flex-wrap max-md:gap-x-1.5">
         {item.model && (
           <span className="font-mono font-normal normal-case">
             {shortModel(item.model)}

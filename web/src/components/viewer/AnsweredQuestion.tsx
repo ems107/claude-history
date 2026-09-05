@@ -260,7 +260,16 @@ function OptionRow({ option, picked }: { option: AskedOption; picked: boolean })
   return (
     <div>
       <div
-        className={`flex items-baseline gap-2 rounded px-2 py-1 text-xs ${
+        // The label carries `min-w-0`, which lets it shrink past its own
+        // content — and with nothing to make the content WRAP, the text simply
+        // spilled out of the box and painted over the description beside it.
+        // `break-words` is the other half of `min-w-0` and was missing.
+        //
+        // On a phone the description takes a line of its own instead of
+        // competing for the same one: at 292px there is room for a label or a
+        // description, not both, and truncating the description to four words
+        // is a way of showing nothing at all.
+        className={`flex items-baseline gap-2 rounded px-2 py-1 text-xs max-md:flex-wrap max-md:gap-y-0.5 ${
           picked
             ? 'border border-[var(--accent-dim)] bg-[var(--accent)]/10 text-[var(--text)]'
             : 'border border-transparent text-[var(--text-dim)]'
@@ -269,9 +278,15 @@ function OptionRow({ option, picked }: { option: AskedOption; picked: boolean })
         <span aria-hidden className={`shrink-0 ${picked ? 'text-[var(--accent)]' : 'opacity-40'}`}>
           {picked ? '●' : '○'}
         </span>
-        <span className={`min-w-0 ${picked ? 'font-medium' : 'opacity-60'}`}>{option.label}</span>
+        <span className={`min-w-0 break-words ${picked ? 'font-medium' : 'opacity-60'}`}>{option.label}</span>
         {option.description && option.description.trim() !== option.label.trim() && (
-          <span className={`truncate text-[11px] ${picked ? 'opacity-70' : 'opacity-50'}`}>{option.description}</span>
+          <span
+            className={`min-w-0 truncate text-[11px] max-md:basis-full max-md:overflow-visible max-md:pl-4 max-md:whitespace-normal ${
+              picked ? 'opacity-70' : 'opacity-50'
+            }`}
+          >
+            {option.description}
+          </span>
         )}
         {option.preview && (
           <FoldHeader
@@ -308,7 +323,7 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
                   {q.header}
                 </span>
               )}
-              <span className="text-xs text-[var(--text)]">{q.question}</span>
+              <span className="min-w-0 text-xs break-words text-[var(--text)]">{q.question}</span>
             </div>
             <div className="space-y-0.5">
               {q.options.map((o) => (
@@ -323,7 +338,7 @@ export function AnsweredQuestionPanel({ parsed }: { parsed: AnsweredQuestions })
                   <span aria-hidden className="shrink-0 text-[var(--accent)]">
                     ✎
                   </span>
-                  <span className="font-medium">{q.typed}</span>
+                  <span className="min-w-0 font-medium break-words">{q.typed}</span>
                   <span className="shrink-0 text-[11px] opacity-70">
                     {q.picked.length > 0 ? 'typed as well' : 'typed instead'}
                   </span>

@@ -78,7 +78,7 @@ function StarButton({ item }: { item: MessageItem }) {
       } ${
         starred
           ? 'text-amber-400 hover:bg-[var(--bg-hover)] hover:text-amber-300'
-          : 'hidden text-[var(--text-dim)] group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-amber-400'
+          : 'hidden text-[var(--text-dim)] group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-amber-400 max-md:inline-block'
       }`}
       title={starred ? 'Remove from Starred' : 'Star this message (kept locally, with a copy of its text)'}
       aria-pressed={starred}
@@ -114,8 +114,13 @@ export function CopyActions({
   // `hidden`, not `opacity-0`: invisible buttons still take their width, and
   // here that left a permanent gap in the header. It sits on each button rather
   // than on the row, because the star stays visible once it is set.
+  // `max-md:inline-block` because Tailwind v4 compiles `hover:` inside
+  // `@media (hover: hover)`: on a phone `group-hover/bubble` never fires, so
+  // these were not merely hard to find, they were `display: none` for good —
+  // and they are the only way to copy a message. Drawn always there instead, at
+  // a size a thumb can hit.
   const cls =
-    'hidden shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-[var(--text)]';
+    'hidden shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:inline-block max-md:px-2 max-md:py-1 max-md:text-xs';
 
   return (
     // The row sits right before the model/cost/context run, after a `flex-1`
@@ -136,7 +141,11 @@ export function CopyActions({
     //
     // The click never belongs to whatever is underneath: a folded bubble
     // unfolds its turn.
-    <span className="flex h-[1lh] items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+    // `h-[1lh]` is off on a phone: it exists to stop a hover toolbar changing
+    // the header's height, and there the buttons are always drawn, so the
+    // height is settled before anybody touches anything. Held to it, the row
+    // would instead clip a 12px label into one line of 10px text.
+    <span className="flex h-[1lh] items-center gap-0.5 max-md:h-auto" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         className={cls}

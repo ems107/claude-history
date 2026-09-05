@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /** Matches `w-84` on the card: the anchor is computed in px, so it has to. */
@@ -31,8 +31,20 @@ export function CardLine({ label, value, tone }: { label: string; value: string;
  * upward from the pill and cannot overflow whatever its height turns out to be.
  * It is `pointer-events-none` — nothing in a card is clickable, and it must
  * never eat a click meant for the conversation.
+ *
+ * **On a touch screen it opens on a TAP**, because hover does not exist there
+ * and this was the only way to the figures behind it: what a turn cost, how it
+ * was split, what the context was made of. Not merely hard to reach — Tailwind
+ * v4 compiles `hover:` inside `@media (hover: hover)`, so on a phone the pill
+ * did not even light up. A tap toggles it and the next tap anywhere puts it
+ * away; the card stays `pointer-events-none`, so that next tap can be on the
+ * card itself and still dismisses it. Decided per POINTER rather than per
+ * breakpoint: a touchscreen laptop at 1400px has the same problem.
  */
-const PILL_BASE = 'shrink-0 cursor-default font-mono text-[10px] font-normal normal-case tabular-nums';
+// A 10px pill is a fine target for a pointer and none at all for a thumb, and
+// on a phone it is now the only door to the card behind it.
+const PILL_BASE =
+  'shrink-0 cursor-default font-mono text-[10px] font-normal normal-case tabular-nums max-md:text-[11px]';
 const PILL_TONE = {
   default: {
     inline: 'text-[var(--text-dim)] hover:text-[var(--text)]',
@@ -63,6 +75,8 @@ export function HoverCard({
 }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
+  /** Held open by a tap rather than by a pointer resting on it. */
+  const [tapped, setTapped] = useState(false);
 
   const open = () => {
     const r = ref.current?.getBoundingClientRect();
@@ -76,12 +90,42 @@ export function HoverCard({
     );
   };
 
+  // The tap that opens it must not also be the tap that closes it, so the
+  // listener goes on in the next task — and in the CAPTURE phase, so a card
+  // opened over a fold header is dismissed before the header sees the press.
+  useEffect(() => {
+    if (!tapped) return;
+    const close = () => {
+      setTapped(false);
+      setAnchor(null);
+    };
+    const t = setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('pointerdown', close, true);
+    };
+  }, [tapped]);
+
   return (
     <span
       ref={ref}
       title={title}
       onMouseEnter={open}
-      onMouseLeave={() => setAnchor(null)}
+      onMouseLeave={() => !tapped && setAnchor(null)}
+      onPointerUp={(e) => {
+        // A mouse already has hover; this is for the pointers that do not.
+        if (e.pointerType === 'mouse') return;
+        // The pill lives inside fold headers and inside a scroller that treats a
+        // click as "select this message". Neither meant this one.
+        e.stopPropagation();
+        if (tapped) {
+          setTapped(false);
+          setAnchor(null);
+        } else {
+          open();
+          setTapped(true);
+        }
+      }}
       className={`${PILL_BASE} ${PILL_TONE[tone][variant]}`}
     >
       {pill}
