@@ -25,6 +25,7 @@
  */
 
 import { useSyncExternalStore } from 'react';
+import { MOBILE_QUERY } from './mobile.ts';
 
 export const HEIGHT_KEY = 'terminalHeight';
 
@@ -120,9 +121,24 @@ function clampFont(px: number): number {
   return Math.min(TERMINAL_FONT_MAX, Math.max(TERMINAL_FONT_MIN, Math.round(px)));
 }
 
+/**
+ * 12px is a comfortable terminal on a monitor a foot away and a squint on a
+ * phone held at arm's length, at a third of the pixel pitch. 14 is the first
+ * size the CLI's own boxes and half-block glyphs read at on a 360px screen, and
+ * it still leaves 25 columns — enough for the CLI to lay itself out rather than
+ * fall back to its narrow mode.
+ *
+ * A DEFAULT and not a floor: `A−` takes it straight back down, the choice is
+ * stored per browser like every other, and the phone has its own storage anyway
+ * (a different origin from the desktop's localhost).
+ */
+const TERMINAL_FONT_DEFAULT_MOBILE = 14;
+
 function readFontSize(): number {
   const stored = Number(localStorage.getItem(FONT_SIZE_KEY));
-  return stored ? clampFont(stored) : TERMINAL_FONT_DEFAULT;
+  if (stored) return clampFont(stored);
+  const phone = typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches;
+  return phone ? TERMINAL_FONT_DEFAULT_MOBILE : TERMINAL_FONT_DEFAULT;
 }
 
 /**

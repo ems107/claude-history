@@ -188,6 +188,51 @@ export function useIsTyping(): boolean {
  */
 const sheetStack: Array<{ key: string; dismiss: () => void }> = [];
 
+/**
+ * Are we inside the task of a user gesture right now?
+ *
+ * Chrome's back-button-trap defence marks a same-document history entry
+ * skippable unless it was pushed **during** a gesture's own dispatch, and
+ * `navigator.userActivation.isActive` is NOT that question: it stays true for
+ * seconds afterwards, so a push from a promise callback passes the check and is
+ * skipped anyway. That was the terminal: it fills the window when its start
+ * request comes back, the marker went on the stack, `isActive` said yes, and
+ * Back stepped over the entry and left the session with a terminal covering it.
+ *
+ * So the answer is kept here instead, from the events themselves. React flushes
+ * a discrete event synchronously — handler, render and layout effects all inside
+ * the dispatch — so a sheet opened by a tap sees a depth above zero, and one
+ * opened by anything else sees zero and waits for the next touch to carry it.
+ *
+ * `click` as well as `pointerdown` because that is the one React treats as
+ * discrete; the counter is decremented from a task of its own, which is the
+ * first moment the dispatch is certainly over.
+ */
+let gestureDepth = 0;
+
+/**
+ * Counted from module load, and that is the part that has to be right: a
+ * listener installed from inside the effect is installed DURING the gesture
+ * that opened the layer, so it has already missed it, and the first sheet of
+ * every page would sit there waiting for a second touch that never comes.
+ */
+if (typeof document !== 'undefined') {
+  const mark = () => {
+    gestureDepth++;
+    setTimeout(() => {
+      gestureDepth--;
+    }, 0);
+  };
+  // **`click`, not `pointerdown`**, and that is the second thing this had to
+  // learn. Chrome grants the activation on the click — for a tap, at the point
+  // the finger lifts — so a marker pushed from a `pointerdown` listener is
+  // pushed BEFORE the gesture counts, and is skipped exactly like one pushed
+  // from a timer. Measured on the DT50: the entry was there, `history.length`
+  // grew, and the system Back stepped over it every time.
+  document.addEventListener('click', mark, true);
+  document.addEventListener('keyup', mark, true);
+}
+
 function popTopSheet() {
   const top = sheetStack.pop();
   top?.dismiss();
@@ -209,12 +254,40 @@ export function useBackDismiss(active: boolean, onDismiss: () => void): void {
   useLayoutEffect(() => {
     if (!mobile || !active) return;
     const key = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    const under = window.history.state as Record<string, unknown> | null;
-    window.history.pushState({ ...under, chSheet: key }, '');
     const entry = { key, dismiss: () => latest.current() };
-    sheetStack.push(entry);
-    window.addEventListener('popstate', popTopSheet);
+    let pushed = false;
+
+    const push = () => {
+      if (pushed) return;
+      pushed = true;
+      const under = window.history.state as Record<string, unknown> | null;
+      window.history.pushState({ ...under, chSheet: key }, '');
+      sheetStack.push(entry);
+      window.addEventListener('popstate', popTopSheet);
+      stopWaiting();
+    };
+
+    // **Some layers do not open on a tap**, and those are the ones that made
+    // this necessary: the embedded terminal fills the window when its `start`
+    // request comes back, seconds after the button was pressed. A marker pushed
+    // there is pushed outside any gesture's dispatch, and Chrome skips it — so
+    // it waits for a gesture it can ride instead, which in practice is the
+    // first tap into the terminal. That is what somebody does with a terminal.
+    const onGesture = () => push();
+    const stopWaiting = () => {
+      document.removeEventListener('click', onGesture, true);
+      document.removeEventListener('keyup', onGesture, true);
+    };
+    if (gestureDepth > 0) {
+      push();
+    } else {
+      document.addEventListener('click', onGesture, true);
+      document.addEventListener('keyup', onGesture, true);
+    }
+
     return () => {
+      stopWaiting();
+      if (!pushed) return;
       const at = sheetStack.indexOf(entry);
       const wasTop = at === sheetStack.length - 1;
       if (at !== -1) sheetStack.splice(at, 1);
