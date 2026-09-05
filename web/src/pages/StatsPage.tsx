@@ -301,7 +301,14 @@ export function StatsPage() {
 
           <div>
             <h2 className="mb-2 text-sm font-semibold">Projects</h2>
-            <table className="w-full text-xs">
+            {/* Five columns, four of them numbers: at 360px the table would
+                either set the width of the page or squeeze a project name to
+                three characters. It scrolls inside its own box instead, which
+                is the one place in the app where sideways is the right answer —
+                a table is a shape, and narrowing it destroys the comparison it
+                exists to make. */}
+            <div className="max-md:-mx-1 max-md:overflow-x-auto max-md:px-1">
+            <table className="w-full text-xs max-md:min-w-[30rem]">
               <thead>
                 <tr className="text-left text-[10px] tracking-wider text-[var(--text-dim)] uppercase">
                   <th className="py-1">Project</th>
@@ -333,6 +340,7 @@ export function StatsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 

@@ -223,7 +223,7 @@ export function Field({ id, badge, children }: { id?: string; badge?: ReactNode;
   return (
     <div
       id={id}
-      className={`flex scroll-mt-16 items-start justify-between gap-3 rounded ${
+      className={`flex scroll-mt-16 items-start justify-between gap-3 rounded max-md:gap-2 ${
         flashed === id ? 'anchor-flash' : ''
       }`}
     >

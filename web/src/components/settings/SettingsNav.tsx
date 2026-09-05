@@ -40,12 +40,12 @@ export function SettingsNav({
     const changed = counts.get(a.id) ?? 0;
     const open = a.id === area;
     return (
-      <div key={a.id}>
+      <div key={a.id} className="max-md:shrink-0">
         <RailLink to={`/settings/${a.id}`} open={open} label={a.title} count={changed} />
         {/* Only the open area's groups, and only when it has more than one: a
             single-group area would list its own name back at you. */}
         {open && groups.length > 1 && (
-          <div className="mb-1 flex flex-col">
+          <div className="mb-1 flex flex-col max-md:hidden">
             {groups.map((g) => (
               <button
                 key={g.id}
@@ -74,12 +74,16 @@ export function SettingsNav({
   };
 
   return (
-    <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] py-3">
+    // A column on a desktop, two rows on a phone: the search box, then the
+    // areas as a strip that scrolls sideways. `contents` is what lets one
+    // markup be both — on a desktop the wrapper is not a box at all, so the
+    // areas stay direct children of this column exactly as they were.
+    <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] py-3 max-md:h-auto max-md:w-full max-md:overflow-visible max-md:border-r-0 max-md:border-b max-md:py-2">
       <SearchBox query={query} setQuery={setQuery} />
       {query.trim() ? (
         <SearchResults query={query} clear={() => setQuery('')} />
       ) : (
-        <>
+        <div className="contents max-md:flex max-md:items-stretch max-md:gap-1.5 max-md:overflow-x-auto max-md:px-3 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden">
           {AREAS.map(item)}
           {/* Last, after the areas it summarises, and only when there is
               anything to summarise. A rail item that comes and goes must not be
@@ -93,7 +97,7 @@ export function SettingsNav({
               count={totalChanged}
             />
           )}
-        </>
+        </div>
       )}
     </nav>
   );
@@ -104,17 +108,19 @@ function RailLink({ to, open, label, count }: { to: string; open: boolean; label
   return (
     <NavLink
       to={to}
-      className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
-        open ? 'text-[var(--text)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
+      className={`flex items-center gap-2 px-3 py-1.5 text-sm max-md:min-h-10 max-md:rounded-full max-md:border max-md:whitespace-nowrap ${
+        open
+          ? 'text-[var(--text)] max-md:border-[var(--accent)] max-md:text-[var(--accent)]'
+          : 'text-[var(--text-dim)] hover:text-[var(--text)] max-md:border-[var(--border)]'
       }`}
     >
       {/* The bar says where you are without indenting the label, so every row
           starts on the same column and the list reads as a list, not a tree. */}
       <span
         aria-hidden="true"
-        className={`h-4 w-0.5 shrink-0 rounded ${open ? 'bg-[var(--accent)]' : 'bg-transparent'}`}
+        className={`h-4 w-0.5 shrink-0 rounded max-md:hidden ${open ? 'bg-[var(--accent)]' : 'bg-transparent'}`}
       />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1 truncate max-md:flex-none">{label}</span>
       {count > 0 && (
         <span
           title={`${count} setting${count === 1 ? '' : 's'} changed from the default`}
@@ -162,7 +168,7 @@ function SearchBox({ query, setQuery }: { query: string; setQuery: (v: string) =
             e.currentTarget.blur();
           }
         }}
-        className="w-full rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
+        className="w-full rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-10 max-md:px-3 max-md:text-sm"
       />
     </div>
   );

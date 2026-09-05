@@ -41,17 +41,17 @@ export function PromptsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm">
+      <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm max-md:flex-wrap max-md:gap-2 max-md:px-3">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search every prompt you ever typed…"
-          className="max-w-md min-w-48 flex-1 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 py-1 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
+          className="max-w-md min-w-48 flex-1 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 py-1 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-10 max-md:w-full max-md:min-w-0 max-md:basis-full"
         />
         <select
           value={projectFilter}
           onChange={(e) => setProjectFilter(e.target.value)}
-          className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)]"
+          className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)] max-md:min-h-10 max-md:px-2"
         >
           <option value="">All projects</option>
           {projectOptions.map(([key, name]) => (

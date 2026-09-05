@@ -108,7 +108,10 @@ export function SettingsPage() {
     <SettingsContext.Provider
       value={{ settings: data.settings, defaults: defaultSettings(dev), meta: data, dev, save, flashed, selected, select }}
     >
-      <div className="flex h-full">
+      {/* A 224px rail beside the content leaves 128px of a 360px screen for the
+          settings themselves, so on a phone the two stack: the rail becomes a
+          strip across the top and the content has the window. */}
+      <div className="flex h-full max-md:flex-col">
         <SettingsNav area={changedView ? null : area} />
         {/* One delegated click for the whole panel, the way the conversation
             does it: the block you clicked, or null for the space beside them,
@@ -122,7 +125,7 @@ export function SettingsPage() {
           }
           className="min-w-0 flex-1 overflow-y-auto"
         >
-          <div className="mx-auto max-w-5xl space-y-4 px-6 py-5">
+          <div className="mx-auto max-w-5xl space-y-4 px-6 py-5 max-md:px-3 max-md:py-3">
             <header>
               <h1 className="text-lg font-semibold">{info?.title}</h1>
               <p className="text-xs text-[var(--text-dim)]">{info?.blurb}</p>

@@ -438,8 +438,8 @@ export function NewSessionPage() {
       {/* The session header's own shell, carrying only what a session that does
           not exist yet can honestly offer: where it will run, and how it will be
           read. No title (Claude names it), no counts, no fold controls. */}
-      <div className="border-b border-[var(--border)] px-4 py-3">
-        <div className="flex items-center gap-2">
+      <div className="border-b border-[var(--border)] px-4 py-3 max-md:px-3 max-md:py-2">
+        <div className="flex items-center gap-2 max-md:flex-wrap max-md:gap-y-1.5">
           <Link to={listUrl()} className="mr-1 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list">
             ←
           </Link>
@@ -492,7 +492,7 @@ export function NewSessionPage() {
       </div>
 
       <div className="relative min-h-0 flex-1">
-        <div className="h-full overflow-y-auto px-4 pt-4 [scrollbar-gutter:stable_both-edges]">
+        <div className="h-full overflow-y-auto px-4 pt-4 [scrollbar-gutter:stable_both-edges] max-md:px-2 max-md:[scrollbar-gutter:auto]">
           <div
             className="mx-auto flex min-h-full flex-col"
             style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
@@ -592,7 +592,7 @@ export function NewSessionPage() {
                         onChange={(e) => setFolder(e.target.value)}
                         placeholder="C:\path\to\the\project"
                         spellCheck={false}
-                        className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-sm text-[var(--text)] outline-none focus:border-[var(--accent-dim)]"
+                        className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-sm text-[var(--text)] outline-none focus:border-[var(--accent-dim)] max-md:min-h-11 max-md:basis-full"
                       />
                       {/* The browser opens on the server's desktop, so from
                           another machine it is dead — and the box beside it is
@@ -606,6 +606,11 @@ export function NewSessionPage() {
                       >
                         {browsing ? 'Browsing…' : '📁 Browse…'}
                       </button>
+                      {browse.disabled && browse.reason && (
+                        <p className="hidden basis-full text-[11px] text-[var(--text-dim)] max-md:block">
+                          {browse.reason}
+                        </p>
+                      )}
                     </div>
                   )}
                   {error && (
@@ -620,7 +625,7 @@ export function NewSessionPage() {
                     <button
                       type="submit"
                       disabled={creating || !folder.trim()}
-                      className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[#1b1512] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100"
+                      className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[#1b1512] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 max-md:min-h-11 max-md:w-full"
                     >
                       {creating ? 'Starting…' : 'Start here'}
                     </button>

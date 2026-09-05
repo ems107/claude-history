@@ -203,7 +203,7 @@ function Item({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       title={title}
-      className="flex w-full cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-[var(--text)] hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:text-[var(--text-dim)]/55 disabled:hover:bg-transparent"
+      className="flex w-full cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-[var(--text)] hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:text-[var(--text-dim)]/55 disabled:hover:bg-transparent max-md:min-h-11 max-md:px-2 max-md:text-sm"
     >
       {children}
     </button>
@@ -330,6 +330,16 @@ export function SessionMenu({
                 <>
                   <div className="my-1.5 -mx-2 h-px bg-[var(--border)]" />
                   <Section label="Open on this machine" />
+                  {/* Three greyed-out rows whose only explanation is a `title`
+                      is three rows with no explanation at all on a phone:
+                      Android has no tooltips. They share one reason — this
+                      browser is not on that machine — so it is said once, in
+                      words, above the rows it is about. */}
+                  {a.folder.disabled && (
+                    <p className="hidden px-2 pb-1.5 text-[11px] text-[var(--text-dim)] max-md:block">
+                      {a.folder.reason}
+                    </p>
+                  )}
                   <Item onClick={a.folder.run} disabled={a.folder.disabled} title={a.folder.reason}>
                     <FolderIcon />
                     Project folder
