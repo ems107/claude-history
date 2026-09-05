@@ -142,7 +142,12 @@ $lnk = $ws.CreateShortcut($lnkPath)
 $lnk.TargetPath = 'wscript.exe'
 $lnk.Arguments = '"{0}"' -f (Join-Path $root 'launch.vbs')
 $lnk.WorkingDirectory = $root
-$lnk.IconLocation = (Join-Path $current 'node\node.exe') + ',0'
+# The app's own mark rather than Node's logo, which is what this shortcut wore
+# until now. The file ships inside the built frontend (it is the favicon too),
+# so there is one drawing in the release and not two; and the path goes THROUGH
+# the 'current' junction, so an update swaps the icon without rewriting the
+# .lnk. A missing file here would show a blank icon, never break the shortcut.
+$lnk.IconLocation = Join-Path $current 'web\favicon.ico'
 $lnk.Description = 'claude-history - browse all your Claude Code conversations'
 $lnk.Save()
 Write-Host "Start Menu shortcut created."
