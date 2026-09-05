@@ -26,7 +26,7 @@ import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useInspector } from '../lib/inspector.ts';
-import { useBackDismiss, useIsMobile } from '../lib/mobile.ts';
+import { useBackDismiss, useIsMobile, useIsTyping } from '../lib/mobile.ts';
 import { useColumnWidth, useSideLayout } from '../lib/sideColumns.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
@@ -722,6 +722,14 @@ export function SessionViewPage() {
    * (`useSideLayout`), where the rail is drawn, and what closes a panel.
    */
   const mobile = useIsMobile();
+  /**
+   * The on-screen keyboard is up, which on a phone leaves about 90px of
+   * conversation between the header and the composer. The follow pill is lifted
+   * by the composer's height and would be standing in the header; and somebody
+   * typing a prompt is not somebody deciding whether to follow the end. So it
+   * goes, and comes back when the keyboard does.
+   */
+  const typing = useIsTyping();
 
   /**
    * Which panel is open beside the conversation. Declared here because the
@@ -1396,6 +1404,7 @@ export function SessionViewPage() {
                 the row's amber pulse and its hover says what is being waited
                 for, because "is anything more coming" is then answered by the
                 reader, not by Claude. */}
+            {!(mobile && typing) && (
             <FollowBottomButton
               following={follow.following}
               toggle={follow.toggle}
@@ -1405,6 +1414,7 @@ export function SessionViewPage() {
               waiting={isWaiting(liveInfo) ? waitingSentence(liveInfo?.waitingFor ?? null) : undefined}
                   liftPx={pillLift}
                 />
+            )}
               </div>
             </div>
             <Inspector

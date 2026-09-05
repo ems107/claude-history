@@ -135,9 +135,12 @@ function ActiveSessionsDialog({
   }, [onClose, onContinue, queryClient]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+    // The card had no height limit and the list inside it has no bound: with
+    // several sessions running on a 620px-tall window, the buttons that answer
+    // the question went off the bottom of the screen with no way to reach them.
+    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-xl rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-2xl"
+        className="my-auto max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">
