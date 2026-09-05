@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 40" width="44" height="40">
+  <!--
+    The mark without its tile, for anywhere that already has a surface of its
+    own - the app header, and nothing else so far. The fade is three steps of
+    the accent rather than three opacities, so it stays warm on the app's cool
+    near-black ground instead of greying out.
+  -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 13 L10.5 20 L4 27" stroke="#8A5138" stroke-width="4.6"/>
+    <path d="M13 9.5 L22 20 L13 30.5" stroke="#B26746" stroke-width="5.4"/>
+    <path d="M23.5 6 L37 20 L23.5 34" stroke="#D97757" stroke-width="6.2"/>
+  </g>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!--
+    claude-history, the mark.
+
+    A terminal prompt and the trail it leaves behind: the solid chevron is now,
+    the two behind it are what already happened. It is drawn as a whole tile
+    rather than a glyph on a background, because that is what Android installs
+    and what Windows pins to a shortcut - a line floating in empty space reads
+    as timid at 128 px, whatever it does at 16.
+
+    The dark is warm (#2B2320), not the app's cool near-black: on a terracotta
+    ground a cool black goes muddy.
+  -->
+  <rect width="48" height="48" rx="10.5" fill="#D97757"/>
+  <g fill="none" stroke="#2B2320" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 16 L15 24 L8 32" stroke-width="5.5" opacity="0.28"/>
+    <path d="M17 13.5 L26 24 L17 34.5" stroke-width="6.5" opacity="0.55"/>
+    <path d="M26.5 11 L39 24 L26.5 37" stroke-width="7.5"/>
+  </g>
+</svg>

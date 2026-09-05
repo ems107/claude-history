@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!--
+    The alternative that was not chosen: the same trail on a dark tile instead of
+    a terracotta one, with the fade carried by temperature rather than opacity -
+    three steps of the accent, from banked to burning.
+
+    Kept because A and B are one mark seen from both sides, and the day the
+    launcher wants to be sober rather than loud, this is the swap. Nothing in
+    either repository points at this file.
+  -->
+  <rect width="48" height="48" rx="10.5" fill="#26221F"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 16 L15 24 L8 32" stroke="#6D4433" stroke-width="5.5"/>
+    <path d="M17 13.5 L26 24 L17 34.5" stroke="#A3603F" stroke-width="6.5"/>
+    <path d="M26.5 11 L39 24 L26.5 37" stroke="#E8845F" stroke-width="7.5"/>
+  </g>
+</svg>
