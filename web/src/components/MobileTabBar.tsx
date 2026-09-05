@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from 'react-router';
-import { useIsTyping } from '../lib/mobile.ts';
+import { useIsShort, useIsTyping } from '../lib/mobile.ts';
 
 /**
  * The navigation, on a phone.
@@ -126,8 +126,12 @@ function coversTheBar(pathname: string): boolean {
 
 export function MobileTabBar({ chatEnabled }: { chatEnabled: boolean }) {
   const typing = useIsTyping();
+  // A phone on its side is 284px tall. A 56px bar there is a fifth of the
+  // window spent on navigation, on the orientation somebody turned to in order
+  // to see MORE of something.
+  const short = useIsShort();
   const { pathname } = useLocation();
-  if (typing || coversTheBar(pathname)) return null;
+  if (typing || short || coversTheBar(pathname)) return null;
   return (
     <nav
       // The gesture bar is under this, so the padding is the bar's own rather

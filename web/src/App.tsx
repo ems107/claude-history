@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
+import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { ActiveSessionsGuardProvider } from './components/ActiveSessionsDialog.tsx';
 import { Brandmark } from './components/Brandmark.tsx';
 import { GearIcon } from './components/icons.tsx';
@@ -15,7 +15,7 @@ import { NotificationToasts } from './components/NotificationToasts.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
-import { useKeyboardInset } from './lib/mobile.ts';
+import { useIsMobile, useIsShort, useKeyboardInset } from './lib/mobile.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
 import { MorePage } from './pages/MorePage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
@@ -114,6 +114,20 @@ export function App() {
   // keyboard is covering, published as `--kb-inset` for whatever has to sit
   // above it. Nothing writes it on a desktop, where it stays 0.
   useKeyboardInset();
+  /**
+   * A phone on its side, on a screen that is a detail rather than a place.
+   *
+   * 284px of window, and the app header, the session's own header and its panel
+   * strip were taking 62% of it before a word of conversation. The app header is
+   * the one of the three that says nothing about what is on screen — it is a
+   * mark, a badge and a menu — and the session under it already has its own way
+   * back. So on a short window it stands aside for the thing somebody turned the
+   * phone sideways to read. It is one Back away, on the list.
+   */
+  const mobile = useIsMobile();
+  const short = useIsShort();
+  const { pathname } = useLocation();
+  const bareDetail = mobile && short && (pathname.startsWith('/session/') || pathname === '/new');
   const navigate = useNavigate();
   // Same query the UpdateButton uses — deduped by TanStack, no extra request.
   const { data: update } = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });
@@ -138,7 +152,11 @@ export function App() {
           widget goes to the More page, and what is left is the mark, which
           instance this is, and the two controls that answer "is anything waiting
           for me" and "where are the settings". */}
-      <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1">
+      <header
+        className={`flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1 ${
+          bareDetail ? 'hidden' : ''
+        }`}
+      >
         {/* Title and version share a baseline, so the small version text sits
             on the title's bottom edge instead of floating at its mid-height. */}
         <span className="flex items-baseline gap-2">
