@@ -157,12 +157,16 @@ export function NotificationsButton() {
 
             {count > 0 && (
               <div className="mt-3 flex justify-end border-t border-[var(--border)] pt-2">
+                {/* `Clear all` said what the map does; this says what the person
+                    is doing, and it is the row button's own words one scale up —
+                    two controls that empty the same list should not be named by
+                    two different metaphors. */}
                 <button
                   type="button"
                   onClick={clearAll}
                   className="cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
                 >
-                  Clear all
+                  ✓ Mark all as read
                 </button>
               </div>
             )}
@@ -224,20 +228,30 @@ function Row({
 }) {
   // Everything inside is shared with the toast — see `NotificationRow` for what
   // the link covers, what the quote does instead, and why the button is a
-  // sibling of both. What is local to the panel is the chrome: a hover fill and
-  // a left rule.
+  // sibling of both. What is local to the panel is the chrome.
   //
-  // The rule is the group heading said a second time, at the one moment it is
-  // needed — a row scrolled far enough down the panel has its own heading off
-  // screen, and amber against grey is the whole distinction the bell makes.
+  // **A row is a CARD**: a border all the way round, a corner and its own
+  // padding. A left rule on its own was not enough to make a row an object —
+  // with a title, a tag and three lines of quote, the eye had nothing to tell
+  // it where one stop ended and the next began, and the panel read as one
+  // column of text with stripes down the side of it.
+  //
+  // The left edge is the one that carries the colour, and it is the group
+  // heading said again at the one moment it is needed: a row scrolled far
+  // enough down the panel has its own heading off screen, and amber against
+  // grey is the whole distinction the bell makes.
   return (
     <div
-      className={`group flex items-stretch gap-1 rounded border-l-2 hover:bg-[var(--bg-hover)] ${
-        stop.kind === 'needs-you' ? 'border-amber-400/70' : 'border-[var(--border)]'
+      className={`group rounded border border-l-2 border-[var(--border)] p-2 hover:bg-[var(--bg-hover)] ${
+        stop.kind === 'needs-you' ? 'border-l-amber-400/70' : ''
       }`}
     >
-      <NotificationRow stop={stop} color={color} onNavigate={onOpen} />
-      <MarkRead label={stop.title ?? stop.sessionId} onClick={() => onDismiss(stop.sessionId)} />
+      <NotificationRow stop={stop} color={color} onNavigate={onOpen} className="" />
+      {/* Under the quote and hard right, where the panel's own button is: the
+          two do the same thing at two scales, and they line up. */}
+      <div className="mt-1.5 flex justify-end">
+        <MarkRead label={stop.title ?? stop.sessionId} onClick={() => onDismiss(stop.sessionId)} />
+      </div>
     </div>
   );
 }

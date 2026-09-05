@@ -62,15 +62,26 @@ export function NotificationRow({
       <Link to={`/session/${stop.sessionId}`} onClick={onNavigate} className="block cursor-pointer" title={name}>
         {/* The line worth reading first, and dressed like it: bigger and semibold
             against the 10 px dim row under it, so a glance lands on WHICH session
-            before anything else. */}
-        <div className={`truncate text-[var(--text)] group-hover:text-[var(--accent)] ${titleClass}`}>{name}</div>
+            before anything else.
+            The clock rides the far end of that same line rather than sitting in
+            the middle of the metadata under it. Down there it was a third grey
+            phrase between a tag and a word, and "how long ago" is the one thing
+            you scan DOWN a list of rows — which only works if it is in the same
+            place on each. */}
+        <div className="flex items-baseline gap-2">
+          <div className={`min-w-0 flex-1 truncate text-[var(--text)] group-hover:text-[var(--accent)] ${titleClass}`}>
+            {name}
+          </div>
+          <span className="shrink-0 text-[10px] text-[var(--text-dim)]" title={formatDateTime(stop.at)}>
+            {relativeTime(stop.at)}
+          </span>
+        </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-dim)]">
           {stop.projectName && <ProjectTag name={stop.projectName} path={stop.cwd ?? ''} color={color} />}
           {/* The CLI's own words. Nothing is translated: "permission prompt" is
               what the process wrote about itself, and inventing a friendlier phrase
               would be this app claiming to know which dialog it was. */}
           {stop.waitingFor && <span className="text-amber-400/90">{stop.waitingFor}</span>}
-          <span title={formatDateTime(stop.at)}>{relativeTime(stop.at)}</span>
           {/* Only ever false for a composer row: a CLI's own notification goes when
               the CLI does. Worth saying, because "resume" is not on offer. */}
           {!stop.stillOpen && <span title="No Claude Code process has this session open any more">closed</span>}
@@ -128,7 +139,13 @@ function StopQuote({
       title={title}
       className={`mt-1 cursor-pointer border-l-2 pl-2 text-[11px] leading-snug text-[var(--text-dim)] ${
         lines === 2 ? 'line-clamp-2' : 'line-clamp-3'
-      } ${preview.kind === 'error' ? 'border-rose-500/50' : 'border-[var(--border)]'}`}
+      } ${preview.kind === 'error' ? 'border-rose-500/50' : 'border-[var(--border)]'} ${
+        // A command's line breaks are part of it — the call on one line and what
+        // the model said it was doing on the next, a stack frame per line — so
+        // the monospaced kinds keep them. Prose does not: an answer's paragraph
+        // break would spend one of the three lines on nothing.
+        mono ? 'whitespace-pre-line' : ''
+      }`}
     >
       {preview.label && (
         <span className={`font-medium text-[var(--text)] ${mono ? 'font-mono' : ''}`}>{preview.label}</span>
@@ -172,12 +189,12 @@ export function DismissCross({
 /**
  * The panel's own control: this row has been seen, and can go.
  *
- * **It is visible before the pointer arrives**, unlike the card's cross, and
- * that is the point of it rather than a difference in taste. The ghost ✕ was
+ * **A button with its name on it, not a glyph.** The ghost ✕ it replaces was
  * discoverable only by hovering a row you had already decided to read, and it
- * never said what it did — "dismiss" is what the code calls it, while what a
- * person is doing is marking it read. A tick that is on screen and named is
- * both halves of that.
+ * never said what it did; a bare ✓ fixed the first half and not the second — a
+ * tick alone is still something you have to try to find out. So it wears the
+ * same shape as the panel's own footer button, because it is the same kind of
+ * thing one row at a time, and the two now read as a pair.
  *
  * The act underneath is unchanged, and so is its endpoint: the row goes, which
  * is the same thing opening the session already does.
@@ -187,11 +204,10 @@ export function MarkRead({ label, onClick }: { label: string; onClick: () => voi
     <button
       type="button"
       onClick={onClick}
-      title="Mark as read"
       aria-label={`Mark as read: ${label}`}
-      className="shrink-0 cursor-pointer self-start rounded px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-raised)] hover:text-[var(--text)] focus-visible:text-[var(--text)]"
+      className="shrink-0 cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
     >
-      ✓
+      ✓ Mark as read
     </button>
   );
 }
