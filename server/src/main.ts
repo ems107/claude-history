@@ -56,7 +56,7 @@ async function main(): Promise<void> {
   const terminals = new SessionTerminalService(config, index, chat, () => index.getSettings());
   // After both halves it watches, and started below once the index has been
   // built — it seeds itself from what is already running.
-  const notifications = new NotificationsService(index, chat);
+  const notifications = new NotificationsService(config, index, chat);
   // Nothing to start: it has no source of its own to watch, only readers.
   const readMarks = new ReadMarksService(index);
   const app = await buildApp({
