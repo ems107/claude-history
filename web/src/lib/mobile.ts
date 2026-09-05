@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 /**
  * The one threshold that says "this is a phone", and the three things that read it.
@@ -175,25 +175,56 @@ export function useIsTyping(): boolean {
  * A no-op above the phone breakpoint, where sheets are panels and Escape is
  * already the way out.
  */
+/**
+ * The layers currently holding a marker, innermost last.
+ *
+ * A stack and not a listener each, because several can be open at once — a file
+ * over a subagent's transcript over the inspector — and one Back must close ONE
+ * of them. With a `popstate` listener per layer, every open layer answered the
+ * same event and a single press closed the lot.
+ *
+ * Module scope rather than a context: there is one history object, so there is
+ * one stack, and a provider would only be a way of accidentally having two.
+ */
+const sheetStack: Array<{ key: string; dismiss: () => void }> = [];
+
+function popTopSheet() {
+  const top = sheetStack.pop();
+  top?.dismiss();
+}
+
 export function useBackDismiss(active: boolean, onDismiss: () => void): void {
   const mobile = useIsMobile();
   const latest = useRef(onDismiss);
   latest.current = onDismiss;
-  useEffect(() => {
+  // **A LAYOUT effect, and that is not a detail.** Chrome on Android skips
+  // history entries a page pushed without a user gesture — its defence against
+  // back-button traps — and a passive `useEffect` runs in a later task, by
+  // which time the credit for the tap has expired. The entry is still there
+  // (`history.back()` from script finds it) but the system Back button steps
+  // straight over it, which looked exactly like the sheet ignoring Back and
+  // leaving the page. A click is a discrete event, so React flushes the render
+  // and the layout effects inside the same task as the tap; the push lands with
+  // the gesture still counted and the entry stops being skippable.
+  useLayoutEffect(() => {
     if (!mobile || !active) return;
     const key = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const under = window.history.state as Record<string, unknown> | null;
     window.history.pushState({ ...under, chSheet: key }, '');
-    let consumed = false;
-    const onPop = () => {
-      consumed = true;
-      latest.current();
-    };
-    window.addEventListener('popstate', onPop);
+    const entry = { key, dismiss: () => latest.current() };
+    sheetStack.push(entry);
+    window.addEventListener('popstate', popTopSheet);
     return () => {
-      window.removeEventListener('popstate', onPop);
+      const at = sheetStack.indexOf(entry);
+      const wasTop = at === sheetStack.length - 1;
+      if (at !== -1) sheetStack.splice(at, 1);
+      if (sheetStack.length === 0) window.removeEventListener('popstate', popTopSheet);
+      // Closed by its own control rather than by Back: the marker is still the
+      // entry we stand on, so take it off. Not if something has pushed on top of
+      // it — going back would undo that navigation — and not if this was not the
+      // top layer, which the unwinding order makes unreachable anyway.
       const now = window.history.state as { chSheet?: string } | null;
-      if (!consumed && now?.chSheet === key) window.history.back();
+      if (wasTop && now?.chSheet === key) window.history.back();
     };
   }, [mobile, active]);
 }

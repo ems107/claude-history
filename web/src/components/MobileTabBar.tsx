@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router';
+import { NavLink, useLocation } from 'react-router';
 import { useIsTyping } from '../lib/mobile.ts';
 
 /**
@@ -113,9 +113,21 @@ function Tab({ to, label, icon, accent }: { to: string; label: string; icon: Rea
   );
 }
 
+/**
+ * The two screens the bar does not appear on. Both are a DETAIL pushed over the
+ * list rather than a place in it, both have their own way back, and both end in
+ * a composer anchored to the bottom of the window — which is the row the bar
+ * would be sitting in. A tab bar under a message box is a tab bar you hit by
+ * accident while reaching for Send.
+ */
+function coversTheBar(pathname: string): boolean {
+  return pathname.startsWith('/session/') || pathname === '/new';
+}
+
 export function MobileTabBar({ chatEnabled }: { chatEnabled: boolean }) {
   const typing = useIsTyping();
-  if (typing) return null;
+  const { pathname } = useLocation();
+  if (typing || coversTheBar(pathname)) return null;
   return (
     <nav
       // The gesture bar is under this, so the padding is the bar's own rather

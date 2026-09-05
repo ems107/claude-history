@@ -326,11 +326,25 @@ export function useSideLayout(stored: {
   column: number | null;
   /** Which seam is under the hand right now. See `layoutColumns`. */
   priority: Priority;
+  /**
+   * A phone, where none of this arithmetic has an answer worth having.
+   *
+   * The floors alone say why: the rail is 72 and the conversation's floor is
+   * 320, so at 360px the two of them already do not fit, and an open inspector
+   * (320 more) left the conversation four pixels wide. Every panel is a sheet
+   * over the conversation there rather than a column beside it, so there is
+   * nothing to lay out: every width is zero and the conversation has the
+   * window.
+   */
+  mobile: boolean;
 }): SideLayout {
   const windowWidth = useWindowWidth();
-  const { inspector, column, priority } = stored;
+  const { inspector, column, priority, mobile } = stored;
 
   return useMemo(() => {
+    if (mobile) {
+      return { inspector: 0, column: 0, gutter: 0, maxInspector: 0, maxColumn: 0 };
+    }
     const openCount = (inspector === null ? 0 : 1) + (column === null ? 0 : 1);
     const seams = RAIL_PX + openCount * GRIP_PX;
     const available = Math.max(0, windowWidth - seams - CONV_MIN);
@@ -352,5 +366,5 @@ export function useSideLayout(stored: {
       maxInspector: Math.min(INSPECTOR_MAX, maxInspector),
       maxColumn: Math.min(SIDE_MAX, maxColumn),
     };
-  }, [windowWidth, inspector, column, priority]);
+  }, [windowWidth, inspector, column, priority, mobile]);
 }

@@ -78,15 +78,31 @@ const ICONS: Record<PanelKey, () => import('react').ReactElement> = {
  * An item exists only if its panel has something in it, which is the rule the
  * six header buttons already followed: a session with no subagents never had a
  * `⑂ Subagents` button either. `Tokens` is the one that is always there.
+ *
+ * **Laid on its side on a phone**, where 72px of a 360px screen is a fifth of
+ * the window held permanently for seven buttons used a few times a session. The
+ * items, their counts and their toggles are identical — only the axis changes,
+ * and the strip scrolls sideways rather than wrapping, so the conversation
+ * below it never moves when a count appears.
  */
-export function InspectorRail({ inspector }: { inspector: InspectorState }) {
+export function InspectorRail({
+  inspector,
+  horizontal = false,
+}: {
+  inspector: InspectorState;
+  horizontal?: boolean;
+}) {
   return (
     <div
       // Measured from checks, like the scroller and the sticky footer are: the
       // rail is where "which panels does this session have" is answered.
       data-inspector-rail
-      style={{ width: RAIL_PX }}
-      className="flex shrink-0 flex-col gap-0.5 border-l border-[var(--border)] py-2"
+      style={horizontal ? undefined : { width: RAIL_PX }}
+      className={
+        horizontal
+          ? 'flex shrink-0 items-stretch gap-1 overflow-x-auto border-b border-[var(--border)] px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
+          : 'flex shrink-0 flex-col gap-0.5 border-l border-[var(--border)] py-2'
+      }
     >
       {inspector.items.map((item) => {
         const active = inspector.open === item.key;
@@ -98,18 +114,28 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
             onClick={() => inspector.toggle(item.key)}
             title={item.hint}
             aria-pressed={active}
-            className={`flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
+            className={`flex cursor-pointer items-center ${
+              horizontal
+                ? 'min-h-10 shrink-0 gap-1.5 rounded-full border px-3 text-xs whitespace-nowrap'
+                : 'flex-col gap-1 px-1 py-1.5 text-[10px] leading-3'
+            } ${
               active
-                ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
-                : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'
+                ? horizontal
+                  ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+                  : 'bg-[var(--accent)]/10 text-[var(--accent)]'
+                : horizontal
+                  ? 'border-[var(--border)] text-[var(--text-dim)]'
+                  : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'
             }`}
             // The lit edge is the one ADJACENT to the panel it opened, which is
             // to the left of the rail. Inline because it is a colour from the
-            // theme in a shadow, and there is exactly one of them.
-            style={active ? { boxShadow: 'inset 2px 0 0 var(--accent)' } : undefined}
+            // theme in a shadow, and there is exactly one of them. A chip has no
+            // adjacent panel — the sheet covers the window — so it wears a
+            // border instead.
+            style={active && !horizontal ? { boxShadow: 'inset 2px 0 0 var(--accent)' } : undefined}
           >
             <Icon />
-            <span className="w-full truncate text-center">
+            <span className={horizontal ? '' : 'w-full truncate text-center'}>
               {item.short}
               {item.count !== null ? ` ${item.count}` : ''}
             </span>

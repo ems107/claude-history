@@ -13,20 +13,37 @@ import type { ReactNode } from 'react';
  * `cursor-col-resize`, and the seam is what you drag rather than the panel's
  * edge — it is also what that function looks for the panel next to, so the
  * seam must stay the sibling BEFORE it.
+ *
+ * **On a phone it is the window**, like the inspector: its floor is 240px and
+ * the conversation's is 320, which do not fit in 360 together. The panels
+ * inside are unchanged — both bring their own header, and the file viewer still
+ * scrolls sideways on purpose — so what a phone loses is the split, not the
+ * panel. Android's Back closes it, on top of the ✕ each of them already has.
  */
 export function SideColumn({
   kind,
+  mobile,
   width,
   onResizeStart,
   children,
 }: {
   /** The measurement hook, like `data-inspector` and `data-inspector-rail`. */
   kind: 'file' | 'agent';
+  /** Draw it over the conversation rather than beside it. */
+  mobile: boolean;
   /** What is DRAWN, which the layout may have squeezed below what was remembered. */
   width: number;
   onResizeStart: (e: React.PointerEvent) => void;
   children: ReactNode;
 }) {
+  if (mobile) {
+    return (
+      <div data-side-column={kind} className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[var(--bg)]">
+        {children}
+      </div>
+    );
+  }
+
   return (
     <>
       <div

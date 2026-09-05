@@ -26,6 +26,7 @@ import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useInspector } from '../lib/inspector.ts';
+import { useBackDismiss, useIsMobile } from '../lib/mobile.ts';
 import { useColumnWidth, useSideLayout } from '../lib/sideColumns.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
@@ -205,20 +206,6 @@ export function SessionViewPage() {
         : next,
     );
   }, []);
-  /**
-   * Where the follow pill goes when a terminal is open.
-   *
-   * Beside it whenever there is room — that corner is where the pill has always
-   * lived, and at the ordinary column width the gutter beside the panel is two
-   * hundred pixels of nothing. It only climbs above the panel when the column
-   * has grown enough to leave it nowhere to stand, which in practice means the
-   * `Full` width. Measured, never assumed: `rightGap` is the real distance from
-   * the panel's right edge to the scroller's.
-   */
-  const pillLift =
-    terminalMode && terminalLayout.open && !terminalLayout.full && terminalLayout.rightGap < PILL_CORNER_PX
-      ? terminalLayout.height
-      : 0;
   /**
    * Prompts sent from the composer that the transcript has not caught up with.
    * `at` is when it was accepted, which is also when the turn really began —
@@ -729,6 +716,14 @@ export function SessionViewPage() {
   );
 
   /**
+   * A phone, where the three columns become one and everything that opened
+   * BESIDE the conversation opens OVER it instead. Read here rather than in the
+   * pieces because it decides the shape of the whole page: the layout arithmetic
+   * (`useSideLayout`), where the rail is drawn, and what closes a panel.
+   */
+  const mobile = useIsMobile();
+
+  /**
    * Which panel is open beside the conversation. Declared here because the
    * counts it needs are the last of them to be worked out, and read by the
    * Escape unwind just below.
@@ -762,6 +757,7 @@ export function SessionViewPage() {
    * inspector dragged wide keep the room it was about to give up.
    */
   const sideLayout = useSideLayout({
+    mobile,
     inspector: inspector.open === null ? null : inspector.width,
     column: agentId || fileRef ? column.width : null,
     // Whichever seam is under the hand wins, and the other gives way to its
@@ -776,6 +772,22 @@ export function SessionViewPage() {
   );
 
   const navigate = useNavigate();
+
+  /**
+   * Android's Back, on the four things Escape unwinds.
+   *
+   * One registration each rather than one chain, because on a phone these are
+   * sheets stacked over the conversation and Back means "close the one on top"
+   * — which is the last one OPENED, not a fixed priority. The stack that makes
+   * that work lives in `useBackDismiss`; all this does is say which layers are
+   * up. Every one of them is a no-op on a desktop, where these are columns and
+   * Escape is the way out.
+   */
+  useBackDismiss(!!fileRef, closeFile);
+  useBackDismiss(!!agentId, closeAgent);
+  useBackDismiss(inspector.open !== null, inspector.close);
+  useBackDismiss(finder.isOpen, finder.close);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -1020,6 +1032,26 @@ export function SessionViewPage() {
     autoFollow: liveInfo !== null && !anchorUuid && !anchorTool,
     messageCount,
   });
+
+  /**
+   * Where the follow pill goes when a terminal is open.
+   *
+   * Beside it whenever there is room — that corner is where the pill has always
+   * lived, and at the ordinary column width the gutter beside the panel is two
+   * hundred pixels of nothing. It only climbs above the panel when the column
+   * has grown enough to leave it nowhere to stand, which in practice means the
+   * `Full` width. Measured, never assumed: `rightGap` is the real distance from
+   * the panel's right edge to the scroller's.
+   */
+  const pillLift = mobile
+    ? // On a phone there is no gutter to float in: the conversation is the whole
+      // window, so the pill sits ON the stuck box rather than in its corner.
+      // Which is also what frees the composer's action row from reserving 120px
+      // of a 360px screen for a pill that is no longer over it.
+      follow.footerHeight
+    : terminalMode && terminalLayout.open && !terminalLayout.full && terminalLayout.rightGap < PILL_CORNER_PX
+      ? terminalLayout.height
+      : 0;
   /** Inside the list, so an echoed prompt is spaced like the turn it is about to become. */
   const pendingTurns = useMemo(
     () =>
@@ -1193,6 +1225,11 @@ export function SessionViewPage() {
               </>
             }
           />
+          {/* On a phone the rail is a strip UNDER the header rather than a
+              column beside the conversation: 72px of a 360px screen is a fifth
+              of it, permanently, for seven buttons that are used a few times a
+              session. Same items, same toggles, laid on their side. */}
+          {mobile && <InspectorRail inspector={inspector} horizontal />}
           {/* Header above, and below it a ROW: the conversation, then whichever
               panel is open, then the rail. Every panel used to be stacked here,
               between the header and the scroller, which is why opening one
@@ -1236,7 +1273,11 @@ export function SessionViewPage() {
               // the full width of the scroller rather than of the column.
               data-conversation-scroller
               onClick={selectFromClick}
-              className={`h-full overflow-y-auto px-4 pt-4 [scrollbar-gutter:stable_both-edges] ${
+              // `scrollbar-gutter` reserves 20px on a desktop to keep the thread
+              // centred against a classic scrollbar. A phone draws an overlay bar
+              // that takes no room, so there is nothing to reserve against and the
+              // 20px would be 6% of the window given away.
+              className={`h-full overflow-y-auto px-4 pt-4 [scrollbar-gutter:stable_both-edges] max-md:px-2 max-md:[scrollbar-gutter:auto] ${
                 // With no composer there is nothing to keep the last bubble off
                 // the window's edge, so the padding comes back.
                 chatEnabled ? '' : 'pb-4'
@@ -1254,7 +1295,7 @@ export function SessionViewPage() {
               <div
                 ref={follow.contentRef}
                 className="mx-auto flex min-h-full flex-col"
-                style={{ maxWidth: view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
+                style={{ maxWidth: mobile || view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
               >
                 <div style={view.zoom === ZOOM_DEFAULT ? undefined : { zoom: `${view.zoom}%` }}>
                   {/* Only the conversation, deliberately: the drawer below
@@ -1323,7 +1364,7 @@ export function SessionViewPage() {
                     {terminalMode ? (
                       <SessionTerminal
                         sessionId={id}
-                        columnWidth={columnWidth}
+                        columnWidth={mobile ? undefined : columnWidth}
                         autoFocus={handedOver}
                         onLayout={onTerminalLayout}
                       />
@@ -1332,8 +1373,10 @@ export function SessionViewPage() {
                         sessionId={id}
                         // The box does arithmetic with it: without this, Send ends
                         // up under the follow pill at the widths where the column
-                        // reaches the window's edge.
-                        columnWidth={columnWidth}
+                        // reaches the window's edge. Not on a phone, where the pill
+                        // has been lifted clear of the box entirely (`pillLift`) and
+                        // the reservation would only cost a third of the row.
+                        columnWidth={mobile ? undefined : columnWidth}
                         onSent={(text) => setPending((prev) => [...prev, { text, at: Date.now() }])}
                         lastModel={lastAnswer?.model ?? null}
                         lastEffort={lastAnswer?.effort ?? null}
@@ -1364,10 +1407,15 @@ export function SessionViewPage() {
                 />
               </div>
             </div>
-            <Inspector inspector={inspector} width={sideLayout.inspector} maxWidth={sideLayout.maxInspector}>
+            <Inspector
+              inspector={inspector}
+              mobile={mobile}
+              width={sideLayout.inspector}
+              maxWidth={sideLayout.maxInspector}
+            >
               {panel}
             </Inspector>
-            <InspectorRail inspector={inspector} />
+            {!mobile && <InspectorRail inspector={inspector} />}
           </div>
         </div>
           {/* A subagent's transcript, then the file — in that order, and it is
@@ -1377,7 +1425,7 @@ export function SessionViewPage() {
               buy that by being drawn OVER the drawer, and buys it now by being
               the column after it. */}
           {agentId && (
-            <SideColumn kind="agent" width={sideLayout.column} onResizeStart={startColumnResize}>
+            <SideColumn kind="agent" mobile={mobile} width={sideLayout.column} onResizeStart={startColumnResize}>
               <SubagentDrawer
                 sessionId={id}
                 agentId={agentId}
@@ -1392,7 +1440,7 @@ export function SessionViewPage() {
             </SideColumn>
           )}
           {fileRef && (
-            <SideColumn kind="file" width={sideLayout.column} onResizeStart={startColumnResize}>
+            <SideColumn kind="file" mobile={mobile} width={sideLayout.column} onResizeStart={startColumnResize}>
               <FileViewerPanel
                 // Keyed on the reference: opening another file starts a fresh panel
                 // rather than scrolling the previous one's state onto a new body.

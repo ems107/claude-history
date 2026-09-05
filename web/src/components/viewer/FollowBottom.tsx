@@ -78,6 +78,8 @@ export function useFollowBottom(
    * it, which is the note in the observer below.
    */
   footerRef: (el: HTMLDivElement | null) => void;
+  /** How tall the stuck box is. See the state it comes from. */
+  footerHeight: number;
 } {
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null);
@@ -159,14 +161,25 @@ export function useFollowBottom(
     return () => scrollEl.removeEventListener('scroll', onScroll);
   }, [scrollEl]);
 
+  /**
+   * How tall the stuck box is right now — the composer, or the terminal in its
+   * place. Measured here already for the compensation below; published because
+   * on a phone the follow pill has to stand ON TOP of it rather than in its
+   * corner. There is no gutter beside a full-width column to float in, and
+   * reserving the pill's 120px inside a 360px composer would have taken a third
+   * of the row the model pickers and Send live in.
+   */
+  const [footerHeight, setFooterHeight] = useState(0);
+
   useEffect(() => {
     if (!scrollEl || !contentEl) return;
     /** Null until the first callback, which is the one that only measures. */
-    let footerHeight: number | null = null;
+    let prevFooter: number | null = null;
     const observer = new ResizeObserver(() => {
       const height = footerEl?.offsetHeight ?? 0;
-      const grew = footerHeight === null ? 0 : height - footerHeight;
-      footerHeight = height;
+      const grew = prevFooter === null ? 0 : height - prevFooter;
+      prevFooter = height;
+      setFooterHeight(height);
       /**
        * The stuck box grew — a line typed, a terminal opened. The growth is also
        * new scrollable height, so scrolling by the difference hands the view back
@@ -246,6 +259,7 @@ export function useFollowBottom(
     following,
     toggle,
     unseen,
+    footerHeight,
     scrollRef: setScrollEl,
     contentRef: setContentEl,
     footerRef: setFooterEl,

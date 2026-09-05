@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
-import { entrypointLabel, formatDateTimeFull, shortModel } from '../../lib/format.ts';
+import { entrypointLabel, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
 import { listUrl } from '../../lib/listState.ts';
 import { Badge, SessionBadges } from '../list/Badges.tsx';
 import { ProjectTag } from '../list/ProjectTag.tsx';
@@ -201,8 +201,8 @@ export function SessionHeader({
     // this header is inside the box that narrows when a column opens beside the
     // session, so its facts row can rewrap — and whatever height it takes, the
     // scroller under it gives up.
-    <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">
-      <div className="flex items-center gap-2">
+    <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2 max-md:px-3">
+      <div className="flex items-center gap-2 max-md:flex-wrap max-md:gap-y-1.5">
         <Link to={listUrl()} className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
           ←
         </Link>
@@ -255,14 +255,28 @@ export function SessionHeader({
           )}
           <SessionBadges session={s} omitPr omitNews live={live} />
         </span>
-        <span className="flex-1" />
-        <span className="flex shrink-0 items-center gap-2">
+        {/* On a desktop this is the gap that pushes the controls right; on a
+            phone it is a full-width break that puts them on the next line, so
+            the title above keeps the whole width instead of the sixty pixels
+            left over. One element, two jobs, no second copy of the controls. */}
+        <span className="flex-1 max-md:basis-full" />
+        <span className="flex shrink-0 items-center gap-2 max-md:w-full max-md:gap-1.5">
           {actions}
           <SessionMenu detail={detail} draft={draft} onRename={() => setEditing(true)} />
         </span>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)]">
+      {/* Eleven facts, two of them full timestamps, wrapped at 360px: five
+          lines, which on a phone is most of what is left after the browser's own
+          bars. So a phone collapses them behind the control this row already has
+          for exactly this question, and shows the three anybody glances at
+          instead. Nothing is lost and nothing is duplicated — `more` opens the
+          same row, in full, that a desktop never hides. */}
+      <div
+        className={`mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)] max-md:gap-x-2.5 ${
+          details ? '' : 'max-md:hidden'
+        }`}
+      >
         {s.gitBranch && <span>⎇ {s.gitBranch}</span>}
         {s.model && <span className="font-mono">{shortModel(s.model)}</span>}
         {s.entrypoint && <span>{entrypointLabel(s.entrypoint)}</span>}
@@ -331,6 +345,28 @@ export function SessionHeader({
           <Chevron up={details} />
         </button>
       </div>
+
+      {/* The phone's version of the row above while it is collapsed: what a
+          session IS at a glance, and the same button to open the rest. */}
+      {!details && (
+        <div className="mt-1.5 hidden flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-[var(--text-dim)] max-md:flex">
+          {s.model && <span className="font-mono">{shortModel(s.model)}</span>}
+          {!draft && <span>{relativeTime(s.lastActivityAt)}</span>}
+          {cost.total !== null && <span className="font-semibold text-[var(--text)]">{formatUsd(cost.total)}</span>}
+          <span className="ml-auto" />
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.setItem(KEY, 'true');
+              setDetails(true);
+            }}
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1 py-1"
+          >
+            more
+            <Chevron />
+          </button>
+        </div>
+      )}
 
       {/* Everything you look UP rather than read: it is here in full, one press
           away, instead of spending a line of the row above on every session. */}

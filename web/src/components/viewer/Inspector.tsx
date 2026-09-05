@@ -15,14 +15,24 @@ import type { InspectorState } from '../../lib/inspector.ts';
  * One width is what keeps the panels honest — each of them has to read at 320
  * px, which is the work that made the token panel a list of cards instead of a
  * six-column table.
+ *
+ * **On a phone it is a sheet over the conversation instead**, and the 320px
+ * floor is why: with a 72px rail beside it there is not room for both on a
+ * 360px screen, and the arithmetic that tried left the conversation four pixels
+ * wide. Nothing about the panels changes — they were already written to read at
+ * 320 — only the box they are in, which is now the window, with a title bar of
+ * its own and Android's Back as a second way out.
  */
 export function Inspector({
   inspector,
+  mobile,
   width,
   maxWidth,
   children,
 }: {
   inspector: InspectorState;
+  /** Draw it over the conversation rather than beside it. */
+  mobile: boolean;
   /**
    * What it is DRAWN at, which is not always what it was dragged to: it gives
    * way to a column being dragged beside it. The remembered width
@@ -41,6 +51,36 @@ export function Inspector({
   const item = inspector.items.find((i) => i.key === inspector.open);
   if (!item) return null;
 
+  const head = (
+    <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-1.5 max-md:px-3 max-md:py-2">
+      <span className="text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase max-md:text-sm max-md:normal-case">
+        {item.title}
+      </span>
+      {item.count !== null && (
+        <span className="text-[11px] tabular-nums text-[var(--text-dim)]/70 max-md:text-sm">{item.count}</span>
+      )}
+      <span className="flex-1" />
+      <button
+        type="button"
+        onClick={inspector.close}
+        title="Close (Esc)"
+        aria-label="Close"
+        className="cursor-pointer rounded px-1 text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:min-h-10 max-md:px-3 max-md:text-lg"
+      >
+        ✕
+      </button>
+    </div>
+  );
+
+  if (mobile) {
+    return (
+      <div data-inspector className="fixed inset-0 z-40 flex flex-col bg-[var(--bg)]">
+        {head}
+        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div
@@ -53,24 +93,7 @@ export function Inspector({
         style={{ width }}
         className="flex min-w-0 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg-raised)]/50"
       >
-        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-1.5">
-          <span className="text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-            {item.title}
-          </span>
-          {item.count !== null && (
-            <span className="text-[11px] tabular-nums text-[var(--text-dim)]/70">{item.count}</span>
-          )}
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={inspector.close}
-            title="Close (Esc)"
-            aria-label="Close"
-            className="cursor-pointer rounded px-1 text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-          >
-            ✕
-          </button>
-        </div>
+        {head}
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </div>
     </>
