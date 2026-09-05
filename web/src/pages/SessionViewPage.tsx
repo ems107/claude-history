@@ -48,6 +48,7 @@ import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
+import { ScratchpadPanel } from '../components/viewer/ScratchpadPanel.tsx';
 import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
@@ -684,6 +685,21 @@ export function SessionViewPage() {
     staleTime: 30_000,
   });
   /**
+   * And what is in the session's temp scratchpad, which is the one panel here
+   * that asks the disk a question the transcript never raised.
+   *
+   * Eager for the reason the mention stats are: the rail decides whether the
+   * item exists at all from the count, so a lazy walk would leave one button in
+   * that strip unable to say what it holds — or, worse, absent until pressed.
+   * Nothing waits for it, so a slow folder means a late item and never a late
+   * page.
+   */
+  const scratchpad = useQuery({
+    queryKey: ['scratchpad', id],
+    queryFn: () => api.scratchpad(id),
+    staleTime: 30_000,
+  });
+  /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
    * For a CHIP on the row and not to hide it. Dropping a mention because another
@@ -722,6 +738,7 @@ export function SessionViewPage() {
     sent: sessionFiles.total,
     mentionCandidates: mentionCandidates.length,
     mentionCount: mentioned ? mentioned.rows.length : null,
+    scratchpadCount: scratchpad.data?.entries.length ?? 0,
     agentCount: session?.subagents.length ?? 0,
     hasLineage: !!session && (session.ancestry.forkedFrom !== null || session.ancestry.descendants.length > 0),
     agents: { open: agentsOpen, toggle: toggleAgents, close: closeAgents },
@@ -1108,6 +1125,11 @@ export function SessionViewPage() {
             onGoToMessage={(uuid, marks) => jumpTo('msg', uuid, marks)}
           />
         );
+      case 'scratchpad':
+        // The item only exists once the walk has answered, so by the time this
+        // can be open the data is there; the guard is for the tick where a
+        // refetch has emptied it.
+        return scratchpad.data ? <ScratchpadPanel sessionId={id} data={scratchpad.data} /> : null;
       case 'agents':
         return (
           <SubagentsPanel

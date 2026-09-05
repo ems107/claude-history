@@ -29,6 +29,7 @@ import type {
   PromptsResponse,
   ReadMarksResponse,
   RetentionResponse,
+  ScratchpadResponse,
   SearchResponse,
   SessionDetailResponse,
   SessionMatchesResponse,
@@ -621,6 +622,14 @@ export const api = {
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
+  /**
+   * What is in the session's scratchpad, as a flat depth-first walk that the
+   * panel folds back into a tree. One request for the whole panel, like the
+   * stat batch — and it takes no path at all, because the server composes the
+   * root from the index rather than trusting one sent from here.
+   */
+  scratchpad: (sessionId: string) =>
+    getJson<ScratchpadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/scratchpad`),
   fileOpen: async (req: FileOpenRequest) => {
     const res = await fetch('/api/files/open', {
       method: 'POST',
