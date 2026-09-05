@@ -4,9 +4,9 @@ import { api } from '../../api/client.ts';
 import { useLocalOnly } from '../../api/useLocal.ts';
 import { isImagePath } from '../../lib/fileRefs.ts';
 import { formatBytes, formatDateTime } from '../../lib/format.ts';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
-import { FoldHeader } from '../FoldHeader.tsx';
 
 /**
  * How far the indent is allowed to travel before it stops.

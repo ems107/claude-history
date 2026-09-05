@@ -524,6 +524,14 @@ export interface ScratchpadEntry {
  */
 export interface ScratchpadResponse {
   root: string;
+  /**
+   * Whether the folder is THERE — not whether it could be listed, which is a
+   * different question with a third answer. A root that exists and refuses to
+   * open (an ACL, a lock) comes back `true` with no entries and a `warn` in the
+   * server log; only a swept or never-created one comes back `false`. Saying
+   * `false` about a folder still sitting on disk would be the one untrue thing
+   * this endpoint could say.
+   */
   exists: boolean;
   entries: ScratchpadEntry[];
   /** The walk stopped at `MAX_SCRATCHPAD_ENTRIES`; there is more down there. */
