@@ -4,7 +4,10 @@
 //         node scripts/package.mjs --release --version 1.2.0   (release.mjs only)
 //
 // Output layout inside the zip (see docs/AI_DISTRIBUTION.md):
-//   install.ps1 / uninstall.ps1 / launch.vbs      <- installer (stable across updates)
+//   install.ps1 / uninstall.ps1 / launch.vbs      <- installer: a stable PATH, but
+//                                                    update-helper.ps1 copies these
+//                                                    back over from the new version
+//                                                    on every successful update
 //   versions/v<version>/
 //     node/node.exe                               <- embedded Node runtime
 //     server.cjs                                  <- esbuild bundle of the server

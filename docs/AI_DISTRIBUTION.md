@@ -33,7 +33,7 @@ A compiled `.node` binary is not JavaScript, so the embedded terminal's pseudo-c
 
 ```
 <install-root>\
-├── install.ps1 / uninstall.ps1 / launch.vbs   <- stable, never touched by updates
+├── install.ps1 / uninstall.ps1 / launch.vbs   <- stable PATHS; refreshed in place by every update
 ├── install.json                               <- marker; the updater detects installed mode by it
 ├── update.log
 ├── current  -> junction -> versions\vX.Y.Z    <- the scheduled task points THROUGH this
@@ -48,7 +48,13 @@ A compiled `.node` binary is not JavaScript, so the embedded terminal's pseudo-c
 - **`ExecutionTimeLimit` must be `PT0S`** — the Task Scheduler default silently kills tasks after 72 hours.
 - **Every task we register needs `-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries`**, including the one-shot update and uninstall helpers. Without it a laptop on battery leaves the task `Queued` forever — it does not fail, it just never runs, and then fires unexpectedly when the machine is plugged in (this exact bug swallowed an uninstall).
 - The action is `wscript.exe //B <root>\current\start-hidden.vbs` — wscript is the only zero-flash way to start a console app hidden at logon, and the vbs waits (`bWaitOnReturn:=True`) so node stays in the task's tree.
-- **The Start Menu shortcut wears the app's own icon, and there is only one copy of it.** `IconLocation` is `<root>\current\web\favicon.ico` — the same file the browser tab uses, because `web/public/` is copied into `web/dist` and staged as `versions/vX.Y.Z/web/`. Two things follow: the path goes THROUGH the junction, so an update swaps the icon without rewriting the `.lnk`; and a drawing is never duplicated between the frontend and the installer. It used to point at `node\node.exe,0`, which is why every install until now had Node's logo in the Start Menu.
+- **The Start Menu shortcut wears the app's own icon, and it is rewritten on every update.** `IconLocation` is `<root>\current\web\favicon.ico` — the same file the browser tab uses, because `web/public/` is copied into `web/dist` and staged as `versions/vX.Y.Z/web/`, so no drawing is duplicated between the frontend and the installer.
+  **A shortcut carries its icon INSIDE the `.lnk`**, which is the whole reason this needs machinery: replacing the app's files cannot change it, and pointing through the junction is not enough on its own. So `install.ps1 -ShortcutOnly` exists — it writes the shortcut and returns — and `update-helper.ps1` runs it after the health check. Three details, each load-bearing:
+  - **It runs the NEW `install.ps1`**, because the helper refreshes the root scripts a few lines earlier. The fix therefore lands on the update that ships it rather than on the one after — which is also why the helper is copied from `stagedDir` and not from the running version.
+  - **After the health check, never before.** A rollback puts `current` back on a version that may have no `web\favicon.ico`, and the icon must not be aimed at a file that is about to vanish.
+  - **A missing icon file leaves the shortcut's icon alone** rather than blanking it, so a version without one costs nothing.
+
+  It used to point at `node\node.exe,0`, which is why every install before 1.19.2 wore Node's logo in the Start Menu — including, for one release, the one that had just been given an icon of its own.
 - **Ending the task only kills the wscript wrapper, not node** (the process tree is NOT terminated, verified). The server therefore runs with `--exit-with-parent`: it watches `process.ppid` every 3 s and exits when the parent dies. **Never remove that flag** from `start-hidden.vbs`.
 - **Port 7433 is released a few seconds AFTER the task ends** (that watchdog polls every 3 s). Anything that restarts the app must wait for the port to be free, then verify `/api/meta` reports the expected **version** — never just that something answers `/api/health`, because the outgoing instance answers too and makes a failed start look successful. That bug made installs silently die minutes later.
 - Junctions (`New-Item -ItemType Junction`) need no admin; deleting one via `(Get-Item).Delete()` removes the reparse point only. The helper swaps `current` only after the old server pid is dead.

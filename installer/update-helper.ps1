@@ -264,6 +264,35 @@ try {
       }
     }
 
+    # Then the Start Menu shortcut, which nothing else can reach: a shortcut
+    # carries its icon INSIDE the .lnk, so replacing the app's files never
+    # changes it, and every install before 1.19.2 kept Node's logo long after
+    # the app had a mark of its own.
+    #
+    # install.ps1 owns that definition and was just refreshed above, so this
+    # runs the NEW one - the fix therefore lands on the update that ships it,
+    # not on the one after. Calling it beats keeping a second copy of the
+    # shortcut here, which would be one definition in two files.
+    #
+    # After the health check on purpose: a rollback puts 'current' back on a
+    # version whose web\favicon.ico may not exist, and the icon must not be
+    # pointed at a file that is about to disappear. Failure is logged and
+    # ignored - a stale icon is not worth failing an update that worked.
+    try {
+      $installer = Join-Path $Root 'install.ps1'
+      if (Test-Path $installer) {
+        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer -ShortcutOnly -InstallTo $Root 2>&1
+        $said = ($out | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0) {
+          Log "Start Menu shortcut refreshed ($said)"
+        } else {
+          Log "install.ps1 -ShortcutOnly exited $LASTEXITCODE : $said" 'warn'
+        }
+      }
+    } catch {
+      Log "could not refresh the Start Menu shortcut: $($_.Exception.Message)" 'warn'
+    }
+
     # 4. Prune version folders, keeping the 3 newest releases (never the
     # active one). Anything not named vX.Y.Z - a local vdev build, a leftover
     # - is not a release and goes too, which is worth saying out loud.

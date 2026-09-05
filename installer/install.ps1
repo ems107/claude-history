@@ -24,7 +24,11 @@
 
 param(
   [string]$InstallTo,
-  [switch]$Portable
+  [switch]$Portable,
+  # Repair the Start Menu shortcut and do nothing else. update-helper.ps1 calls
+  # this after an update, because the icon is recorded INSIDE the .lnk and
+  # replacing the app's files never changes it.
+  [switch]$ShortcutOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,6 +57,42 @@ function Wait-PortFree([int]$p, [int]$seconds = 20) {
     Start-Sleep -Milliseconds 500
   }
   return $false
+}
+
+# The Start Menu shortcut, defined once and written by two callers: this
+# script, and update-helper.ps1 through -ShortcutOnly after an update.
+#
+# It has to be written again on every update because a shortcut carries its
+# icon INSIDE the .lnk: replacing the app's files cannot change it, which is
+# how every install before 1.19.2 went on wearing Node's logo long after the
+# app had an icon of its own.
+function Set-StartMenuShortcut([string]$root) {
+  $current = Join-Path $root 'current'
+  $lnkPath = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\claude-history.lnk'
+  $ws = New-Object -ComObject WScript.Shell
+  $lnk = $ws.CreateShortcut($lnkPath)
+  $lnk.TargetPath = 'wscript.exe'
+  $lnk.Arguments = '"{0}"' -f (Join-Path $root 'launch.vbs')
+  $lnk.WorkingDirectory = $root
+  # Through the junction, so the drawing can change without the shortcut being
+  # rewritten. Only when the file is really there: an existing shortcut then
+  # keeps whatever icon it had rather than being blanked by a version that
+  # somehow ships without one.
+  $icon = Join-Path $current 'web\favicon.ico'
+  if (Test-Path $icon) { $lnk.IconLocation = $icon }
+  $lnk.Description = 'claude-history - browse all your Claude Code conversations'
+  $lnk.Save()
+}
+
+# --- Shortcut only: repair the Start Menu entry and stop -------------------
+# Deliberately before the Mark-of-the-Web sweep below, which would walk the
+# whole install folder for nothing.
+if ($ShortcutOnly) {
+  $root = if ($InstallTo) { $InstallTo } else { Join-Path $env:LOCALAPPDATA 'Programs\claude-history' }
+  $root = [System.IO.Path]::GetFullPath($root)
+  Set-StartMenuShortcut $root
+  Write-Host "Start Menu shortcut refreshed in $root."
+  return
 }
 
 # Remove Mark-of-the-Web from the extracted files (the zip was downloaded).
@@ -136,20 +176,7 @@ Write-Host "Scheduled task '$taskName' registered (starts at logon)."
   ConvertTo-Json | Set-Content -Path (Join-Path $root 'install.json') -Encoding UTF8
 
 # Start Menu shortcut -> launch.vbs (starts the task if needed, opens the UI).
-$lnkPath = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\claude-history.lnk'
-$ws = New-Object -ComObject WScript.Shell
-$lnk = $ws.CreateShortcut($lnkPath)
-$lnk.TargetPath = 'wscript.exe'
-$lnk.Arguments = '"{0}"' -f (Join-Path $root 'launch.vbs')
-$lnk.WorkingDirectory = $root
-# The app's own mark rather than Node's logo, which is what this shortcut wore
-# until now. The file ships inside the built frontend (it is the favicon too),
-# so there is one drawing in the release and not two; and the path goes THROUGH
-# the 'current' junction, so an update swaps the icon without rewriting the
-# .lnk. A missing file here would show a blank icon, never break the shortcut.
-$lnk.IconLocation = Join-Path $current 'web\favicon.ico'
-$lnk.Description = 'claude-history - browse all your Claude Code conversations'
-$lnk.Save()
+Set-StartMenuShortcut $root
 Write-Host "Start Menu shortcut created."
 
 # Start now and confirm the version that answers is the one just installed
