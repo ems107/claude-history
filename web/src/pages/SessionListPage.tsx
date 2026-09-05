@@ -9,8 +9,18 @@ import { SearchOptions } from '../components/list/SearchOptions.tsx';
 import { SearchResults } from '../components/list/SearchResults.tsx';
 import { SessionRow } from '../components/list/SessionRow.tsx';
 import { SortBar } from '../components/list/SortBar.tsx';
-import { applyFilters, buildRows, filtersToParams, parseFilters, type FilterState } from '../lib/filters.ts';
+import { actionClass } from '../components/controlClass.ts';
+import {
+  activeFilterCount,
+  applyFilters,
+  buildRows,
+  DEFAULT_FILTERS,
+  filtersToParams,
+  parseFilters,
+  type FilterState,
+} from '../lib/filters.ts';
 import { saveListParams, saveListScroll, savedListScroll } from '../lib/listState.ts';
+import { MOBILE_QUERY, useBackDismiss, useIsMobile } from '../lib/mobile.ts';
 import {
   applyTuning,
   parseTuning,
@@ -20,6 +30,21 @@ import {
 } from '../lib/searchTuning.ts';
 
 const ROW_HEIGHT = 64;
+/**
+ * The same row on a phone, where it is three lines instead of one: the title,
+ * the metadata wrapped under it, and the badges when there are any.
+ *
+ * A GUESS rather than a height, and the difference matters. Rows on a phone are
+ * MEASURED (`virtualizer.measureElement`, mobile only), because the tallest of
+ * them — a long project name, five metadata items and two badges — is half
+ * again the shortest, and a fixed height that fits the tallest would spend that
+ * difference on every ordinary row. On a screen that shows four of them at a
+ * time, one wasted row in four is a quarter of the list.
+ *
+ * The desktop keeps its fixed 64: every row there is one line, measuring would
+ * find exactly that, and it would pay a layout read per row to learn it.
+ */
+const ROW_HEIGHT_MOBILE = 88;
 const HEADER_HEIGHT = 30;
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 
@@ -28,7 +53,15 @@ export function SessionListPage() {
   const sessions = useQuery({ queryKey: ['sessions'], queryFn: api.sessions });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [searchParams, setSearchParams] = useSearchParams();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const mobile = useIsMobile();
+  // Open on a desktop, where it is a column beside the list; closed on a phone,
+  // where it is a sheet over it and would otherwise be the first thing anybody
+  // saw. Read once, from the media query rather than from `mobile`, because
+  // this is an initial value and `useIsMobile` has not answered yet on the
+  // first render.
+  const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(MOBILE_QUERY).matches);
+  // Android's Back closes the sheet instead of leaving the list.
+  useBackDismiss(mobile && sidebarOpen, () => setSidebarOpen(false));
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('sidebarWidth')) || 256);
 
   // Remember filters/search + scroll so navigating into a session and back
@@ -70,6 +103,7 @@ export function SessionListPage() {
   }, []);
 
   const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
+  const filterCount = activeFilterCount(filters);
   const q = searchParams.get('q') ?? '';
   const setFilters = useCallback(
     (f: FilterState) => {
@@ -177,9 +211,15 @@ export function SessionListPage() {
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (i) => (rows[i]?.kind === 'header' ? HEADER_HEIGHT : ROW_HEIGHT),
+    estimateSize: (i) => (rows[i]?.kind === 'header' ? HEADER_HEIGHT : mobile ? ROW_HEIGHT_MOBILE : ROW_HEIGHT),
     overscan: 12,
   });
+
+  // A row is a different height on a phone, and the virtualizer remembers the
+  // one it was told: without this, a window dragged across the breakpoint keeps
+  // the old offsets and every row after the first is drawn in the wrong place.
+  // It also throws away the measurements taken on the other side of the line.
+  useEffect(() => virtualizer.measure(), [mobile, virtualizer]);
 
   // Restore the scroll offset once, when data is first available.
   const scrollRestored = useRef(false);
@@ -241,25 +281,53 @@ export function SessionListPage() {
     return <div className="p-8 text-red-400">Failed to load sessions: {String(sessions.error)}</div>;
   }
 
+  const sidebar = (
+    <FilterSidebar
+      sessions={sessions.data ?? []}
+      projects={projects.data ?? []}
+      filters={filters}
+      onChange={setFilters}
+    />
+  );
+
   return (
     <div className="flex h-full">
-      {sidebarOpen && (
-        <>
-          <div style={{ width: sidebarWidth }} className="h-full shrink-0">
-            <FilterSidebar
-              sessions={sessions.data ?? []}
-              projects={projects.data ?? []}
-              filters={filters}
-              onChange={setFilters}
-            />
+      {sidebarOpen &&
+        (mobile ? (
+          /* A 256px column is 70% of a 360px screen, so on a phone the filters
+             are a sheet OVER the list rather than a slice of it — full screen,
+             because there are six sections in here and every one of them wants
+             the width. It closes with Done or with Android's Back. */
+          <div className="fixed inset-0 z-40 flex flex-col bg-[var(--bg)]">
+            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+              <h2 className="min-w-0 flex-1 text-sm font-semibold">Filters</h2>
+              {filterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilters({ ...DEFAULT_FILTERS, sort: filters.sort, dir: filters.dir, group: filters.group })}
+                  className={actionClass}
+                >
+                  Clear all
+                </button>
+              )}
+              <button type="button" onClick={() => setSidebarOpen(false)} className={actionClass}>
+                Done
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">{sidebar}</div>
           </div>
-          <div
-            className="h-full w-1 shrink-0 cursor-col-resize touch-none hover:bg-[var(--accent-dim)]"
-            onPointerDown={startResize}
-            title="Drag to resize"
-          />
-        </>
-      )}
+        ) : (
+          <>
+            <div style={{ width: sidebarWidth }} className="h-full shrink-0">
+              {sidebar}
+            </div>
+            <div
+              className="h-full w-1 shrink-0 cursor-col-resize touch-none hover:bg-[var(--accent-dim)]"
+              onPointerDown={startResize}
+              title="Drag to resize"
+            />
+          </>
+        ))}
       <div className="flex min-w-0 flex-1 flex-col">
         <SortBar
           filters={filters}
@@ -270,10 +338,16 @@ export function SessionListPage() {
           <button
             type="button"
             title={sidebarOpen ? 'Hide filters' : 'Show filters'}
+            aria-label={sidebarOpen ? 'Hide filters' : 'Show filters'}
             onClick={() => setSidebarOpen((v) => !v)}
-            className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+            className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-xs hover:border-[var(--text-dim)] max-md:min-h-9 max-md:px-2.5 ${
+              filterCount > 0
+                ? 'border-[var(--accent-dim)] text-[var(--accent)]'
+                : 'border-[var(--border)] text-[var(--text-dim)]'
+            }`}
           >
             ☰
+            {filterCount > 0 && <span className="font-mono text-[11px]">{filterCount}</span>}
           </button>
           <SearchBox value={q} onChange={setQ} />
           <button
@@ -338,17 +412,40 @@ export function SessionListPage() {
           ) : rows.length === 0 ? (
             <div className="p-8 text-center text-[var(--text-dim)]">No sessions match the current filters.</div>
           ) : (
-            <div className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
+            <div
+              // Remounted across the breakpoint, and it has to be. A measured
+              // row keeps its ResizeObserver until the ELEMENT leaves the DOM —
+              // `measureElement(null)` only releases nodes that are already
+              // disconnected — so merely dropping the ref left every row still
+              // observed. On the desktop side the wrapper is then given an
+              // inline height from the cache, the observer reads that height
+              // back and writes it in again, and the mobile measurements pin
+              // themselves in place: a 1440px window drawing 114px rows.
+              // Remounting disconnects them, which is what makes the cleanup
+              // fire and `virtualizer.measure()` stick.
+              key={mobile ? 'phone' : 'desktop'}
+              className="relative w-full"
+              style={{ height: virtualizer.getTotalSize() }}
+            >
               {virtualizer.getVirtualItems().map((vi) => {
                 const row = rows[vi.index];
                 return (
                   <div
                     key={row.id}
+                    // Measured on a phone and told on a desktop — see
+                    // ROW_HEIGHT_MOBILE. `data-index` is what the measurer reads
+                    // to know which row it just measured, and the height has to
+                    // be absent for there to be anything to measure.
+                    data-index={vi.index}
+                    ref={mobile ? virtualizer.measureElement : undefined}
                     className={`absolute top-0 left-0 w-full ${vi.index === selected ? 'bg-[var(--bg-hover)]' : ''}`}
-                    style={{ height: vi.size, transform: `translateY(${vi.start}px)` }}
+                    style={{
+                      height: mobile ? undefined : vi.size,
+                      transform: `translateY(${vi.start}px)`,
+                    }}
                   >
                     {row.kind === 'header' ? (
-                      <div className="flex h-full items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-raised)] px-4 text-xs font-semibold tracking-wide text-[var(--text-dim)] uppercase">
+                      <div className="flex h-full items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-raised)] px-4 text-xs font-semibold tracking-wide text-[var(--text-dim)] uppercase max-md:h-auto max-md:min-h-8 max-md:px-3 max-md:py-1.5">
                         {row.color && (
                           <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
                         )}

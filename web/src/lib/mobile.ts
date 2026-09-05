@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 /**
  * The one threshold that says "this is a phone", and the three things that read it.
@@ -145,4 +145,55 @@ export function useIsTyping(): boolean {
     };
   }, []);
   return typing;
+}
+
+/**
+ * The hardware Back button closes the sheet that is open, instead of leaving
+ * the page.
+ *
+ * **Every layer that CAN be a route is one** — `/more`, the session's own file
+ * and subagent columns, which live in the URL already. Back needs nothing
+ * invented for those. This is for the rest: a filter sheet, a notifications
+ * sheet, a dialog — layers whose state is a `useState` and which have no
+ * business in anybody's history or in a shared link.
+ *
+ * What it does is push a MARKER onto the entry we are already standing on: same
+ * URL, same router state object with one key added, so react-router's own index
+ * bookkeeping is untouched and no navigation happens. Back then pops the marker,
+ * `popstate` fires and the sheet closes; nothing else in the app notices,
+ * because the location never changed.
+ *
+ * Two ways out and both are handled. Closed with its own ✕: the marker is still
+ * the entry we stand on, so the cleanup takes it off with `history.back()`.
+ * Closed by NAVIGATING from inside it — tapping a notification, say: something
+ * has pushed on top of the marker, `history.state` is no longer ours, and going
+ * back would undo that navigation, so the cleanup leaves it alone. The buried
+ * marker then behaves exactly like the entry beneath it — same URL — so the
+ * worst it can cost is one Back press that appears to do nothing, on a path
+ * where the alternative was undoing the tap the user had just made.
+ *
+ * A no-op above the phone breakpoint, where sheets are panels and Escape is
+ * already the way out.
+ */
+export function useBackDismiss(active: boolean, onDismiss: () => void): void {
+  const mobile = useIsMobile();
+  const latest = useRef(onDismiss);
+  latest.current = onDismiss;
+  useEffect(() => {
+    if (!mobile || !active) return;
+    const key = `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const under = window.history.state as Record<string, unknown> | null;
+    window.history.pushState({ ...under, chSheet: key }, '');
+    let consumed = false;
+    const onPop = () => {
+      consumed = true;
+      latest.current();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      const now = window.history.state as { chSheet?: string } | null;
+      if (!consumed && now?.chSheet === key) window.history.back();
+    };
+  }, [mobile, active]);
 }

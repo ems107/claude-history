@@ -15,9 +15,11 @@ function RowDates({ session }: { session: SessionSummary }) {
       className="shrink-0 text-right"
       title={`Last activity: ${formatDateTime(last)}\nCreated: ${formatDateTime(session.createdAt)}`}
     >
-      <div className="text-sm leading-tight">{relativeTime(last)}</div>
-      <div className="text-xs leading-tight text-[var(--text-dim)]">last activity {formatDateTime(last)}</div>
-      <div className="text-xs leading-tight text-[var(--text-dim)] opacity-70">
+      <div className="text-sm leading-tight max-md:text-xs">{relativeTime(last)}</div>
+      <div className="text-xs leading-tight text-[var(--text-dim)] max-md:hidden">
+        last activity {formatDateTime(last)}
+      </div>
+      <div className="text-xs leading-tight text-[var(--text-dim)] opacity-70 max-md:hidden">
         created {formatDateTime(session.createdAt)}
       </div>
     </div>
@@ -86,13 +88,15 @@ function RowContent({
     <>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <ProjectTag
-            name={session.projectName}
-            path={session.projectPath}
-            color={color}
-            onClick={onProjectClick ? () => onProjectClick(session.projectKey) : undefined}
-          />
-          <span className="truncate text-sm font-medium" title={session.title}>
+          <span className="contents max-md:hidden">
+            <ProjectTag
+              name={session.projectName}
+              path={session.projectPath}
+              color={color}
+              onClick={onProjectClick ? () => onProjectClick(session.projectKey) : undefined}
+            />
+          </span>
+          <span className="min-w-0 truncate text-sm font-medium" title={session.title}>
             {session.title}
           </span>
           {session.titleSource === 'local' && (
@@ -110,7 +114,7 @@ function RowContent({
               e.stopPropagation();
               onStartEdit();
             }}
-            className="shrink-0 cursor-pointer rounded px-1 text-xs text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+            className="shrink-0 cursor-pointer rounded px-1 text-xs text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:px-2 max-md:py-1 max-md:text-sm max-md:opacity-100"
             title="Rename locally (never writes to ~/.claude)"
           >
             ✎
@@ -122,17 +126,26 @@ function RowContent({
               e.stopPropagation();
               onTogglePin();
             }}
-            className={`shrink-0 cursor-pointer rounded px-1 text-sm ${
+            className={`shrink-0 cursor-pointer rounded px-1 text-sm max-md:px-2 max-md:py-1 max-md:text-base ${
               session.pinned
                 ? 'text-amber-400 hover:text-amber-300'
-                : 'text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-amber-400'
+                : 'text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-amber-400 max-md:opacity-100'
             }`}
             title={session.pinned ? 'Unpin' : 'Pin (stored locally, filter via ★ Pinned)'}
           >
             {session.pinned ? '★' : '☆'}
           </button>
         </div>
-        <div className="mt-1 flex items-center gap-3 text-xs text-[var(--text-dim)]">
+        <div className="mt-1 flex items-center gap-3 text-xs text-[var(--text-dim)] max-md:flex-wrap max-md:gap-x-2 max-md:gap-y-1">
+          <span className="hidden max-md:contents">
+            <ProjectTag
+              name={session.projectName}
+              path={session.projectPath}
+              color={color}
+              shrink
+              onClick={onProjectClick ? () => onProjectClick(session.projectKey) : undefined}
+            />
+          </span>
           {meta.map(([key, text]) =>
             text === null ? null : (
               <span key={key} className="shrink-0">
@@ -200,7 +213,7 @@ export function SessionRow({
 
   if (editing) {
     return (
-      <div className="flex h-full items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-hover)] px-4">
+      <div className="flex h-full items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-hover)] px-4 max-md:h-auto max-md:min-h-20 max-md:flex-wrap max-md:content-center max-md:gap-2 max-md:px-3 max-md:py-2">
         <ProjectTag name={session.projectName} path={session.projectPath} color={color} />
         <input
           autoFocus
@@ -216,12 +229,24 @@ export function SessionRow({
               ? 'New local title — leave empty to restore the original (Enter saves, Esc cancels)'
               : 'New local title (Enter saves, Esc cancels)'
           }
-          className="min-w-0 flex-1 rounded border border-[var(--accent-dim)] bg-[var(--bg-raised)] px-2 py-1 text-sm focus:outline-none"
+          className="min-w-0 flex-1 rounded border border-[var(--accent-dim)] bg-[var(--bg-raised)] px-2 py-1 text-sm focus:outline-none max-md:min-h-10 max-md:basis-full"
         />
+        {/* Enter saves and Escape cancels, and on a desktop that is the whole
+            of it. A phone has no Escape and its Enter key is a "Go" the user
+            has to trust, so the two get buttons — the only thing here that is
+            drawn rather than restyled. */}
+        <button
+          type="button"
+          onClick={() => save(value.trim())}
+          disabled={saving}
+          className="hidden cursor-pointer rounded border border-[var(--accent-dim)] px-3 py-2 text-sm text-[var(--accent)] disabled:opacity-40 max-md:inline-block"
+        >
+          Save
+        </button>
         <button
           type="button"
           onClick={() => setEditing(false)}
-          className="cursor-pointer text-xs text-[var(--text-dim)] hover:text-[var(--text)]"
+          className="cursor-pointer text-xs text-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-9 max-md:px-2 max-md:text-sm"
         >
           Cancel
         </button>
@@ -232,7 +257,7 @@ export function SessionRow({
   return (
     <Link
       to={`/session/${session.id}`}
-      className="group flex h-full items-center gap-3 border-b border-[var(--border)] px-4 hover:bg-[var(--bg-hover)]"
+      className="group flex h-full items-center gap-3 border-b border-[var(--border)] px-4 hover:bg-[var(--bg-hover)] max-md:h-auto max-md:min-h-20 max-md:gap-2 max-md:px-3 max-md:py-2"
     >
       <RowContent
         session={session}

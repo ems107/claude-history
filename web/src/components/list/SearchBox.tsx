@@ -15,13 +15,15 @@ export function SearchBox({ value, onChange }: { value: string; onChange: (q: st
   }, [text, onChange]);
 
   return (
-    <div className="relative max-w-md min-w-48 flex-1">
+    // `min-w-48` is a floor for a row that has room to give; on a phone it is
+    // 192 of the 328 available and the reason nothing else fits beside it.
+    <div className="relative max-w-md min-w-48 flex-1 max-md:min-w-0">
       <input
         id="global-search"
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Search all conversations…  ( / )"
-        className="w-full rounded border border-[var(--border)] bg-[var(--bg-raised)] py-1 pr-7 pl-2.5 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
+        className="w-full rounded border border-[var(--border)] bg-[var(--bg-raised)] py-1 pr-7 pl-2.5 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-9"
       />
       {text && (
         <button
@@ -30,7 +32,7 @@ export function SearchBox({ value, onChange }: { value: string; onChange: (q: st
             setText('');
             onChange('');
           }}
-          className="absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer text-[var(--text-dim)] hover:text-[var(--text)]"
+          className="absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer px-1 text-[var(--text-dim)] hover:text-[var(--text)] max-md:px-2 max-md:text-lg"
           title="Clear search"
         >
           ×
