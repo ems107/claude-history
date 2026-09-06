@@ -1,20 +1,21 @@
 /**
- * What a control looks like — the two shapes the app draws over and over.
+ * What a control looks like — the shapes the app draws over and over.
  *
  * It lived under `viewer/` while `toggleClass` was the only thing in it, and
  * came up here when the settings page needed the other one: a look shared by
  * the viewer, the settings page and the log viewer belongs to none of them.
- */
-
-/**
- * **Both carry their own touch size, in `max-md:` variants, and that is why
- * they are worth having.** At the desktop's 22 px and 26 px these are fine
- * targets for a pointer and impossible ones for a thumb; fifteen files draw one
- * of these, so the phone's floor is set here once rather than fifteen times.
- * `toggleClass` grows by a minimum height, because it is already `inline-flex`
- * and centres its own label; `actionClass` grows by padding, because it is put
- * on plain `<button>`s that would not centre a taller box. Above 768 px neither
- * variant applies and both are the strings they always were.
+ * Four things live here now — two shapes with a label, the square without one,
+ * and the row they sit in.
+ *
+ * **Every one of them carries its own touch size, in `max-md:` variants, and
+ * that is why they are worth having.** At the desktop's 22 px and 26 px these
+ * are fine targets for a pointer and impossible ones for a thumb; fifteen files
+ * draw one of these, so the phone's floor is set here once rather than fifteen
+ * times. `toggleClass` grows by a minimum height, because it is already
+ * `inline-flex` and centres its own label; `actionClass` grows by padding,
+ * because it is put on plain `<button>`s that would not centre a taller box.
+ * Above 48rem none of the variants apply and the strings are the ones they
+ * always were.
  */
 
 /**

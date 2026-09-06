@@ -31,18 +31,36 @@ export const MOBILE_QUERY = '(width < 48rem)';
 /**
  * Short and wide — a phone held sideways, where the height is what is scarce.
  *
- * 500px because the DT50 in landscape is 360px tall: a header, a bottom bar and
- * a composer leave nothing for the conversation. Anything that costs permanent
- * vertical space answers this as well as `MOBILE_QUERY`.
+ * 500px because a phone on its side at the stock density is 284px tall: a
+ * header, a bottom bar and a composer leave nothing for the conversation.
+ * Anything that costs permanent vertical space answers this as well as
+ * `MOBILE_QUERY`, and the pairing matters — turn the density down and the same
+ * device in landscape is 1012px wide, which is a DESKTOP by the only rule this
+ * app has, so none of these rules apply to it at all.
  */
-export const SHORT_QUERY = '(height < 500px)';
+const SHORT_QUERY = '(height < 500px)';
 
+/**
+ * One subscriber per query, for the life of the module.
+ *
+ * `useSyncExternalStore` compares the function it was given by IDENTITY and
+ * re-subscribes whenever it changes, so building the closure inside the hook
+ * meant tearing down and rebuilding a `matchMedia` listener on every render of
+ * every component that asks — and some of them render on every scroll. There
+ * are two queries in the app and they are known at module load.
+ */
+const subscribers = new Map<string, (onChange: () => void) => () => void>();
 function subscribe(query: string) {
-  return (onChange: () => void) => {
-    const mql = window.matchMedia(query);
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
-  };
+  let existing = subscribers.get(query);
+  if (!existing) {
+    existing = (onChange: () => void) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener('change', onChange);
+      return () => mql.removeEventListener('change', onChange);
+    };
+    subscribers.set(query, existing);
+  }
+  return existing;
 }
 
 function useMedia(query: string): boolean {
