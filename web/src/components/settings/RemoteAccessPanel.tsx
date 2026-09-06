@@ -64,8 +64,11 @@ export function RemoteAccessPanel() {
   if (dev) {
     return (
       <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
-        Remote access belongs to the installed release. This dev instance listens on 127.0.0.1 only, so there is nothing
-        here to switch on — and nothing it could expose.
+        Remote access belongs to the installed release — the switch, the credentials and the firewall button are all
+        its, and there is nothing here to turn on.{' '}
+        {remote
+          ? 'This dev instance was started with --host, which is the one thing that skips that gate: you are reading this from another machine, and you still had to sign in to do it.'
+          : 'This dev instance listens on 127.0.0.1 unless it is started with --host (dev.ps1 -Remote), which skips the gate rather than exercising it.'}
       </p>
     );
   }

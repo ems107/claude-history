@@ -732,17 +732,22 @@ export function SessionViewPage() {
    * The pane above it already clips ([overflow-hidden]), so there is nothing to
    * hide it with. Its height is measured rather than assumed — it is one row or
    * five, depending on `more`.
+   *
+   * A callback ref and not a ref object, for the reason `useFollowBottom` gives
+   * about its own three: this page renders a loading state first, so the element
+   * appears a render after the effects are armed — a ref object filled in
+   * silently leaves an observer that never observed anything, and a header
+   * height of 0, which is a fold that folds nothing.
    */
-  const headerBox = useRef<HTMLDivElement>(null);
+  const [headerBox, setHeaderBox] = useState<HTMLDivElement | null>(null);
   const [headerHeight, setHeaderHeight] = useState(0);
   useEffect(() => {
-    const el = headerBox.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setHeaderHeight(el.offsetHeight));
-    ro.observe(el);
-    setHeaderHeight(el.offsetHeight);
+    if (!headerBox) return;
+    const ro = new ResizeObserver(() => setHeaderHeight(headerBox.offsetHeight));
+    ro.observe(headerBox);
+    setHeaderHeight(headerBox.offsetHeight);
     return () => ro.disconnect();
-  }, []);
+  }, [headerBox]);
   const headerFold = useHideOnScroll(mobile);
   /**
    * The on-screen keyboard is up, which on a phone leaves about 90px of
@@ -1233,7 +1238,7 @@ export function SessionViewPage() {
             menus open downward INSIDE the box. */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <div
-            ref={headerBox}
+            ref={setHeaderBox}
             className={mobile ? 'shrink-0 transition-[margin-top] duration-200 ease-out' : 'shrink-0'}
             style={mobile && headerFold.hidden ? { marginTop: -headerHeight } : undefined}
             // Anything that opens while it is tucked away — the title editor,

@@ -116,6 +116,17 @@ const REVEAL_ABOVE_PX = 48;
 const HIDE_AFTER_PX = 40;
 /** And back UP to get it again. Smaller: asking for it should feel immediate. */
 const SHOW_AFTER_PX = 24;
+/**
+ * How long the tally ignores the scroller after folding or unfolding.
+ *
+ * **Folding the header makes the scroller taller, and a scroller pinned to the
+ * bottom answers that by moving.** That move is a scroll event, which the rule
+ * below reads as somebody scrolling, which folds or unfolds again: measured on
+ * the DT50 as a header oscillating around −8px for as long as the session
+ * stayed live. Longer than the 200ms transition, so what is ignored is the
+ * whole of the movement the fold itself caused.
+ */
+const SETTLE_MS = 350;
 
 /**
  * The header steps aside while you read downwards, and comes back the moment
@@ -144,15 +155,26 @@ export function useHideOnScroll(active: boolean): {
   const [hidden, setHidden] = useState(false);
   const lastY = useRef(0);
   const run = useRef(0);
+  /** Until when the scroller is the fold's own doing rather than a reader's. */
+  const settled = useRef(0);
   useEffect(() => {
     if (!active) setHidden(false);
   }, [active]);
+  useEffect(() => {
+    settled.current = Date.now() + SETTLE_MS;
+  }, [hidden]);
   const onScroll = useCallback(
     (e: { currentTarget: HTMLElement }) => {
       const y = e.currentTarget.scrollTop;
       const dy = y - lastY.current;
       lastY.current = y;
       if (!active) return;
+      // Still settling after the last change of mind: the movement being
+      // reported is the one the fold made, so it decides nothing.
+      if (Date.now() < settled.current) {
+        run.current = 0;
+        return;
+      }
       if (y <= REVEAL_ABOVE_PX) {
         run.current = 0;
         setHidden(false);
@@ -298,11 +320,43 @@ if (typeof document !== 'undefined') {
   // grew, and the system Back stepped over it every time.
   document.addEventListener('click', mark, true);
   document.addEventListener('keyup', mark, true);
+  // One listener for the life of the page, rather than one attached while
+  // layers are open. It has to outlive the stack, because the stack going empty
+  // is exactly when this module takes a marker off with `history.back()` — and
+  // that press has to be swallowed rather than acted on.
+  window.addEventListener('popstate', popTopSheet);
 }
 
+/**
+ * Pops this module caused itself, which must dismiss nothing.
+ *
+ * A layer closed by its own ✕ takes its marker off with `history.back()`, and
+ * that fires `popstate` like any other. Without this the press we made
+ * ourselves would close the layer UNDERNEATH — the inspector vanishing because
+ * the menu on top of it was tidying up after itself.
+ */
+let selfPops = 0;
+
 function popTopSheet() {
-  const top = sheetStack.pop();
-  top?.dismiss();
+  if (selfPops > 0) {
+    selfPops--;
+    return;
+  }
+  sheetStack.pop()?.dismiss();
+  // Layers are still open below, and the entry we have landed on is the marker
+  // of the innermost of them. Nothing to tidy.
+  if (sheetStack.length > 0) return;
+  // Nothing left to close, and we are standing on a marker no layer owns — one
+  // left buried when a layer opened in the same gesture another closed in,
+  // which is what tapping a panel inside the session sheet does. It would be a
+  // press that appears to do nothing, so it is spent now instead; the entry
+  // underneath carries the same URL by construction, so nothing on screen
+  // changes either way.
+  const now = window.history.state as { chSheet?: string } | null;
+  if (now?.chSheet) {
+    selfPops++;
+    window.history.back();
+  }
 }
 
 export function useBackDismiss(active: boolean, onDismiss: () => void): void {
@@ -330,7 +384,6 @@ export function useBackDismiss(active: boolean, onDismiss: () => void): void {
       const under = window.history.state as Record<string, unknown> | null;
       window.history.pushState({ ...under, chSheet: key }, '');
       sheetStack.push(entry);
-      window.addEventListener('popstate', popTopSheet);
       stopWaiting();
     };
 
@@ -356,15 +409,26 @@ export function useBackDismiss(active: boolean, onDismiss: () => void): void {
       stopWaiting();
       if (!pushed) return;
       const at = sheetStack.indexOf(entry);
-      const wasTop = at === sheetStack.length - 1;
       if (at !== -1) sheetStack.splice(at, 1);
-      if (sheetStack.length === 0) window.removeEventListener('popstate', popTopSheet);
-      // Closed by its own control rather than by Back: the marker is still the
-      // entry we stand on, so take it off. Not if something has pushed on top of
-      // it — going back would undo that navigation — and not if this was not the
-      // top layer, which the unwinding order makes unreachable anyway.
-      const now = window.history.state as { chSheet?: string } | null;
-      if (wasTop && now?.chSheet === key) window.history.back();
+      /**
+       * Closed by its own control rather than by Back: the marker is still the
+       * entry we stand on, so take it off. Not if something has pushed on top of
+       * it — going back would undo that navigation.
+       *
+       * **A task later, and that is not tidiness.** A layer can open in the very
+       * gesture that closes this one — tapping a panel in the session sheet
+       * closes the sheet and opens the panel — and the new layer pushes its
+       * marker AFTER this cleanup runs, on top of ours. Taking ours off then
+       * would take theirs instead, and the panel would open and vanish. Read a
+       * task later, the state says whether that happened: if it is no longer
+       * our key, our marker is buried and is left alone.
+       */
+      setTimeout(() => {
+        const now = window.history.state as { chSheet?: string } | null;
+        if (now?.chSheet !== key) return;
+        selfPops++;
+        window.history.back();
+      }, 0);
     };
   }, [mobile, active]);
 }

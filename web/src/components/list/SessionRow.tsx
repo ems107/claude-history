@@ -86,7 +86,10 @@ function RowContent({
 
   return (
     <>
-      <div className="min-w-0 flex-1">
+      {/* Clipped, so nothing in here can be painted over the dates on
+          its right. A project whose name is a temp-folder path is 700px of
+          unshrinkable tag, and without this it simply ran across them. */}
+      <div className="min-w-0 flex-1 overflow-hidden">
         <div className="flex items-center gap-2">
           <span className="contents max-md:hidden">
             <ProjectTag
@@ -136,7 +139,7 @@ function RowContent({
             {session.pinned ? '★' : '☆'}
           </button>
         </div>
-        <div className="mt-1 flex items-center gap-3 text-xs text-[var(--text-dim)] max-md:flex-wrap max-md:gap-x-2 max-md:gap-y-1">
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[var(--text-dim)] max-md:gap-x-2">
           <span className="hidden max-md:contents">
             <ProjectTag
               name={session.projectName}
@@ -213,7 +216,7 @@ export function SessionRow({
 
   if (editing) {
     return (
-      <div className="flex h-full items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-hover)] px-4 max-md:h-auto max-md:min-h-20 max-md:flex-wrap max-md:content-center max-md:gap-2 max-md:px-3 max-md:py-2">
+      <div className="flex min-h-16 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-hover)] px-4 max-md:min-h-20 max-md:flex-wrap max-md:content-center max-md:gap-2 max-md:px-3 max-md:py-2">
         <ProjectTag name={session.projectName} path={session.projectPath} color={color} />
         <input
           autoFocus
@@ -257,7 +260,12 @@ export function SessionRow({
   return (
     <Link
       to={`/session/${session.id}`}
-      className="group flex h-full items-center gap-3 border-b border-[var(--border)] px-4 hover:bg-[var(--bg-hover)] max-md:h-auto max-md:min-h-20 max-md:gap-2 max-md:px-3 max-md:py-2"
+      // `min-h` rather than `h-full`: the virtualizer measures these rather
+      // than telling them a height, so there is no longer a box for a
+      // percentage to resolve against. 64 is the height the desktop list has
+      // always drawn, and it is now the floor rather than the ceiling — which
+      // is what lets a row that has to wrap say so.
+      className="group flex min-h-16 items-center gap-3 border-b border-[var(--border)] px-4 hover:bg-[var(--bg-hover)] max-md:min-h-20 max-md:gap-2 max-md:px-3 max-md:py-2"
     >
       <RowContent
         session={session}

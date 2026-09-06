@@ -52,7 +52,7 @@ export function SystemArea() {
         id="updates"
         master="updateAutoCheck"
         masterHint="A small conditional request to the GitHub releases API — one of this app's only two automatic network calls."
-        offNote="Nothing is checked and nothing is offered. The Check now button in the header still works whenever you press it."
+        offNote="Nothing is checked and nothing is offered. The button below still opens the updates window, and checks whenever you ask it to."
       >
         <NumberField
           field="updateIntervalMinutes"

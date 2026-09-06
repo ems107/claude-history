@@ -35,15 +35,18 @@ const ROW_HEIGHT = 64;
  * The same row on a phone, where it is three lines instead of one: the title,
  * the metadata wrapped under it, and the badges when there are any.
  *
- * A GUESS rather than a height, and the difference matters. Rows on a phone are
- * MEASURED (`virtualizer.measureElement`, mobile only), because the tallest of
- * them — a long project name, five metadata items and two badges — is half
- * again the shortest, and a fixed height that fits the tallest would spend that
- * difference on every ordinary row. On a screen that shows four of them at a
- * time, one wasted row in four is a quarter of the list.
+ * Both of these are GUESSES rather than heights, and the difference matters:
+ * **every row is measured** (`virtualizer.measureElement`), because a row's
+ * height is decided by how much of it wraps, and that is decided by the width.
+ * At 360px the tallest — a long project name, five metadata items and two
+ * badges — is half again the shortest. At 1000px, which is this phone held
+ * sideways, a desktop row wraps to two lines and overflowed the 64 it was
+ * being told to be: rows drawn on top of each other. Above about 1200 nothing
+ * wraps and the measurement comes back as exactly the estimate, so the wide
+ * desktop pays a layout read per visible row and changes by nothing.
  *
- * The desktop keeps its fixed 64: every row there is one line, measuring would
- * find exactly that, and it would pay a layout read per row to learn it.
+ * The estimate still matters — it is what the scrollbar is sized from before a
+ * row has been drawn — which is why there are two of them.
  */
 const ROW_HEIGHT_MOBILE = 88;
 const HEADER_HEIGHT = 30;
@@ -452,20 +455,20 @@ export function SessionListPage() {
                 return (
                   <div
                     key={row.id}
-                    // Measured on a phone and told on a desktop — see
-                    // ROW_HEIGHT_MOBILE. `data-index` is what the measurer reads
-                    // to know which row it just measured, and the height has to
-                    // be absent for there to be anything to measure.
+                    // Measured, always — see ROW_HEIGHT_MOBILE. `data-index` is
+                    // what the measurer reads to know which row it just
+                    // measured, and there must be no height on the box for
+                    // there to be anything to measure.
                     data-index={vi.index}
-                    ref={mobile ? virtualizer.measureElement : undefined}
+                    ref={virtualizer.measureElement}
                     className={`absolute top-0 left-0 w-full ${vi.index === selected ? 'bg-[var(--bg-hover)]' : ''}`}
-                    style={{
-                      height: mobile ? undefined : vi.size,
-                      transform: `translateY(${vi.start}px)`,
-                    }}
+                    style={{ transform: `translateY(${vi.start}px)` }}
                   >
                     {row.kind === 'header' ? (
-                      <div className="flex h-full items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-raised)] px-4 text-xs font-semibold tracking-wide text-[var(--text-dim)] uppercase max-md:h-auto max-md:min-h-8 max-md:px-3 max-md:py-1.5">
+                      // `min-h` and not `h-full`: the box around this no longer
+                      // carries a height for a percentage to resolve against,
+                      // which is what makes it measurable.
+                      <div className="flex min-h-[30px] items-center gap-2 border-b border-[var(--border)] bg-[var(--bg-raised)] px-4 text-xs font-semibold tracking-wide text-[var(--text-dim)] uppercase max-md:min-h-8 max-md:px-3 max-md:py-1.5">
                         {row.color && (
                           <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: row.color }} />
                         )}
