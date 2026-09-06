@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { OrderGroup, OrderState } from '../../lib/order.ts';
 import { useBackDismiss } from '../../lib/mobile.ts';
+import { controlRow } from '../controlClass.ts';
 import { Choice, FunnelIcon, Sheet, SheetHeading, SortIcon, SquareButton } from './mobileBar.tsx';
 import { SearchBox } from './SearchBox.tsx';
 
@@ -72,7 +73,7 @@ export function MobileToolbar({
     <>
       <div className="border-b border-[var(--border)] px-3 pt-2 pb-2">
         <h1 className="mb-1.5 text-sm font-semibold">{title}</h1>
-        <div className="flex items-center gap-2">
+        <div className={controlRow}>
           <SearchBox value={q} onChange={onQ} placeholder={placeholder} />
           {filters.length > 0 && (
             <SquareButton label="Filters" count={active} active={filtering} onClick={() => setFiltering(true)}>

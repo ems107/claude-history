@@ -74,6 +74,17 @@ export function squareClass(active = false): string {
 }
 
 /**
+ * A row of those, with the one gap the app uses between controls.
+ *
+ * It was 6px in the app header and 8px everywhere else, which is invisible
+ * until the two rows are stacked — the header above the list's toolbar — and
+ * then it is the only thing you can see. 8px, because it is what the majority
+ * of the rows already were and because at 40px squares a 6px gap reads as a
+ * mistake rather than as tightness.
+ */
+export const controlRow = 'flex items-center gap-2';
+
+/**
  * The size an icon is drawn at inside one of those. 14px reads well beside a
  * label on a desktop and is lost in the middle of a 40px square.
  */

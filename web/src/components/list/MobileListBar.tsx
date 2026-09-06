@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FilterState, GroupMode, SortField } from '../../lib/filters.ts';
 import { useBackDismiss } from '../../lib/mobile.ts';
+import { controlRow } from '../controlClass.ts';
 import { Choice, FunnelIcon, Sheet, SheetHeading, SlidersIcon, SortIcon, SquareButton } from './mobileBar.tsx';
 import { SearchBox } from './SearchBox.tsx';
 
@@ -76,7 +77,7 @@ export function MobileListBar({
 
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+      <div className={`${controlRow} border-b border-[var(--border)] px-3 py-2`}>
         <SearchBox
           value={q}
           onChange={onQ}

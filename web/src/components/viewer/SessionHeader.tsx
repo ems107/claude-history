@@ -6,6 +6,7 @@ import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
 import { entrypointLabel, formatDateTimeFull, shortModel } from '../../lib/format.ts';
+import { controlRow } from '../controlClass.ts';
 import { Badge, SessionBadges } from '../list/Badges.tsx';
 import { ProjectTag } from '../list/ProjectTag.tsx';
 import { SessionMenu } from './SessionActions.tsx';
@@ -274,7 +275,7 @@ export function SessionHeader({
           <SessionBadges session={s} omitPr omitNews live={live} />
         </span>
         <span className="flex-1" />
-        <span className="flex shrink-0 items-center gap-2">
+        <span className={`shrink-0 ${controlRow}`}>
           {/* Both are sections of the sheet on a phone ([menuSections]). */}
           <span className="flex items-center gap-2 max-md:hidden">{actions}</span>
           <SessionMenu

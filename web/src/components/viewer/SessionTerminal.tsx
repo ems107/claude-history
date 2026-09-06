@@ -131,6 +131,73 @@ const SHIFTED: Record<string, string> = {
  * sequence is not what a bar like this is for.
  */
 /**
+ * The font xterm is asked for, in one place: the terminal is built from it and
+ * [canDraw] has to ask about the same one.
+ *
+ * It is not taste. The CLI draws its logo and its panels out of block and
+ * box-drawing characters, and those only line up in a font whose cell the
+ * glyphs were cut for.
+ */
+const TERMINAL_FONT = "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', monospace";
+
+/**
+ * Does this browser have a glyph for `ch`, or would it draw a box?
+ *
+ * Asked rather than assumed, because the answer is per device and the wrong
+ * guess is bad in both directions: substituting on a machine that has the glyph
+ * would be a downgrade nobody asked for, and not substituting on one that does
+ * not leaves the CLI's mode line reading `□□ accept edits on`.
+ *
+ * A width comparison cannot answer it — the whole point of a monospace font is
+ * that a box and a letter are the same width — so it is the PIXELS: draw the
+ * character, draw a private-use codepoint that certainly has no glyph, and see
+ * whether they came out the same. Two different private-use codepoints have to
+ * agree first, or "what tofu looks like" is not a stable thing to compare
+ * against and the test means nothing.
+ */
+function canDraw(ch: string): boolean {
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const g = canvas.getContext('2d');
+  if (!g) return true; // Cannot tell, so change nothing.
+  const paint = (s: string): string => {
+    g.clearRect(0, 0, 32, 32);
+    g.font = `24px ${TERMINAL_FONT}`;
+    g.textBaseline = 'top';
+    g.fillStyle = '#fff';
+    g.fillText(s, 2, 2);
+    return canvas.toDataURL();
+  };
+  const tofu = paint('\uE000');
+  if (paint('\uE123') !== tofu) return true;
+  return paint(ch) !== tofu;
+}
+
+/**
+ * The glyphs a device may not have, and the closest ones it will.
+ *
+ * Four characters, and they are the ones Claude Code puts in front of its own
+ * mode line: `⏵⏵ accept edits on`. **No font on the check device has
+ * U+23F4-U+23F7** — not the monospace one, not the symbol ones, not the system
+ * fallback — so what a phone drew there was two boxes. The small triangles are
+ * the same shapes a size down, they are in every Android font, and they carry
+ * no emoji presentation to colour them in.
+ *
+ * This is a FONT fallback with nowhere to put a font, and it is applied to the
+ * terminal's output only where [canDraw] says the real glyph is missing. Every
+ * one of these is above U+007F, so it can never be part of an escape sequence
+ * and rewriting it cannot corrupt the stream.
+ */
+const MISSING_GLYPHS = /[\u23F4-\u23F7]/g;
+const INSTEAD: Record<string, string> = {
+  ['\u23F4']: '\u25C2', // black medium left-pointing triangle -> small
+  ['\u23F5']: '\u25B8', // right
+  ['\u23F6']: '\u25B4', // up
+  ['\u23F7']: '\u25BE', // down
+};
+
+/**
  * Is this `onData` really a KEY?
  *
  * Not everything that leaves xterm is one. With focus tracking on it reports
@@ -555,7 +622,7 @@ export function SessionTerminal({
       // box-drawing characters, and those only line up in a font whose cell the
       // glyphs were cut for. `customGlyphs` (on by default) draws the box rules
       // geometrically whatever the font does, which is the other half of it.
-      fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', monospace",
+      fontFamily: TERMINAL_FONT,
       // The GETTER, not the subscribed value, and that is load-bearing: this
       // effect's cleanup disposes the terminal, so a size in its dependency
       // list would tear the whole thing down and build it again on every press
@@ -727,12 +794,15 @@ export function SessionTerminal({
     socket.binaryType = 'arraybuffer';
 
     const decoder = new TextDecoder();
+    // Asked once per socket rather than per chunk: it paints three canvases,
+    // and the answer cannot change while the page is open.
+    const substitute = !canDraw('\u23F5');
     socket.onmessage = (event) => {
       if (typeof event.data !== 'string') {
         // PTY output. Binary because it is 99% of the traffic and wrapping it
         // in JSON would cost a parse per keystroke echoed back.
         const text = decoder.decode(event.data as ArrayBuffer, { stream: true });
-        term.write(text);
+        term.write(substitute ? text.replace(MISSING_GLYPHS, (ch) => INSTEAD[ch]) : text);
         return;
       }
       try {

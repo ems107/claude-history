@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { ActiveSessionsGuardProvider } from './components/ActiveSessionsDialog.tsx';
 import { Brandmark } from './components/Brandmark.tsx';
+import { controlRow } from './components/controlClass.ts';
 import { GearIcon } from './components/icons.tsx';
 import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
@@ -227,7 +228,7 @@ export function App() {
           <NavItem to="/plans" label="Plans" />
           <NavItem to="/stats" label="Stats" />
         </nav>
-        <span className="ml-auto flex items-center gap-2 max-md:gap-1.5">
+        <span className={`ml-auto ${controlRow}`}>
           {/* Upright bars on a phone, the full pills above 48rem — one widget,
               swapped inside itself. */}
           <UsageWidget />
