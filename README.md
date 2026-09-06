@@ -39,7 +39,7 @@ Logging off stops the server with your session; the next logon starts it again a
 
 The server checks the GitHub releases feed on start and every 10 minutes — a tiny conditional GET (ETag) against `api.github.com`, and one of the app's **only two automatic network calls** (the other is the subscription-usage read; both switchable off in Settings). Nothing is ever downloaded or installed without your confirmation.
 
-When newer releases exist, the upgrade button in the header shows how many. Clicking it opens a popup listing **every version newer than yours**, newest first, each with its release notes — so you see the whole set of changes, not just the last one — and you pick which to install (the newest is preselected). Press **Update** to apply, or **Check now** to poll on demand. The update then:
+When newer releases exist, the upgrade button in the header shows how many. Clicking it opens a window listing **every version newer than yours**, newest first, each with its release notes — so you see the whole set of changes, not just the last one — and you pick which to install (the newest is preselected). Press **Update** to apply, or **Check now** to poll on demand. **Settings → System → Updates** opens the same window whenever you want it, which is the way in when there is nothing waiting and the header's button is not drawn. The update then:
 
 1. downloads the release zip and **verifies its SHA-256** against the release's `checksums.txt`;
 2. extracts the new version into `versions\vX.Y.Z\` next to the current one;
@@ -67,7 +67,9 @@ That makes remote access three steps in the panel instead of one. The credential
 
 What guards the port is not the bind but the session check: **a request from anywhere other than this machine gets nothing until it signs in** — not the session list, not the version, not the paths in Settings. A request from this machine never asks for a password, exactly as before.
 
-A few things are refused over the network rather than half-done. The greyed-out button and the 409 behind it give the same reason, because they read it from the same place:
+**On a phone it is a phone app.** Below 768px the frame is rebuilt around a thumb: the destinations move to a bar along the bottom, the list's toolbar becomes a search box and three buttons, Settings is a list you pick an area from, and inside a session the title row keeps a name and one ⋮ that holds everything else — find, the panels, how the conversation is drawn, what can be done with the session — while the header steps aside as you read down and comes back as you scroll up. The embedded terminal fills the screen with a row of the keys a CLI needs — Esc, Ctrl, Alt, Shift, Tab, Paste, the arrows, ^C and the punctuation a soft keyboard buries — and scrolls under a finger; Shift+Tab from there cycles Claude Code's own modes, which a phone keyboard cannot send at all. Android's Back closes whatever is on top rather than leaving the page, and the app can be added to the home screen. Nothing above 768px changes.
+
+A few things are refused over the network rather than half-done. On a desktop the button is drawn greyed with the reason beside it — that is how you tell which of the two browsers you are in — and on a phone it is not drawn at all, since a phone is never the machine and the apology would be permanent. What is left is whatever still works from there: copying the `claude --resume` command instead of running it, typing a path instead of browsing for one. The greyed-out button and the 409 behind it give the same reason, because they read it from the same place:
 
 | Refused when remote | Why |
 | --- | --- |

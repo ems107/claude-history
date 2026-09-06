@@ -61,8 +61,12 @@ export function ContextSnapshotPanel({ snapshot }: { snapshot: ContextSnapshot }
   );
 
   const Row = ({ label, tokens, pct, dim }: { label: string; tokens: number; pct: number; dim?: boolean }) => (
-    <div className="grid grid-cols-[10rem_1fr_5rem_3.5rem] items-center gap-2 py-0.5">
-      <span className={dim ? 'text-[var(--text-dim)]' : ''}>{label}</span>
+    // 10rem + 5rem + 3.5rem + three gaps is 320px before the bar has any width
+    // at all, and a bubble on a phone is 292. So on a phone the label takes the
+    // line and the bar, the count and the share share the one under it — the
+    // same four facts in the same order, folded rather than dropped.
+    <div className="grid grid-cols-[10rem_1fr_5rem_3.5rem] items-center gap-2 py-0.5 max-md:grid-cols-[1fr_4rem_3rem] max-md:gap-x-1.5 max-md:py-1">
+      <span className={`max-md:col-span-3 max-md:truncate ${dim ? 'text-[var(--text-dim)]' : ''}`}>{label}</span>
       <Bar tokens={tokens} dim={dim} />
       <span className="text-right font-mono tabular-nums">{fmt(tokens)}</span>
       <span className="text-right font-mono text-[var(--text-dim)] tabular-nums">{pct}%</span>

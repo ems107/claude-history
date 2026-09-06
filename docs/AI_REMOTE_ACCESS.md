@@ -204,7 +204,9 @@ One fact keeps the risk in proportion: every rule this app actually creates or d
 
 ## Trying it without publishing a release
 
-`.\preview.ps1` — a third instance, port 7435, `%LOCALAPPDATA%\claude-history-preview`, run **without** `--dev-instance` so it is subject to exactly the gate a release is. It exists because `dev.ps1` structurally cannot test this: a dev instance is loopback-only, so there is no remote request to make.
+`.\preview.ps1` — a third instance, port 7435, `%LOCALAPPDATA%\claude-history-preview`, run **without** `--dev-instance` so it is subject to exactly the gate a release is. It exists because the gate is what has to be tested, and a dev instance never meets it: `core/bind.ts` answers `dev-instance` before it asks the firewall anything.
+
+**A dev instance CAN be reached from another machine, and that is a different claim.** `.\dev.ps1 -Remote` launches it with `--host 0.0.0.0`, the same escape hatch preview offers, so a phone on the LAN can use the code being written without cutting a release. What that skips is the GATE — nothing consults the firewall, so the port still needs an inbound rule of its own before anything arrives, and Windows may ask about the bind. What it does NOT skip is the trust model: `isLocalRequest` reads the socket address and knows nothing about dev instances, so that browser is remote exactly as it is on a release, and gets 403 or 401 until the switch is on, credentials are set and it has signed in. The Remote access panel is not drawn on a dev instance, so those two are set through the API — the recipe is in [AI_TESTING.md](AI_TESTING.md#reaching-the-dev-instance-from-a-phone).
 
 Being subject to the gate means preview binds loopback too until its own rule exists, which is the point when the gate itself is what is being tested. To exercise the remote path without a rule, pass `--host 0.0.0.0` by hand — the one escape hatch, and the one thing that can still make Windows ask.
 

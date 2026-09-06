@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import hljs from 'highlight.js/lib/common';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { type FileRef, isImagePath, languageForPath, refBasename } from '../../lib/fileRefs.ts';
 import { formatBytes, formatDateTime } from '../../lib/format.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
@@ -123,6 +123,9 @@ export function FileViewerPanel({
   // panel itself works from anywhere — the server reads the bytes and sends
   // them — so this greys out three buttons and leaves the reading half alone.
   const handOff = useLocalOnly('openFile');
+  // Reading the file works from anywhere — the server sends the bytes — so
+  // only the three hand-offs go, and Copy path and Copy contents stay.
+  const hideLocal = useHideLocalOnly();
   const canOpen = !!data?.exists && !data.error && !handOff.disabled;
   const openWhy =
     handOff.reason ??
@@ -229,7 +232,7 @@ export function FileViewerPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 border-b border-[var(--border)] px-4 py-1.5">
-        {data?.isDirectory ? (
+        {hideLocal ? null : data?.isDirectory ? (
           <button
             type="button"
             onClick={() => open('folder')}

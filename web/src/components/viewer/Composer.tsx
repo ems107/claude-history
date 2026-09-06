@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { shortModel } from '../../lib/format.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
 import { cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
 import { BlockedBar } from './BlockedBar.tsx';
 import { PILL_CORNER_PX } from './FollowBottom.tsx';
@@ -50,7 +51,7 @@ function modelLabel(m: ChatModelInfo): string {
  * looks nothing like the rest of the app — the caret is drawn alongside instead.
  */
 const chip =
-  'cursor-pointer appearance-none rounded-md bg-transparent py-0.5 pr-4 pl-1.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent';
+  'cursor-pointer appearance-none rounded-md bg-transparent py-0.5 pr-4 pl-1.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent max-md:min-h-9 max-md:rounded-lg max-md:border max-md:border-[var(--border)] max-md:pr-6 max-md:pl-2.5 max-md:text-xs';
 
 /**
  * The process is alive between turns — that is what makes the second prompt
@@ -117,7 +118,7 @@ function Picker({
           </option>
         ))}
       </select>
-      <span aria-hidden className="pointer-events-none absolute right-1 text-[7px] text-[var(--text-dim)]">
+      <span aria-hidden className="pointer-events-none absolute right-1 text-[7px] text-[var(--text-dim)] max-md:right-2 max-md:text-[9px]">
         ▼
       </span>
     </span>
@@ -187,6 +188,9 @@ export function Composer({
   lastMode?: ChatPermissionMode | null;
 }) {
   const queryClient = useQueryClient();
+  // A phone, where Enter is a newline and Send is the only way out. See the
+  // textarea's own `onKeyDown`.
+  const mobile = useIsMobile();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [answering, setAnswering] = useState(false);
@@ -381,7 +385,7 @@ export function Composer({
                   setText(`/${name} `);
                   box.current?.focus();
                 }}
-                className="block w-full px-3 py-1 text-left font-mono text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+                className="block w-full px-3 py-1 text-left font-mono text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:py-2.5 max-md:text-sm"
               >
                 /{name}
               </button>
@@ -417,15 +421,22 @@ export function Composer({
                 onKeyDown={(e) => {
                   // Enter sends, Shift+Enter is a newline. The page's own Escape
                   // handler already ignores TEXTAREA, so nothing else to guard.
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  //
+                  // **Not on a phone**, where it is the other way round and has
+                  // to be: a soft keyboard has no Shift+Enter, so with Enter
+                  // sending there was no way to type a second line at all —
+                  // every paragraph break sent the message instead. Enter is a
+                  // newline there and Send is the button, which is why that
+                  // button grows to a real target below.
+                  if (e.key === 'Enter' && !e.shiftKey && !mobile) {
                     e.preventDefault();
                     send();
                   }
                 }}
-                className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)]"
+                className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] max-md:px-3 max-md:text-base"
               />
               <div
-                className="flex items-center gap-1 px-2 pt-0.5 pb-2"
+                className="flex items-center gap-1 px-2 pt-0.5 pb-2 max-md:flex-wrap max-md:gap-1.5 max-md:px-2.5"
                 style={
                   columnWidth
                     ? { paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - var(--conv-box, 100vw) / 2 + ${columnWidth} / 2))` }
@@ -505,7 +516,7 @@ export function Composer({
                     onClick={stop}
                     title="Stop this turn"
                     aria-label="Stop this turn"
-                    className="flex size-7 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+                    className="flex size-7 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:size-11"
                   >
                     <span aria-hidden className="size-2.5 rounded-[2px] bg-current" />
                   </button>
@@ -516,13 +527,13 @@ export function Composer({
                     disabled={!canSend}
                     title="Send (Enter)"
                     aria-label="Send"
-                    className={`flex size-7 items-center justify-center rounded-full transition-colors ${
+                    className={`flex size-7 items-center justify-center rounded-full transition-colors max-md:size-11 ${
                       canSend
                         ? 'bg-[var(--accent)] text-[#1b1512] hover:brightness-110'
                         : 'bg-[var(--bg-hover)] text-[var(--text-dim)]'
                     }`}
                   >
-                    <svg aria-hidden viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg aria-hidden viewBox="0 0 16 16" className="size-4 max-md:size-6" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M8 13V3.5M8 3.5 4 7.5M8 3.5l4 4" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   </button>

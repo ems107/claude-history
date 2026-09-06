@@ -23,12 +23,23 @@ import { useSettingsPage } from './context.ts';
  * Labels rather than icons, deliberately. Six abstract categories cannot be told
  * apart at 16 px — `InspectorRail` gets away with icons because its six are
  * concrete nouns (files, agents, tokens) and these are not.
+ *
+ * **On a phone the rail is a SCREEN**, which is the shape a rail takes when
+ * there is no room beside the thing it navigates. It was a strip of chips
+ * scrolling sideways under the header, and a strip that scrolls is a list you
+ * cannot see the end of: six areas, of which two were off the right edge, above
+ * a panel whose own scroll then fought it. A list of six rows with their blurbs
+ * is the same six choices, readable at once, and the area gets the whole window
+ * once one is picked.
  */
 export function SettingsNav({
   area,
+  index = false,
 }: {
   /** Null on the changed-list, which is a route but not an area. */
   area: AreaId | null;
+  /** The phone's list-of-areas screen rather than the desktop's rail. */
+  index?: boolean;
 }) {
   const { settings, defaults, selected, select } = useSettingsPage();
   const [query, setQuery] = useState('');
@@ -36,6 +47,7 @@ export function SettingsNav({
   const totalChanged = [...counts.values()].reduce((a, b) => a + b, 0);
   const groups = area ? groupsOf(area) : [];
 
+  // Only the desktop rail draws these; the phone's list is `IndexRow`.
   const item = (a: Area) => {
     const changed = counts.get(a.id) ?? 0;
     const open = a.id === area;
@@ -73,6 +85,37 @@ export function SettingsNav({
     );
   };
 
+  if (index) {
+    return (
+      <nav className="h-full overflow-y-auto pt-3 pb-6">
+        <SearchBox query={query} setQuery={setQuery} />
+        {query.trim() ? (
+          <SearchResults query={query} clear={() => setQuery('')} />
+        ) : (
+          <div className="flex flex-col">
+            {AREAS.map((a) => (
+              <IndexRow
+                key={a.id}
+                to={`/settings/${a.id}`}
+                label={a.title}
+                hint={a.blurb}
+                count={counts.get(a.id) ?? 0}
+              />
+            ))}
+            {totalChanged > 0 && (
+              <IndexRow
+                to={`/settings/${CHANGED_VIEW.id}`}
+                label={CHANGED_VIEW.title}
+                hint={CHANGED_VIEW.blurb}
+                count={totalChanged}
+              />
+            )}
+          </div>
+        )}
+      </nav>
+    );
+  }
+
   return (
     <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] py-3">
       <SearchBox query={query} setQuery={setQuery} />
@@ -96,6 +139,31 @@ export function SettingsNav({
         </>
       )}
     </nav>
+  );
+}
+
+/** One area, as a row on the phone's list: what it is called and what is in it. */
+function IndexRow({ to, label, hint, count }: { to: string; label: string; hint: string; count: number }) {
+  return (
+    <NavLink
+      to={to}
+      className="flex min-h-16 items-center gap-3 border-b border-[var(--border)] px-4 py-2 active:bg-[var(--bg-hover)]"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2 text-sm text-[var(--text)]">
+          {label}
+          {count > 0 && (
+            <span className="rounded-full bg-[var(--accent)]/15 px-1.5 text-[10px] leading-4 text-[var(--accent)]">
+              {count} changed
+            </span>
+          )}
+        </span>
+        <span className="mt-0.5 block text-xs text-[var(--text-dim)]">{hint}</span>
+      </span>
+      <span aria-hidden className="shrink-0 text-[var(--text-dim)]">
+        ›
+      </span>
+    </NavLink>
   );
 }
 
@@ -162,7 +230,7 @@ function SearchBox({ query, setQuery }: { query: string; setQuery: (v: string) =
             e.currentTarget.blur();
           }
         }}
-        className="w-full rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
+        className="w-full rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-10 max-md:px-3 max-md:text-sm"
       />
     </div>
   );

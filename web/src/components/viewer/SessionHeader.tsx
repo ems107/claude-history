@@ -6,7 +6,7 @@ import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
 import { entrypointLabel, formatDateTimeFull, shortModel } from '../../lib/format.ts';
-import { listUrl } from '../../lib/listState.ts';
+import { controlRow } from '../controlClass.ts';
 import { Badge, SessionBadges } from '../list/Badges.tsx';
 import { ProjectTag } from '../list/ProjectTag.tsx';
 import { SessionMenu } from './SessionActions.tsx';
@@ -151,6 +151,7 @@ export function SessionHeader({
   draft,
   color,
   actions,
+  menuSections,
   live,
 }: {
   detail: SessionDetail;
@@ -171,6 +172,15 @@ export function SessionHeader({
    * where the title is.
    */
   actions?: import('react').ReactNode;
+  /**
+   * The same two, plus the panels, as sections of the phone's session sheet.
+   *
+   * On a phone the title row holds a name and one button, and everything else
+   * lives behind it — so these cannot be `actions` in a narrower shape: a
+   * popover trigger and a section of a sheet are different components of the
+   * same state, and the page builds both.
+   */
+  menuSections?: (close: () => void) => import('react').ReactNode;
 }) {
   const s = detail.summary;
   /**
@@ -201,16 +211,25 @@ export function SessionHeader({
     // this header is inside the box that narrows when a column opens beside the
     // session, so its facts row can rewrap — and whatever height it takes, the
     // scroller under it gives up.
-    <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2">
-      <div className="flex items-center gap-2">
-        <Link to={listUrl()} className="mr-1 shrink-0 text-[var(--text-dim)] hover:text-[var(--text)]" title="Back to list (Esc)">
-          ←
-        </Link>
+    <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2 max-md:px-3">
+      {/* On a phone: the name, and one button. Everything that used to sit
+          beside it — find, the view menu, the session's own actions and the
+          seven panels — is behind that button, because a title is what somebody
+          opens a session to see and the row was spending two thirds of itself on
+          controls used a few times each.
+          The ← went with them, from BOTH sizes. Escape has always been the way
+          out on a desktop and Back is the way out on a phone; the mark in the
+          app's own header goes to the list as well, and a glyph whose whole job
+          is duplicating the browser's own control is a glyph that had to justify
+          its 20px on every session ever opened. */}
+      <div className="flex items-center gap-2 max-md:gap-1.5">
         {/* `shrink`, which the list deliberately does not pass: this header can
             be squeezed to 320 px by a column opened beside the session, and a
             tag that held its full width there pushed the row's own controls out
             of the box — where the clip then ate them. */}
-        <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
+        <span className="contents max-md:hidden">
+          <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
+        </span>
         {draft ? (
           <h1 className="min-w-0 truncate text-base font-semibold text-[var(--text-dim)]" title={s.title}>
             {s.title}
@@ -235,7 +254,7 @@ export function SessionHeader({
             this size is exactly enough to look wrong. `gap-1` is the gap
             `SessionBadges` uses inside itself, so the mark below joins that row
             rather than sitting slightly apart from it. */}
-        <span className="flex shrink-0 items-center gap-1">
+        <span className="flex shrink-0 items-center gap-1 max-md:hidden">
           {/* Renamed: a STATE, so it belongs with the other states rather than in
               the menu that changes it — and wearing the same `Badge` the pin
               does, because the two are the same kind of thing and one component
@@ -256,13 +275,66 @@ export function SessionHeader({
           <SessionBadges session={s} omitPr omitNews live={live} />
         </span>
         <span className="flex-1" />
-        <span className="flex shrink-0 items-center gap-2">
-          {actions}
-          <SessionMenu detail={detail} draft={draft} onRename={() => setEditing(true)} />
+        <span className={`shrink-0 ${controlRow}`}>
+          {/* Both are sections of the sheet on a phone ([menuSections]). */}
+          <span className="flex items-center gap-2 max-md:hidden">{actions}</span>
+          <SessionMenu
+            detail={detail}
+            draft={draft}
+            onRename={() => setEditing(true)}
+            extra={menuSections}
+          />
         </span>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)]">
+      {/* The phone's second row, and it is always drawn: what this session IS.
+          `more` does not swap it for something else — it opens the rest of the
+          facts UNDERNEATH, so the tag and the badges stay where they were and
+          the header simply gets taller until `less` puts it back.
+          Above the facts row in the DOM rather than below it, which is what
+          makes that the reading order on a phone; on a desktop this row does not
+          exist and nothing has moved. */}
+      <div className="mt-1 hidden flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--text-dim)] max-md:flex">
+        {/* Capped, because a wrapped row does not shrink its items: a project
+            called `OrchardCore.DistribWebAPI_2` took the line on its own. */}
+        <span className="flex max-w-40 min-w-0">
+          <ProjectTag name={s.projectName} path={s.projectPath} color={color} shrink />
+        </span>
+        {s.titleSource === 'local' && (
+          <Badge
+            label="✎"
+            title={`Renamed locally — original title: “${s.originalTitle ?? ''}”`}
+            className="bg-amber-500/15 text-amber-400"
+          />
+        )}
+        <SessionBadges session={s} omitPr omitNews live={live} />
+        <span className="ml-auto" />
+        <button
+          type="button"
+          onClick={() =>
+            setDetails((v) => {
+              localStorage.setItem(KEY, String(!v));
+              return !v;
+            })
+          }
+          className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-1 ${
+            details ? 'text-[var(--accent)]' : ''
+          }`}
+        >
+          {details ? 'less' : 'more'}
+          <Chevron up={details} />
+        </button>
+      </div>
+
+      {/* Eleven facts, two of them full timestamps, wrapped at 360px: five
+          lines, which on a phone is most of what is left after the browser's own
+          bars. So a phone keeps them folded until `more` above asks for them —
+          the same row, in full, that a desktop never hides. */}
+      <div
+        className={`mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--text-dim)] max-md:gap-x-2.5 ${
+          details ? '' : 'max-md:hidden'
+        }`}
+      >
         {s.gitBranch && <span>⎇ {s.gitBranch}</span>}
         {s.model && <span className="font-mono">{shortModel(s.model)}</span>}
         {s.entrypoint && <span>{entrypointLabel(s.entrypoint)}</span>}
@@ -314,6 +386,7 @@ export function SessionHeader({
           </span>
         )}
         <span className="ml-auto" />
+        {/* The phone has its own, on the row above, and it is always there. */}
         <button
           type="button"
           onClick={() =>
@@ -322,7 +395,7 @@ export function SessionHeader({
               return !v;
             })
           }
-          className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] ${
+          className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:hidden ${
             details ? 'text-[var(--accent)]' : ''
           }`}
           title="The rest of what is known about this session"

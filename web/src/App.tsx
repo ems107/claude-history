@@ -1,18 +1,21 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { Link, NavLink, Route, Routes, useNavigate } from 'react-router';
+import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { ActiveSessionsGuardProvider } from './components/ActiveSessionsDialog.tsx';
 import { Brandmark } from './components/Brandmark.tsx';
+import { controlRow } from './components/controlClass.ts';
 import { GearIcon } from './components/icons.tsx';
 import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RemoteDisabledPage } from './pages/RemoteDisabledPage.tsx';
+import { MobileTabBar } from './components/MobileTabBar.tsx';
 import { NotificationsButton } from './components/NotificationsButton.tsx';
 import { NotificationToasts } from './components/NotificationToasts.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
+import { useIsMobile, useIsShort, useKeyboardInset } from './lib/mobile.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
 import { PlansPage } from './pages/PlansPage.tsx';
@@ -106,6 +109,24 @@ export function AppGate() {
 
 export function App() {
   useEvents();
+  // One listener for the whole app: how much of the window the on-screen
+  // keyboard is covering, published as `--kb-inset` for whatever has to sit
+  // above it. Nothing writes it on a desktop, where it stays 0.
+  useKeyboardInset();
+  /**
+   * A phone on its side, on a screen that is a detail rather than a place.
+   *
+   * 284px of window, and the app header, the session's own header and its panel
+   * strip were taking 62% of it before a word of conversation. The app header is
+   * the one of the three that says nothing about what is on screen — it is a
+   * mark, a badge and a menu — and the session under it already has its own way
+   * back. So on a short window it stands aside for the thing somebody turned the
+   * phone sideways to read. It is one Back away, on the list.
+   */
+  const mobile = useIsMobile();
+  const short = useIsShort();
+  const { pathname } = useLocation();
+  const bareDetail = mobile && short && (pathname.startsWith('/session/') || pathname === '/new');
   const navigate = useNavigate();
   // Same query the UpdateButton uses — deduped by TanStack, no extra request.
   const { data: update } = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });
@@ -125,7 +146,18 @@ export function App() {
   }, [dev]);
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2">
+      {/* The one row that had to give. It needs about 900px and a phone has
+          360, so the destinations and the gear go to the bottom bar and what is
+          left is this: who this is on the left, and on the right the three
+          readings — what Claude has spent, what is waiting, and whether there is
+          a new version. The last of those is drawn only when there IS one; the
+          rest of the time it is a button that answers a question nobody asks
+          from a phone, and Settings › Updates is where it is asked from. */}
+      <header
+        className={`flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1 ${
+          bareDetail ? 'hidden' : ''
+        }`}
+      >
         {/* Title and version share a baseline, so the small version text sits
             on the title's bottom edge instead of floating at its mid-height. */}
         <span className="flex items-baseline gap-2">
@@ -143,9 +175,9 @@ export function App() {
               e.preventDefault();
               navigate(listUrl()); // computed at click time: restores saved filters
             }}
-            className="flex items-baseline gap-1.5 text-lg font-semibold tracking-tight"
+            className="flex items-baseline gap-1.5 text-lg font-semibold tracking-tight max-md:gap-1 max-md:text-sm"
           >
-            <Brandmark className="h-5 w-auto shrink-0 self-center" />
+            <Brandmark className="h-5 w-auto shrink-0 self-center max-md:h-4" />
             <span>
               <span className="text-[var(--accent)]">claude</span> history
             </span>
@@ -172,7 +204,7 @@ export function App() {
             )
           )}
         </span>
-        <nav className="ml-4 flex items-center gap-1">
+        <nav className="ml-4 flex items-center gap-1 max-md:hidden">
           {/* Not a NavItem: everything else in this bar goes to a list of things
               that already exist, and this one makes something. The border says
               so before the label is read. */}
@@ -196,16 +228,25 @@ export function App() {
           <NavItem to="/plans" label="Plans" />
           <NavItem to="/stats" label="Stats" />
         </nav>
-        <span className="ml-auto flex items-center gap-2">
+        <span className={`ml-auto ${controlRow}`}>
+          {/* Upright bars on a phone, the full pills above 48rem — one widget,
+              swapped inside itself. */}
           <UsageWidget />
           <NotificationsButton />
-          <UpdateButton />
+          {/* A phone only ever reaches this app from another machine, so a
+              button whose whole job is "check, and tell me there is nothing" is
+              a button that is right 99 days out of 100. It appears when there is
+              something to install, and Settings › Updates opens the same window
+              the rest of the time. */}
+          <span className={update?.updateAvailable ? '' : 'max-md:hidden'}>
+            <UpdateButton />
+          </span>
           <NavLink
             to="/settings"
             title="Settings"
             aria-label="Settings"
             className={({ isActive }) =>
-              `cursor-pointer rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] ${
+              `inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:hidden ${
                 isActive ? 'text-[var(--accent)]' : 'text-[var(--text-dim)]'
               }`
             }
@@ -234,6 +275,7 @@ export function App() {
           <Route path="/logs" element={<LogsPage />} />
         </Routes>
       </main>
+      <MobileTabBar chatEnabled={chatEnabled} />
     </div>
   );
 }

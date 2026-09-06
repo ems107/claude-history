@@ -19,6 +19,17 @@ import { Sketch } from './Sketch.tsx';
  * (one tab each) and a tool the auto classifier would not approve, which is a
  * plain allow/deny over its own input.
  */
+/**
+ * The footer buttons, at a size a thumb can hit.
+ *
+ * These are the app's most consequential controls — approving a plan, allowing a
+ * tool — and at 360px they were 26px tall, crushed into one line beside a note
+ * field with a 160px floor. On a phone each takes a line of its own at full
+ * width: three of them stacked is more scrolling and no chance of approving a
+ * plan when you meant to send it back.
+ */
+const footerBtn = (cls: string) => `${cls} max-md:w-full max-md:py-3 max-md:text-sm`;
+
 export function QuestionPanel({
   question,
   onAnswer,
@@ -248,7 +259,7 @@ export function QuestionPanel({
                   {current.header}
                 </span>
               )}
-              <span className="text-sm text-[var(--text)]">{current.question}</span>
+              <span className="min-w-0 text-sm break-words text-[var(--text)]">{current.question}</span>
             </div>
             {/* Side by side once there is a sketch to put beside the list —
                 which is what Claude Code's own card does, and the only way
@@ -269,7 +280,7 @@ export function QuestionPanel({
                       // a list of labels with the drawings frozen elsewhere.
                       onMouseEnter={() => setFocused((prev) => ({ ...prev, [current.question]: o.label }))}
                       onFocus={() => setFocused((prev) => ({ ...prev, [current.question]: o.label }))}
-                      className={`block w-full rounded border px-2.5 py-1.5 text-left transition-colors ${
+                      className={`block w-full rounded border px-2.5 py-1.5 text-left transition-colors max-md:px-3 max-md:py-2.5 ${
                         on
                           ? 'border-[var(--accent-dim)] bg-[var(--accent)]/10'
                           : 'border-[var(--border)] hover:bg-[var(--bg-hover)]'
@@ -302,7 +313,7 @@ export function QuestionPanel({
                 value={other[current.question] ?? ''}
                 onChange={(e) => typeOther(current.question, e.target.value)}
                 placeholder="Or type your own answer…"
-                className={`w-full rounded border bg-[var(--bg)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] ${
+                className={`w-full rounded border bg-[var(--bg)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] max-md:min-h-11 max-md:px-3 ${
                   typing ? 'border-[var(--accent-dim)] bg-[var(--accent)]/10' : 'border-[var(--border)]'
                 }`}
               />
@@ -315,7 +326,7 @@ export function QuestionPanel({
                 value={notes[current.question] ?? ''}
                 onChange={(e) => setNotes((prev) => ({ ...prev, [current.question]: e.target.value }))}
                 placeholder="✎ A note on your answer…"
-                className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-amber-500/60"
+                className="w-full rounded border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-amber-500/60 max-md:min-h-11 max-md:px-3 max-md:text-sm"
               />
             </div>
             {current.multiSelect ? (
@@ -370,7 +381,7 @@ export function QuestionPanel({
           `userFeedback` — the very text the viewer later prints under
           "the user said". */}
       {isPlan ? (
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--accent-dim)]/40 px-3 py-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-[var(--accent-dim)]/40 px-3 py-1.5 max-md:gap-2 max-md:py-2.5">
           {/* Full width, above the row: the reason two of the three buttons are
               out has to be readable without hovering one of them. */}
           {comments.length > 0 && (
@@ -387,7 +398,7 @@ export function QuestionPanel({
             placeholder={
               comments.length > 0 ? 'Anything else? (sent with the comments)' : 'What should change? (sent back with the plan)'
             }
-            className="min-w-40 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)]"
+            className="min-w-40 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] max-md:w-full max-md:min-w-0 max-md:basis-full max-md:py-2.5 max-md:text-sm"
           />
           <button
             type="button"
@@ -398,7 +409,7 @@ export function QuestionPanel({
                 ? `Send the plan back with your note and ${String(comments.length)} comment${comments.length === 1 ? '' : 's'}.`
                 : 'Send the plan back for more work, with your note as the reason.'
             }
-            className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
+            className={footerBtn('rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40')}
           >
             Keep planning{comments.length > 0 ? ` · ${String(comments.length)} ✎` : ''}
           </button>
@@ -407,7 +418,7 @@ export function QuestionPanel({
             onClick={() => onPlanDecision('approve-manual')}
             disabled={busy || comments.length > 0}
             title={approveTitle ?? 'Approve the plan and ask before each change from here on.'}
-            className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
+            className={footerBtn('rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40')}
           >
             Approve · ask me
           </button>
@@ -416,28 +427,28 @@ export function QuestionPanel({
             onClick={() => onPlanDecision('approve-auto')}
             disabled={busy || comments.length > 0}
             title={approveTitle ?? 'Approve the plan and let Claude carry it out the way it normally works.'}
-            className="rounded border border-[var(--accent-dim)] px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
+            className={footerBtn('rounded border border-[var(--accent-dim)] px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent')}
           >
             {busy ? 'Sending…' : 'Approve · go ahead'}
           </button>
         </div>
       ) : (
-        <div className="flex items-center gap-1.5 border-t border-[var(--accent-dim)]/40 px-3 py-1.5">
+        <div className="flex items-center gap-1.5 border-t border-[var(--accent-dim)]/40 px-3 py-1.5 max-md:flex-wrap max-md:gap-2 max-md:py-2.5">
           {items && items.length > 1 && active < items.length - 1 && (
             <button
               type="button"
               onClick={() => setActive((i) => i + 1)}
-              className="rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+              className={footerBtn('rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]')}
             >
               Next question →
             </button>
           )}
-          <span className="ml-auto" />
+          <span className="ml-auto max-md:basis-full" />
           <button
             type="button"
             onClick={onDecline}
             disabled={busy}
-            className="rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40"
+            className={footerBtn('rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] disabled:opacity-40')}
           >
             {items ? 'Decline' : 'Deny'}
           </button>
@@ -445,7 +456,7 @@ export function QuestionPanel({
             type="button"
             onClick={submit}
             disabled={busy || (!!items && !complete)}
-            className="rounded border border-[var(--accent-dim)] px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent"
+            className={footerBtn('rounded border border-[var(--accent-dim)] px-2 py-1 text-xs text-[var(--accent)] hover:bg-[var(--bg-hover)] disabled:opacity-40 disabled:hover:bg-transparent')}
           >
             {busy ? 'Sending…' : items ? 'Answer' : 'Allow'}
           </button>

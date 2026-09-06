@@ -10,7 +10,7 @@ import {
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
 import { useActiveSessions } from '../../api/useActiveSessions.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { actionClass } from '../controlClass.ts';
 import { AutoReloadStatus } from './AutoReloadStatus.tsx';
 import { useSettingsPage } from './context.ts';
@@ -42,6 +42,9 @@ export function ClaudeArea() {
   // from it: the server is what refuses, and its refusal is the dialog.
   const { data: active } = useActiveSessions();
   const browse = useLocalOnly('pickFolder');
+  // The BOX beside it still works — typing the path is the way in from a phone
+  // — so only the button that opens a dialog on the server's desktop goes.
+  const hideLocal = useHideLocalOnly();
   const [browsing, setBrowsing] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
   const usageOff = !s.usageWidget;
@@ -189,15 +192,17 @@ export function ClaudeArea() {
           disabled={reloadOff}
           hint={pickError ?? 'Claude Code needs a real working directory; a throwaway folder is the right one.'}
           after={
-            <button
-              type="button"
-              className={actionClass}
-              disabled={reloadOff || browsing || browse.disabled}
-              title={browse.reason ?? 'Opens the Windows folder browser on this machine'}
-              onClick={browseForFolder}
-            >
-              {browsing ? 'Browsing…' : 'Browse…'}
-            </button>
+            hideLocal ? null : (
+              <button
+                type="button"
+                className={actionClass}
+                disabled={reloadOff || browsing || browse.disabled}
+                title={browse.reason ?? 'Opens the Windows folder browser on this machine'}
+                onClick={browseForFolder}
+              >
+                {browsing ? 'Browsing…' : 'Browse…'}
+              </button>
+            )
           }
         />
         <ToggleField

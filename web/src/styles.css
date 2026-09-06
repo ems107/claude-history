@@ -1,6 +1,35 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/**
+ * The glyphs the embedded terminal needs and a device may not have.
+ *
+ * Claude Code decorates its own mode line with U+23F5, and no font on the
+ * Android device this app is checked against has U+23F4-U+23F7 — so a phone
+ * drew two empty boxes there. This is 5 KB of Noto Sans Symbols 2, kept to the
+ * two blocks where the hole is, and it goes at the END of the terminal's font
+ * stack: CSS fallback is per CHARACTER, so Cascadia Mono goes on drawing every
+ * glyph it has and this is reached only for the ones it does not.
+ *
+ * `unicode-range` is what keeps it from being consulted about anything else,
+ * and it is **one block and no more**. A range is a takeover: inside it this
+ * font wins over anything the system has, so a second block was drawing the
+ * turn bullet the CLI prints (U+25CF) in a shape nobody asked to change. One
+ * block, the one the hole is in.
+ *
+ * The range is wider than the 37 glyphs actually in the file, which is correct:
+ * a font selected by range but missing the glyph simply passes the character
+ * on down the stack.
+ *
+ * Provenance, the ranges and how to regenerate it: web/src/fonts/README.md.
+ */
+@font-face {
+  font-family: 'ch-terminal-symbols';
+  src: url('./fonts/terminal-symbols.woff2') format('woff2');
+  font-display: block;
+  unicode-range: U+2300-23FF;
+}
+
 /* Dark-first design. The app targets a dark UI by default. */
 :root {
   --bg: #0f1115;
@@ -293,14 +322,130 @@ body {
   border-color: color-mix(in srgb, var(--accent) 65%, transparent);
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* A styled scrollbar is a CLASSIC scrollbar: naming `::-webkit-scrollbar` at all
+   opts the whole app out of the overlay bars a touch device draws, and takes a
+   10 px gutter out of every scroller for good. On a 360 px screen that is 3 % of
+   the width, in each of the three or four scrollers that nest inside one
+   another. So the look is the desktop's, and a phone keeps the bars its own
+   platform gives it — which take no room and fade when nothing is moving. */
+@media (width >= 48rem) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a323e;
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }
-::-webkit-scrollbar-thumb {
-  background: #2a323e;
-  border-radius: 5px;
+
+/* ---------------------------------------------------------------------------
+   The phone.
+
+   One threshold for the whole app — `48rem`, which is Tailwind v4's own `md`,
+   written in the same units the `max-md:` variant compiles to so the two cannot
+   drift. `web/src/lib/mobile.ts` holds the same string for the components that
+   have to swap rather than restyle, and explains why it is a width rather than
+   a pointer type.
+
+   Nothing below reaches a desktop: every rule is inside the query, and
+   everything the markup adds for a phone is a `max-md:` variant.
+   --------------------------------------------------------------------------- */
+
+html {
+  /* Chrome on Android inflates the text of any block it decides is a column,
+     which in this app means a bubble at one size and a code block at another,
+     neither of them chosen. The viewport meta already tells it the real width,
+     so the guess is unwanted everywhere. */
+  -webkit-text-size-adjust: 100%;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+:root {
+  /* How much of the window the on-screen keyboard is covering. Written by
+     `useKeyboardInset`, and declared here so the `calc()`s that read it are
+     valid on the very first paint — and so it is 0 on every desktop, where
+     nothing ever writes it. */
+  --kb-inset: 0px;
+  /* The gesture bar at the foot of the screen, and 0 wherever there is none.
+     A separate quantity from the keyboard: a phone can be showing both. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/**
+ * Truncate from the START, so what survives is the END of the string.
+ *
+ * For a path, which is the only thing this is on: the last two segments say
+ * which project, the first six say which temp folder, and an ellipsis at the
+ * usual end throws away the half worth reading. "direction: rtl" moves the
+ * ellipsis to the left edge; "unicode-bidi: plaintext" takes the paragraph
+ * direction from the text itself, so a Latin path is still drawn left to right
+ * with its separators where they belong; "text-align: left" undoes the
+ * alignment the direction would otherwise bring with it. Pair it with
+ * Tailwind's own "truncate", which supplies the overflow and the ellipsis.
+ */
+.truncate-start {
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+}
+
+@media (width < 48rem) {
+  body {
+    /* Pull-to-refresh is a page reload, and this page holds an unsent prompt,
+       a scroll position and an open terminal. Nothing in the app scrolls the
+       document itself, so the only way to reach the gesture is by overscrolling
+       a conversation that has hit its top — which is to say, by accident. */
+    overscroll-behavior: none;
+  }
+
+  /* Something happened where the finger went down. The app draws its own hover
+     and active states, but none of them fire before the tap is resolved, and a
+     360 px screen full of small controls needs the acknowledgement more than a
+     desktop does. */
+  button,
+  a,
+  [role='button'],
+  summary,
+  label {
+    -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  /* The one thing that makes a conversation scroll sideways at 360px: a string
+     with nowhere to break in it. A path in a code span, a URL, a 60-character
+     identifier — at 900px they fit and nobody notices, at 360 they push the
+     whole scroller out. `anywhere` rather than `break-word` because these are
+     not words: breaking `PCCOM.Distrib.ModuloVentas.Application` mid-token is
+     exactly what a reader wants when the alternative is not seeing the end of
+     it at all. Only in prose, so nothing else in the app is touched. */
+  .prose :is(code, a) {
+    overflow-wrap: anywhere;
+  }
+
+  /* Text laid out verbatim — a prompt, a plan note, a finding, an injected
+     notice — keeps every line break its writer made and every unbreakable run
+     they typed. At 900px a 60-character path fits; at 292px it pushes the
+     bubble past the window and the whole conversation scrolls sideways.
+
+     Matched on the utility rather than on a component because CSS has no
+     selector for "is laid out pre-wrap", and a dozen places are: one rule beats
+     a dozen edits, and the thirteenth component added later is covered without
+     anybody remembering. The `~=` is an exact token match, so a variant like
+     `md:whitespace-pre-wrap` is not caught by accident, and <pre> is excluded
+     because those scroll on purpose. */
+  [class~='whitespace-pre-wrap']:not(pre) {
+    overflow-wrap: anywhere;
+  }
+
+  /* A table cannot be made narrow, so it is made scrollable. `display: block`
+     is what gives it a scroll container of its own; the alternative is the
+     table setting the width of the page. */
+  .prose table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }

@@ -220,7 +220,19 @@ function Chart({ index, jump }: { index: ContextIndex; jump: ((uuid: string) => 
     <div ref={wrap} className="relative h-[42vh] min-h-56 shrink-0">
       {size && innerW > 0 && innerH > 0 && (
         <>
-          <svg width={w} height={h} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className="block">
+          {/* Scrubbed rather than hovered on a phone: the curve reads a finger
+              going down, follows it along, and clears when it lifts. `touch-pan-y`
+              keeps the overlay's own vertical scroll working over the chart. */}
+          <svg
+            width={w}
+            height={h}
+            onPointerDown={onMove}
+            onPointerMove={onMove}
+            onPointerUp={(e) => e.pointerType !== 'mouse' && setHover(null)}
+            onPointerCancel={() => setHover(null)}
+            onPointerLeave={(e) => e.pointerType === 'mouse' && setHover(null)}
+            className="block touch-pan-y"
+          >
             {tokenTicks(max).map((t) => (
               <g key={t}>
                 <line x1={M.left} x2={M.left + innerW} y1={y(t)} y2={y(t)} stroke="var(--border)" strokeWidth="1" />

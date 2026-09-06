@@ -20,7 +20,7 @@ const base = {
  * workspace it wrote in, a fork for the agents, a graph for the lineage. Same
  * stroke and same grid as `components/icons.tsx`.
  */
-const ICONS: Record<PanelKey, () => import('react').ReactElement> = {
+export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> = {
   tokens: () => (
     <svg {...base}>
       <path d="M3 13V7" />
@@ -78,6 +78,12 @@ const ICONS: Record<PanelKey, () => import('react').ReactElement> = {
  * An item exists only if its panel has something in it, which is the rule the
  * six header buttons already followed: a session with no subagents never had a
  * `⑂ Subagents` button either. `Tokens` is the one that is always there.
+ *
+ * **Not drawn at all on a phone.** It was a strip of chips under the header
+ * there, and a strip that scrolls sideways is a list you cannot see the end of:
+ * with seven panels, two of them were always off the right edge. The same seven
+ * are a section of the session sheet instead ([SessionSheetSections]), where
+ * they are all visible at once and cost no permanent room.
  */
 export function InspectorRail({ inspector }: { inspector: InspectorState }) {
   return (
@@ -90,7 +96,7 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
     >
       {inspector.items.map((item) => {
         const active = inspector.open === item.key;
-        const Icon = ICONS[item.key];
+        const Icon = PANEL_ICONS[item.key];
         return (
           <button
             key={item.key}

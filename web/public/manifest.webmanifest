@@ -1,0 +1,16 @@
+{
+  "name": "Claude History",
+  "short_name": "claude history",
+  "description": "Every Claude Code conversation on this machine, in one place.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "maskable" }
+  ]
+}

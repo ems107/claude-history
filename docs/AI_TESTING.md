@@ -756,13 +756,65 @@ up as several failures at once rather than as a setting nobody notices is gone.
   label, in each of the four areas that have sub-items, with none of them
   truncating at the deeper indent.
 
+## The phone
+
+Everything here is about a real device at 360×720 CSS pixels. An emulated narrow window catches the layout faults and none of the others — no soft keyboard, no system Back button, no `@media (hover: hover)` behaving as a phone's does. [AI_MOBILE.md](AI_MOBILE.md) holds the rules these check.
+
+### Reaching the dev instance from a phone
+
+`.\dev.ps1 -Remote` runs it with `--host 0.0.0.0`. **This proves nothing about the bind gate** — `--host` is what skips it — so it is for trying the UI on a device, never for checks 30-36, which are `preview.ps1`'s. What it does NOT skip is the trust model: the phone is a remote browser exactly as it is on a release.
+
+Once, on a fresh dev data folder, with the server already up on loopback:
+
+1. `PUT /api/auth/credentials` with `{"username":…,"password":…}` (≥ 8 characters) from 127.0.0.1. Then `PUT /api/settings` with `{"remoteAccessEnabled":true}` — **in that order**: `setSettings` clamps the switch back to false when there are no credentials. `curl.exe` with `--data-binary "@file"`; PowerShell mangles inline JSON.
+2. `POST /api/firewall` from 127.0.0.1 — one UAC, and it makes `claude-history (port 7434)`, TCP inbound, profile **Private**. Without a rule nothing arrives however the server is bound. Check `Get-NetConnectionProfile` says Private for the adapter the phone can see.
+3. `pnpm build && .\dev.ps1 -Restart -Remote -NoBrowser`. It prints the LAN addresses and warns when the port has no rule.
+4. On the phone: `http://<that address>:7434`, sign in.
+
+The Remote access panel is **not drawn on a dev instance**, so the switch, the credentials and the firewall button are API-only there. Undo it by deleting the rule and restarting without `-Remote`.
+
+**Driving it from here.** `adb` gives real touch and a real Back button; Chrome's remote debugging gives measurement:
+
+```
+adb forward tcp:9222 localabstract:chrome_devtools_remote
+curl http://127.0.0.1:9222/json/list          # the tabs, and their WebSocket URLs
+adb shell am start -a android.intent.action.VIEW -d <url>
+adb shell input keyevent KEYCODE_BACK
+adb exec-out screencap -p > shot.png
+```
+
+Four traps, each of which cost time once:
+
+- **Work with ONE tab.** The debugging list is not ordered by which tab is in front, so a script that takes the first one can be evaluating in a background tab while `adb` taps land in the foreground one — or on the launcher, if a Back press has sent Chrome to the background. Check with a screenshot when a result makes no sense.
+- **`adb shell input text` is not typing.** It commits characters in a way Gboard's composing region duplicates, and what lands in a terminal is `/modelmodelodeldelell`. Tapping the on-screen keys is clean, and so is CDP `Input.insertText` — but beware the OTHER end of that pipe: Git Bash rewrites a leading `/` in an argument, so `node type.mjs "/help"` arrives at the CLI as `C:/Program Files/Git/help`. Use `input text` only for fields, never to judge a terminal.
+- **A scripted `.click()` carries no user activation**, so history entries pushed from it are skipped and the Back-button checks fail for the wrong reason. Use CDP `Input.dispatchMouseEvent`, or real taps.
+- **Coordinates from `getBoundingClientRect` are viewport coordinates.** `adb shell input tap` wants screen pixels: multiply by the device pixel ratio and add the height of Chrome's own bars.
+
+### The checks
+
+**49. Nothing scrolls sideways.** Walk every route — `/`, `/prompts`, `/starred`, `/plans`, `/stats`, `/logs`, `/new`, `/settings`, each of its five areas and `/settings/changed`, and a session — asserting `document.documentElement.scrollWidth === innerWidth`. Then, in a session, the same of the conversation itself: `scroller.scrollWidth - scroller.clientWidth === 0`. Do it on the biggest sessions in the corpus and on one with an answered question, one with a `/context` snapshot and one with a long path in a code span — those are the three shapes that broke it. An element wider than the window is only a fault when nothing between it and the root can scroll or clip it; a code block and a table are both meant to.
+
+**50. The desktop is untouched.** The same routes at 1440px, through `Emulation.setDeviceMetricsOverride` **in the same connection as the measurement** — the override is cleared when the socket closes, so a separate call measures the phone again. The session's rail must be 72px wide at x = width − 72, the reading column 896, a list row exactly 64px, the settings rail 224 with its sub-groups drawn, and the header's nav, usage widget, update button and gear all visible with the tab bar `display: none`. Prompts, Plans and Starred must still draw their own row — 1, 3 and 3 `<select>`s, no `h1` — rather than the phone's toolbar. **A list row being exactly 64 is the sharpest of these**: the rows are measured rather than told a height, so a row that comes back at 48 means the box lost its floor and the whole list has silently compacted.
+
+**50b. And the window between the two.** At about 1000px — which is the check device held sideways — the app is above its own breakpoint and draws the desktop in a window narrower than any desktop is. Assert the same `scrollWidth === innerWidth`, and look at the list: rows must not be drawn on top of each other (they wrap and are measured), and nothing in a row may be painted across the dates on its right.
+
+**51. Back closes one layer at a time, and no press does nothing.** In a session: open the ⋮ sheet, open the Subagents panel from it, open a transcript from that, then three presses — the transcript, the panel, then the list, with the URL unchanged until the last. **The panel opened from the sheet is the case worth doing deliberately**: the sheet closes and the panel opens in one tap, so one marker comes off the history as another goes on, and the failure modes are the panel vanishing as it opens (it did) and a spare press that appears to do nothing before the list comes back. Then the terminal: open it, tap into it, and Back must put it back to its title bar. **With the keyboard up, the first Back is Android's own** and closes the keyboard; that is not a failure.
+
+**52b. One square, one gap, one height.** In the header, on the list and in a session, every icon-in-a-box is 40×40 — the bell, the update button, the ⋮, the funnel, the sliders, the sort — the gap between any two of them is 8px, and everything sharing a row with them is 40 tall: the search box and the usage readout. Measure them (`columnGap`, and the real distance between two adjacent boxes) rather than looking, and do it at 360px as well, where the header has to hold the mark, a two-line usage readout, the bell and the update button without the document scrolling sideways.
+
+**52. Nothing needs a hover, and nothing dead is drawn.** With a session open, copy a message, star one, and open the cost and the context cards — all four are `group-hover:` on a desktop and must be reachable by tapping. In the list, rename and pin a session from the row. Then the other half: **none of the thirteen local-only actions may appear at all** ([useHideLocalOnly](../web/src/api/useLocal.ts)) — no *Open on this machine* section in the session sheet, no *Browse…* beside a folder box, no *Open folder* in the file viewer or the scratchpad, no *Open data folder* / *Open install folder*, no danger zone, and Remote access is a sentence rather than a switch. What must still be there is whatever works from here: *Copy resume command*, *Copy path*, the folder box itself. Check the same pages at 1440px and find every one of them back, greyed, with its reason.
+
+**53. The composer and the terminal, on the soft keyboard.** In the composer: Enter inserts a newline and does not send, Send does; the box stays above the keyboard (`innerHeight` and `visualViewport.height` agree, so `--kb-inset` reads `0px`). In the terminal (`chatMode: 'terminal'`, which is the default): it opens full screen, the accessory bar answers the CLI's own prompts — ↓ then Enter on "do you trust this folder" — the keys typed arrive once each, a drag across the key row scrolls it and presses nothing, `Ctrl` then `c` interrupts rather than typing a `c`, and **`Shift` then `Tab` cycles the CLI's own modes** — the line under the prompt changes, which is the proof the back-tab arrived. `Alt` then a character must send it with an ESC in front (watch `WebSocket.prototype.send`), and arming a modifier and then closing the keyboard must NOT spend it: the focus report xterm sends is not a key. `Shift` twice more cycles it back, and at *accept edits* the two triangles before the words must be TRIANGLES rather than boxes — that is the bundled symbol font (`web/src/fonts/`). Do it on a COLD load rather than after poking at the page: the failure mode is a race, and xterm caches a rasterised box for the life of the terminal. Check the rest of the screen while you are there — the logo, the box rules and the turn bullets must be exactly what they were, because a `unicode-range` is a takeover of everything inside it. **Drag a finger over the terminal itself and the CLI's transcript must move** — take a screenshot either side, because there is nothing in the DOM to read: the buffer is the alternate one and its viewport reports no scroll. `▾ minimise` must leave the CLI running (the pid is still on the bar) and the bar must reopen it full screen. Send one prompt end to end and assert the model from the transcript, per the two rules above: **pin `/model haiku` first**, because a terminal takes the machine's default and nothing in the API says otherwise.
+
+**54. Add to home screen.** The manifest is served and the app opens standalone, without the browser's bars — which is two rows of conversation back on a 620px window.
+
 ## Platform and plumbing
 
 **29. The dev/release split.** Run it with the release actually up, because "they do not collide" is the whole claim. `.\dev.ps1` → `/api/meta` on **7434** reports `devInstance: true` and a `cacheDir` under `claude-history-dev`, while 7433 goes on answering with the release's version and its own paths, untouched. Then, from the dev page (all four live under *System → This instance*, the two that do not undo themselves in its *Danger zone* subsection): **Stop server** must kill 7434 only (7433 still answers, and the notice must point at `dev.ps1`, not at the Start Menu), **Open data folder** must open `…\claude-history-dev`, and *Open install folder* / *Uninstall* must both be disabled — a source run is not an install. Star a message and rename a session in each instance and diff the two `userdata.json` files: neither may know about the other's. Finally the guards: `dev.ps1 -Port 7433` and `PORT=7433 pnpm stop` must both refuse rather than touch the release. On a **fresh** dev data folder, *System → Updates* and *Claude → Subscription usage* must show the update check and the interval usage read already off, with no "default" marker beside them (they are this instance's defaults) — and switching one on must make the marker appear.
 
 ### Remote access
 
-**`.\preview.ps1`**, never the release and never the dev instance: the dev one binds `127.0.0.1`, so remote access cannot be tried on it at all. That script is the whole setup — port 7435, `%LOCALAPPDATA%\claude-history-preview`, no `--dev-instance` so the bind gate treats it exactly like a release, and a `userdata.json` written with the update poll and the usage reads **off**. That last part is not tidiness: without `--dev-instance` the defaults apply, and usage rate-limits per ACCOUNT, so a 429 earned here blanks the real release's widget.
+**`.\preview.ps1`**, never the release: it is the only instance the bind GATE applies to, and the gate is what checks 30-36 are about. (A dev instance can be reached from a phone, but only by skipping that gate with `--host`, so it proves nothing about it — see *Reaching the dev instance from a phone* below, which is for trying the UI on a real device rather than for these checks.) That script is the whole setup — port 7435, `%LOCALAPPDATA%\claude-history-preview`, no `--dev-instance` so the bind gate treats it exactly like a release, and a `userdata.json` written with the update poll and the usage reads **off**. That last part is not tidiness: without `--dev-instance` the defaults apply, and usage rate-limits per ACCOUNT, so a 429 earned here blanks the real release's widget.
 
 **Preview is subject to the bind gate too**, which is the thing being tested in 35: with no firewall rule for 7435 it listens on loopback and there is no remote socket to make. So 30-34 are run either after creating that rule (the panel's own button, one UAC) or with **`--host 0.0.0.0`** passed by hand — the one escape hatch, and the one thing that can still raise the Windows dialog. Whichever way, 35 must be done on a clean slate first, because creating the rule is what makes it stop being interesting.
 

@@ -10,6 +10,7 @@ The detail lives in `docs/`, one document per area. **Load the ones that match w
 | [Tokens, cost and context](docs/AI_COST_AND_CONTEXT.md) | counting tokens, pricing a message, cost/context pills, re-cached context, compaction |
 | [Subagents, questions and plans](docs/AI_AGENTS_QUESTIONS_PLANS.md) | the ⑂ panel, `AskUserQuestion`, plan mode, offloaded tool output |
 | [The viewer](docs/AI_VIEWER.md) | anything under `web/src/`: folding, deep links, highlighting, the find bar, file references, the working indicator, the settings page |
+| [The phone](docs/AI_MOBILE.md) | anything that has to work at 360px: the breakpoint, the sheets, the Back button, touch sizes, the on-screen keyboard |
 | [Search](docs/AI_SEARCH.md) | the index, the deep scan, folding/matching, the paged match list |
 | [Architecture](docs/AI_ARCHITECTURE.md) | the scan → summarize → cache → enrich pipeline, a new endpoint, where state lives, containment rules |
 | [Running Claude](docs/AI_RUNNING_CLAUDE.md) | subscription usage, the auto-reload, the composer, the embedded terminal — anything that talks to Anthropic or spawns `claude` |
@@ -36,7 +37,7 @@ Package manager **pnpm**, workspace `shared` + `server` + `web`.
 | Command | What it does |
 | --- | --- |
 | `pnpm install` | install all workspace deps |
-| `.\dev.ps1` | **start the dev instance** on `http://127.0.0.1:7434` (builds if needed, detached, opens the browser). `-Build` `-Restart` `-Stop` `-Foreground` `-Seed` |
+| `.\dev.ps1` | **start the dev instance** on `http://127.0.0.1:7434` (builds if needed, detached, opens the browser). `-Build` `-Restart` `-Stop` `-Foreground` `-Seed`, and `-Remote` to listen on the network so a phone can reach it ([The phone](docs/AI_MOBILE.md)) |
 | `.\preview.ps1` | **start a release-shaped instance** on `7435`, own data folder, subject to the same bind gate a release is — the only way to try [remote access](docs/AI_REMOTE_ACCESS.md) without publishing a release. Same flags |
 | `pnpm dev` | Fastify API on `http://127.0.0.1:7434` (tsx watch) + Vite UI on `http://localhost:5173` (proxies `/api`) |
 | `pnpm build` | build the web app to `web/dist` |
@@ -77,6 +78,8 @@ server/src/
   util/         launcher (executable resolution), sameOrigin, fetchError, firewall
 web/src/        React 19 + Vite + Tailwind v4, TanStack Query, SSE
                 components/viewer/ is where the conversation is drawn
+                fonts/ is the only binary in the repo — 3 KB of symbols the
+                terminal needs and an Android device turns out not to have
 installer/      what ships inside the release zip (pure ASCII, PowerShell 5.1)
 scripts/        package.mjs · release.mjs
 ```
@@ -98,10 +101,11 @@ scripts/        package.mjs · release.mjs
 - **Everything in `~/.claude` has an expiry date** (`cleanupPeriodDays`), fixtures included. → [Transcripts](docs/AI_TRANSCRIPTS.md)
 - **The installed release is never touched from here** — not its port, not its data folder, not its scheduled task. Everything this repo runs is the dev instance. → [Two instances](#two-instances-and-the-line-between-them)
 - **A stop is a TRANSITION, and nothing on disk records one.** `idle` is the resting state of every open session, so the bell keeps its own memory of what each session was doing — in memory, never persisted, because a restart loses the transitions with it. → [Transcripts](docs/AI_TRANSCRIPTS.md)
+- **A phone is a supported browser, and the desktop is what must not change for it.** One threshold in three spellings (`max-md:`, `@media (width < 48rem)`, `MOBILE_QUERY`), nothing revealed on hover as the only way to a feature, no `title=` as the only explanation, nothing that can only work on the machine drawn at all (`useHideLocalOnly` — the server still refuses all thirteen), and no route that scrolls the document sideways. → [The phone](docs/AI_MOBILE.md)
 - **What settings exist lives in `web/src/lib/settingsCatalog.ts`**, and adding one is three edits: the field in `AppSettings`, an entry there, the row in its area file. The rail, the search, the changed-from-default tally and the deep-link anchors all read that one list. → [The viewer](docs/AI_VIEWER.md#the-settings-page-is-a-catalogue-and-six-areas)
 - **Never log with `console.*`** in new code. → [Logging](docs/AI_LOGGING.md)
 - **Wrap every `JSON.parse` of a transcript line in try/catch.** Lines can be corrupt or half-written, and active files grow while being read.
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 48 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 56 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

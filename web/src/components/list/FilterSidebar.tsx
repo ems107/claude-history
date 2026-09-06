@@ -35,12 +35,12 @@ function CheckRow({
   count?: number;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm select-none hover:bg-[var(--bg-hover)]">
+    <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm select-none hover:bg-[var(--bg-hover)] max-md:min-h-11 max-md:gap-3 max-md:px-2">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="accent-[var(--accent)]"
+        className="accent-[var(--accent)] max-md:size-5"
       />
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {count !== undefined && <span className="text-xs text-[var(--text-dim)]">{count}</span>}
@@ -79,7 +79,7 @@ function DateFilter({
   // color-scheme: dark makes the browser's native calendar icon light, which
   // is the only way it stays visible on this theme.
   const dateInput =
-    'min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5 [color-scheme:dark]';
+    'min-w-0 flex-1 rounded border border-[var(--border)] bg-transparent px-1 py-0.5 [color-scheme:dark] max-md:min-h-10 max-md:px-2 max-md:text-sm';
   return (
     <>
       <div className="flex flex-wrap gap-1">
@@ -88,7 +88,7 @@ function DateFilter({
             key={id}
             type="button"
             onClick={() => onChange(days === null ? null : isoDaysAgo(days), null)}
-            className={`cursor-pointer rounded border px-2 py-0.5 text-xs ${
+            className={`cursor-pointer rounded border px-2 py-0.5 text-xs max-md:min-h-9 max-md:px-3 max-md:text-[13px] ${
               activePreset === id
                 ? 'border-[var(--accent)] text-[var(--accent)]'
                 : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
@@ -141,7 +141,7 @@ export function FilterSidebar({
   const sortedProjects = useMemo(() => sortProjectsByName(projects), [projects]);
 
   return (
-    <aside className="flex h-full w-full flex-col overflow-y-auto border-r border-[var(--border)]">
+    <aside className="flex h-full w-full flex-col overflow-y-auto border-r border-[var(--border)] max-md:border-r-0">
       <Section title="Projects">
         {sortedProjects.map((p) => (
           <CheckRow

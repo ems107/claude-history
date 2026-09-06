@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { LOCAL_ONLY_ACTIONS, type LocalOnlyAction } from '@claude-history/shared';
+import { useIsMobile } from '../lib/mobile.ts';
 import { api } from './client.ts';
 
 /**
@@ -32,4 +33,25 @@ export function useIsRemote(): boolean {
 export function useLocalOnly(action: LocalOnlyAction): { disabled: boolean; reason: string | null } {
   const remote = useIsRemote();
   return { disabled: remote, reason: remote ? LOCAL_ONLY_ACTIONS[action] : null };
+}
+
+/**
+ * Should a control that can never work from here be drawn at all?
+ *
+ * On a desktop, yes: the same page is served to the browser on the machine and
+ * to one across the network, they look identical, and a greyed-out button with
+ * its reason beside it is how somebody learns which of the two they are on.
+ *
+ * A phone is never the machine. There is no local phone and there never will
+ * be, so a row that says "only on the machine claude-history runs on" is a row
+ * that will say that every time it is ever read — a permanent apology occupying
+ * a screen that has 360px of width to spend. What survives is whatever still
+ * works from here: "Copy resume command" instead of "Resume in terminal",
+ * typing a path instead of browsing for one.
+ *
+ * The server is unaffected and still refuses all thirteen (409). This decides
+ * what is DRAWN, never what is allowed.
+ */
+export function useHideLocalOnly(): boolean {
+  return useIsMobile() && useIsRemote();
 }

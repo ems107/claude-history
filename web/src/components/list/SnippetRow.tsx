@@ -68,7 +68,7 @@ export function SnippetRow({
           onSelect();
         })
       }
-      className={`block truncate rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] ${
+      className={`block truncate rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] max-md:overflow-visible max-md:py-2 max-md:text-clip max-md:whitespace-normal ${
         active ? 'ring-1 ring-[var(--accent)] bg-[var(--bg-hover)]' : ''
       }`}
     >
@@ -82,12 +82,12 @@ export function SnippetRow({
           its title — would otherwise pull the role and the text left and the
           list would lose the shape this is here to give it. */}
       <span
-        className="mr-2 inline-block w-17 shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60"
+        className="mr-2 inline-block w-17 shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60 max-md:mr-1.5 max-md:w-auto"
         title={when ? `${formatDateTimeFull(when)} · ${relativeTime(when)}` : undefined}
       >
         {when ? formatDateTimeShort(when) : ''}
       </span>
-      <span className="mr-2 inline-block w-14 shrink-0 text-right font-semibold text-[var(--text-dim)]/70 uppercase">
+      <span className="mr-2 inline-block w-14 shrink-0 text-right font-semibold text-[var(--text-dim)]/70 uppercase max-md:mr-1.5 max-md:w-auto max-md:text-left">
         {snippet.role}
       </span>
       {snippet.parts.map((part, pi) =>

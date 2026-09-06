@@ -8,6 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { SessionDetailResponse, TerminalServerMessage } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { selectionText } from '../../lib/selection.ts';
 import {
   clamp,
@@ -52,6 +53,302 @@ function themeFrom(el: HTMLElement): Record<string, string> {
  * it: mounting attaches and replays what was missed, unmounting detaches and
  * nothing more. Closing the tab loses the picture, never the process.
  */
+/**
+ * The keys a terminal needs and a phone keyboard does not have.
+ *
+ * Esc, Tab, Ctrl and the arrows are not conveniences here: without them a CLI
+ * cannot be answered at all — no interrupt, no menu dismissed, no history
+ * walked, no completion. `|`, `~`, `-` and `/` are on the soft keyboard's
+ * second page and used constantly, so they are worth a tap each.
+ *
+ * Everything goes through `term.input()`, which is xterm's own way of saying
+ * "this arrived from the user": it fires `onData`, so it takes the same path up
+ * the socket as a keystroke, sticky Ctrl and all, and nothing here needs to know
+ * a socket exists.
+ *
+ * `onPointerDown` with `preventDefault`, not `onClick`: a tap on a button would
+ * otherwise take the focus off the terminal, which on Android closes the
+ * keyboard — so the bar would put a key through and dismiss the keyboard in the
+ * same gesture, every time.
+ */
+interface Key {
+  label: string;
+  data: string;
+  title: string;
+}
+
+/** First on the row, because it is the key a CLI dialog is answered NO with. */
+const ESC: Key = { label: 'Esc', data: '\u001b', title: 'Escape' };
+/** After the modifiers, because Shift+Tab is what it is most often pressed with. */
+const TAB: Key = { label: 'Tab', data: '\t', title: 'Tab — completion, and Shift+Tab cycles the CLI’s modes' };
+
+/** The rest, in the order a thumb reaches for them. */
+const TERMINAL_KEYS: Key[] = [
+  { label: '↑', data: '\u001b[A', title: 'Up — the previous command' },
+  { label: '↓', data: '\u001b[B', title: 'Down' },
+  { label: '←', data: '\u001b[D', title: 'Left' },
+  { label: '→', data: '\u001b[C', title: 'Right' },
+  { label: '^C', data: '\u0003', title: 'Ctrl+C — interrupt' },
+  { label: '|', data: '|', title: 'Pipe' },
+  { label: '~', data: '~', title: 'Tilde' },
+  { label: '-', data: '-', title: 'Hyphen' },
+  { label: '/', data: '/', title: 'Slash' },
+];
+
+/** The three the bar holds for the next key. See [applyMods]. */
+type Mod = 'ctrl' | 'alt' | 'shift';
+type Mods = Record<Mod, boolean>;
+const NO_MODS: Mods = { ctrl: false, alt: false, shift: false };
+
+/** Shift's own sequence for the keys that have one. */
+const SHIFTED: Record<string, string> = {
+  '\t': '\u001b[Z', // back-tab
+  '\u001b[A': '\u001b[1;2A',
+  '\u001b[B': '\u001b[1;2B',
+  '\u001b[C': '\u001b[1;2C',
+  '\u001b[D': '\u001b[1;2D',
+};
+
+/**
+ * The font xterm is asked for.
+ *
+ * It is not taste, and the last entry is not decoration either. The CLI draws
+ * its logo and its panels out of block and box-drawing characters, and those
+ * only line up in a font whose cell the glyphs were cut for — while
+ * `ch-terminal-symbols` is 5 KB of Noto Sans Symbols 2 at the END of the
+ * stack, holding the handful of glyphs an Android device turns out not to
+ * have (`web/src/fonts/README.md`). CSS fallback is per CHARACTER, so it is
+ * reached only for a glyph none of the others could draw.
+ */
+const TERMINAL_FONT =
+  "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', 'ch-terminal-symbols', monospace";
+
+/**
+ * Is this `onData` really a KEY?
+ *
+ * Not everything that leaves xterm is one. With focus tracking on it reports
+ * every focus in and out (`ESC [ I` / `ESC [ O`), and with mouse reporting on —
+ * which Claude Code turns on — every tap, drag and synthetic wheel goes out as
+ * an SGR mouse report. An armed modifier applied to one of those is a modifier
+ * silently spent on something the user did not press: measured on the DT50 as
+ * Alt arming, the keyboard closing, and the ESC landing on the focus report
+ * instead of on the next key.
+ */
+function isKeystroke(data: string): boolean {
+  if (data === '\u001b[I' || data === '\u001b[O') return false;
+  return !data.startsWith('\u001b[<') && !data.startsWith('\u001b[M');
+}
+
+/**
+ * What the armed modifiers turn the next keystroke into.
+ *
+ * A phone keyboard has none of these, and without them a CLI is unusable: no
+ * interrupt, no chords, and no Shift+Tab — which in Claude Code is how you
+ * cycle its modes, so it is not an edge case. Sticky rather than held, because
+ * there is nothing to hold: they arm, the next key goes through changed, and
+ * they disarm themselves.
+ *
+ * Applied in the order a terminal encodes them. **Shift first**, because it
+ * changes the key itself — a real back-tab or an arrow with its modifier
+ * parameter, and for an ordinary character the capital. **Then Ctrl**, which is
+ * the letter's own code with the top three bits cleared, exactly as the
+ * keyboard does it. **Then Alt**, which is an ESC in front of whatever came out
+ * of the other two, which is how every terminal has sent Meta since before it
+ * was called Alt.
+ *
+ * Anything that is not a single character and has no shifted form of its own
+ * passes through untouched, and still disarms them: Ctrl plus an escape
+ * sequence is not what a bar like this is for.
+ */
+function applyMods(data: string, mods: Mods): string {
+  let out = data;
+  if (mods.shift) {
+    if (SHIFTED[out]) out = SHIFTED[out];
+    else if (out.length === 1) out = out.toUpperCase();
+  }
+  if (mods.ctrl && out.length === 1) {
+    const code = out.toUpperCase().charCodeAt(0);
+    if (code >= 63 && code <= 95) out = String.fromCharCode(code & 31);
+  }
+  if (mods.alt) out = `\u001b${out}`;
+  return out;
+}
+
+/**
+ * A long path with its middle taken out, rather than its end.
+ *
+ * The cwd of a session started from the app is a temp folder six segments deep,
+ * and the only two anybody reads are the first (which drive) and the last
+ * (which project). Cut by SEGMENT rather than by character count, so what is
+ * left is still a path. If it is still too wide the box truncates it, and that
+ * truncation eats the front — see `truncate-start` in `styles.css`.
+ */
+function elidePath(path: string): string {
+  const parts = path.split(/[\\/]/);
+  if (parts.length <= 5) return path;
+  const sep = path.includes('\\') ? '\\' : '/';
+  return [parts[0], parts[1], '…', parts[parts.length - 2], parts[parts.length - 1]].join(sep);
+}
+
+/**
+ * Paste, on a page that cannot read the clipboard.
+ *
+ * `navigator.clipboard` is `[SecureContext]` and this app is served over plain
+ * HTTP on a LAN ([AI_REMOTE_ACCESS.md]), so it does not exist here at all. On a
+ * desktop that costs nothing — Ctrl+V is a browser command and xterm's own
+ * paste listener takes it — but a phone has no Ctrl+V, and long-pressing the
+ * terminal lands on xterm's canvas rather than on a text field.
+ *
+ * So the paste goes somewhere it CAN happen: a real textarea, which Android's
+ * own long-press menu will paste into. What arrives is handed to the terminal
+ * the way a paste would be, and the box goes away.
+ */
+function PasteBox({ onSend, onCancel }: { onSend: (text: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState('');
+  return (
+    <div className="flex shrink-0 flex-col gap-2 border-t border-[var(--accent-dim)] bg-[var(--bg-raised)] p-2">
+      <textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={2}
+        placeholder="Long-press here and choose Paste, then Send"
+        className="w-full resize-none rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 font-mono text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)]"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="min-h-10 flex-1 rounded border border-[var(--border)] px-3 text-sm text-[var(--text-dim)]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={text === ''}
+          onClick={() => onSend(text)}
+          className="min-h-10 flex-1 rounded border border-[var(--accent-dim)] px-3 text-sm text-[var(--accent)] disabled:opacity-40"
+        >
+          Send to the terminal
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * How far a finger may travel between going down and coming up and still be a
+ * tap rather than a scroll. The row is wider than the screen, so the commonest
+ * gesture over these buttons is a drag ACROSS them; firing on `pointerdown`
+ * meant every attempt to reach `/` typed an `Esc` on the way.
+ */
+const TAP_SLOP_PX = 10;
+
+/**
+ * One key on the accessory bar.
+ *
+ * **It fires on the way UP, not on the way down**, and only if the finger has
+ * not travelled — see `TAP_SLOP_PX`. `preventDefault` still goes on the way
+ * down, and that is what it is for: it stops the press taking focus off the
+ * terminal, which on Android closes the keyboard. It does not stop the row
+ * scrolling; `touch-action` decides that, and this row is left free to pan.
+ *
+ * **One width for one kind of key.** A glyph key is a fixed square, so ↑ and ←
+ * are the same size however differently the font draws them — the arrows came
+ * out three pixels apart when the width was left to the text. A word key takes
+ * the same height and floor with padding around its label.
+ */
+function TerminalKey({
+  label,
+  title,
+  active,
+  onPress,
+}: {
+  label: string;
+  title: string;
+  active?: boolean;
+  onPress: () => void;
+}) {
+  const from = useRef<{ id: number; x: number; y: number } | null>(null);
+  // Two characters or fewer is a glyph: a fixed square. Anything longer is a
+  // word, and gets the same floor with room around it.
+  const shape = label.length <= 2 ? 'w-11' : 'min-w-11 px-3';
+  return (
+    <button
+      type="button"
+      title={title}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        from.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        const start = from.current;
+        from.current = null;
+        if (!start || start.id !== e.pointerId) return;
+        if (Math.abs(e.clientX - start.x) > TAP_SLOP_PX || Math.abs(e.clientY - start.y) > TAP_SLOP_PX) return;
+        onPress();
+      }}
+      onPointerCancel={() => {
+        from.current = null;
+      }}
+      className={`flex h-10 shrink-0 items-center justify-center rounded border font-mono text-sm active:bg-[var(--bg-hover)] active:text-[var(--text)] ${shape} ${
+        active
+          ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]'
+          : 'border-[var(--border)] text-[var(--text-dim)]'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+const MOD_TITLE: Record<Mod, string> = {
+  ctrl: 'Ctrl — the next key goes through as a control code',
+  alt: 'Alt — the next key is sent with an Escape in front of it, which is what Meta is',
+  shift: 'Shift — the next key is sent shifted: Tab becomes back-tab, an arrow carries the modifier',
+};
+
+/**
+ * The row, in the order a thumb wants it: the way out, the three modifiers,
+ * the key they are most often pressed with, the paste this page cannot do any
+ * other way, then movement, then punctuation the soft keyboard buries.
+ */
+function TerminalKeys({
+  onKey,
+  mods,
+  onMod,
+  onPaste,
+}: {
+  onKey: (data: string) => void;
+  mods: Mods;
+  onMod: (mod: Mod) => void;
+  onPaste: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[var(--border)] bg-[var(--bg-raised)] px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <TerminalKey label={ESC.label} title={ESC.title} onPress={() => onKey(ESC.data)} />
+      {(['ctrl', 'alt', 'shift'] as const).map((mod) => (
+        <TerminalKey
+          key={mod}
+          label={mod === 'ctrl' ? 'Ctrl' : mod === 'alt' ? 'Alt' : 'Shift'}
+          title={MOD_TITLE[mod]}
+          active={mods[mod]}
+          onPress={() => onMod(mod)}
+        />
+      ))}
+      <TerminalKey label={TAB.label} title={TAB.title} onPress={() => onKey(TAB.data)} />
+      <TerminalKey
+        label="Paste"
+        title="Paste — opens a box to paste into, because a page served over plain HTTP cannot read the clipboard"
+        onPress={onPaste}
+      />
+      {TERMINAL_KEYS.map((k) => (
+        <TerminalKey key={k.label} label={k.label} title={k.title} onPress={() => onKey(k.data)} />
+      ))}
+    </div>
+  );
+}
+
 export function SessionTerminal({
   sessionId,
   columnWidth,
@@ -115,7 +412,38 @@ export function SessionTerminal({
    * this tab's, the next tab's, and the one opened tomorrow.
    */
   const fontSize = useTerminalFontSize();
+  /**
+   * A phone, where the panel is the window and the keys a terminal needs are
+   * not on the keyboard.
+   */
+  const mobile = useIsMobile();
+  // The same answer, readable from callbacks that must not be rebuilt when it
+  // changes — `expand` is a `useCallback` the title bar holds, and the start
+  // mutation's `onSuccess` is built once.
+  const mobileRef = useRef(mobile);
+  mobileRef.current = mobile;
+  // Full screen from the start on a phone: 380px of panel inside a 620px window
+  // under a header and a chip strip is about eight rows, and a CLI that draws
+  // boxes needs more than that to be read at all. Read from the query rather
+  // than from `mobile` because this is an initial value and the hook has not
+  // answered on the first render.
   const [full, setFull] = useState(false);
+  /**
+   * Ctrl, Alt and Shift, held for the next key. See [applyMods] for what each
+   * of them does to it.
+   *
+   * A ref as well as state because the transform happens inside `term.onData`,
+   * which is set up once by an effect that must not depend on it.
+   */
+  const [mods, setMods] = useState<Mods>(NO_MODS);
+  const modsRef = useRef<Mods>(NO_MODS);
+  const armMod = useCallback((mod: Mod) => {
+    const next = { ...modsRef.current, [mod]: !modsRef.current[mod] };
+    modsRef.current = next;
+    setMods(next);
+  }, []);
+  /** The paste box is open. See [PasteBox] for why one is needed at all. */
+  const [pasting, setPasting] = useState(false);
   /**
    * Collapsed to its title bar. The CLI keeps running and the socket stays
    * attached — this is a panel getting out of the way of the conversation, not a
@@ -133,6 +461,27 @@ export function SessionTerminal({
    * terminal is the answer, and it comes up open with the cursor in it.
    */
   const [minimised, setMinimised] = useState(!(autoStart || autoFocus));
+  /**
+   * Filling the window, and actually doing it.
+   *
+   * On a phone `full` starts true, before the panel has been opened — and a
+   * `fixed inset-0` box whose xterm host is `hidden` is a blank screen, which is
+   * the exact trap the class comment further down warns about. So the two are
+   * kept apart: `full` is the intent and survives the panel being put away,
+   * `fullNow` is what is drawn.
+   */
+  const fullNow = full && !minimised;
+
+  // A terminal filling a phone's screen is the top layer of the page, so Back
+  // has to mean "out of this" before it means "out of the session" — otherwise
+  // the one control every Android user reaches for first would leave the
+  // conversation while a terminal was covering it. It does exactly what the
+  // panel's own ▾ does: puts it away as a title bar, still running. Through a
+  // ref because `leaveFull` is declared with the rest of the callbacks, far
+  // below, and this has to be registered with the other layers.
+  const leaveFullRef = useRef<() => void>(() => undefined);
+  useBackDismiss(mobile && fullNow, () => leaveFullRef.current());
+
   /**
    * Held open on purpose: the one way to switch the focus rule off.
    *
@@ -220,7 +569,7 @@ export function SessionTerminal({
       // box-drawing characters, and those only line up in a font whose cell the
       // glyphs were cut for. `customGlyphs` (on by default) draws the box rules
       // geometrically whatever the font does, which is the other half of it.
-      fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', monospace",
+      fontFamily: TERMINAL_FONT,
       // The GETTER, not the subscribed value, and that is load-bearing: this
       // effect's cleanup disposes the terminal, so a size in its dependency
       // list would tear the whole thing down and build it again on every press
@@ -272,12 +621,134 @@ export function SessionTerminal({
     }
     termRef.current = term;
     fitRef.current = fit;
+
+    /**
+     * Make the symbol fallback arrive, and rebuild the atlas when it does.
+     *
+     * **xterm rasterises each glyph ONCE**, into a texture atlas it never
+     * revisits. A webfont that is still downloading when the CLI paints its
+     * first frame therefore loses: the box gets cached and stays cached for the
+     * life of the terminal, which is exactly what happened — the font reported
+     * `loaded`, a canvas drew the glyph perfectly, and the terminal went on
+     * showing `□□ accept edits on`.
+     *
+     * Two things fix it and both are here. `document.fonts.load` is what starts
+     * the download at all — nothing in the DOM uses this family, and a canvas
+     * drawing text does not ask for a font that has never been requested — and
+     * clearing the atlas afterwards throws away whatever was rasterised before
+     * it arrived. Resolves immediately once it is cached, so a second terminal
+     * pays a repaint and nothing else.
+     */
+    void document.fonts.load(`${getTerminalFontSize()}px ch-terminal-symbols`, '⏵').then(() => {
+      // Disposed while the font was in flight: everything below would throw.
+      if (termRef.current !== term) return;
+      term.clearTextureAtlas();
+      term.refresh(0, term.rows - 1);
+    });
     return () => {
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
     };
   }, [open]);
+
+  /**
+   * A finger dragged over the terminal scrolls it, exactly as a wheel does.
+   *
+   * Nothing scrolled at all before, and the reason is a layer: xterm builds a
+   * `.xterm-viewport` that really is a scrollable div and a `.xterm-screen`
+   * that sits ON TOP of it, so a touch lands on the screen and the viewport
+   * under it never hears about it. A wheel event is forwarded across that gap
+   * by xterm itself. A touch is not.
+   *
+   * **So the drag is turned into wheel events rather than into scrolling**, and
+   * that is the decision worth writing down. `term.scrollLines()` would have
+   * been the obvious call and it would have done nothing here: Claude Code runs
+   * in the ALTERNATE screen buffer (`buffer.active.type === 'alternate'`), which
+   * by definition has no scrollback to move, and it turns full mouse reporting
+   * on — so on a desktop the wheel is not scrolling anything either. It is
+   * being SENT to the CLI, which scrolls its own transcript. One synthetic
+   * wheel per row puts a phone on that same path, and whatever xterm decides to
+   * do with it — report it, translate it to cursor keys in an alt buffer with
+   * no mouse mode, or scroll a real scrollback — is decided in one place for
+   * both kinds of pointer.
+   *
+   * `deltaMode: DOM_DELTA_LINE` and one event per row, because that is what
+   * survives the translation: in pixel mode xterm damps anything under 50px to
+   * 30% and carries the remainder, and a mouse report is one notch per event
+   * however large the delta.
+   *
+   * The 8px slop keeps a TAP a tap — `preventDefault` on a touchmove suppresses
+   * the compatibility mouse events after it, and those are what put the cursor
+   * in the terminal.
+   */
+  useEffect(() => {
+    if (!open || !mobile) return;
+    const host = hostRef.current;
+    if (!host) return;
+    /** Wheel's own units: 0 is pixels, 1 is lines. */
+    const DOM_DELTA_LINE = 1;
+    /** A flick can cover the window; forwarding all of it would be a burst. */
+    const MAX_ROWS_PER_MOVE = 8;
+    /** Below this the gesture is still a tap being made slightly untidily. */
+    const TAP_SLOP = 8;
+    let lastY = 0;
+    let carried = 0;
+    let travelled = 0;
+    let tracking = false;
+    const rowHeight = (): number => {
+      const term = termRef.current;
+      if (!term || term.rows === 0) return 0;
+      const screen = host.querySelector('.xterm-screen');
+      const px = screen instanceof HTMLElement ? screen.clientHeight : host.clientHeight;
+      return px / term.rows;
+    };
+    const onStart = (e: TouchEvent) => {
+      tracking = e.touches.length === 1;
+      if (!tracking) return;
+      lastY = e.touches[0].clientY;
+      carried = 0;
+      travelled = 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!tracking || e.touches.length !== 1) return;
+      const row = rowHeight();
+      if (row <= 0) return;
+      const touch = e.touches[0];
+      // Finger up means read further down, the way a page moves under a hand.
+      const dy = lastY - touch.clientY;
+      lastY = touch.clientY;
+      travelled += Math.abs(dy);
+      if (travelled < TAP_SLOP) return;
+      e.preventDefault();
+      carried += dy;
+      const rows = Math.trunc(carried / row);
+      if (rows === 0) return;
+      carried -= rows * row;
+      // On the screen, which is what a mouse would be over: with reporting on,
+      // xterm turns the coordinates into the cell the CLI is told about.
+      const target = host.querySelector('.xterm-screen') ?? host;
+      const step = rows > 0 ? 1 : -1;
+      for (let i = 0; i < Math.min(Math.abs(rows), MAX_ROWS_PER_MOVE); i++) {
+        target.dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: step,
+            deltaMode: DOM_DELTA_LINE,
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    };
+    host.addEventListener('touchstart', onStart, { passive: true });
+    host.addEventListener('touchmove', onMove, { passive: false });
+    return () => {
+      host.removeEventListener('touchstart', onStart);
+      host.removeEventListener('touchmove', onMove);
+    };
+  }, [open, mobile]);
 
   /**
    * One socket per open terminal. It only ever attaches: starting is the POST,
@@ -330,7 +801,16 @@ export function SessionTerminal({
     };
 
     const input = term.onData((data) => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'i', d: data }));
+      // Whatever the accessory bar is holding, applied to whatever comes next —
+      // from the soft keyboard or from the bar itself ([applyMods]).
+      let out = data;
+      const armed = modsRef.current;
+      if ((armed.ctrl || armed.alt || armed.shift) && isKeystroke(data)) {
+        modsRef.current = NO_MODS;
+        setMods(NO_MODS);
+        out = applyMods(data, armed);
+      }
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'i', d: out }));
     });
     /**
      * Shift+Enter, which is a newline in the CLI and was sending the prompt.
@@ -490,6 +970,13 @@ export function SessionTerminal({
    */
   const expand = useCallback(() => {
     setMinimised(false);
+    // Full screen is what "open" means on a phone. 380px of panel inside a
+    // 620px window, under a header and a chip strip, is about eight rows — and
+    // a CLI that draws boxes cannot be read in eight. Set HERE rather than as
+    // an initial state, so it lands on the tap that opened the panel: that is
+    // what lets `useBackDismiss` push a history entry Android's Back will
+    // honour, and what keeps the title bar's own ⤢/⤡ telling the truth.
+    if (mobileRef.current) setFull(true);
     // Either there is an xterm to focus — the ordinary case, since the panel is
     // open — or the effect that builds one takes the focus when it does.
     focusOnOpen.current = true;
@@ -581,6 +1068,10 @@ export function SessionTerminal({
    * ([collapseOnRelease]), which is the one exception the rule itself carries.
    */
   const collapseOnFocusOut = useCallback(() => {
+    // Never on a phone: opening or closing the on-screen keyboard takes the
+    // focus, and the panel would fold to its title bar under the user, mid
+    // command. See the press rule below, which is exempt for the same reason.
+    if (mobile) return;
     if (full || minimised || confirmClose || pinned) return;
     window.setTimeout(() => {
       // A button still held is a gesture still being made: what it meant is
@@ -588,7 +1079,7 @@ export function SessionTerminal({
       if (pendingRelease.current) return;
       collapseIfOutside();
     }, 0);
-  }, [full, minimised, confirmClose, pinned, collapseIfOutside]);
+  }, [mobile, full, minimised, confirmClose, pinned, collapseIfOutside]);
 
   /**
    * Reading text out of the conversation is the exception to that rule, and the
@@ -626,6 +1117,10 @@ export function SessionTerminal({
    * collapsed one arms nothing.
    */
   useEffect(() => {
+    // Never on a phone, for the reason on `collapseOnFocusOut`. There the panel
+    // is full screen with its own ✕ and Android's Back — two ways out that mean
+    // it, rather than one the keyboard triggers by accident.
+    if (mobile) return;
     if (full || minimised || confirmClose || pinned) return;
     const armRelease = (e: MouseEvent) => {
       // The LEFT button only, and only outside the panel: a press inside is the
@@ -663,7 +1158,7 @@ export function SessionTerminal({
       window.removeEventListener('mouseup', collapseOnRelease, true);
       pendingRelease.current = false;
     };
-  }, [full, minimised, confirmClose, pinned, collapseIfOutside]);
+  }, [mobile, full, minimised, confirmClose, pinned, collapseIfOutside]);
 
   const start = useMutation({
     mutationFn: async () => {
@@ -682,6 +1177,8 @@ export function SessionTerminal({
       // explain. Pressing the button is the same statement `/new` makes by
       // existing, so it gets the same answer — open, with the cursor in it.
       setMinimised(false);
+      // And on a phone, filling the window. See `expand`.
+      if (mobileRef.current) setFull(true);
       // Either the xterm is there already — "start again" on a panel keeping a
       // dead process's screen — or it is about to be built, and the effect that
       // builds it takes the focus then.
@@ -733,26 +1230,38 @@ export function SessionTerminal({
   }, []);
 
   // Dragging the TOP edge, because the bottom one is the window. Same shape as
-  // the session list's sidebar handle, turned on its side.
+  // the session list's sidebar handle, turned on its side — and on the same
+  // POINTER events, so the one drag in this panel is reachable with a finger.
   const startResize = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.PointerEvent) => {
       e.preventDefault();
+      const grip = e.currentTarget as HTMLElement;
+      const id = e.pointerId;
       const startY = e.clientY;
       // Once, here: nobody resizes the window in the middle of a drag, and a
       // ceiling that moved under the pointer would make the panel fight it.
       const room = roomFor(rootRef.current);
       const from = clamp(readHeight(), room);
-      const onMove = (ev: MouseEvent) => {
+      try {
+        grip.setPointerCapture(id);
+      } catch {
+        // The pointer has already gone; the listeners below still tidy up.
+      }
+      const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== id) return;
         const next = clamp(from + startY - ev.clientY, room);
         setHeight(next);
         localStorage.setItem(HEIGHT_KEY, String(next));
       };
-      const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== id) return;
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
       };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
     },
     [roomFor],
   );
@@ -792,12 +1301,12 @@ export function SessionTerminal({
       const rootBox = root.getBoundingClientRect();
       if (!(scroller instanceof HTMLElement)) {
         setBleed(null);
-        onLayout?.({ full, open, height: root.offsetHeight, rightGap: 0 });
+        onLayout?.({ full: fullNow, open, height: root.offsetHeight, rightGap: 0 });
         return;
       }
       const scrollerBox = scroller.getBoundingClientRect();
       setBleed(
-        open && !full
+        open && !fullNow
           ? {
               width: scroller.clientWidth,
               marginLeft: Math.round(scrollerBox.left + scroller.clientLeft - rootBox.left),
@@ -805,7 +1314,7 @@ export function SessionTerminal({
           : null,
       );
       onLayout?.({
-        full,
+        full: fullNow,
         open,
         height: root.offsetHeight,
         rightGap: Math.round(scrollerBox.right - rootBox.right),
@@ -816,7 +1325,7 @@ export function SessionTerminal({
     if (scroller instanceof HTMLElement) observer.observe(scroller);
     observer.observe(root);
     return () => observer.disconnect();
-  }, [open, full, onLayout, roomFor]);
+  }, [open, fullNow, onLayout, roomFor]);
 
   /**
    * Full screen is the one thing about this panel that IS remembered — and only
@@ -849,10 +1358,23 @@ export function SessionTerminal({
   }, [minimised]);
   const leaveFull = useCallback(() => {
     setFull(false);
+    // **On a phone there are only two states: filling the window, or a title
+    // bar.** An inline panel there is eight rows under a header and a chip
+    // strip, which is not a terminal you can work in — so the way out of full
+    // screen is the way back to the bar, and the way out of the terminal is the
+    // × on that bar. The desktop keeps its third state and its own rule: full
+    // screen puts back whatever opening it interrupted.
+    if (mobileRef.current) {
+      collapsedBeforeFull.current = false;
+      setMinimised(true);
+      return;
+    }
     if (!collapsedBeforeFull.current) return;
     collapsedBeforeFull.current = false;
     setMinimised(true);
   }, []);
+  // What Android's Back calls. See the registration far above.
+  leaveFullRef.current = leaveFull;
 
   // What went WRONG, and nothing else: a `blocked` session takes the place of
   // the start bar instead ([BlockedBar]), because a greyed-out button with a
@@ -873,16 +1395,29 @@ export function SessionTerminal({
           collapsed — open, the bar is a label and the click is a no-op that
           merely keeps the focus where it already is. */}
       <div
-        className={`flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] ${
+        // **Never wrapped**, and that is the fix rather than the preference:
+        // with `flex-wrap` on, a long cwd does not fit after the `❯` at its
+        // full content width, so it is placed on the NEXT line and shrunk
+        // there — leaving a first row holding one glyph and nothing else. It
+        // truncates on one line instead, which is what the ellipsis was for.
+        className={`flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] max-md:py-1.5 ${
           minimised ? 'cursor-pointer hover:text-[var(--text)]' : ''
         }`}
         title={minimised ? 'Click to open the terminal' : undefined}
       >
-        <span className="text-[var(--accent)]">❯</span>
-        <span className="truncate" title={cwd ?? undefined}>
+        <span className="shrink-0 text-[var(--accent)]">❯</span>
+        <span className="shrink-0">
           {running ? 'claude' : exit ? `claude exited (code ${exit.code ?? 'killed'})` : 'claude'}
-          {cwd ? ` — ${cwd}` : ''}
         </span>
+        {/* The folder, with its middle taken out and — if it STILL does not fit
+            — its front. Which end survives is the whole point: every session
+            started from the app lives six segments down the same temp folder,
+            so the first half of the path is the half that says nothing. */}
+        {cwd && (
+          <span className="truncate-start min-w-0 flex-1 truncate opacity-80" title={cwd}>
+            {elidePath(cwd)}
+          </span>
+        )}
         {status.data?.pid ? <span className="shrink-0">pid {status.data.pid}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {!running && (
@@ -987,13 +1522,23 @@ export function SessionTerminal({
             // Opens the panel on the way in, puts it back on the way out, and
             // takes the focus into the terminal ([enterFull]).
             onClick={full ? leaveFull : enterFull}
-            // It says *full screen* on the way out too, and never "close": one
-            // word for two different things is how a button that gives the
-            // conversation back gets read as the one that ends a CLI mid-turn.
-            title={full ? 'Leave full screen — the terminal is not closed' : 'Fill the window'}
-            className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+            // It never says "close": one word for two different things is how a
+            // button that gives the conversation back gets read as the one that
+            // ends a CLI mid-turn. On a phone it says *minimise*, because that
+            // is what it now does — there is no inline state to return to.
+            title={
+              full
+                ? mobile
+                  ? 'Put it away — the terminal keeps running, and × is what closes it'
+                  : 'Leave full screen — the terminal is not closed'
+                : 'Fill the window'
+            }
+            className={`rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] ${
+              // Redundant on a phone while it is a bar: the bar IS the way in.
+              !full && mobile ? 'hidden' : ''
+            }`}
           >
-            {full ? '⤡ exit full screen' : '⤢ full screen'}
+            {full ? (mobile ? '▾ minimise' : '⤡ exit full screen') : '⤢ full screen'}
           </button>
           {/* Not offered while the panel is filling the window. Ending the CLI
               is not a way out of a view, and the only × on a screen with nothing
@@ -1023,6 +1568,29 @@ export function SessionTerminal({
           out of the tree would take the terminal's whole DOM with it — the same
           trap the full-screen class avoids. */}
       <div ref={hostRef} className={minimised ? 'hidden' : 'min-h-0 flex-1 overflow-hidden px-1 py-0.5'} />
+      {/* Inside the panel, so it comes full screen with it and sits directly on
+          the on-screen keyboard rather than behind it. */}
+      {mobile && !minimised && !pasting && (
+        <TerminalKeys
+          onKey={(data) => termRef.current?.input(data)}
+          mods={mods}
+          onMod={armMod}
+          onPaste={() => setPasting(true)}
+        />
+      )}
+      {mobile && !minimised && pasting && (
+        <PasteBox
+          onCancel={() => setPasting(false)}
+          onSend={(text) => {
+            setPasting(false);
+            // Through `input()` like every other key, so it takes the same path
+            // up the socket. Not through xterm's `paste()`, which would wrap it
+            // in bracketed-paste markers a second time.
+            termRef.current?.input(text);
+            termRef.current?.focus();
+          }}
+        />
+      )}
     </div>
   );
 
@@ -1078,15 +1646,15 @@ export function SessionTerminal({
             // catch on either side of it. A 1 px target four pixels clear of
             // the thing it resizes is a target you have to aim at.
             <div
-              className="group relative -mb-1 h-2 cursor-row-resize"
+              className="group relative -mb-1 h-2 cursor-row-resize touch-none max-md:h-4"
               style={bleed ? { width: bleed.width, marginLeft: bleed.marginLeft } : undefined}
-              onMouseDown={startResize}
+              onPointerDown={startResize}
               title="Drag to resize"
             >
               <div className="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded transition-colors group-hover:bg-[var(--accent-dim)]" />
             </div>
           )}
-          {full && (
+          {fullNow && (
             // The strip keeps its place with a line saying where the panel went,
             // exactly as the plan panel does: two live copies of one terminal
             // would be two views fighting over one cursor.
@@ -1104,7 +1672,7 @@ export function SessionTerminal({
           */}
           <div
             className={
-              full
+              fullNow
                 ? 'fixed inset-0 z-50 flex flex-col bg-[var(--bg)] p-2'
                 : 'flex flex-col'
             }

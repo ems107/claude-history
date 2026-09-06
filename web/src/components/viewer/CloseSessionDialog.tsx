@@ -125,11 +125,11 @@ export function CloseSessionDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4"
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-lg rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-2xl"
+        className="my-auto max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="mb-2 text-sm font-semibold text-[var(--text)]">Close the Claude Code session?</h2>

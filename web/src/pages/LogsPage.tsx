@@ -242,8 +242,12 @@ export function LogsPage() {
   const records = frozen ?? day.data?.records ?? [];
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--border)] p-3">
+    // Stacked on a phone rather than side by side: a 224px column of filters
+    // beside a log line leaves 136px for the line. The filters take the top,
+    // capped at two fifths of the window and scrolling inside that, so the
+    // stream they filter is always the larger half.
+    <div className="flex h-full min-h-0 max-md:flex-col">
+      <aside className="flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--border)] p-3 max-md:max-h-[40dvh] max-md:w-full max-md:border-r-0 max-md:border-b">
         <div>
           <Link to="/settings" className="text-xs text-[var(--text-dim)] hover:text-[var(--text)]">
             ← Settings
@@ -367,14 +371,14 @@ export function LogsPage() {
           <UpdateLogView />
         ) : (
           <>
-            <div className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-2">
+            <div className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 max-md:flex-wrap max-md:gap-2">
               <input
                 type="text"
                 value={draftQuery}
                 onChange={(e) => setDraftQuery(e.target.value)}
                 placeholder="Search messages…"
                 spellCheck={false}
-                className="w-64 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs focus:border-[var(--text-dim)] focus:outline-none"
+                className="w-64 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs focus:border-[var(--text-dim)] focus:outline-none max-md:min-h-10 max-md:w-full max-md:text-sm"
               />
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-dim)]">
                 <input

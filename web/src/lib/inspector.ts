@@ -48,7 +48,7 @@ export interface InspectorState {
   items: PanelItem[];
   toggle: (key: PanelKey) => void;
   close: () => void;
-  startResize: (e: React.MouseEvent, max: number) => void;
+  startResize: (e: React.PointerEvent, max: number) => void;
   /**
    * Its seam is under the hand. The page turns this into `layoutColumns`'
    * priority, which is what lets an inspector being dragged push the column
@@ -165,7 +165,7 @@ export function useInspector({
   // seam is anchored to the panel's right edge and follows the pointer, and
   // `max` — `SideLayout.maxInspector`, passed down by `Inspector` — is where
   // the column has yielded all it can and the conversation is on its floor.
-  const startResize = useCallback((e: React.MouseEvent, max: number) => {
+  const startResize = useCallback((e: React.PointerEvent, max: number) => {
     trackPointer(
       e,
       INSPECTOR_MIN,
