@@ -23,12 +23,23 @@ import { useSettingsPage } from './context.ts';
  * Labels rather than icons, deliberately. Six abstract categories cannot be told
  * apart at 16 px — `InspectorRail` gets away with icons because its six are
  * concrete nouns (files, agents, tokens) and these are not.
+ *
+ * **On a phone the rail is a SCREEN**, which is the shape a rail takes when
+ * there is no room beside the thing it navigates. It was a strip of chips
+ * scrolling sideways under the header, and a strip that scrolls is a list you
+ * cannot see the end of: six areas, of which two were off the right edge, above
+ * a panel whose own scroll then fought it. A list of six rows with their blurbs
+ * is the same six choices, readable at once, and the area gets the whole window
+ * once one is picked.
  */
 export function SettingsNav({
   area,
+  index = false,
 }: {
   /** Null on the changed-list, which is a route but not an area. */
   area: AreaId | null;
+  /** The phone's list-of-areas screen rather than the desktop's rail. */
+  index?: boolean;
 }) {
   const { settings, defaults, selected, select } = useSettingsPage();
   const [query, setQuery] = useState('');
@@ -36,16 +47,17 @@ export function SettingsNav({
   const totalChanged = [...counts.values()].reduce((a, b) => a + b, 0);
   const groups = area ? groupsOf(area) : [];
 
+  // Only the desktop rail draws these; the phone's list is `IndexRow`.
   const item = (a: Area) => {
     const changed = counts.get(a.id) ?? 0;
     const open = a.id === area;
     return (
-      <div key={a.id} className="max-md:shrink-0">
+      <div key={a.id}>
         <RailLink to={`/settings/${a.id}`} open={open} label={a.title} count={changed} />
         {/* Only the open area's groups, and only when it has more than one: a
             single-group area would list its own name back at you. */}
         {open && groups.length > 1 && (
-          <div className="mb-1 flex flex-col max-md:hidden">
+          <div className="mb-1 flex flex-col">
             {groups.map((g) => (
               <button
                 key={g.id}
@@ -73,17 +85,44 @@ export function SettingsNav({
     );
   };
 
+  if (index) {
+    return (
+      <nav className="h-full overflow-y-auto pt-3 pb-6">
+        <SearchBox query={query} setQuery={setQuery} />
+        {query.trim() ? (
+          <SearchResults query={query} clear={() => setQuery('')} />
+        ) : (
+          <div className="flex flex-col">
+            {AREAS.map((a) => (
+              <IndexRow
+                key={a.id}
+                to={`/settings/${a.id}`}
+                label={a.title}
+                hint={a.blurb}
+                count={counts.get(a.id) ?? 0}
+              />
+            ))}
+            {totalChanged > 0 && (
+              <IndexRow
+                to={`/settings/${CHANGED_VIEW.id}`}
+                label={CHANGED_VIEW.title}
+                hint={CHANGED_VIEW.blurb}
+                count={totalChanged}
+              />
+            )}
+          </div>
+        )}
+      </nav>
+    );
+  }
+
   return (
-    // A column on a desktop, two rows on a phone: the search box, then the
-    // areas as a strip that scrolls sideways. `contents` is what lets one
-    // markup be both — on a desktop the wrapper is not a box at all, so the
-    // areas stay direct children of this column exactly as they were.
-    <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] py-3 max-md:h-auto max-md:w-full max-md:overflow-visible max-md:border-r-0 max-md:border-b max-md:py-2">
+    <nav className="flex h-full w-56 shrink-0 flex-col overflow-y-auto border-r border-[var(--border)] py-3">
       <SearchBox query={query} setQuery={setQuery} />
       {query.trim() ? (
         <SearchResults query={query} clear={() => setQuery('')} />
       ) : (
-        <div className="contents max-md:flex max-md:items-stretch max-md:gap-1.5 max-md:overflow-x-auto max-md:px-3 max-md:[scrollbar-width:none] max-md:[&::-webkit-scrollbar]:hidden">
+        <>
           {AREAS.map(item)}
           {/* Last, after the areas it summarises, and only when there is
               anything to summarise. A rail item that comes and goes must not be
@@ -97,9 +136,34 @@ export function SettingsNav({
               count={totalChanged}
             />
           )}
-        </div>
+        </>
       )}
     </nav>
+  );
+}
+
+/** One area, as a row on the phone's list: what it is called and what is in it. */
+function IndexRow({ to, label, hint, count }: { to: string; label: string; hint: string; count: number }) {
+  return (
+    <NavLink
+      to={to}
+      className="flex min-h-16 items-center gap-3 border-b border-[var(--border)] px-4 py-2 active:bg-[var(--bg-hover)]"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2 text-sm text-[var(--text)]">
+          {label}
+          {count > 0 && (
+            <span className="rounded-full bg-[var(--accent)]/15 px-1.5 text-[10px] leading-4 text-[var(--accent)]">
+              {count} changed
+            </span>
+          )}
+        </span>
+        <span className="mt-0.5 block text-xs text-[var(--text-dim)]">{hint}</span>
+      </span>
+      <span aria-hidden className="shrink-0 text-[var(--text-dim)]">
+        ›
+      </span>
+    </NavLink>
   );
 }
 
@@ -108,19 +172,17 @@ function RailLink({ to, open, label, count }: { to: string; open: boolean; label
   return (
     <NavLink
       to={to}
-      className={`flex items-center gap-2 px-3 py-1.5 text-sm max-md:min-h-10 max-md:rounded-full max-md:border max-md:whitespace-nowrap ${
-        open
-          ? 'text-[var(--text)] max-md:border-[var(--accent)] max-md:text-[var(--accent)]'
-          : 'text-[var(--text-dim)] hover:text-[var(--text)] max-md:border-[var(--border)]'
+      className={`flex items-center gap-2 px-3 py-1.5 text-sm ${
+        open ? 'text-[var(--text)]' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
       }`}
     >
       {/* The bar says where you are without indenting the label, so every row
           starts on the same column and the list reads as a list, not a tree. */}
       <span
         aria-hidden="true"
-        className={`h-4 w-0.5 shrink-0 rounded max-md:hidden ${open ? 'bg-[var(--accent)]' : 'bg-transparent'}`}
+        className={`h-4 w-0.5 shrink-0 rounded ${open ? 'bg-[var(--accent)]' : 'bg-transparent'}`}
       />
-      <span className="min-w-0 flex-1 truncate max-md:flex-none">{label}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       {count > 0 && (
         <span
           title={`${count} setting${count === 1 ? '' : 's'} changed from the default`}

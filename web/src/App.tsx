@@ -8,7 +8,6 @@ import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RemoteDisabledPage } from './pages/RemoteDisabledPage.tsx';
-import { MobileHeaderMenu } from './components/MobileHeaderMenu.tsx';
 import { MobileTabBar } from './components/MobileTabBar.tsx';
 import { NotificationsButton } from './components/NotificationsButton.tsx';
 import { NotificationToasts } from './components/NotificationToasts.tsx';
@@ -17,7 +16,6 @@ import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
 import { useIsMobile, useIsShort, useKeyboardInset } from './lib/mobile.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
-import { MorePage } from './pages/MorePage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
 import { PlansPage } from './pages/PlansPage.tsx';
 import { PromptsPage } from './pages/PromptsPage.tsx';
@@ -147,11 +145,13 @@ export function App() {
   }, [dev]);
   return (
     <div className="flex h-full flex-col">
-      {/* The one row that had to give. It needs about 900px and a phone has 360,
-          so on a phone the five destinations go to the bottom bar, the usage
-          widget goes to the More page, and what is left is the mark, which
-          instance this is, and the two controls that answer "is anything waiting
-          for me" and "where are the settings". */}
+      {/* The one row that had to give. It needs about 900px and a phone has
+          360, so the destinations and the gear go to the bottom bar and what is
+          left is this: who this is on the left, and on the right the three
+          readings — what Claude has spent, what is waiting, and whether there is
+          a new version. The last of those is drawn only when there IS one; the
+          rest of the time it is a button that answers a question nobody asks
+          from a phone, and Settings › Updates is where it is asked from. */}
       <header
         className={`flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1 ${
           bareDetail ? 'hidden' : ''
@@ -174,7 +174,7 @@ export function App() {
               e.preventDefault();
               navigate(listUrl()); // computed at click time: restores saved filters
             }}
-            className="flex items-baseline gap-1.5 text-lg font-semibold tracking-tight max-md:gap-1 max-md:text-base"
+            className="flex items-baseline gap-1.5 text-lg font-semibold tracking-tight max-md:gap-1 max-md:text-sm"
           >
             <Brandmark className="h-5 w-auto shrink-0 self-center max-md:h-4" />
             <span>
@@ -227,19 +227,17 @@ export function App() {
           <NavItem to="/plans" label="Plans" />
           <NavItem to="/stats" label="Stats" />
         </nav>
-        <span className="ml-auto flex items-center gap-2">
-          {/* Not on a phone: it is a five-figure readout that needs its own row,
-              and it has one on the More page. */}
-          <span className="max-md:hidden">
-            <UsageWidget />
-          </span>
+        <span className="ml-auto flex items-center gap-2 max-md:gap-1.5">
+          {/* Upright bars on a phone, the full pills above 48rem — one widget,
+              swapped inside itself. */}
+          <UsageWidget />
           <NotificationsButton />
-          {/* Both come off the row on a phone and go behind the three dots:
-              this header is on screen on every page, so what it takes it takes
-              from all of them, and on the session view it was helping to spend
-              half the window on chrome. The bell is the exception and stays —
-              a count you cannot see is not telling you anything. */}
-          <span className="max-md:hidden">
+          {/* A phone only ever reaches this app from another machine, so a
+              button whose whole job is "check, and tell me there is nothing" is
+              a button that is right 99 days out of 100. It appears when there is
+              something to install, and Settings › Updates opens the same window
+              the rest of the time. */}
+          <span className={update?.updateAvailable ? '' : 'max-md:hidden'}>
             <UpdateButton />
           </span>
           <NavLink
@@ -254,7 +252,6 @@ export function App() {
           >
             <GearIcon />
           </NavLink>
-          <MobileHeaderMenu />
         </span>
       </header>
       {/* Above the routes and outside `main`: the cards are `fixed`, they
@@ -269,9 +266,6 @@ export function App() {
           <Route path="/starred" element={<StarredPage />} />
           <Route path="/plans" element={<PlansPage />} />
           <Route path="/stats" element={<StatsPage />} />
-          {/* Phone only, and a real route rather than a sheet so the hardware
-              Back button needs nothing invented for it. It sends a desktop home. */}
-          <Route path="/more" element={<MorePage />} />
           {/* Both, rather than an optional segment: `/settings` is in the README
               and in every bookmark, and it goes on landing on the first area. */}
           <Route path="/settings" element={<SettingsPage />} />

@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
+import { UpdateButton } from '../UpdateButton.tsx';
 import { useSettingsPage } from './context.ts';
 import { DangerZone } from './DangerZone.tsx';
 import { Anchored, Explain, GroupCard, NumberField, Readout, ReadoutRow, SelectField } from './controls.tsx';
@@ -25,6 +26,9 @@ export function SystemArea() {
   const guard = useActiveSessionsGuard();
   const dataFolder = useLocalOnly('openDataFolder');
   const installFolder = useLocalOnly('openInstallFolder');
+  // Both open Explorer on the server's desktop; Clear cache beside them works
+  // from anywhere and stays ([useHideLocalOnly]).
+  const hideLocal = useHideLocalOnly();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -71,6 +75,13 @@ export function SystemArea() {
             )}
           </ReadoutRow>
         </Readout>
+        {/* The same window the header's badge opens — check now, read the
+            notes, pick a version. A second door rather than a second control:
+            this page is where somebody comes to ask about updates, and on a
+            phone the header's icon is only drawn when there is one waiting. */}
+        <Anchored id="act-updates">
+          <UpdateButton trigger="action" />
+        </Anchored>
       </GroupCard>
 
       <GroupCard id="logs">
@@ -137,28 +148,32 @@ export function SystemArea() {
         </Anchored>
 
         <div className="flex flex-wrap gap-1.5 pt-1">
-          <Anchored id="act-open-data">
-            <button
-              type="button"
-              className={actionClass}
-              disabled={dataFolder.disabled}
-              title={dataFolder.reason ?? undefined}
-              onClick={() => void api.openDataFolder()}
-            >
-              Open data folder
-            </button>
-          </Anchored>
-          <Anchored id="act-open-install">
-            <button
-              type="button"
-              className={actionClass}
-              disabled={!meta.paths.installRoot || installFolder.disabled}
-              title={installFolder.reason ?? meta.paths.installRoot ?? 'Not a managed install'}
-              onClick={() => void api.openInstallFolder()}
-            >
-              Open install folder
-            </button>
-          </Anchored>
+          {!hideLocal && (
+            <>
+              <Anchored id="act-open-data">
+                <button
+                  type="button"
+                  className={actionClass}
+                  disabled={dataFolder.disabled}
+                  title={dataFolder.reason ?? undefined}
+                  onClick={() => void api.openDataFolder()}
+                >
+                  Open data folder
+                </button>
+              </Anchored>
+              <Anchored id="act-open-install">
+                <button
+                  type="button"
+                  className={actionClass}
+                  disabled={!meta.paths.installRoot || installFolder.disabled}
+                  title={installFolder.reason ?? meta.paths.installRoot ?? 'Not a managed install'}
+                  onClick={() => void api.openInstallFolder()}
+                >
+                  Open install folder
+                </button>
+              </Anchored>
+            </>
+          )}
           <Anchored id="act-clear-cache">
             <button
               type="button"

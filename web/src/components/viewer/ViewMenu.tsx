@@ -127,7 +127,7 @@ function Item({
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       title={title}
-      className="flex w-full cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-[var(--text)] hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:text-[var(--text-dim)]/55 disabled:hover:bg-transparent"
+      className="flex w-full cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-[var(--text)] hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:text-[var(--text-dim)]/55 disabled:hover:bg-transparent max-md:min-h-11 max-md:px-2 max-md:text-sm"
     >
       {children}
     </button>
@@ -230,6 +230,35 @@ export function ViewMenu({
           window with a margin either side. */}
       {pop.open && (
         <div className="absolute right-0 z-30 mt-1 w-64 max-w-[calc(100vw-1.5rem)] rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 text-xs shadow-xl">
+          <ViewMenuBody view={view} reading={reading} fold={fold} counts={counts} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The menu's contents, with no menu around them.
+ *
+ * Its own export because a phone has no header row to hang this off: everything
+ * that was a control beside the title is one section of one sheet there, and a
+ * popover opened from inside a sheet is a second layer for the Back button to
+ * disagree about. Same controls, same state, drawn flat.
+ */
+export function ViewMenuBody({
+  view,
+  reading,
+  fold,
+  counts,
+}: {
+  view: ViewPrefs;
+  reading?: ReadingPrefs;
+  fold?: FoldState;
+  counts?: { thinking: number; tools: number; compactions: number };
+}) {
+  const full = view.width === WIDTH_FULL;
+  return (
+    <>
           {reading && counts && (
             <>
               <Section label="Shown in the conversation" />
@@ -319,7 +348,7 @@ export function ViewMenu({
             <Stepper label="+" onClick={() => view.stepZoomBy(1)} disabled={view.zoom >= ZOOM_MAX} />
           </div>
 
-          <div className="flex items-center gap-1.5 py-1">
+          <div className="flex items-center gap-1.5 py-1 max-md:hidden">
             <span className="w-12 shrink-0 text-[var(--text-dim)]">Width</span>
             <Stepper label="−" onClick={() => view.stepWidthBy(-1)} disabled={!full && view.width <= WIDTH_MIN} />
             <NumberField
@@ -339,12 +368,10 @@ export function ViewMenu({
             type="button"
             onClick={view.reset}
             disabled={view.isDefault}
-            className="mt-1 w-full cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40"
+            className="mt-1 w-full cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40 max-md:min-h-10 max-md:text-sm"
           >
             Reset to defaults
           </button>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

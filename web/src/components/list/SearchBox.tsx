@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 
-export function SearchBox({ value, onChange }: { value: string; onChange: (q: string) => void }) {
+export function SearchBox({
+  value,
+  onChange,
+  // The phone's bar has no room for the desktop's "370 of 400 sessions", and an
+  // empty box is exactly when there is room to read it.
+  placeholder = 'Search all conversations…  ( / )',
+}: {
+  value: string;
+  onChange: (q: string) => void;
+  placeholder?: string;
+}) {
   const [text, setText] = useState(value);
   const latest = useRef(value);
   latest.current = value;
@@ -22,7 +32,7 @@ export function SearchBox({ value, onChange }: { value: string; onChange: (q: st
         id="global-search"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Search all conversations…  ( / )"
+        placeholder={placeholder}
         className="w-full rounded border border-[var(--border)] bg-[var(--bg-raised)] py-1 pr-7 pl-2.5 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-9"
       />
       {text && (

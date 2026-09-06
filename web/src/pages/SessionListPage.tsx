@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { FilterSidebar } from '../components/list/FilterSidebar.tsx';
+import { MobileListBar } from '../components/list/MobileListBar.tsx';
 import { SearchBox } from '../components/list/SearchBox.tsx';
 import { SearchOptions } from '../components/list/SearchOptions.tsx';
 import { SearchResults } from '../components/list/SearchResults.tsx';
@@ -329,45 +330,64 @@ export function SessionListPage() {
           </>
         ))}
       <div className="flex min-w-0 flex-1 flex-col">
-        <SortBar
-          filters={filters}
-          onChange={setFilters}
-          resultCount={matching.length}
-          totalCount={sessions.data?.length ?? 0}
-        >
-          <button
-            type="button"
-            title={sidebarOpen ? 'Hide filters' : 'Show filters'}
-            aria-label={sidebarOpen ? 'Hide filters' : 'Show filters'}
-            onClick={() => setSidebarOpen((v) => !v)}
-            className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-xs hover:border-[var(--text-dim)] max-md:min-h-9 max-md:px-2.5 ${
-              filterCount > 0
-                ? 'border-[var(--accent-dim)] text-[var(--accent)]'
-                : 'border-[var(--border)] text-[var(--text-dim)]'
-            }`}
+        {/* One line and three square buttons on a phone, seven controls in a
+            row on a desktop. A branch rather than one markup restyled: the
+            phone's bar puts the count in the search placeholder and the
+            grouping behind a sheet, which is not the same row narrower. */}
+        {mobile ? (
+          <MobileListBar
+            filters={filters}
+            onChange={setFilters}
+            resultCount={matching.length}
+            totalCount={sessions.data?.length ?? 0}
+            q={q}
+            onQ={setQ}
+            filterCount={filterCount}
+            filtersOpen={sidebarOpen}
+            onToggleFilters={() => setSidebarOpen((v) => !v)}
+            tunedCount={tunedCount}
+            optionsOpen={optionsOpen}
+            onToggleOptions={() => setOptionsOpen((v) => !v)}
+          />
+        ) : (
+          <SortBar
+            filters={filters}
+            onChange={setFilters}
+            resultCount={matching.length}
+            totalCount={sessions.data?.length ?? 0}
           >
-            ☰
-            {filterCount > 0 && <span className="font-mono text-[11px]">{filterCount}</span>}
-          </button>
-          <SearchBox value={q} onChange={setQ} />
-          <button
-            type="button"
-            onClick={() => setOptionsOpen((v) => !v)}
-            title={
-              tunedCount > 0
-                ? 'Advanced search — options are changing these results'
-                : 'Advanced search options'
-            }
-            className={`cursor-pointer rounded border px-1.5 py-1 text-xs whitespace-nowrap ${
-              tunedCount > 0
-                ? 'border-[var(--accent-dim)] text-[var(--text)]'
-                : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
-            }`}
-          >
-            {/* The count is what keeps a collapsed panel from changing results in silence. */}
-            Advanced{tunedCount > 0 && ` · ${tunedCount}`} {optionsOpen ? '▴' : '▾'}
-          </button>
-        </SortBar>
+            <button
+              type="button"
+              title={sidebarOpen ? 'Hide filters' : 'Show filters'}
+              aria-label={sidebarOpen ? 'Hide filters' : 'Show filters'}
+              onClick={() => setSidebarOpen((v) => !v)}
+              className={`inline-flex shrink-0 cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-xs hover:border-[var(--text-dim)] ${
+                filterCount > 0
+                  ? 'border-[var(--accent-dim)] text-[var(--accent)]'
+                  : 'border-[var(--border)] text-[var(--text-dim)]'
+              }`}
+            >
+              ☰
+              {filterCount > 0 && <span className="font-mono text-[11px]">{filterCount}</span>}
+            </button>
+            <SearchBox value={q} onChange={setQ} />
+            <button
+              type="button"
+              onClick={() => setOptionsOpen((v) => !v)}
+              title={
+                tunedCount > 0 ? 'Advanced search — options are changing these results' : 'Advanced search options'
+              }
+              className={`cursor-pointer rounded border px-1.5 py-1 text-xs whitespace-nowrap ${
+                tunedCount > 0
+                  ? 'border-[var(--accent-dim)] text-[var(--text)]'
+                  : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]'
+              }`}
+            >
+              {/* The count is what keeps a collapsed panel from changing results in silence. */}
+              Advanced{tunedCount > 0 && ` · ${tunedCount}`} {optionsOpen ? '▴' : '▾'}
+            </button>
+          </SortBar>
+        )}
         {optionsOpen && <SearchOptions tuning={tuning} onChange={setTuning} />}
         <div
           ref={parentRef}

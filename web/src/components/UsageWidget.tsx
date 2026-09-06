@@ -13,6 +13,26 @@ function barColor(pct: number): string {
   return 'bg-emerald-400';
 }
 
+/**
+ * The same reading stood on its end, filling from the bottom like a battery.
+ *
+ * It is what the phone's header shows: a horizontal bar wide enough to read is
+ * 32px of a row that has 176 for everything to the right of the mark, and two
+ * of them plus their labels did not fit. Upright, a window costs 7px and the
+ * shape it borrows is the one every phone already draws in its own status bar.
+ */
+function VBar({ pct }: { pct: number }) {
+  return (
+    <span className="flex h-4 w-[7px] shrink-0 items-end overflow-hidden rounded-[2px] border border-[var(--border)] bg-[var(--bg)]">
+      <span
+        className={`block w-full ${barColor(pct)}`}
+        // A few percent still has to look like a level, not an empty cell.
+        style={{ height: `${Math.min(100, Math.max(6, pct))}%` }}
+      />
+    </span>
+  );
+}
+
 function Bar({ pct, className = '' }: { pct: number; className?: string }) {
   return (
     <span className={`inline-block overflow-hidden rounded-sm bg-[var(--border)] ${className}`}>
@@ -198,7 +218,7 @@ export function UsageWidget() {
         // One box, and inside it each window reads "label (resets) bar pct":
         // the countdown sits next to the label it belongs to, and the
         // percentage closes the group.
-        className={`flex cursor-pointer items-center gap-4 rounded border px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] ${
+        className={`flex cursor-pointer items-center gap-4 rounded border px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] max-md:gap-2 max-md:px-1.5 ${
           data.stale ? 'border-amber-400/40' : 'border-[var(--border)]'
         }`}
         title={
@@ -213,6 +233,26 @@ export function UsageWidget() {
           <span className="text-amber-400">usage n/a</span>
         ) : (
           <>
+            {/* The phone's version of the same two figures: no countdown, and
+                the bar stood on its end. Swapped by CSS rather than by a prop,
+                so there is one widget with one set of queries behind it and
+                nothing to keep in step. */}
+            <span className="hidden items-center gap-2 max-md:flex">
+              {[
+                ['5h', five] as const,
+                ['wk', week] as const,
+              ].map(([label, w]) =>
+                w ? (
+                  <span key={label} className="flex items-center gap-1">
+                    <span className="text-[9px] opacity-60">{label}</span>
+                    <VBar pct={w.utilization} />
+                    <span className="font-mono text-[10px] font-semibold text-[var(--text)]">
+                      {Math.round(w.utilization)}%
+                    </span>
+                  </span>
+                ) : null,
+              )}
+            </span>
             {/* One pill per window, so the countdown clearly belongs to the
                 figure on its left and not to the next window's label. */}
             {[
@@ -222,7 +262,7 @@ export function UsageWidget() {
               w ? (
                 <span
                   key={label}
-                  className="flex items-center gap-1.5"
+                  className="flex items-center gap-1.5 max-md:hidden"
                   title={`${w.label} — ${Math.round(w.utilization)}% used${
                     timeUntil(w.resetsAt) ? `, resets in ${timeUntil(w.resetsAt)}` : ''
                   }`}

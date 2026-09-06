@@ -2,9 +2,10 @@ import type { SessionDetail, SessionSummary } from '@claude-history/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { downloadMarkdown, type ExportOptions } from '../../lib/exportMarkdown.ts';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { usePopover } from '../../lib/popover.ts';
 import { toggleClass } from '../controlClass.ts';
 
@@ -178,6 +179,17 @@ function DotsIcon() {
   );
 }
 
+/** The same three dots stood up: the shape a phone's overflow menu wears. */
+function VDotsIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden className="size-4 shrink-0">
+      <circle cx="8" cy="3.2" r="1.35" />
+      <circle cx="8" cy="8" r="1.35" />
+      <circle cx="8" cy="12.8" r="1.35" />
+    </svg>
+  );
+}
+
 function Section({ label }: { label: string }) {
   return (
     <div className="mt-1 mb-0.5 px-1.5 text-[10px] font-semibold tracking-wider text-[var(--text-dim)]/60 uppercase">
@@ -227,13 +239,30 @@ export function SessionMenu({
   detail,
   draft,
   onRename,
+  extra,
 }: {
   detail: SessionDetail;
   draft?: boolean;
   /** Starts the title editor, which the header draws where the title is. */
   onRename: () => void;
+  /**
+   * Everything the page owns that has nowhere to sit on a phone — the panels,
+   * find, and how the conversation is drawn. Drawn ABOVE this menu's own items
+   * inside the sheet, and never on a desktop, where each of them is a control
+   * of its own in the header row.
+   *
+   * A function of `close` rather than a node, because every one of those is a
+   * thing you do and then want the sheet gone.
+   */
+  extra?: (close: () => void) => import('react').ReactNode;
 }) {
   const pop = usePopover<HTMLDivElement>();
+  const mobile = useIsMobile();
+  // Android's Back closes the sheet rather than leaving the session.
+  useBackDismiss(mobile && pop.open, pop.close);
+  // The thirteen actions that only work on the machine are not drawn at all
+  // here: a phone is never that machine ([useHideLocalOnly]).
+  const hideLocal = useHideLocalOnly();
   const a = useSessionActions(detail.summary);
   const queryClient = useQueryClient();
   const [exporting, setExporting] = useState(false);
@@ -264,19 +293,8 @@ export function SessionMenu({
     });
   };
 
-  return (
-    <div ref={pop.ref} className="relative inline-block">
-      <button
-        type="button"
-        onClick={pop.toggle}
-        className={toggleClass(pop.open)}
-        title="What can be done with this session"
-        aria-label="Session actions"
-      >
-        <DotsIcon />
-      </button>
-      {pop.open && (
-        <div className="absolute right-0 z-30 mt-1 w-60 max-w-[calc(100vw-1.5rem)] rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 shadow-xl">
+  const body = (
+        <>
           {exporting ? (
             <>
               <Section label="What goes in the file" />
@@ -328,35 +346,42 @@ export function SessionMenu({
               </Item>
               {!draft && (
                 <>
-                  <div className="my-1.5 -mx-2 h-px bg-[var(--border)]" />
-                  <Section label="Open on this machine" />
-                  {/* Three greyed-out rows whose only explanation is a `title`
-                      is three rows with no explanation at all on a phone:
-                      Android has no tooltips. They share one reason — this
-                      browser is not on that machine — so it is said once, in
-                      words, above the rows it is about. */}
-                  {a.folder.disabled && (
-                    <p className="hidden px-2 pb-1.5 text-[11px] text-[var(--text-dim)] max-md:block">
-                      {a.folder.reason}
-                    </p>
+                  {/* Three rows that open a window on the server's desktop. On a
+                      desktop they are drawn greyed with the reason above them —
+                      which is how somebody learns they are on the other machine.
+                      On a phone they are not drawn at all: a phone is never that
+                      machine, so the reason would be permanent — and then the
+                      only row left is one that copies text, which belongs with
+                      the session's own actions rather than under a heading
+                      about a machine it never touches. */}
+                  {!hideLocal && (
+                    <>
+                      <div className="my-1.5 -mx-2 h-px bg-[var(--border)]" />
+                      <Section label="Open on this machine" />
+                      {a.folder.disabled && (
+                        <p className="hidden px-2 pb-1.5 text-[11px] text-[var(--text-dim)] max-md:block">
+                          {a.folder.reason}
+                        </p>
+                      )}
+                      <Item onClick={a.folder.run} disabled={a.folder.disabled} title={a.folder.reason}>
+                        <FolderIcon />
+                        Project folder
+                      </Item>
+                      <Item onClick={a.vscode.run} disabled={a.vscode.disabled} title={a.vscode.reason}>
+                        <span aria-hidden className="w-3.5 shrink-0 text-center font-mono text-[11px]">
+                          {'{}'}
+                        </span>
+                        VS Code
+                      </Item>
+                      <Item onClick={a.resume.run} disabled={a.resume.disabled} title={a.resume.reason}>
+                        {/* Same ❯ the "cli" entrypoint chip uses. */}
+                        <span aria-hidden className="w-3.5 shrink-0 text-center text-xs">
+                          ❯
+                        </span>
+                        {a.resume.label}
+                      </Item>
+                    </>
                   )}
-                  <Item onClick={a.folder.run} disabled={a.folder.disabled} title={a.folder.reason}>
-                    <FolderIcon />
-                    Project folder
-                  </Item>
-                  <Item onClick={a.vscode.run} disabled={a.vscode.disabled} title={a.vscode.reason}>
-                    <span aria-hidden className="w-3.5 shrink-0 text-center font-mono text-[11px]">
-                      {'{}'}
-                    </span>
-                    VS Code
-                  </Item>
-                  <Item onClick={a.resume.run} disabled={a.resume.disabled} title={a.resume.reason}>
-                    {/* Same ❯ the "cli" entrypoint chip uses. */}
-                    <span aria-hidden className="w-3.5 shrink-0 text-center text-xs">
-                      ❯
-                    </span>
-                    {a.resume.label}
-                  </Item>
                   {/* Live from anywhere, including another machine, where it is
                       the only one of these that still does something useful. */}
                   <Item onClick={a.copy} title={a.command}>
@@ -367,8 +392,57 @@ export function SessionMenu({
               )}
             </>
           )}
-        </div>
-      )}
+        </>
+  );
+
+  return (
+    <div ref={pop.ref} className="relative inline-block">
+      <button
+        type="button"
+        onClick={pop.toggle}
+        className={
+          mobile
+            ? `grid size-10 shrink-0 cursor-pointer place-items-center rounded border ${
+                pop.open
+                  ? 'border-[var(--accent)] text-[var(--accent)]'
+                  : 'border-[var(--border)] text-[var(--text-dim)]'
+              }`
+            : toggleClass(pop.open)
+        }
+        title="What can be done with this session"
+        aria-label="Session actions"
+      >
+        {mobile ? <VDotsIcon /> : <DotsIcon />}
+      </button>
+      {pop.open &&
+        (mobile ? (
+          /* Everything that was a control in the header row, as one screen.
+             A 240px popover hanging off the right edge of a 360px header is a
+             menu you read through a slot; this is the same items with the
+             window, which is what "operative before tidy" buys here. */
+          <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg)] text-left">
+            <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{s.title}</h2>
+              <button
+                type="button"
+                onClick={pop.close}
+                aria-label="Close"
+                className="grid size-10 shrink-0 cursor-pointer place-items-center rounded border border-[var(--border)] text-[var(--text-dim)]"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-6">
+              {!exporting && extra?.(pop.close)}
+              {!exporting && extra && <div className="my-1.5 h-px bg-[var(--border)]" />}
+              {body}
+            </div>
+          </div>
+        ) : (
+          <div className="absolute right-0 z-30 mt-1 w-60 max-w-[calc(100vw-1.5rem)] rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 shadow-xl">
+            {body}
+          </div>
+        ))}
     </div>
   );
 }

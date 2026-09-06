@@ -3,7 +3,7 @@ import { BIND_REASONS, MIN_PASSWORD_LENGTH } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
@@ -38,6 +38,10 @@ export function RemoteAccessPanel() {
   const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
   const credentials = useLocalOnly('credentials');
   const firewallOnly = useLocalOnly('firewall');
+  // Setting the password and opening the firewall port are both things that
+  // can only be done AT the machine — the second raises a UAC prompt on its
+  // desktop — so from a phone they are two dead controls and a paragraph.
+  const hideLocal = useHideLocalOnly();
   // Only asked for where it can be acted on, and it shells out to PowerShell:
   // no reason to pay for it in every remote tab.
   const firewall = useQuery({ queryKey: ['firewall'], queryFn: api.firewall, enabled: !firewallOnly.disabled && !dev });
@@ -188,21 +192,34 @@ export function RemoteAccessPanel() {
           (it opens the credentials form when there are none) is a reason for it
           to look MORE like the others, not less. */}
       <Anchored id="set-remoteAccessEnabled" className="border-b border-[var(--border)] pb-3">
-        <div className={`flex items-start gap-2.5 ${credentials.disabled ? 'opacity-70' : ''}`}>
-          <Switch
-            checked={settings.remoteAccessEnabled}
-            disabled={credentials.disabled}
-            onChange={(v) => toggle(v)}
-          />
-          <span>
-            Let other machines on this network use claude-history
-            <span className="mt-0.5 block text-[11px] leading-relaxed text-[var(--text-dim)]">
-              {credentials.disabled
-                ? credentials.reason
-                : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
+        {hideLocal ? (
+          // A phone reading this page IS the remote access it describes, and
+          // there is nothing here it can change: the switch, the password and
+          // the firewall are all decided at the machine. So it says what the
+          // state is and where it is changed, instead of drawing a switch that
+          // can only refuse ([useHideLocalOnly]).
+          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
+            Remote access is <span className="text-[var(--text)]">on</span> — it is how you are reading this. The
+            switch, the username and password, and the firewall rule are all set on the machine claude-history runs
+            on.
+          </p>
+        ) : (
+          <div className={`flex items-start gap-2.5 ${credentials.disabled ? 'opacity-70' : ''}`}>
+            <Switch
+              checked={settings.remoteAccessEnabled}
+              disabled={credentials.disabled}
+              onChange={(v) => toggle(v)}
+            />
+            <span>
+              Let other machines on this network use claude-history
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-[var(--text-dim)]">
+                {credentials.disabled
+                  ? credentials.reason
+                  : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
+              </span>
             </span>
-          </span>
-        </div>
+          </div>
+        )}
       </Anchored>
 
       {(formOpen || configured) && !credentials.disabled && (

@@ -432,6 +432,12 @@ export const ENTRIES: Entry[] = [
     keywords: 'minutes interval update',
   },
   {
+    id: 'act-updates',
+    group: 'updates',
+    label: 'Open the updates window',
+    keywords: 'update check now install release notes version upgrade',
+  },
+  {
     id: 'set-logLevel',
     group: 'logs',
     field: 'logLevel',

@@ -1,7 +1,7 @@
 import { type AppSettings, defaultSettings } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useParams } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 import { api } from '../api/client.ts';
 import { markUsageRead } from '../api/usageReason.ts';
 import { useActiveSessionsGuard } from '../components/ActiveSessionsDialog.tsx';
@@ -13,6 +13,7 @@ import { NotificationsArea } from '../components/settings/NotificationsArea.tsx'
 import { RemoteAccessArea } from '../components/settings/RemoteAccessArea.tsx';
 import { SettingsNav } from '../components/settings/SettingsNav.tsx';
 import { SystemArea } from '../components/settings/SystemArea.tsx';
+import { useIsMobile } from '../lib/mobile.ts';
 import { type AreaId, CHANGED_VIEW, DEFAULT_AREA, findArea, groupIdOf, resolveAnchor } from '../lib/settingsCatalog.ts';
 
 /** Must match the `anchor-flash` animation in styles.css. */
@@ -49,6 +50,18 @@ export function SettingsPage() {
 
   const params = useParams();
   const { hash } = useLocation();
+  const mobile = useIsMobile();
+  /**
+   * `/settings` is a LIST on a phone, and an area on a desktop.
+   *
+   * The rail has nowhere to be beside a 360px panel, and as a strip above one it
+   * was six chips scrolling sideways over a panel that scrolled the other way.
+   * So the bare path shows what there is, and picking one gives it the window.
+   * A path that names an area is unaffected, and so is a hash that implies one:
+   * `/settings#backups` is a bookmark and a README link, and landing it on a
+   * menu would be landing it nowhere.
+   */
+  const showIndex = mobile && !params.area && !resolveAnchor(hash);
   /** The one route that is a list rather than an area. */
   const changedView = params.area === CHANGED_VIEW.id;
   /**
@@ -109,10 +122,23 @@ export function SettingsPage() {
       value={{ settings: data.settings, defaults: defaultSettings(dev), meta: data, dev, save, flashed, selected, select }}
     >
       {/* A 224px rail beside the content leaves 128px of a 360px screen for the
-          settings themselves, so on a phone the two stack: the rail becomes a
-          strip across the top and the content has the window. */}
-      <div className="flex h-full max-md:flex-col">
-        <SettingsNav area={changedView ? null : area} />
+          settings themselves, so on a phone the two are separate screens. */}
+      <div className={showIndex ? 'h-full' : 'flex h-full max-md:flex-col'}>
+        {showIndex ? (
+          <SettingsNav area={null} index />
+        ) : mobile ? (
+          // The way back to the list, and the only thing this row is for. The
+          // area's own name is the `h1` a few pixels below it, so saying it
+          // here as well would be the same word twice in 40px.
+          <Link
+            to="/settings"
+            className="flex shrink-0 items-center gap-1 border-b border-[var(--border)] px-3 py-2.5 text-sm text-[var(--text-dim)]"
+          >
+            <span aria-hidden>‹</span> All settings
+          </Link>
+        ) : (
+          <SettingsNav area={changedView ? null : area} />
+        )}
         {/* One delegated click for the whole panel, the way the conversation
             does it: the block you clicked, or null for the space beside them,
             which is what deselecting is. Controls inside a block are not
@@ -123,7 +149,7 @@ export function SettingsPage() {
           onClick={(e) =>
             select((e.target as Element).closest('[data-settings-group]')?.getAttribute('data-settings-group') ?? null)
           }
-          className="min-w-0 flex-1 overflow-y-auto"
+          className={`min-w-0 flex-1 overflow-y-auto ${showIndex ? 'hidden' : ''}`}
         >
           <div className="mx-auto max-w-5xl space-y-4 px-6 py-5 max-md:px-3 max-md:py-3">
             <header>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
@@ -28,6 +28,10 @@ export function DangerZone() {
   const guard = useActiveSessionsGuard();
   const stopServer = useLocalOnly('stopServer');
   const uninstall = useLocalOnly('uninstall');
+  // Both would cut the connection they arrived through, and a phone has no
+  // other one. Nothing is drawn rather than two red buttons that can only
+  // apologise ([useHideLocalOnly]).
+  const hideLocal = useHideLocalOnly();
   const [stopped, setStopped] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -47,6 +51,8 @@ export function DangerZone() {
       setNote(String(e instanceof Error ? e.message : e));
     });
   };
+
+  if (hideLocal) return null;
 
   return (
     <Subgroup title="Danger zone" tone="danger">

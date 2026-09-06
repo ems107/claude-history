@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { api } from '../api/client.ts';
-import { useLocalOnly } from '../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../api/useLocal.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { Composer } from '../components/viewer/Composer.tsx';
 import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
@@ -183,6 +183,8 @@ export function NewSessionPage() {
   const [terminalStarted, setTerminalStarted] = useState(false);
   const view = useViewPrefs();
   const browse = useLocalOnly('pickFolder');
+  // The field beside it is the way in from a phone, and it is untouched.
+  const hideLocal = useHideLocalOnly();
 
   const started = useMemo(readRemembered, []);
   /**
@@ -596,20 +598,21 @@ export function NewSessionPage() {
                       />
                       {/* The browser opens on the server's desktop, so from
                           another machine it is dead — and the box beside it is
-                          not, which is the whole reason only this button goes. */}
-                      <button
-                        type="button"
-                        onClick={browseForFolder}
-                        disabled={browsing || browse.disabled}
-                        className={`${btn} shrink-0 py-1.5`}
-                        title={browse.reason ?? 'Browse for a folder'}
-                      >
-                        {browsing ? 'Browsing…' : '📁 Browse…'}
-                      </button>
-                      {browse.disabled && browse.reason && (
-                        <p className="hidden basis-full text-[11px] text-[var(--text-dim)] max-md:block">
-                          {browse.reason}
-                        </p>
+                          not, which is the whole reason only this button goes.
+                          On a phone it is not drawn at all: there is no phone
+                          that IS that machine, so the greyed button and the
+                          sentence under it would be permanent furniture on the
+                          screen with the least room for it. */}
+                      {!hideLocal && (
+                        <button
+                          type="button"
+                          onClick={browseForFolder}
+                          disabled={browsing || browse.disabled}
+                          className={`${btn} shrink-0 py-1.5`}
+                          title={browse.reason ?? 'Browse for a folder'}
+                        >
+                          {browsing ? 'Browsing…' : '📁 Browse…'}
+                        </button>
                       )}
                     </div>
                   )}

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 /**
  * The one threshold that says "this is a phone", and the three things that read it.
@@ -107,6 +107,73 @@ export function useKeyboardInset(): void {
       root.style.removeProperty('--kb-inset');
     };
   }, []);
+}
+
+/** Above this much scroll the header is always shown: the top of a list is not
+ * somewhere anybody is trying to see more of. */
+const REVEAL_ABOVE_PX = 48;
+/** How far you must scroll DOWN, without changing your mind, to put it away. */
+const HIDE_AFTER_PX = 40;
+/** And back UP to get it again. Smaller: asking for it should feel immediate. */
+const SHOW_AFTER_PX = 24;
+
+/**
+ * The header steps aside while you read downwards, and comes back the moment
+ * you scroll up.
+ *
+ * A phone reading a conversation has about 500px of window, and a session's
+ * header is 80 of them — permanently, for a name you have already read and
+ * facts you looked at once. Every app on the device does this, which is the
+ * other half of the argument: it is the behaviour a thumb already expects.
+ *
+ * It measures ACCUMULATED movement in one direction rather than each event's
+ * delta, so a momentum scroll that wobbles a pixel the other way does not flap
+ * the header in and out. Above `REVEAL_ABOVE_PX` it is always shown: at the top
+ * of a conversation there is nothing being scrolled away from.
+ *
+ * Returns the flag, the handler to put on the scroller, and a way to ask for
+ * the header back — something inside it taking the focus, say. The caller owns
+ * how "hidden" is drawn; here it is a negative margin, which lets the
+ * conversation grow into the space instead of sliding under a floating bar.
+ */
+export function useHideOnScroll(active: boolean): {
+  hidden: boolean;
+  onScroll: (e: { currentTarget: HTMLElement }) => void;
+  reveal: () => void;
+} {
+  const [hidden, setHidden] = useState(false);
+  const lastY = useRef(0);
+  const run = useRef(0);
+  useEffect(() => {
+    if (!active) setHidden(false);
+  }, [active]);
+  const onScroll = useCallback(
+    (e: { currentTarget: HTMLElement }) => {
+      const y = e.currentTarget.scrollTop;
+      const dy = y - lastY.current;
+      lastY.current = y;
+      if (!active) return;
+      if (y <= REVEAL_ABOVE_PX) {
+        run.current = 0;
+        setHidden(false);
+        return;
+      }
+      // A change of direction starts the tally again, which is what makes one
+      // decisive flick enough and a jittery one not enough.
+      if (dy > 0 !== run.current > 0) run.current = 0;
+      run.current += dy;
+      if (run.current > HIDE_AFTER_PX) setHidden(true);
+      else if (run.current < -SHOW_AFTER_PX) setHidden(false);
+    },
+    [active],
+  );
+  // Whatever asked for it also resets the tally: otherwise the next flick
+  // downwards would arrive with a run already banked and hide it at once.
+  const reveal = useCallback(() => {
+    run.current = 0;
+    setHidden(false);
+  }, []);
+  return { hidden, onScroll, reveal };
 }
 
 /**

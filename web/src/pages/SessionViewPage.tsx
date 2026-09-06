@@ -26,7 +26,7 @@ import { buildToolCallIndex } from '../lib/toolCalls.ts';
 import { isFromTerminal } from '../lib/terminalPrefs.ts';
 import { turnActivity } from '../lib/turnActivity.ts';
 import { useInspector } from '../lib/inspector.ts';
-import { useBackDismiss, useIsMobile, useIsTyping } from '../lib/mobile.ts';
+import { useBackDismiss, useHideOnScroll, useIsMobile, useIsTyping } from '../lib/mobile.ts';
 import { useColumnWidth, useSideLayout } from '../lib/sideColumns.ts';
 import { useReadingPrefs } from '../lib/readingPrefs.ts';
 import { useViewPrefs, WIDTH_FULL, ZOOM_DEFAULT } from '../lib/viewPrefs.ts';
@@ -44,6 +44,7 @@ import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
+import { SessionSheetSections } from '../components/viewer/SessionSheetSections.tsx';
 import { SideColumn } from '../components/viewer/SideColumn.tsx';
 import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
@@ -723,6 +724,27 @@ export function SessionViewPage() {
    */
   const mobile = useIsMobile();
   /**
+   * The session header steps aside while you read downwards.
+   *
+   * A negative margin rather than a transform or a `fixed` bar: the header is a
+   * row of the same flex column the conversation is in, so pulling it up gives
+   * the conversation the pixels instead of letting it slide under something.
+   * The pane above it already clips ([overflow-hidden]), so there is nothing to
+   * hide it with. Its height is measured rather than assumed — it is one row or
+   * five, depending on `more`.
+   */
+  const headerBox = useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  useEffect(() => {
+    const el = headerBox.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setHeaderHeight(el.offsetHeight));
+    ro.observe(el);
+    setHeaderHeight(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
+  const headerFold = useHideOnScroll(mobile);
+  /**
    * The on-screen keyboard is up, which on a phone leaves about 90px of
    * conversation between the header and the composer. The follow pill is lifted
    * by the composer's height and would be standing in the header; and somebody
@@ -1210,34 +1232,53 @@ export function SessionViewPage() {
             and the terminal's full screen are untouched, and the two header
             menus open downward INSIDE the box. */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <SessionHeader
-            detail={session}
-            draft={isDraft}
-            color={color}
-            // Not detail.summary.live: that one only moves when the transcript
-            // grows, so the badge would still read "live" through a turn the app
-            // itself is running.
-            live={liveInfo}
-            actions={
-              <>
-                <FindButton
-                  open={finder.isOpen}
-                  onToggle={() => (finder.isOpen ? finder.close() : finder.openBar())}
-                />
-                <ViewMenu
+          <div
+            ref={headerBox}
+            className={mobile ? 'shrink-0 transition-[margin-top] duration-200 ease-out' : 'shrink-0'}
+            style={mobile && headerFold.hidden ? { marginTop: -headerHeight } : undefined}
+            // Anything that opens while it is tucked away — the title editor,
+            // the ⋮ sheet — needs it back, and the sheet is `fixed` so only the
+            // first of those would have been off screen.
+            onFocusCapture={() => headerFold.reveal()}
+          >
+            <SessionHeader
+              detail={session}
+              draft={isDraft}
+              color={color}
+              // Not detail.summary.live: that one only moves when the transcript
+              // grows, so the badge would still read "live" through a turn the
+              // app itself is running.
+              live={liveInfo}
+              actions={
+                <>
+                  <FindButton
+                    open={finder.isOpen}
+                    onToggle={() => (finder.isOpen ? finder.close() : finder.openBar())}
+                  />
+                  <ViewMenu
+                    view={view}
+                    reading={reading}
+                    fold={fold}
+                    counts={{ thinking: thinkingCount, tools: toolCount, compactions: compactionCount }}
+                  />
+                </>
+              }
+              // The same three, plus the seven panels, as sections of the sheet
+              // the ⋮ opens on a phone — where the title row has room for a name
+              // and one button, and nothing else.
+              menuSections={(close) => (
+                <SessionSheetSections
+                  inspector={inspector}
+                  onFind={finder.openBar}
                   view={view}
                   reading={reading}
                   fold={fold}
                   counts={{ thinking: thinkingCount, tools: toolCount, compactions: compactionCount }}
+                  close={close}
                 />
-              </>
-            }
-          />
-          {/* On a phone the rail is a strip UNDER the header rather than a
-              column beside the conversation: 72px of a 360px screen is a fifth
-              of it, permanently, for seven buttons that are used a few times a
-              session. Same items, same toggles, laid on their side. */}
-          {mobile && <InspectorRail inspector={inspector} horizontal />}
+              )}
+            />
+          </div>
           {/* Header above, and below it a ROW: the conversation, then whichever
               panel is open, then the rail. Every panel used to be stacked here,
               between the header and the scroller, which is why opening one
@@ -1281,6 +1322,10 @@ export function SessionViewPage() {
               // the full width of the scroller rather than of the column.
               data-conversation-scroller
               onClick={selectFromClick}
+              // Reading downwards puts the session header away; scrolling back
+              // up brings it straight back ([useHideOnScroll]). A no-op above
+              // 48rem, where the header costs nothing worth reclaiming.
+              onScroll={headerFold.onScroll}
               // `scrollbar-gutter` reserves 20px on a desktop to keep the thread
               // centred against a classic scrollbar. A phone draws an overlay bar
               // that takes no room, so there is nothing to reserve against and the

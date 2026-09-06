@@ -506,6 +506,104 @@ export function SessionTerminal({
   }, [open]);
 
   /**
+   * A finger dragged over the terminal scrolls it, exactly as a wheel does.
+   *
+   * Nothing scrolled at all before, and the reason is a layer: xterm builds a
+   * `.xterm-viewport` that really is a scrollable div and a `.xterm-screen`
+   * that sits ON TOP of it, so a touch lands on the screen and the viewport
+   * under it never hears about it. A wheel event is forwarded across that gap
+   * by xterm itself. A touch is not.
+   *
+   * **So the drag is turned into wheel events rather than into scrolling**, and
+   * that is the decision worth writing down. `term.scrollLines()` would have
+   * been the obvious call and it would have done nothing here: Claude Code runs
+   * in the ALTERNATE screen buffer (`buffer.active.type === 'alternate'`), which
+   * by definition has no scrollback to move, and it turns full mouse reporting
+   * on — so on a desktop the wheel is not scrolling anything either. It is
+   * being SENT to the CLI, which scrolls its own transcript. One synthetic
+   * wheel per row puts a phone on that same path, and whatever xterm decides to
+   * do with it — report it, translate it to cursor keys in an alt buffer with
+   * no mouse mode, or scroll a real scrollback — is decided in one place for
+   * both kinds of pointer.
+   *
+   * `deltaMode: DOM_DELTA_LINE` and one event per row, because that is what
+   * survives the translation: in pixel mode xterm damps anything under 50px to
+   * 30% and carries the remainder, and a mouse report is one notch per event
+   * however large the delta.
+   *
+   * The 8px slop keeps a TAP a tap — `preventDefault` on a touchmove suppresses
+   * the compatibility mouse events after it, and those are what put the cursor
+   * in the terminal.
+   */
+  useEffect(() => {
+    if (!open || !mobile) return;
+    const host = hostRef.current;
+    if (!host) return;
+    /** Wheel's own units: 0 is pixels, 1 is lines. */
+    const DOM_DELTA_LINE = 1;
+    /** A flick can cover the window; forwarding all of it would be a burst. */
+    const MAX_ROWS_PER_MOVE = 8;
+    /** Below this the gesture is still a tap being made slightly untidily. */
+    const TAP_SLOP = 8;
+    let lastY = 0;
+    let carried = 0;
+    let travelled = 0;
+    let tracking = false;
+    const rowHeight = (): number => {
+      const term = termRef.current;
+      if (!term || term.rows === 0) return 0;
+      const screen = host.querySelector('.xterm-screen');
+      const px = screen instanceof HTMLElement ? screen.clientHeight : host.clientHeight;
+      return px / term.rows;
+    };
+    const onStart = (e: TouchEvent) => {
+      tracking = e.touches.length === 1;
+      if (!tracking) return;
+      lastY = e.touches[0].clientY;
+      carried = 0;
+      travelled = 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!tracking || e.touches.length !== 1) return;
+      const row = rowHeight();
+      if (row <= 0) return;
+      const touch = e.touches[0];
+      // Finger up means read further down, the way a page moves under a hand.
+      const dy = lastY - touch.clientY;
+      lastY = touch.clientY;
+      travelled += Math.abs(dy);
+      if (travelled < TAP_SLOP) return;
+      e.preventDefault();
+      carried += dy;
+      const rows = Math.trunc(carried / row);
+      if (rows === 0) return;
+      carried -= rows * row;
+      // On the screen, which is what a mouse would be over: with reporting on,
+      // xterm turns the coordinates into the cell the CLI is told about.
+      const target = host.querySelector('.xterm-screen') ?? host;
+      const step = rows > 0 ? 1 : -1;
+      for (let i = 0; i < Math.min(Math.abs(rows), MAX_ROWS_PER_MOVE); i++) {
+        target.dispatchEvent(
+          new WheelEvent('wheel', {
+            deltaY: step,
+            deltaMode: DOM_DELTA_LINE,
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      }
+    };
+    host.addEventListener('touchstart', onStart, { passive: true });
+    host.addEventListener('touchmove', onMove, { passive: false });
+    return () => {
+      host.removeEventListener('touchstart', onStart);
+      host.removeEventListener('touchmove', onMove);
+    };
+  }, [open, mobile]);
+
+  /**
    * One socket per open terminal. It only ever attaches: starting is the POST,
    * so a refusal is a sentence and not a socket that closes again for reasons
    * nobody can read.
@@ -1156,13 +1254,18 @@ export function SessionTerminal({
           collapsed — open, the bar is a label and the click is a no-op that
           merely keeps the focus where it already is. */}
       <div
-        className={`flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] max-md:flex-wrap max-md:gap-y-1 max-md:py-1.5 ${
+        // **Never wrapped**, and that is the fix rather than the preference:
+        // with `flex-wrap` on, a long cwd does not fit after the `❯` at its
+        // full content width, so it is placed on the NEXT line and shrunk
+        // there — leaving a first row holding one glyph and nothing else. It
+        // truncates on one line instead, which is what the ellipsis was for.
+        className={`flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)] max-md:py-1.5 ${
           minimised ? 'cursor-pointer hover:text-[var(--text)]' : ''
         }`}
         title={minimised ? 'Click to open the terminal' : undefined}
       >
-        <span className="text-[var(--accent)]">❯</span>
-        <span className="truncate" title={cwd ?? undefined}>
+        <span className="shrink-0 text-[var(--accent)]">❯</span>
+        <span className="min-w-0 flex-1 truncate" title={cwd ?? undefined}>
           {running ? 'claude' : exit ? `claude exited (code ${exit.code ?? 'killed'})` : 'claude'}
           {cwd ? ` — ${cwd}` : ''}
         </span>

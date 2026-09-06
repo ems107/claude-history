@@ -1,7 +1,7 @@
 import type { ScratchpadEntry, ScratchpadResponse } from '@claude-history/shared';
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { isImagePath } from '../../lib/fileRefs.ts';
 import { formatBytes, formatDateTime } from '../../lib/format.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
@@ -130,6 +130,7 @@ export function ScratchpadPanel({ sessionId, data }: { sessionId: string; data: 
   // and would disagree the first time either was reworded. `FileViewerPanel`
   // greys its own Show in Explorer out the same way.
   const handOff = useLocalOnly('openFile');
+  const hideLocal = useHideLocalOnly();
 
   const openFolder = () => {
     setOpening(true);
@@ -164,19 +165,21 @@ export function ScratchpadPanel({ sessionId, data }: { sessionId: string; data: 
         >
           {data.root}
         </span>
-        <button
-          type="button"
-          disabled={handOff.disabled || opening}
-          onClick={openFolder}
-          title={handOff.reason ?? `Open ${data.root} in Explorer`}
-          className={`shrink-0 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] ${
-            handOff.disabled || opening
-              ? 'cursor-default opacity-40'
-              : 'cursor-pointer hover:border-[var(--text-dim)] hover:text-[var(--text)]'
-          }`}
-        >
-          Open folder
-        </button>
+        {!hideLocal && (
+          <button
+            type="button"
+            disabled={handOff.disabled || opening}
+            onClick={openFolder}
+            title={handOff.reason ?? `Open ${data.root} in Explorer`}
+            className={`shrink-0 rounded border border-[var(--border)] px-1.5 py-0.5 text-[10px] ${
+              handOff.disabled || opening
+                ? 'cursor-default opacity-40'
+                : 'cursor-pointer hover:border-[var(--text-dim)] hover:text-[var(--text)]'
+            }`}
+          >
+            Open folder
+          </button>
+        )}
       </div>
       {openError && <div className="mb-2 text-[11px] text-amber-500/90">{openError}</div>}
       <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">

@@ -3,7 +3,7 @@ import { CLAUDE_SWEEP_INTERVAL_HOURS } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
 import { api } from '../../api/client.ts';
-import { useLocalOnly } from '../../api/useLocal.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { retentionLabel, retentionView } from '../../lib/retention.ts';
@@ -38,6 +38,8 @@ export function RetentionPanel() {
   });
   const [note, setNote] = useState<string | null>(null);
   const claudeFolder = useLocalOnly('openClaudeFolder');
+  // Copy the path still works from anywhere, and is what is left here.
+  const hideLocal = useHideLocalOnly();
 
   if (!data) return <p className="text-[var(--text-dim)]">Reading Claude Code's settings…</p>;
   const view = retentionView(data);
@@ -207,15 +209,17 @@ export function RetentionPanel() {
       </Explain>
 
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
-        <button
-          type="button"
-          className={actionClass}
-          onClick={() => void api.openClaudeSettingsFolder()}
-          disabled={claudeFolder.disabled}
-          title={claudeFolder.reason ?? undefined}
-        >
-          Open the folder
-        </button>
+        {!hideLocal && (
+          <button
+            type="button"
+            className={actionClass}
+            onClick={() => void api.openClaudeSettingsFolder()}
+            disabled={claudeFolder.disabled}
+            title={claudeFolder.reason ?? undefined}
+          >
+            Open the folder
+          </button>
+        )}
         <button
           type="button"
           className={actionClass}

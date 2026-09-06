@@ -1,5 +1,7 @@
-import { NavLink, useLocation } from 'react-router';
-import { useIsShort, useIsTyping } from '../lib/mobile.ts';
+import { useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router';
+import { GearIcon } from './icons.tsx';
+import { useBackDismiss, useIsShort, useIsTyping } from '../lib/mobile.ts';
 
 /**
  * The navigation, on a phone.
@@ -9,10 +11,10 @@ import { useIsShort, useIsTyping } from '../lib/mobile.ts';
  * row with no wrap. At 360px that row simply ran off the screen, taking the
  * whole document with it — and what ran off first was the navigation.
  *
- * So the destinations come down here, where a thumb is. Four of them plus a
- * `More` that is a PAGE rather than a popover ([MorePage]), which is the whole
- * of how the hardware Back button works on this: every layer of the navigation
- * is a real route, so Back is the browser's own and there is no history to fake.
+ * So the destinations come down here, where a thumb is. Five of them, and the
+ * middle one is the one that MAKES something. `More` is a menu rather than a
+ * page: a page of four links is a screen you have to leave again, and every one
+ * of those links is a place you were trying to get to in one tap.
  *
  * **In the flow, not `fixed`.** The app root is already a full-height flex
  * column, so a `shrink-0` row at the end of it is a bar the content cannot slide
@@ -50,12 +52,13 @@ function SessionsIcon() {
   );
 }
 
-/** A caret and a line — something you typed. */
-function PromptsIcon() {
+/** Bars of different heights — what the conversations cost. */
+function StatsIcon() {
   return (
     <svg {...base}>
-      <path d="M3 4.5 6 8l-3 3.5" />
-      <path d="M8 11.5h5" />
+      <path d="M3 13V7.5" />
+      <path d="M8 13V3" />
+      <path d="M13 13V9.5" />
     </svg>
   );
 }
@@ -71,14 +74,6 @@ function NewIcon() {
   );
 }
 
-function StarIcon() {
-  return (
-    <svg {...base}>
-      <path d="M8 2.2l1.76 3.57 3.94.57-2.85 2.78.67 3.92L8 11.2l-3.52 1.85.67-3.92L2.3 6.34l3.94-.57z" />
-    </svg>
-  );
-}
-
 /** Three dots — everything that did not fit. */
 function MoreIcon() {
   return (
@@ -90,6 +85,11 @@ function MoreIcon() {
   );
 }
 
+const tabClass = (active: boolean, accent?: boolean) =>
+  `flex min-w-0 flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] ${
+    active ? 'text-[var(--accent)]' : accent ? 'text-[var(--text)]' : 'text-[var(--text-dim)]'
+  }`;
+
 function Tab({ to, label, icon, accent }: { to: string; label: string; icon: React.ReactNode; accent?: boolean }) {
   return (
     <NavLink
@@ -97,21 +97,20 @@ function Tab({ to, label, icon, accent }: { to: string; label: string; icon: Rea
       // `end` on the root alone: every other route is a prefix of nothing, and
       // without it "/" would light up on every page in the app.
       end={to === '/'}
-      className={({ isActive }) =>
-        `flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] ${
-          isActive
-            ? 'text-[var(--accent)]'
-            : accent
-              ? 'text-[var(--text)]'
-              : 'text-[var(--text-dim)]'
-        }`
-      }
+      className={({ isActive }) => tabClass(isActive, accent)}
     >
       {icon}
       <span className="max-w-full truncate">{label}</span>
     </NavLink>
   );
 }
+
+/** The three places that did not earn a tab of their own. */
+const MORE: Array<[string, string, string]> = [
+  ['/prompts', 'Prompts', 'Every prompt you have typed, across all sessions'],
+  ['/plans', 'Plans', 'Every plan written in a session, newest first'],
+  ['/starred', 'Starred messages', 'The messages you kept'],
+];
 
 /**
  * The two screens the bar does not appear on. Both are a DETAIL pushed over the
@@ -131,19 +130,60 @@ export function MobileTabBar({ chatEnabled }: { chatEnabled: boolean }) {
   // to see MORE of something.
   const short = useIsShort();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const [more, setMore] = useState(false);
+  // Android's Back closes the menu instead of leaving the page. A menu and not
+  // a route, so it needs the marker; the destinations inside it are routes and
+  // Back handles those itself.
+  useBackDismiss(more, () => setMore(false));
   if (typing || short || coversTheBar(pathname)) return null;
+  const inMore = MORE.some(([to]) => pathname === to);
   return (
     <nav
       // The gesture bar is under this, so the padding is the bar's own rather
       // than something the page below has to know about.
-      className="flex shrink-0 items-stretch border-t border-[var(--border)] bg-[var(--bg-raised)] pb-[var(--safe-bottom)] md:hidden"
+      className="relative flex shrink-0 items-stretch border-t border-[var(--border)] bg-[var(--bg-raised)] pb-[var(--safe-bottom)] md:hidden"
       aria-label="Sections"
     >
       <Tab to="/" label="Sessions" icon={<SessionsIcon />} />
-      <Tab to="/prompts" label="Prompts" icon={<PromptsIcon />} />
+      <Tab to="/stats" label="Stats" icon={<StatsIcon />} />
       {chatEnabled && <Tab to="/new" label="New" icon={<NewIcon />} accent />}
-      <Tab to="/starred" label="Starred" icon={<StarIcon />} />
-      <Tab to="/more" label="More" icon={<MoreIcon />} />
+      <button type="button" onClick={() => setMore((v) => !v)} className={tabClass(more || inMore)} aria-expanded={more}>
+        <MoreIcon />
+        <span className="max-w-full truncate">More</span>
+      </button>
+      <Tab to="/settings" label="Settings" icon={<GearIcon className="size-5" />} />
+
+      {more && (
+        <>
+          {/* A tap anywhere else closes it, and it must sit UNDER the menu but
+              over the page: the same two-layer shape the usage popover uses. */}
+          <div className="fixed inset-0 z-40" onClick={() => setMore(false)} />
+          <div className="absolute inset-x-2 bottom-full z-50 mb-1 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] shadow-xl">
+            {MORE.map(([to, label, hint]) => (
+              <button
+                key={to}
+                type="button"
+                onClick={() => {
+                  setMore(false);
+                  void navigate(to);
+                }}
+                className={`flex min-h-14 w-full cursor-pointer items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-left last:border-b-0 ${
+                  pathname === to ? 'text-[var(--accent)]' : ''
+                }`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm">{label}</span>
+                  <span className="block text-xs text-[var(--text-dim)]">{hint}</span>
+                </span>
+                <span aria-hidden className="shrink-0 text-[var(--text-dim)]">
+                  ›
+                </span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </nav>
   );
 }
