@@ -26,7 +26,10 @@ export function CountBadge({ count, className = '' }: { count: number; className
     // button says nothing about what it counts.
     <span
       aria-hidden="true"
-      className={`absolute -top-1.5 -right-1.5 min-w-4 rounded-full border-2 border-[var(--bg)] px-1 text-[9px] leading-3 font-bold ${
+      // A GRID and not a line box: centred on its own content, so `1` and
+      // `12` are both in the middle of the circle instead of one of them
+      // riding the digit's baseline and reading as dropped.
+      className={`absolute -top-1.5 -right-1.5 grid h-4 min-w-4 place-items-center rounded-full border-2 border-[var(--bg)] px-1 text-[9px] leading-none font-bold ${
         // The halo is `--bg` and not the control's own fill: it has to read as a
         // gap punched through the border, whatever the control is sitting on.
         className || 'bg-amber-400 text-black'

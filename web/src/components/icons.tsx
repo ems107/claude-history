@@ -14,9 +14,9 @@ const base = {
 };
 
 /** Arrow rising out of a line — "upgrade", as opposed to a refresh circle. */
-export function UpgradeIcon() {
+export function UpgradeIcon({ className = 'h-3.5 w-3.5' }: { className?: string } = {}) {
   return (
-    <svg {...base} className="h-3.5 w-3.5">
+    <svg {...base} className={className}>
       <path d="M8 11V2.5" />
       <path d="M4.5 6 8 2.5 11.5 6" />
       <path d="M3 13.5h10" />

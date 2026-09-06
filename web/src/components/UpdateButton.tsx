@@ -7,7 +7,8 @@ import { useIsRemote } from '../api/useLocal.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
 import { useBackDismiss } from '../lib/mobile.ts';
 import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
-import { actionClass } from './controlClass.ts';
+import { CountBadge } from './CountBadge.tsx';
+import { actionClass, squareClass, squareIcon } from './controlClass.ts';
 import { UpgradeIcon } from './icons.tsx';
 import { Markdown } from './viewer/Markdown.tsx';
 
@@ -239,16 +240,12 @@ export function UpdateButton({ trigger = 'icon' }: { trigger?: 'icon' | 'action'
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="relative cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-9 max-md:px-2.5"
+          className={squareClass()}
           title={count > 0 ? `${count} new version${count !== 1 ? 's' : ''} available` : 'Check for updates'}
           aria-label="Updates"
         >
-          <UpgradeIcon />
-          {count > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 grid h-4 min-w-4 place-items-center rounded-full border-2 border-[var(--bg)] bg-amber-400 px-1 text-[9px] leading-none font-bold text-black">
-              {count}
-            </span>
-          )}
+          <UpgradeIcon className={squareIcon} />
+          <CountBadge count={count} />
         </button>
       )}
 

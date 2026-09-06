@@ -23,7 +23,7 @@ function barColor(pct: number): string {
  */
 function VBar({ pct }: { pct: number }) {
   return (
-    <span className="flex h-4 w-[7px] shrink-0 items-end overflow-hidden rounded-[2px] border border-[var(--border)] bg-[var(--bg)]">
+    <span className="flex h-3.5 w-[7px] shrink-0 items-end overflow-hidden rounded-[2px] border border-[var(--border)] bg-[var(--bg)]">
       <span
         className={`block w-full ${barColor(pct)}`}
         // A few percent still has to look like a level, not an empty cell.
@@ -218,7 +218,7 @@ export function UsageWidget() {
         // One box, and inside it each window reads "label (resets) bar pct":
         // the countdown sits next to the label it belongs to, and the
         // percentage closes the group.
-        className={`flex cursor-pointer items-center gap-4 rounded border px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] max-md:gap-2 max-md:px-1.5 ${
+        className={`flex cursor-pointer items-center gap-4 rounded border px-2 py-1 text-[11px] text-[var(--text-dim)] hover:border-[var(--text-dim)] max-md:h-10 max-md:gap-2 max-md:px-1.5 max-md:py-0 ${
           data.stale ? 'border-amber-400/40' : 'border-[var(--border)]'
         }`}
         title={
@@ -233,20 +233,30 @@ export function UsageWidget() {
           <span className="text-amber-400">usage n/a</span>
         ) : (
           <>
-            {/* The phone's version of the same two figures: no countdown, and
-                the bar stood on its end. Swapped by CSS rather than by a prop,
-                so there is one widget with one set of queries behind it and
-                nothing to keep in step. */}
-            <span className="hidden items-center gap-2 max-md:flex">
+            {/* The phone's version of the same two figures, and it says the
+                same things: the label, how long until it resets, the level and
+                the percentage. **Stacked rather than side by side**, which is
+                the whole of what makes the countdown fit — two of these end to
+                end is 150px of a row that has about 100, and one above the
+                other is 75 in the 40px of height the squares beside it already
+                take. Swapped by CSS rather than by a prop, so there is one
+                widget with one set of queries behind it. */}
+            <span className="hidden max-md:grid max-md:content-center max-md:gap-y-0.5">
               {[
                 ['5h', five] as const,
                 ['wk', week] as const,
               ].map(([label, w]) =>
                 w ? (
-                  <span key={label} className="flex items-center gap-1">
-                    <span className="text-[9px] opacity-60">{label}</span>
+                  <span key={label} className="flex items-center gap-1 leading-none">
+                    <span className="w-4 shrink-0 text-[9px] opacity-60">{label}</span>
+                    {timeUntil(w.resetsAt, true) && (
+                      <span className="flex shrink-0 items-center gap-px text-[9px] opacity-40">
+                        <ResetIcon />
+                        {timeUntil(w.resetsAt, true)}
+                      </span>
+                    )}
                     <VBar pct={w.utilization} />
-                    <span className="font-mono text-[10px] font-semibold text-[var(--text)]">
+                    <span className="ml-auto w-7 shrink-0 text-right font-mono text-[10px] font-semibold text-[var(--text)]">
                       {Math.round(w.utilization)}%
                     </span>
                   </span>

@@ -7,6 +7,8 @@ import { api } from '../api/client.ts';
 import { OrderBar } from '../components/list/OrderBar.tsx';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
+import { MobileToolbar } from '../components/list/MobileToolbar.tsx';
+import { useIsMobile } from '../lib/mobile.ts';
 import { groupBySession, sortByDate, useOrder } from '../lib/order.ts';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
@@ -113,6 +115,7 @@ export function PlansPage() {
   const [projectFilter, setProjectFilter] = useState('');
   const [status, setStatus] = useState('');
   const [order, setOrder] = useOrder('plansOrder');
+  const mobile = useIsMobile();
 
   const colorByProject = useMemo(() => {
     const map = new Map<string, string>();
@@ -151,48 +154,82 @@ export function PlansPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm max-md:flex-wrap max-md:gap-2 max-md:px-3">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search every plan you were ever shown…"
-          className="max-w-md min-w-48 flex-1 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 py-1 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-10 max-md:w-full max-md:min-w-0 max-md:basis-full"
+      {mobile ? (
+        <MobileToolbar
+          title="Plans"
+          q={q}
+          onQ={setQ}
+          placeholder={`Search ${rows.length} plan${rows.length === 1 ? '' : 's'}…`}
+          filters={[
+            {
+              label: 'Outcome',
+              value: status,
+              onChange: setStatus,
+              options: [
+                ['', 'Any outcome'],
+                ['approved', 'Approved'],
+                ['rejected', 'Not approved'],
+                ['pending', 'Awaiting an answer'],
+              ],
+            },
+            {
+              label: 'Project',
+              value: projectFilter,
+              onChange: setProjectFilter,
+              options: [['', 'All projects'], ...projectOptions],
+            },
+          ]}
+          order={{
+            order,
+            onChange: setOrder,
+            field: 'Asked',
+            groupHint: 'the session that submitted them',
+          }}
         />
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)] max-md:min-h-10 max-md:px-2"
-        >
-          <option value="">Any outcome</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Not approved</option>
-          <option value="pending">Awaiting an answer</option>
-        </select>
-        <select
-          value={projectFilter}
-          onChange={(e) => setProjectFilter(e.target.value)}
-          className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)] max-md:min-h-10 max-md:px-2"
-        >
-          <option value="">All projects</option>
-          {projectOptions.map(([key, name]) => (
-            <option key={key} value={key}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <span className="text-[var(--text-dim)]">
-          {rows.length} plan{rows.length === 1 ? '' : 's'}
-          {order.group === 'session' && ` in ${groups.length} session${groups.length === 1 ? '' : 's'}`}
-        </span>
-        <span className="ml-auto">
-          <OrderBar
-            order={order}
-            onChange={setOrder}
-            field="Asked"
-            groupHint="Group the plans by the session that submitted them, newest session first"
+      ) : (
+        <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search every plan you were ever shown…"
+            className="max-w-md min-w-48 flex-1 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 py-1 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
           />
-        </span>
-      </div>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)]"
+          >
+            <option value="">Any outcome</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Not approved</option>
+            <option value="pending">Awaiting an answer</option>
+          </select>
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)]"
+          >
+            <option value="">All projects</option>
+            {projectOptions.map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <span className="text-[var(--text-dim)]">
+            {rows.length} plan{rows.length === 1 ? '' : 's'}
+            {order.group === 'session' && ` in ${groups.length} session${groups.length === 1 ? '' : 's'}`}
+          </span>
+          <span className="ml-auto">
+            <OrderBar
+              order={order}
+              onChange={setOrder}
+              field="Asked"
+              groupHint="Group the plans by the session that submitted them, newest session first"
+            />
+          </span>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {order.group === 'session'
           ? groups.map((group) => (

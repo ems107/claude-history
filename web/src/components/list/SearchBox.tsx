@@ -33,7 +33,10 @@ export function SearchBox({
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded border border-[var(--border)] bg-[var(--bg-raised)] py-1 pr-7 pl-2.5 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-9"
+        // 40px on a phone, which is what the squares beside it are: a search
+        // box two thirds their height on the same row is the row looking
+        // unfinished, whatever else is right about it.
+        className="w-full rounded border border-[var(--border)] bg-[var(--bg-raised)] py-1 pr-7 pl-2.5 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none max-md:min-h-10"
       />
       {text && (
         <button

@@ -51,3 +51,30 @@ export function toggleClass(active: boolean, disabled = false): string {
  */
 export const actionClass =
   'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40 max-md:px-3 max-md:py-2 max-md:text-sm';
+
+/**
+ * The one square control in the app, and the reason it is written here.
+ *
+ * A phone's chrome is icons in boxes — the bell, the update badge, the filter
+ * funnel, the session's ⋮ — and they were five different boxes: two sized by
+ * padding around a 14px glyph, two `size-10`, one `min-h-9`. Side by side in
+ * the same header that reads as sloppiness, and there is nothing to decide per
+ * control: a square is a square. **40px on a phone**, which is the touch floor
+ * this work aims at, with the icon centred in it; above 48rem it keeps the
+ * padded shape the desktop header has always had, so nothing up there moves.
+ *
+ * `relative`, because most of them carry a `CountBadge` in the corner.
+ */
+export function squareClass(active = false): string {
+  return `relative inline-flex shrink-0 cursor-pointer items-center justify-center rounded border px-2 py-1 max-md:size-10 max-md:p-0 ${
+    active
+      ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
+      : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'
+  }`;
+}
+
+/**
+ * The size an icon is drawn at inside one of those. 14px reads well beside a
+ * label on a desktop and is lost in the middle of a 40px square.
+ */
+export const squareIcon = 'h-3.5 w-3.5 max-md:size-[18px]';

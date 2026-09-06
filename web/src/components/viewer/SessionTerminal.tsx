@@ -71,9 +71,19 @@ function themeFrom(el: HTMLElement): Record<string, string> {
  * keyboard — so the bar would put a key through and dismiss the keyboard in the
  * same gesture, every time.
  */
-const TERMINAL_KEYS: Array<{ label: string; data: string; title: string }> = [
-  { label: 'Esc', data: '\u001b', title: 'Escape' },
-  { label: 'Tab', data: '\t', title: 'Tab — completion' },
+interface Key {
+  label: string;
+  data: string;
+  title: string;
+}
+
+/** First on the row, because it is the key a CLI dialog is answered NO with. */
+const ESC: Key = { label: 'Esc', data: '\u001b', title: 'Escape' };
+/** After the modifiers, because Shift+Tab is what it is most often pressed with. */
+const TAB: Key = { label: 'Tab', data: '\t', title: 'Tab — completion, and Shift+Tab cycles the CLI’s modes' };
+
+/** The rest, in the order a thumb reaches for them. */
+const TERMINAL_KEYS: Key[] = [
   { label: '↑', data: '\u001b[A', title: 'Up — the previous command' },
   { label: '↓', data: '\u001b[B', title: 'Down' },
   { label: '←', data: '\u001b[D', title: 'Left' },
@@ -84,6 +94,87 @@ const TERMINAL_KEYS: Array<{ label: string; data: string; title: string }> = [
   { label: '-', data: '-', title: 'Hyphen' },
   { label: '/', data: '/', title: 'Slash' },
 ];
+
+/** The three the bar holds for the next key. See [applyMods]. */
+type Mod = 'ctrl' | 'alt' | 'shift';
+type Mods = Record<Mod, boolean>;
+const NO_MODS: Mods = { ctrl: false, alt: false, shift: false };
+
+/** Shift's own sequence for the keys that have one. */
+const SHIFTED: Record<string, string> = {
+  '\t': '\u001b[Z', // back-tab
+  '\u001b[A': '\u001b[1;2A',
+  '\u001b[B': '\u001b[1;2B',
+  '\u001b[C': '\u001b[1;2C',
+  '\u001b[D': '\u001b[1;2D',
+};
+
+/**
+ * What the armed modifiers turn the next keystroke into.
+ *
+ * A phone keyboard has none of these, and without them a CLI is unusable: no
+ * interrupt, no chords, and no Shift+Tab — which in Claude Code is how you
+ * cycle its modes, so it is not an edge case. Sticky rather than held, because
+ * there is nothing to hold: they arm, the next key goes through changed, and
+ * they disarm themselves.
+ *
+ * Applied in the order a terminal encodes them. **Shift first**, because it
+ * changes the key itself — a real back-tab or an arrow with its modifier
+ * parameter, and for an ordinary character the capital. **Then Ctrl**, which is
+ * the letter's own code with the top three bits cleared, exactly as the
+ * keyboard does it. **Then Alt**, which is an ESC in front of whatever came out
+ * of the other two, which is how every terminal has sent Meta since before it
+ * was called Alt.
+ *
+ * Anything that is not a single character and has no shifted form of its own
+ * passes through untouched, and still disarms them: Ctrl plus an escape
+ * sequence is not what a bar like this is for.
+ */
+/**
+ * Is this `onData` really a KEY?
+ *
+ * Not everything that leaves xterm is one. With focus tracking on it reports
+ * every focus in and out (`ESC [ I` / `ESC [ O`), and with mouse reporting on —
+ * which Claude Code turns on — every tap, drag and synthetic wheel goes out as
+ * an SGR mouse report. An armed modifier applied to one of those is a modifier
+ * silently spent on something the user did not press: measured on the DT50 as
+ * Alt arming, the keyboard closing, and the ESC landing on the focus report
+ * instead of on the next key.
+ */
+function isKeystroke(data: string): boolean {
+  if (data === '\u001b[I' || data === '\u001b[O') return false;
+  return !data.startsWith('\u001b[<') && !data.startsWith('\u001b[M');
+}
+
+function applyMods(data: string, mods: Mods): string {
+  let out = data;
+  if (mods.shift) {
+    if (SHIFTED[out]) out = SHIFTED[out];
+    else if (out.length === 1) out = out.toUpperCase();
+  }
+  if (mods.ctrl && out.length === 1) {
+    const code = out.toUpperCase().charCodeAt(0);
+    if (code >= 63 && code <= 95) out = String.fromCharCode(code & 31);
+  }
+  if (mods.alt) out = `\u001b${out}`;
+  return out;
+}
+
+/**
+ * A long path with its middle taken out, rather than its end.
+ *
+ * The cwd of a session started from the app is a temp folder six segments deep,
+ * and the only two anybody reads are the first (which drive) and the last
+ * (which project). Cut by SEGMENT rather than by character count, so what is
+ * left is still a path. If it is still too wide the box truncates it, and that
+ * truncation eats the front — see `truncate-start` in `styles.css`.
+ */
+function elidePath(path: string): string {
+  const parts = path.split(/[\\/]/);
+  if (parts.length <= 5) return path;
+  const sep = path.includes('\\') ? '\\' : '/';
+  return [parts[0], parts[1], '…', parts[parts.length - 2], parts[parts.length - 1]].join(sep);
+}
 
 /**
  * Paste, on a page that cannot read the clipboard.
@@ -197,33 +288,49 @@ function TerminalKey({
   );
 }
 
+const MOD_TITLE: Record<Mod, string> = {
+  ctrl: 'Ctrl — the next key goes through as a control code',
+  alt: 'Alt — the next key is sent with an Escape in front of it, which is what Meta is',
+  shift: 'Shift — the next key is sent shifted: Tab becomes back-tab, an arrow carries the modifier',
+};
+
+/**
+ * The row, in the order a thumb wants it: the way out, the three modifiers,
+ * the key they are most often pressed with, the paste this page cannot do any
+ * other way, then movement, then punctuation the soft keyboard buries.
+ */
 function TerminalKeys({
   onKey,
-  ctrlArmed,
-  onCtrl,
+  mods,
+  onMod,
   onPaste,
 }: {
   onKey: (data: string) => void;
-  ctrlArmed: boolean;
-  onCtrl: () => void;
+  mods: Mods;
+  onMod: (mod: Mod) => void;
   onPaste: () => void;
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-t border-[var(--border)] bg-[var(--bg-raised)] px-1 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <TerminalKey
-        label="Ctrl"
-        title="Ctrl — the next key goes through as a control code"
-        active={ctrlArmed}
-        onPress={onCtrl}
-      />
-      {TERMINAL_KEYS.map((k) => (
-        <TerminalKey key={k.label} label={k.label} title={k.title} onPress={() => onKey(k.data)} />
+      <TerminalKey label={ESC.label} title={ESC.title} onPress={() => onKey(ESC.data)} />
+      {(['ctrl', 'alt', 'shift'] as const).map((mod) => (
+        <TerminalKey
+          key={mod}
+          label={mod === 'ctrl' ? 'Ctrl' : mod === 'alt' ? 'Alt' : 'Shift'}
+          title={MOD_TITLE[mod]}
+          active={mods[mod]}
+          onPress={() => onMod(mod)}
+        />
       ))}
+      <TerminalKey label={TAB.label} title={TAB.title} onPress={() => onKey(TAB.data)} />
       <TerminalKey
         label="Paste"
         title="Paste — opens a box to paste into, because a page served over plain HTTP cannot read the clipboard"
         onPress={onPaste}
       />
+      {TERMINAL_KEYS.map((k) => (
+        <TerminalKey key={k.label} label={k.label} title={k.title} onPress={() => onKey(k.data)} />
+      ))}
     </div>
   );
 }
@@ -308,17 +415,19 @@ export function SessionTerminal({
   // answered on the first render.
   const [full, setFull] = useState(false);
   /**
-   * Ctrl, held for the next key — the accessory bar's one modifier.
+   * Ctrl, Alt and Shift, held for the next key. See [applyMods] for what each
+   * of them does to it.
    *
-   * A phone keyboard has no Ctrl at all, and without it a CLI is unusable: no
-   * interrupt, no chords of its own. Sticky rather than held, because there is
-   * nothing to hold: it arms, the next character goes through as a control
-   * code, and it disarms itself. A ref as well as state because the transform
-   * happens inside `term.onData`, which is set up once by an effect that must
-   * not depend on it.
+   * A ref as well as state because the transform happens inside `term.onData`,
+   * which is set up once by an effect that must not depend on it.
    */
-  const [ctrlArmed, setCtrlArmed] = useState(false);
-  const ctrlRef = useRef(false);
+  const [mods, setMods] = useState<Mods>(NO_MODS);
+  const modsRef = useRef<Mods>(NO_MODS);
+  const armMod = useCallback((mod: Mod) => {
+    const next = { ...modsRef.current, [mod]: !modsRef.current[mod] };
+    modsRef.current = next;
+    setMods(next);
+  }, []);
   /** The paste box is open. See [PasteBox] for why one is needed at all. */
   const [pasting, setPasting] = useState(false);
   /**
@@ -654,20 +763,14 @@ export function SessionTerminal({
     };
 
     const input = term.onData((data) => {
-      // The accessory bar's Ctrl, applied to whatever comes next — from the soft
-      // keyboard or from the bar itself. A control code is the letter's own code
-      // with the top three bits cleared, which is what a real Ctrl does at the
-      // keyboard's own level. Anything that is not a single character (an escape
-      // sequence, a paste) passes through untouched and still disarms it: Ctrl
-      // plus an arrow is not what a bar like this is for.
+      // Whatever the accessory bar is holding, applied to whatever comes next —
+      // from the soft keyboard or from the bar itself ([applyMods]).
       let out = data;
-      if (ctrlRef.current) {
-        ctrlRef.current = false;
-        setCtrlArmed(false);
-        if (data.length === 1) {
-          const code = data.toUpperCase().charCodeAt(0);
-          if (code >= 63 && code <= 95) out = String.fromCharCode(code & 31);
-        }
+      const armed = modsRef.current;
+      if ((armed.ctrl || armed.alt || armed.shift) && isKeystroke(data)) {
+        modsRef.current = NO_MODS;
+        setMods(NO_MODS);
+        out = applyMods(data, armed);
       }
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'i', d: out }));
     });
@@ -1265,10 +1368,18 @@ export function SessionTerminal({
         title={minimised ? 'Click to open the terminal' : undefined}
       >
         <span className="shrink-0 text-[var(--accent)]">❯</span>
-        <span className="min-w-0 flex-1 truncate" title={cwd ?? undefined}>
+        <span className="shrink-0">
           {running ? 'claude' : exit ? `claude exited (code ${exit.code ?? 'killed'})` : 'claude'}
-          {cwd ? ` — ${cwd}` : ''}
         </span>
+        {/* The folder, with its middle taken out and — if it STILL does not fit
+            — its front. Which end survives is the whole point: every session
+            started from the app lives six segments down the same temp folder,
+            so the first half of the path is the half that says nothing. */}
+        {cwd && (
+          <span className="truncate-start min-w-0 flex-1 truncate opacity-80" title={cwd}>
+            {elidePath(cwd)}
+          </span>
+        )}
         {status.data?.pid ? <span className="shrink-0">pid {status.data.pid}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {!running && (
@@ -1424,11 +1535,8 @@ export function SessionTerminal({
       {mobile && !minimised && !pasting && (
         <TerminalKeys
           onKey={(data) => termRef.current?.input(data)}
-          ctrlArmed={ctrlArmed}
-          onCtrl={() => {
-            ctrlRef.current = !ctrlRef.current;
-            setCtrlArmed(ctrlRef.current);
-          }}
+          mods={mods}
+          onMod={armMod}
           onPaste={() => setPasting(true)}
         />
       )}

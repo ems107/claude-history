@@ -345,6 +345,24 @@ html {
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/**
+ * Truncate from the START, so what survives is the END of the string.
+ *
+ * For a path, which is the only thing this is on: the last two segments say
+ * which project, the first six say which temp folder, and an ellipsis at the
+ * usual end throws away the half worth reading. "direction: rtl" moves the
+ * ellipsis to the left edge; "unicode-bidi: plaintext" takes the paragraph
+ * direction from the text itself, so a Latin path is still drawn left to right
+ * with its separators where they belong; "text-align: left" undoes the
+ * alignment the direction would otherwise bring with it. Pair it with
+ * Tailwind's own "truncate", which supplies the overflow and the ellipsis.
+ */
+.truncate-start {
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+}
+
 @media (width < 48rem) {
   body {
     /* Pull-to-refresh is a page reload, and this page holds an unsent prompt,

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client.ts';
 import { useNotifications } from '../api/useNotifications.ts';
 import { CountBadge } from './CountBadge.tsx';
+import { squareClass, squareIcon } from './controlClass.ts';
 import { BellIcon } from './icons.tsx';
 import { FALLBACK_COLOR, MarkRead, NotificationRow } from './NotificationRow.tsx';
 
@@ -80,7 +81,7 @@ export function NotificationsButton() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-9 max-md:px-2.5"
+        className={squareClass()}
         title={
           count > 0
             ? `${count} session${count !== 1 ? 's' : ''} stopped and waiting for you`
@@ -88,7 +89,7 @@ export function NotificationsButton() {
         }
         aria-label="Notifications"
       >
-        <BellIcon className="h-3.5 w-3.5 max-md:h-4 max-md:w-4" />
+        <BellIcon className={squareIcon} />
         <CountBadge count={count} />
       </button>
 

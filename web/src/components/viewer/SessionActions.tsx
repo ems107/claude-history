@@ -7,7 +7,7 @@ import { copyPlain } from '../../lib/clipboard.ts';
 import { downloadMarkdown, type ExportOptions } from '../../lib/exportMarkdown.ts';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { usePopover } from '../../lib/popover.ts';
-import { toggleClass } from '../controlClass.ts';
+import { squareClass, toggleClass } from '../controlClass.ts';
 
 /**
  * What can be DONE with a session, as opposed to how it is read: rename it, pin
@@ -400,15 +400,7 @@ export function SessionMenu({
       <button
         type="button"
         onClick={pop.toggle}
-        className={
-          mobile
-            ? `grid size-10 shrink-0 cursor-pointer place-items-center rounded border ${
-                pop.open
-                  ? 'border-[var(--accent)] text-[var(--accent)]'
-                  : 'border-[var(--border)] text-[var(--text-dim)]'
-              }`
-            : toggleClass(pop.open)
-        }
+        className={mobile ? squareClass(pop.open) : toggleClass(pop.open)}
         title="What can be done with this session"
         aria-label="Session actions"
       >
@@ -423,12 +415,7 @@ export function SessionMenu({
           <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg)] text-left">
             <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
               <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{s.title}</h2>
-              <button
-                type="button"
-                onClick={pop.close}
-                aria-label="Close"
-                className="grid size-10 shrink-0 cursor-pointer place-items-center rounded border border-[var(--border)] text-[var(--text-dim)]"
-              >
+              <button type="button" onClick={pop.close} aria-label="Close" className={squareClass()}>
                 ✕
               </button>
             </div>
