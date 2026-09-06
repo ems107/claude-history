@@ -546,6 +546,22 @@ export function SessionTerminal({
    * done ([server/src/core/sessionTerminal.ts]).
    */
   const enhancedKeysRef = useRef(false);
+  /**
+   * The socket comes back on its own, and these two are how.
+   *
+   * A dropped line is not always somebody leaving — the wifi blinks, the laptop
+   * suspends, the phone is locked — and until this the panel simply froze until
+   * it was remounted or the page reloaded. That was already a nuisance; with the
+   * server closing an unattached terminal on a session that never became a
+   * conversation ([UNBORN_GRACE_MINUTES]), it is the difference between a blip
+   * and a terminal that is gone when you come back.
+   *
+   * The count lives in a REF and only the tick is state: resetting the attempt
+   * counter through `setState` inside `onopen` would re-run the effect and tear
+   * down the socket that had just succeeded.
+   */
+  const attemptRef = useRef(0);
+  const [reconnect, setReconnect] = useState(0);
 
   const open = status.data?.open ?? false;
   const running = status.data?.running ?? false;
@@ -774,18 +790,37 @@ export function SessionTerminal({
   }, [open, mobile]);
 
   /**
-   * One socket per open terminal. It only ever attaches: starting is the POST,
-   * so a refusal is a sentence and not a socket that closes again for reasons
-   * nobody can read.
+   * One socket per open terminal, and it comes back by itself.
+   *
+   * It only ever attaches: starting is the POST, so a refusal is a sentence and
+   * not a socket that closes again for reasons nobody can read. What it does do
+   * on its own is RECONNECT — a line dropped by the network is indistinguishable
+   * here from one dropped by a tab closing, and only one of the two means
+   * anybody left ([attemptRef]).
    */
   useEffect(() => {
     if (!open) return;
     const term = termRef.current;
     if (!term) return;
+    /**
+     * An attach is the whole screen, so it starts from an empty one.
+     *
+     * The server opens every attach with its entire backlog, which is what a
+     * fresh mount has always been given — this only makes a RECONNECT behave
+     * like one, instead of appending a second copy of the last 256 KB under the
+     * first. It is also what keeps two sessions apart in the same panel: the
+     * xterm is built once for the life of the component, and `/session/:id` is
+     * one route, so without this the next conversation's replay would land
+     * under the last one's.
+     */
+    term.reset();
     const url = new URL(`/api/sessions/${sessionId}/terminal/ws`, window.location.href);
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
+    /** The cleanup has run: this socket's closing is ours and asks for nothing. */
+    let gone = false;
+    let retry: number | undefined;
 
     const decoder = new TextDecoder();
     socket.onmessage = (event) => {
@@ -798,8 +833,14 @@ export function SessionTerminal({
       }
       try {
         const message = JSON.parse(event.data) as TerminalServerMessage;
-        if (message.t === 'error') setError(message.message);
-        else if (message.t === 'exit') void queryClient.invalidateQueries({ queryKey: ['terminal', sessionId] });
+        // The status goes with it: "no terminal is open for this session" is
+        // how a tab that was away finds out its terminal was closed while it
+        // was — by the server's own sweep, or from another page — and without
+        // this it would sit on a dead screen instead of offering to start one.
+        if (message.t === 'error') {
+          setError(message.message);
+          void queryClient.invalidateQueries({ queryKey: ['terminal', sessionId] });
+        } else if (message.t === 'exit') void queryClient.invalidateQueries({ queryKey: ['terminal', sessionId] });
         // Both frames carry the same fact, from the two moments it can arrive:
         // `ready` is what the terminal was already doing before this browser
         // attached, `keys` is it changing while we watch.
@@ -809,7 +850,39 @@ export function SessionTerminal({
         // A control frame we cannot read is a control frame we ignore.
       }
     };
-    socket.onerror = () => setError('The connection to the terminal was lost.');
+    /**
+     * Nothing is said about a dropped line until it has failed to come back.
+     *
+     * `onerror` used to put the red box up at once, and with a retry behind it
+     * that reads as a fault where there was a hiccup — the panel is normally
+     * back before anybody has read the sentence. So the error is the CLOSE
+     * handler's to raise, and only once the second attempt has failed too.
+     */
+    socket.onerror = () => undefined;
+    socket.onclose = (event) => {
+      // Ours (the cleanup), or a refusal: 1008 is cross-origin or a session the
+      // server does not know, and neither is going to be different in a second.
+      if (gone || event.code === 1008) return;
+      const wait = Math.min(10_000, 1_000 * 2 ** attemptRef.current);
+      attemptRef.current += 1;
+      if (attemptRef.current >= 2) setError('The connection to the terminal was lost — reconnecting…');
+      retry = window.setTimeout(() => setReconnect((n) => n + 1), wait);
+    };
+    /**
+     * The two moments a phone comes back, and neither can wait for the backoff:
+     * the network returning, and the tab being looked at again. The server gives
+     * an unattached terminal a minute when the session never became a
+     * conversation, so a browser that dawdles is a terminal that is gone.
+     */
+    const nudge = (): void => {
+      if (gone || document.visibilityState !== 'visible') return;
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) return;
+      window.clearTimeout(retry);
+      attemptRef.current = 0;
+      setReconnect((n) => n + 1);
+    };
+    window.addEventListener('online', nudge);
+    document.addEventListener('visibilitychange', nudge);
     // The FIRST thing said up the socket is how big this panel really is.
     //
     // Two moments need it and neither can be served by the server's own guess.
@@ -820,6 +893,10 @@ export function SessionTerminal({
     // a laptop, come back to on a monitor. Sending it here also makes the CLI
     // repaint in full, which is what tidies a replayed backlog.
     socket.onopen = () => {
+      // The ref, never the state: a `setReconnect` here would re-run this very
+      // effect and close the socket that has just come up.
+      attemptRef.current = 0;
+      setError(null);
       socket.send(JSON.stringify({ t: 'r', cols: term.cols, rows: term.rows }));
     };
 
@@ -898,11 +975,15 @@ export function SessionTerminal({
     });
 
     return () => {
+      gone = true;
+      window.clearTimeout(retry);
+      window.removeEventListener('online', nudge);
+      document.removeEventListener('visibilitychange', nudge);
       input.dispose();
       resize.dispose();
       socket.close();
     };
-  }, [open, sessionId, queryClient]);
+  }, [open, sessionId, queryClient, reconnect]);
 
   // The panel changed shape: re-measure and tell the CLI, which decides its
   // whole layout from the console size.

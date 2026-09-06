@@ -98,6 +98,7 @@ scripts/        package.mjs · release.mjs
 - **Only one thing may hold a session's transcript at a time** — the composer, an embedded terminal or a real terminal window — and every door asks `core/writerGuard.ts`, never its own memory. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **Nothing that ends this server or changes how prompts are sent may run while the app is running Claude** — stop, restart, update, clear cache, restore userdata and the two chat settings all refuse while a CLI of ours is alive, **idle ones included**, and the 409 carries the list so the dialog can offer to close them. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
 - **The embedded terminal runs `claude.exe` with no shell around it**, and the pseudo-terminal belongs to the server rather than to the tab. → [Running Claude](docs/AI_RUNNING_CLAUDE.md)
+- **A session that never became a conversation is nobody's to leave running**, in either door: no transcript means no list, no search, no badge and no URL anyone has, so a CLI on one is closed a minute after the last browser leaves. Everything WITH a transcript keeps its own rule — the terminal no timeout, the composer the cache's hour. → [Running Claude](docs/AI_RUNNING_CLAUDE.md#a-session-that-never-became-a-conversation)
 - **Everything in `~/.claude` has an expiry date** (`cleanupPeriodDays`), fixtures included. → [Transcripts](docs/AI_TRANSCRIPTS.md)
 - **The installed release is never touched from here** — not its port, not its data folder, not its scheduled task. Everything this repo runs is the dev instance. → [Two instances](#two-instances-and-the-line-between-them)
 - **A stop is a TRANSITION, and nothing on disk records one.** `idle` is the resting state of every open session, so the bell keeps its own memory of what each session was doing — in memory, never persisted, because a restart loses the transitions with it. → [Transcripts](docs/AI_TRANSCRIPTS.md)
@@ -108,4 +109,4 @@ scripts/        package.mjs · release.mjs
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 57 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 58 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

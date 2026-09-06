@@ -10,6 +10,7 @@ import {
   TERMINAL_MAX_ROWS,
   TERMINAL_MIN_COLS,
   TERMINAL_MIN_ROWS,
+  UNBORN_GRACE_MINUTES,
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { cleanEnv, findClaudeCli } from '../util/launcher.ts';
@@ -47,6 +48,16 @@ const SCROLLBACK_BYTES = 256 * 1024;
  * typing `/exit` lands inside it.
  */
 const STARTUP_GRACE_MS = 3_000;
+
+/**
+ * How often the unborn-session sweep runs ([sweep]).
+ *
+ * Shorter than the chat's 30 s so a one-minute rule lands between 60 and 75
+ * seconds rather than between 60 and 90 — and it can afford to be: the tick
+ * walks a map that is normally empty and asks the disk nothing until a terminal
+ * is actually a candidate.
+ */
+const TICK_MS = 15_000;
 
 /**
  * Sent before a replay: leave the alternate screen, stop mouse reporting, show
@@ -133,6 +144,18 @@ interface TerminalProcess {
   modes: Map<number, boolean>;
   /** The tail of the last chunk, so a mode sequence split across two survives. */
   modeTail: string;
+  /**
+   * When the last browser left, or null while one is attached.
+   *
+   * The only signal there is for "nobody is there any more", and it needs no
+   * cooperation from the browser: the socket is torn down by the tab closing,
+   * by a navigation that unmounts the panel, and by the network going away, and
+   * we are told about all three the same way. Born at `Date.now()` rather than
+   * null, because at the moment of the spawning POST nobody is attached yet —
+   * the socket follows a beat later, and a terminal nobody ever attaches to is
+   * exactly the kind this reaps.
+   */
+  detachedAt: number | null;
 }
 
 /** What the route hands us: one browser attached to one terminal. */
@@ -171,6 +194,7 @@ export class SessionTerminalService implements TranscriptWriter {
    */
   private pty: typeof import('@lydell/node-pty') | null = null;
   private ptyError: string | null = null;
+  private timer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly config: AppConfig,
@@ -185,6 +209,8 @@ export class SessionTerminalService implements TranscriptWriter {
 
   /** Loads the native module. Failure is recorded, never thrown. */
   async start(): Promise<void> {
+    this.timer = setInterval(() => this.sweep(), TICK_MS);
+    this.timer.unref();
     try {
       this.pty = await import('@lydell/node-pty');
       log.info('node-pty loaded');
@@ -352,6 +378,9 @@ export class SessionTerminalService implements TranscriptWriter {
       enhancedKeys: false,
       modes: new Map(),
       modeTail: '',
+      // Nobody is on the socket yet: the POST comes first and the browser
+      // follows. A terminal whose socket never arrives is reaped like any other.
+      detachedAt: Date.now(),
     };
     this.procs.set(sessionId, p);
 
@@ -420,6 +449,7 @@ export class SessionTerminalService implements TranscriptWriter {
       return () => {};
     }
     p.clients.add(client);
+    p.detachedAt = null;
     if (p.bufferBytes > 0) {
       client.sendBytes(Buffer.concat([Buffer.from(RESET_BEFORE_REPLAY, 'utf8'), ...p.buffer]));
     }
@@ -455,7 +485,12 @@ export class SessionTerminalService implements TranscriptWriter {
         // A process that died between the check and here — onExit will say so.
       }
     }
-    return () => p.clients.delete(client);
+    return () => {
+      p.clients.delete(client);
+      // The clock only starts on the LAST one out: a second tab watching the
+      // same terminal is somebody being there.
+      if (p.clients.size === 0) p.detachedAt = Date.now();
+    };
   }
 
   write(sessionId: string, data: string): void {
@@ -520,6 +555,8 @@ export class SessionTerminalService implements TranscriptWriter {
   }
 
   shutdown(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
     for (const [sessionId, p] of this.procs) {
       this.killPty(p, 'server shutting down');
       this.procs.delete(sessionId);
@@ -527,6 +564,49 @@ export class SessionTerminalService implements TranscriptWriter {
   }
 
   // ---- internals ----
+
+  /**
+   * Closes the terminals of sessions that never became conversations and have
+   * nobody left looking at them ([UNBORN_GRACE_MINUTES]).
+   *
+   * **The pty still belongs to the server rather than to the tab**, and this is
+   * not a retreat from that: a closed tab detaches and comes back to the same
+   * terminal, exactly as before. What this adds is the end of that sentence,
+   * which was missing — *and if nobody ever comes back, and there was never a
+   * conversation here, it does not run for ever*. Before it, leaving `/new`
+   * without typing anything left a CLI alive that no page in this app could
+   * reach, holding a slot and refusing every guarded action until the server
+   * was restarted.
+   *
+   * Four things are asked, and the last is the one that makes it safe:
+   *
+   * - a CLI that has already exited is skipped — that entry is a SCREEN, kept
+   *   on purpose as the diagnosis of a failed start; it holds no slot, keeps no
+   *   reservation alive and costs a buffer;
+   * - somebody attached is somebody there, whatever they are doing;
+   * - the minute has to have passed since the last one left;
+   * - and the session must have no transcript, asked of the INDEX and then of
+   *   the DISK — the same two questions `open()` asks to decide `--session-id`
+   *   against `--resume`, and for the same reason: Claude Code writes the file
+   *   when the first turn runs, and the index is a rescan behind. Anything with
+   *   a conversation in it is out of reach of this for good.
+   */
+  private sweep(): void {
+    const graceMs = UNBORN_GRACE_MINUTES * 60_000;
+    const now = Date.now();
+    // A copy: `close()` deletes from the map we would be walking.
+    for (const [sessionId, p] of [...this.procs]) {
+      if (!p.pty || p.exit !== null) continue;
+      if (p.clients.size > 0 || p.detachedAt === null) continue;
+      if (now - p.detachedAt < graceMs) continue;
+      if (this.index.get(sessionId) || this.transcriptExists(sessionId)) continue;
+      log.info(
+        `closing the terminal for ${sessionId} — it never became a conversation and nobody has been ` +
+          `attached for ${String(Math.round((now - p.detachedAt) / 1000))}s`,
+      );
+      this.close(sessionId);
+    }
+  }
 
   /**
    * Follows the program's own modes through the output stream: what it has

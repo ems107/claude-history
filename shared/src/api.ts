@@ -1038,6 +1038,36 @@ export const CLAUDE_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export const CHAT_IDLE_TIMEOUT_MINUTES = 60;
 
 /**
+ * How long a CLI of ours may sit on a session that never became a conversation,
+ * once nobody is there any more. **One number for both doors.**
+ *
+ * The hour above is the cache's, and this is the other end of the same
+ * question: what is there to lose by closing this? A session Claude Code has
+ * never written a transcript for has run no turn, so there is no cache, no
+ * history and no answer in flight — there is a process, and a screen nobody is
+ * looking at. That is what makes a minute the right number here and an hour the
+ * right number there; they are not two settings, they are two answers.
+ *
+ * It exists because such a session is INVISIBLE: the index only knows files, so
+ * until the first turn writes one the id is in no list, no search and no badge,
+ * and its URL was never in the address bar either — `/new` is where you were.
+ * Leave that page and the CLI stays for ever, holding a `maxActiveSessions` slot
+ * and refusing every guarded action, with no door left that leads to it.
+ *
+ * **Nothing that HAS a transcript is ever reached by this**, which is what makes
+ * the number safe: the file appears when the first turn starts, so anything with
+ * a conversation in it — or with one arriving — is out of reach for good, the
+ * handover from `/new` to `/session/<id>` included.
+ *
+ * Each door measures "nobody is there" in its own terms, because they are
+ * different things: a terminal has a socket, so it is the last client detaching;
+ * a composer has none, so it is silence — and killing an idle composer costs
+ * nothing anyway, since the next prompt spawns a fresh process on its own and
+ * the model list is the install's rather than that process's.
+ */
+export const UNBORN_GRACE_MINUTES = 1;
+
+/**
  * Floor and ceiling on `maxActiveSessions`.
  *
  * One is the floor because zero would switch the feature off through the back
