@@ -67,7 +67,9 @@ That makes remote access three steps in the panel instead of one. The credential
 
 What guards the port is not the bind but the session check: **a request from anywhere other than this machine gets nothing until it signs in** — not the session list, not the version, not the paths in Settings. A request from this machine never asks for a password, exactly as before.
 
-A few things are refused over the network rather than half-done. The greyed-out button and the 409 behind it give the same reason, because they read it from the same place:
+**On a phone it is a phone app.** Below 768px the frame is rebuilt around a thumb: the destinations move to a bar along the bottom, the list's toolbar becomes a search box and three buttons, Settings is a list you pick an area from, and inside a session the title row keeps a name and one ⋮ that holds everything else — find, the panels, how the conversation is drawn, what can be done with the session — while the header steps aside as you read down and comes back as you scroll up. The embedded terminal fills the screen with a row of the keys a CLI needs (Esc, Tab, Ctrl, the arrows, ^C) and scrolls under a finger. Android's Back closes whatever is on top rather than leaving the page, and the app can be added to the home screen. Nothing above 768px changes.
+
+A few things are refused over the network rather than half-done. On a desktop the button is drawn greyed with the reason beside it — that is how you tell which of the two browsers you are in — and on a phone it is not drawn at all, since a phone is never the machine and the apology would be permanent. What is left is whatever still works from there: copying the `claude --resume` command instead of running it, typing a path instead of browsing for one. The greyed-out button and the 409 behind it give the same reason, because they read it from the same place:
 
 | Refused when remote | Why |
 | --- | --- |
