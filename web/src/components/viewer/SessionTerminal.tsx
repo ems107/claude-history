@@ -615,11 +615,14 @@ export function SessionTerminal({
      *
      * xterm sets `autocorrect` and `autocapitalize` off, which is the generic
      * "no suggestions" flag, and **that is exactly the one Samsung's predictor
-     * ignores**. What no IME may ignore is the field's VARIATION: an email
-     * address is not a sentence, so prediction and correction are off by
-     * contract rather than by courtesy, and the layout stays a normal QWERTY
-     * with a full space bar — it only gains `@`, which Claude Code happens to
-     * use for file mentions.
+     * ignores**. So the lever is the field's VARIATION instead: a URL is not a
+     * sentence, and a keyboard that thinks it is typing one turns correction
+     * and prediction off. The layout keeps a normal QWERTY and a full space
+     * bar; it trades the comma for `/`, which a terminal wants more anyway.
+     *
+     * `email` was tried first, for the `@` Claude Code uses in file mentions,
+     * and Samsung Keyboard predicted straight through it — confirmed on the
+     * device rather than assumed, which is the only way any of this is known.
      *
      * Not gated on the width breakpoint, and that is deliberate: this is the
      * one question in this app that really is about TOUCH rather than about how
@@ -629,7 +632,7 @@ export function SessionTerminal({
      */
     const ime = term.textarea;
     if (ime) {
-      ime.inputMode = 'email';
+      ime.inputMode = 'url';
       ime.autocapitalize = 'none';
       ime.spellcheck = false;
       ime.setAttribute('autocomplete', 'off');
