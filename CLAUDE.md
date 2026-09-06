@@ -78,6 +78,8 @@ server/src/
   util/         launcher (executable resolution), sameOrigin, fetchError, firewall
 web/src/        React 19 + Vite + Tailwind v4, TanStack Query, SSE
                 components/viewer/ is where the conversation is drawn
+                fonts/ is the only binary in the repo — 3 KB of symbols the
+                terminal needs and an Android device turns out not to have
 installer/      what ships inside the release zip (pure ASCII, PowerShell 5.1)
 scripts/        package.mjs · release.mjs
 ```

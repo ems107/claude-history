@@ -1,6 +1,35 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/**
+ * The glyphs the embedded terminal needs and a device may not have.
+ *
+ * Claude Code decorates its own mode line with U+23F5, and no font on the
+ * Android device this app is checked against has U+23F4-U+23F7 — so a phone
+ * drew two empty boxes there. This is 5 KB of Noto Sans Symbols 2, kept to the
+ * two blocks where the hole is, and it goes at the END of the terminal's font
+ * stack: CSS fallback is per CHARACTER, so Cascadia Mono goes on drawing every
+ * glyph it has and this is reached only for the ones it does not.
+ *
+ * `unicode-range` is what keeps it from being consulted about anything else,
+ * and it is **one block and no more**. A range is a takeover: inside it this
+ * font wins over anything the system has, so a second block was drawing the
+ * turn bullet the CLI prints (U+25CF) in a shape nobody asked to change. One
+ * block, the one the hole is in.
+ *
+ * The range is wider than the 37 glyphs actually in the file, which is correct:
+ * a font selected by range but missing the glyph simply passes the character
+ * on down the stack.
+ *
+ * Provenance, the ranges and how to regenerate it: web/src/fonts/README.md.
+ */
+@font-face {
+  font-family: 'ch-terminal-symbols';
+  src: url('./fonts/terminal-symbols.woff2') format('woff2');
+  font-display: block;
+  unicode-range: U+2300-23FF;
+}
+
 /* Dark-first design. The app targets a dark UI by default. */
 :root {
   --bg: #0f1115;

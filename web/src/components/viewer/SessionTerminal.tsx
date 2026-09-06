@@ -110,6 +110,36 @@ const SHIFTED: Record<string, string> = {
 };
 
 /**
+ * The font xterm is asked for.
+ *
+ * It is not taste, and the last entry is not decoration either. The CLI draws
+ * its logo and its panels out of block and box-drawing characters, and those
+ * only line up in a font whose cell the glyphs were cut for — while
+ * `ch-terminal-symbols` is 5 KB of Noto Sans Symbols 2 at the END of the
+ * stack, holding the handful of glyphs an Android device turns out not to
+ * have (`web/src/fonts/README.md`). CSS fallback is per CHARACTER, so it is
+ * reached only for a glyph none of the others could draw.
+ */
+const TERMINAL_FONT =
+  "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', 'ch-terminal-symbols', monospace";
+
+/**
+ * Is this `onData` really a KEY?
+ *
+ * Not everything that leaves xterm is one. With focus tracking on it reports
+ * every focus in and out (`ESC [ I` / `ESC [ O`), and with mouse reporting on —
+ * which Claude Code turns on — every tap, drag and synthetic wheel goes out as
+ * an SGR mouse report. An armed modifier applied to one of those is a modifier
+ * silently spent on something the user did not press: measured on the DT50 as
+ * Alt arming, the keyboard closing, and the ESC landing on the focus report
+ * instead of on the next key.
+ */
+function isKeystroke(data: string): boolean {
+  if (data === '\u001b[I' || data === '\u001b[O') return false;
+  return !data.startsWith('\u001b[<') && !data.startsWith('\u001b[M');
+}
+
+/**
  * What the armed modifiers turn the next keystroke into.
  *
  * A phone keyboard has none of these, and without them a CLI is unusable: no
@@ -130,89 +160,6 @@ const SHIFTED: Record<string, string> = {
  * passes through untouched, and still disarms them: Ctrl plus an escape
  * sequence is not what a bar like this is for.
  */
-/**
- * The font xterm is asked for, in one place: the terminal is built from it and
- * [canDraw] has to ask about the same one.
- *
- * It is not taste. The CLI draws its logo and its panels out of block and
- * box-drawing characters, and those only line up in a font whose cell the
- * glyphs were cut for.
- */
-const TERMINAL_FONT = "'Cascadia Mono', 'Cascadia Code', Consolas, ui-monospace, 'Courier New', monospace";
-
-/**
- * Does this browser have a glyph for `ch`, or would it draw a box?
- *
- * Asked rather than assumed, because the answer is per device and the wrong
- * guess is bad in both directions: substituting on a machine that has the glyph
- * would be a downgrade nobody asked for, and not substituting on one that does
- * not leaves the CLI's mode line reading `□□ accept edits on`.
- *
- * A width comparison cannot answer it — the whole point of a monospace font is
- * that a box and a letter are the same width — so it is the PIXELS: draw the
- * character, draw a private-use codepoint that certainly has no glyph, and see
- * whether they came out the same. Two different private-use codepoints have to
- * agree first, or "what tofu looks like" is not a stable thing to compare
- * against and the test means nothing.
- */
-function canDraw(ch: string): boolean {
-  const canvas = document.createElement('canvas');
-  canvas.width = 32;
-  canvas.height = 32;
-  const g = canvas.getContext('2d');
-  if (!g) return true; // Cannot tell, so change nothing.
-  const paint = (s: string): string => {
-    g.clearRect(0, 0, 32, 32);
-    g.font = `24px ${TERMINAL_FONT}`;
-    g.textBaseline = 'top';
-    g.fillStyle = '#fff';
-    g.fillText(s, 2, 2);
-    return canvas.toDataURL();
-  };
-  const tofu = paint('\uE000');
-  if (paint('\uE123') !== tofu) return true;
-  return paint(ch) !== tofu;
-}
-
-/**
- * The glyphs a device may not have, and the closest ones it will.
- *
- * Four characters, and they are the ones Claude Code puts in front of its own
- * mode line: `⏵⏵ accept edits on`. **No font on the check device has
- * U+23F4-U+23F7** — not the monospace one, not the symbol ones, not the system
- * fallback — so what a phone drew there was two boxes. The small triangles are
- * the same shapes a size down, they are in every Android font, and they carry
- * no emoji presentation to colour them in.
- *
- * This is a FONT fallback with nowhere to put a font, and it is applied to the
- * terminal's output only where [canDraw] says the real glyph is missing. Every
- * one of these is above U+007F, so it can never be part of an escape sequence
- * and rewriting it cannot corrupt the stream.
- */
-const MISSING_GLYPHS = /[\u23F4-\u23F7]/g;
-const INSTEAD: Record<string, string> = {
-  ['\u23F4']: '\u25C2', // black medium left-pointing triangle -> small
-  ['\u23F5']: '\u25B8', // right
-  ['\u23F6']: '\u25B4', // up
-  ['\u23F7']: '\u25BE', // down
-};
-
-/**
- * Is this `onData` really a KEY?
- *
- * Not everything that leaves xterm is one. With focus tracking on it reports
- * every focus in and out (`ESC [ I` / `ESC [ O`), and with mouse reporting on —
- * which Claude Code turns on — every tap, drag and synthetic wheel goes out as
- * an SGR mouse report. An armed modifier applied to one of those is a modifier
- * silently spent on something the user did not press: measured on the DT50 as
- * Alt arming, the keyboard closing, and the ESC landing on the focus report
- * instead of on the next key.
- */
-function isKeystroke(data: string): boolean {
-  if (data === '\u001b[I' || data === '\u001b[O') return false;
-  return !data.startsWith('\u001b[<') && !data.startsWith('\u001b[M');
-}
-
 function applyMods(data: string, mods: Mods): string {
   let out = data;
   if (mods.shift) {
@@ -674,6 +621,30 @@ export function SessionTerminal({
     }
     termRef.current = term;
     fitRef.current = fit;
+
+    /**
+     * Make the symbol fallback arrive, and rebuild the atlas when it does.
+     *
+     * **xterm rasterises each glyph ONCE**, into a texture atlas it never
+     * revisits. A webfont that is still downloading when the CLI paints its
+     * first frame therefore loses: the box gets cached and stays cached for the
+     * life of the terminal, which is exactly what happened — the font reported
+     * `loaded`, a canvas drew the glyph perfectly, and the terminal went on
+     * showing `□□ accept edits on`.
+     *
+     * Two things fix it and both are here. `document.fonts.load` is what starts
+     * the download at all — nothing in the DOM uses this family, and a canvas
+     * drawing text does not ask for a font that has never been requested — and
+     * clearing the atlas afterwards throws away whatever was rasterised before
+     * it arrived. Resolves immediately once it is cached, so a second terminal
+     * pays a repaint and nothing else.
+     */
+    void document.fonts.load(`${getTerminalFontSize()}px ch-terminal-symbols`, '⏵').then(() => {
+      // Disposed while the font was in flight: everything below would throw.
+      if (termRef.current !== term) return;
+      term.clearTextureAtlas();
+      term.refresh(0, term.rows - 1);
+    });
     return () => {
       term.dispose();
       termRef.current = null;
@@ -794,15 +765,12 @@ export function SessionTerminal({
     socket.binaryType = 'arraybuffer';
 
     const decoder = new TextDecoder();
-    // Asked once per socket rather than per chunk: it paints three canvases,
-    // and the answer cannot change while the page is open.
-    const substitute = !canDraw('\u23F5');
     socket.onmessage = (event) => {
       if (typeof event.data !== 'string') {
         // PTY output. Binary because it is 99% of the traffic and wrapping it
         // in JSON would cost a parse per keystroke echoed back.
         const text = decoder.decode(event.data as ArrayBuffer, { stream: true });
-        term.write(substitute ? text.replace(MISSING_GLYPHS, (ch) => INSTEAD[ch]) : text);
+        term.write(text);
         return;
       }
       try {
