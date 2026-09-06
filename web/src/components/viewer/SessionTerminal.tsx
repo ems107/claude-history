@@ -595,6 +595,46 @@ export function SessionTerminal({
     term.loadAddon(unicode11);
     term.unicode.activeVersion = '11';
     term.open(hostRef.current);
+    /**
+     * Tell the on-screen keyboard that this is not prose, so it stops
+     * COMPOSING in here.
+     *
+     * An Android keyboard does not send letters one at a time: it holds the
+     * word being typed in a *composing region* — provisional, revisable — and
+     * only commits it at a space. That is right in a text field and poison in a
+     * terminal, where every key has to reach the CLI as it is pressed. xterm
+     * plays along (`CompositionHelper`): while a composition is open it sends
+     * NOTHING and draws the letters in an overlay of its own, then releases the
+     * whole word at the end. On a Galaxy S25 with Samsung Keyboard that reads
+     * as a word that does not appear until you finish it, with the CLI's own
+     * cursor left behind where it really is — and it gets worse, not better,
+     * when you move that cursor: the keyboard asks the field what surrounds it,
+     * decides which word it is correcting, and issues "delete N back, insert
+     * this", which arrives as backspaces the CLI applies at ITS cursor. Text
+     * nobody typed.
+     *
+     * xterm sets `autocorrect` and `autocapitalize` off, which is the generic
+     * "no suggestions" flag, and **that is exactly the one Samsung's predictor
+     * ignores**. What no IME may ignore is the field's VARIATION: an email
+     * address is not a sentence, so prediction and correction are off by
+     * contract rather than by courtesy, and the layout stays a normal QWERTY
+     * with a full space bar — it only gains `@`, which Claude Code happens to
+     * use for file mentions.
+     *
+     * Not gated on the width breakpoint, and that is deliberate: this is the
+     * one question in this app that really is about TOUCH rather than about how
+     * wide the window is ([AI_MOBILE.md](../../../../docs/AI_MOBILE.md)). A
+     * pointer-driven browser never reads `inputmode` at all, and a touchscreen
+     * laptop has the same keyboard and the same bug.
+     */
+    const ime = term.textarea;
+    if (ime) {
+      ime.inputMode = 'email';
+      ime.autocapitalize = 'none';
+      ime.spellcheck = false;
+      ime.setAttribute('autocomplete', 'off');
+      ime.setAttribute('autocorrect', 'off');
+    }
     // AFTER `open`, which is a requirement of the addon and not a preference.
     //
     // The default DOM renderer draws every cell as a span, so box-drawing and
