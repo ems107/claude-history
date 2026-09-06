@@ -1080,7 +1080,8 @@ export class SessionChatService implements TranscriptWriter {
        */
       const unborn = !this.index.get(p.sessionId) && !this.transcriptExists(p.sessionId);
       if (unborn && quiet > UNBORN_GRACE_MINUTES * 60_000) {
-        log.info(`closing the session for ${p.sessionId} — it never became a conversation`);
+        // `kill` writes the line, reason and all — saying it here too was the
+        // same sentence twice in the log.
         this.kill(p, 'it never became a conversation');
         this.changed(p.sessionId);
         continue;
