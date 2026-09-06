@@ -366,18 +366,24 @@ export function NewSessionPage() {
   };
 
   /**
-   * Back to the picker, and take with us whatever was opened for this folder.
+   * Back to the picker, and nothing else.
    *
-   * Both doors are asked, because neither knows about the other and only
-   * `writerGuard` does: a composer process may have been opened to read the
-   * model list, and in terminal mode the terminal started itself. A refusal from
-   * the one that was never running is nothing to report.
+   * It used to stop both doors on the way out, and that was the whole of this
+   * app's housekeeping for a session nobody ever typed into — one exit out of
+   * seven. The arrow back to the list, a reload, a closed tab, a crash and a
+   * lost network all left the CLI running on an id no page could reach. A
+   * cleanup that only fires on the tidiest of the seven is not a rule; it is a
+   * patch that hides the other six.
+   *
+   * The server closes them all now, a minute after the last browser leaves
+   * ([UNBORN_GRACE_MINUTES]), and it does not care which way you left. So this
+   * button is what it says it is, and a good thing follows from that: in
+   * terminal mode its `notAsked` gate never closes (nothing fills `pending`
+   * there), so it stayed on screen while Claude was answering the first prompt
+   * — and pressing it killed that turn, with no dialog. Now the conversation
+   * lives on and turns up in the list like any other.
    */
   const changeFolder = () => {
-    if (draft) {
-      void api.chatStop(draft.sessionId).catch(() => undefined);
-      void api.terminalStop(draft.sessionId).catch(() => undefined);
-    }
     asked.current = false;
     setTerminalStarted(false);
     setDraft(null);
@@ -461,11 +467,7 @@ export function NewSessionPage() {
                     type="button"
                     onClick={changeFolder}
                     className={btn}
-                    title={
-                      terminalMode
-                        ? 'Close this terminal and choose a different folder'
-                        : 'Choose a different folder'
-                    }
+                    title="Choose a different folder"
                   >
                     ← Change folder
                   </button>
