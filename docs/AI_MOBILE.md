@@ -73,8 +73,7 @@ The two shared recipes in `components/controlClass.ts` carry their own `max-md:`
 
 ## The composer and the terminal
 
-- **The keyboard must not COMPOSE in the terminal, and saying "no suggestions" is not enough.** An Android keyboard holds the word being typed in a composing region and only commits it at a space; xterm plays along, sending nothing until then and drawing the letters in an overlay of its own. In a text field that is right. In a terminal it means a word that does not appear until you finish it, the CLI's cursor left where it really is, and — once you move that cursor — the keyboard asking the field what surrounds it, deciding which word it is correcting, and issuing "delete N back, insert this", which arrives as backspaces the CLI applies at ITS cursor. Text nobody typed. xterm already sets `autocorrect`/`autocapitalize` off, which is the generic no-suggestions flag, and **that is the one Samsung Keyboard's predictor ignores** — reported on a Galaxy S25 in both Chrome and Firefox, and gone the moment predictive text is switched off, which is the confirmation. The lever left is the field's VARIATION, so `term.textarea.inputMode = 'url'`: a URL is not a sentence, and a keyboard that thinks it is typing one turns correction and prediction off. The layout keeps a full QWERTY and a full space bar and trades the comma for `/`, which a terminal wants more anyway. **`email` was tried first and Samsung predicted straight through it** — which is the fact worth keeping, because it says the variations are honoured one at a time rather than as a class.
-  **Not gated on the breakpoint**, and it is the first thing in this work that is not: this is the one question that really is about TOUCH rather than about how wide the window is. A pointer-driven browser never reads `inputmode`, and a touchscreen laptop has the same keyboard and the same bug.
+- **The keyboard is asked not to suggest, and that is all it is.** A terminal is not prose, so `spellcheck` and `autocomplete` go off beside the `autocorrect`/`autocapitalize` xterm sets itself, and where a keyboard honours that the suggestion strip goes away. Where one does not, see *Samsung Keyboard* below — it is the one thing in this work that is known broken and left that way.
 - **Enter is a newline on a phone and Send is the button.** A soft keyboard has no Shift+Enter, so with Enter sending there was no way to type a second line at all: every paragraph break sent the message. Which is why that button has to be a real target.
 - **The terminal fills the window when it opens**, and `full` is set at the moment the panel opens rather than as an initial state: an intent to fill the window that the panel is not obeying makes the title bar's own ⤢/⤡ lie, and hands a `fixed inset-0` box a hidden xterm host, which is a blank screen. **There are two states and not three**: the way out of full screen is `▾ minimise`, back to the title bar with the CLI still running, and the `×` on that bar is what closes it.
 - **The title bar never wraps.** With `flex-wrap` on, a long cwd does not fit after the `❯` at its full content width, so it is placed on the next line and shrunk THERE — leaving a first row holding one glyph. It truncates on one line instead, which is what the ellipsis was for.
@@ -86,6 +85,39 @@ The two shared recipes in `components/controlClass.ts` carry their own `max-md:`
 - **A drag over the terminal scrolls it, by becoming wheel events.** `term.scrollLines()` is the obvious call and does nothing here: Claude Code runs in the ALTERNATE screen buffer, which has no scrollback, and turns full mouse reporting on — so on a desktop the wheel is not scrolling anything either, it is being SENT to the CLI, which scrolls its own transcript. xterm's scrollable viewport sits UNDER the screen a touch lands on and only a wheel is forwarded across that gap, so the drag is turned into one synthetic wheel per row (`deltaMode: DOM_DELTA_LINE` — pixel mode damps anything under 50px to 30%, and a mouse report is one notch per event however large the delta). Whatever xterm decides to do with it is then decided in one place for both kinds of pointer.
 - **The collapse rules are off on a phone.** "The panel closes when you look away" is read from a press outside it and from the focus leaving, and on a touch screen the keyboard opening or closing does both — the panel would fold to its 32px title bar under the user, mid-command.
 - Paste has a box of its own: `navigator.clipboard` is `[SecureContext]` and does not exist over plain HTTP ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md#http-and-the-two-things-it-breaks)), and long-pressing a canvas offers nothing to paste into.
+
+## Samsung Keyboard, and the one thing that is known broken
+
+**Galaxy S25 Ultra · Samsung Keyboard · predictive text ON.** Typing in the embedded terminal misbehaves in three escalating ways:
+
+1. A word does not appear as you type it. It arrives in one piece when you press space, and until then the CLI's own cursor is missing from where you are typing — as far as the CLI is concerned you have typed nothing.
+2. Put the cursor into the middle of a line already typed and carry on, and characters are deleted and inserted that nobody typed.
+3. Switch predictive text off and every bit of it goes away.
+
+Chrome and Firefox alike, so it is the keyboard and not the engine. No other keyboard tried does it — the check device's Gboard included, which is why none of this can be reproduced or verified from here.
+
+**The mechanism.** An Android keyboard does not send letters one at a time: it holds the word being typed in a *composing region* — provisional, revisable — and commits it at a space. xterm plays along (`CompositionHelper`): while a composition is open it sends NOTHING to the PTY and draws the letters in an overlay of its own, releasing the whole word at the end. Right in a text field, wrong in a terminal. (2) is the same mechanism one step further: the keyboard asks the field what surrounds the cursor, decides which word it is correcting, and issues "delete N back, insert this" — which arrives as backspaces the CLI applies at ITS cursor, somewhere else entirely.
+
+**What was tried, and failed.** All of it verified on the device, never assumed:
+
+| Attempt | Result |
+| --- | --- |
+| `autocorrect` / `autocapitalize` off (xterm's own) | ignored — this is the generic NO_SUGGESTIONS flag, and it is the one Samsung's predictor does not honour |
+| `spellcheck=false`, `autocomplete=off` beside them | ignored, same flag. **Kept anyway**: it costs nothing and other keyboards do honour it |
+| `inputmode="email"` | ignored. The build really was live — the comma key had become `@`, which is how it was checked |
+| `inputmode="url"` | ignored. **Not kept**: both variations cost the comma key, which a prompt written to Claude needs and which is nowhere else on a phone, while `/` is already on the accessory bar |
+
+The useful fact left behind: **the variations are honoured one at a time rather than as a class.** "Not a sentence" is not a single switch, so a third variation would prove nothing about the first two.
+
+**The workaround is the device setting**, and it is not a bad one: in a terminal you type commands and paths, so a corrector has nothing to offer and prediction is worth turning off on its own merits.
+
+**If it is ever worth fixing properly**, two routes, neither cheap and neither verifiable without a phone that has the bug:
+
+- **An input element of our own, `type="password"`.** The Android IME contract *requires* auto-correction, auto-completion and gesture input to be off in a password field — the only guarantee in this area that does not depend on a vendor's goodwill — and the layout stays a normal QWERTY. A `<textarea>` cannot be one, so it means an input over the terminal forwarding to `term.input()`, and with it a second input path to keep working: Enter, backspace, the sticky modifiers, the touch scroll, selection. Chrome may also offer the password manager on it.
+- **Handling the composition ourselves.** On each `compositionupdate`, diff the composing string against what was last sent and push the delta straight at the socket, swallowing xterm's own flush at `compositionend`. It is the only route that works *with* prediction on rather than by switching it off, and it would fix (1) outright; whether it fixes (2) is unknown. Roughly fifty lines of subtle code on the path every keystroke takes, the desktop's included.
+
+The second is the better answer and the first is the surer one. Both are a bad trade against a device setting until somebody is typing into that terminal every day.
+
 
 ## Verifying it
 

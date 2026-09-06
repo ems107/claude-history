@@ -596,47 +596,27 @@ export function SessionTerminal({
     term.unicode.activeVersion = '11';
     term.open(hostRef.current);
     /**
-     * Tell the on-screen keyboard that this is not prose, so it stops
-     * COMPOSING in here.
+     * Ask the on-screen keyboard not to suggest anything in here.
      *
-     * An Android keyboard does not send letters one at a time: it holds the
-     * word being typed in a *composing region* — provisional, revisable — and
-     * only commits it at a space. That is right in a text field and poison in a
-     * terminal, where every key has to reach the CLI as it is pressed. xterm
-     * plays along (`CompositionHelper`): while a composition is open it sends
-     * NOTHING and draws the letters in an overlay of its own, then releases the
-     * whole word at the end. On a Galaxy S25 with Samsung Keyboard that reads
-     * as a word that does not appear until you finish it, with the CLI's own
-     * cursor left behind where it really is — and it gets worse, not better,
-     * when you move that cursor: the keyboard asks the field what surrounds it,
-     * decides which word it is correcting, and issues "delete N back, insert
-     * this", which arrives as backspaces the CLI applies at ITS cursor. Text
-     * nobody typed.
+     * A terminal is not prose: every key has to reach the CLI as it is pressed,
+     * and there is nothing for a corrector to correct. xterm sets `autocorrect`
+     * and `autocapitalize` off already; these are the other two halves of the
+     * same request, and on a keyboard that honours it the suggestion strip goes
+     * away — measured on the check device, where it did.
      *
-     * xterm sets `autocorrect` and `autocapitalize` off, which is the generic
-     * "no suggestions" flag, and **that is exactly the one Samsung's predictor
-     * ignores**. So the lever is the field's VARIATION instead: a URL is not a
-     * sentence, and a keyboard that thinks it is typing one turns correction
-     * and prediction off. The layout keeps a normal QWERTY and a full space
-     * bar; it trades the comma for `/`, which a terminal wants more anyway.
-     *
-     * `email` was tried first, for the `@` Claude Code uses in file mentions,
-     * and Samsung Keyboard predicted straight through it — confirmed on the
-     * device rather than assumed, which is the only way any of this is known.
-     *
-     * Not gated on the width breakpoint, and that is deliberate: this is the
-     * one question in this app that really is about TOUCH rather than about how
-     * wide the window is ([AI_MOBILE.md](../../../../docs/AI_MOBILE.md)). A
-     * pointer-driven browser never reads `inputmode` at all, and a touchscreen
-     * laptop has the same keyboard and the same bug.
+     * **It does not fix the one keyboard that ignores it.** Samsung Keyboard
+     * with predictive text on composes regardless, and the whole story — what
+     * that breaks, what was tried, and what would actually fix it — is in
+     * [AI_MOBILE.md](../../../../docs/AI_MOBILE.md) under *Samsung Keyboard*.
+     * What is NOT set here is `inputMode`: the two non-linguistic variations
+     * were tried and neither stopped it, and both cost the comma key — which a
+     * prompt written to Claude needs and which is nowhere else on a phone,
+     * where `/` is already a key on the accessory bar.
      */
     const ime = term.textarea;
     if (ime) {
-      ime.inputMode = 'url';
-      ime.autocapitalize = 'none';
       ime.spellcheck = false;
       ime.setAttribute('autocomplete', 'off');
-      ime.setAttribute('autocorrect', 'off');
     }
     // AFTER `open`, which is a requirement of the addon and not a preference.
     //
