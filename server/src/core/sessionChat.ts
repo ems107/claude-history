@@ -21,7 +21,13 @@ import type {
   ChatState,
   ChatStatus,
 } from '@claude-history/shared';
-import { askingFor, activeSessionLimitMessage, CHAT_IDLE_TIMEOUT_MINUTES, CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import {
+  askingFor,
+  activeSessionLimitMessage,
+  CHAT_IDLE_TIMEOUT_MINUTES,
+  CHAT_MESSAGE_MAX,
+  UNBORN_GRACE_MINUTES,
+} from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import type { OurTurn } from '../util/chatLive.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
@@ -1052,6 +1058,31 @@ export class SessionChatService implements TranscriptWriter {
           this.kill(p, 'the turn went silent');
           this.changed(p.sessionId);
         }
+        continue;
+      }
+      /**
+       * A process on a session that never became a conversation, with nobody
+       * saying anything to it ([UNBORN_GRACE_MINUTES]).
+       *
+       * The composer's door to the same hole the terminal has: `/new` opens a
+       * CLI here to read the model list, and until a prompt is sent that id has
+       * no transcript, so it is in no list, no search and no badge — leave the
+       * page and it holds a slot and refuses every guarded action for the whole
+       * hour below. There is no socket to watch on this side, and none is
+       * needed: **closing an idle composer costs nothing at all here**, because
+       * the next prompt spawns a fresh process on its own (`send`) and the
+       * pickers are filled from `lastCapabilities`, which belongs to the install
+       * rather than to this process.
+       *
+       * The hour is untouched for everything else, and it is the same reasoning
+       * in both directions: it is the prompt cache's own clock, and a session
+       * with no transcript has no cache to keep warm.
+       */
+      const unborn = !this.index.get(p.sessionId) && !this.transcriptExists(p.sessionId);
+      if (unborn && quiet > UNBORN_GRACE_MINUTES * 60_000) {
+        log.info(`closing the session for ${p.sessionId} — it never became a conversation`);
+        this.kill(p, 'it never became a conversation');
+        this.changed(p.sessionId);
         continue;
       }
       if (quiet > idleMs) {
