@@ -96,6 +96,10 @@ The index itself is in memory and rebuilt on every start. Every path in that tab
 
 **Retired settings are dropped on load**: `SessionIndex.build` keeps only keys still in `DEFAULT_SETTINGS`. `chatModel` and `chatEffort` outlived their own removal in `userdata.json` and were still being served by `/api/settings`.
 
+> **Which means a branch that ADDS a setting can lose it by being switched away from.** Start the dev instance on a build whose `DEFAULT_SETTINGS` does not have the key yet — `git switch` to a branch without it, then restart — and the value is dropped on load and gone from disk on the next write. **The `pre-loss` guard cannot catch this one**, and the reason is worth stating: `userdataCounts()` lists what to count, and that list lives in the same code that no longer knows the field, so there is nothing to compare. Measured the hard way, on two project groups somebody had just made.
+>
+> Nothing in the code can fix it — dropping unknown keys is what keeps a retired setting from being served as current, and the two cases are indistinguishable from inside one build. What avoids it is a habit: **do not restart the dev instance while a branch that owns a setting is checked out of it.** Merge that branch’s `main` in and stay on the branch, or take a copy of `userdata.json` first (*Settings → Your data → Back up now*).
+
 ### `userdata.json` is the one file a write may not lose
 
 It holds the only state that cannot be rebuilt, and **several browser windows write it at once** — a star in one and a pin in the other land in the same tick, through the same in-memory index.
