@@ -94,12 +94,19 @@ function LogoColour() {
           />
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2">
-          <span className="text-[var(--text-dim)]">Any other colour</span>
+      {/* The words wrap away from the controls at 360px, and the two controls
+          never wrap away from EACH OTHER: they are one choice made two ways, and
+          a picker stranded on the line above the hex it fills in reads as two
+          unrelated boxes. So the pair is its own flex item, and the label is a
+          `<span>` with an `aria-label` on each input rather than a `<label>`
+          wrapping one of them. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="text-[var(--text-dim)]">Any other colour</span>
+        <span className="flex items-center gap-2">
           <input
             ref={picker}
             type="color"
+            aria-label="Logo colour, from a colour picker"
             // The saved value while the draft is unreadable: a colour input has
             // no way to hold "verde", and handed one it would silently show
             // black — a third state on screen that is nobody's choice.
@@ -107,23 +114,23 @@ function LogoColour() {
             onChange={(e) => setDraft(e.target.value)}
             className="h-9 w-12 cursor-pointer rounded border border-[var(--border)] bg-transparent p-0.5 max-md:h-11 max-md:w-14"
           />
-        </label>
-        <input
-          type="text"
-          value={draft}
-          spellCheck={false}
-          aria-label="Logo colour, as a hex value"
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              commit();
-              e.currentTarget.blur();
-            }
-            if (e.key === 'Escape') setDraft(value);
-          }}
-          className={`w-28 font-mono text-[11px] ${inputClass} max-md:min-h-11`}
-        />
+          <input
+            type="text"
+            value={draft}
+            spellCheck={false}
+            aria-label="Logo colour, as a hex value"
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                commit();
+                e.currentTarget.blur();
+              }
+              if (e.key === 'Escape') setDraft(value);
+            }}
+            className={`w-28 font-mono text-[11px] ${inputClass} max-md:min-h-11`}
+          />
+        </span>
       </div>
       <Hint>
         {typed === null && draft.trim() !== ''
