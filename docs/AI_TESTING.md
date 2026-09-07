@@ -802,6 +802,21 @@ runs, and Enter always worked while blur never did).
   appending a new one fetches, appending-then-removing fetches twice, and a
   plain reload is unaffected either way, because the server already tints what
   it serves.
+- **And a request is still not a tab. This one needs eyes, and the pixels are
+  not in the page.** A fetched icon that Chrome then declines to show looks
+  identical to everything above, and that is how the colour reached the browser
+  and stopped: with `<link rel="alternate icon" href="/favicon.ico"
+  sizes="16x16 …">` also declared, **Chrome puts the raster in the tab and the
+  SVG nowhere** — measured against `sizes="any"` and `sizes="48x48"` on the SVG
+  alike, so nothing said about the SVG rescues it. The fix is that the SVG is
+  the only icon `web/index.html` declares; the `.ico` stays on disk for the
+  Start Menu shortcut and for the browsers that ask for the conventional path
+  unprompted. To see it: a VISIBLE Chrome (`--window-position=0,0`), then
+  PowerShell `SetWindowPos` the window topmost at the origin and
+  `CopyFromScreen` the top 130 px — `CopyFromScreen` alone photographs whatever
+  is in front, which twice meant the release's own tab on 7433 and a reading of
+  "still terracotta" that was not this window at all. Look three times: the
+  default, straight after a swatch, and after a reload.
 - **Server-side, with `curl` from this machine** (a local PUT needs no headers):
   `"logoColor":"verde"` must come back as the default rather than be stored, and
   `"ABC"` as `#aabbcc`. The UI refuses both first; this is the half that is not

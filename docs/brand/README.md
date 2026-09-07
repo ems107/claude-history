@@ -9,7 +9,7 @@ A terminal prompt and the trail it leaves behind: the solid chevron is now, the 
 | Where it lives | Which form, and who reads it |
 | --- | --- |
 | `web/public/favicon.svg` | the tile — the browser tab (served tinted by `server/src/routes/brand.ts`), and the source every raster below was drawn from |
-| `web/public/favicon.ico` | the same tile at 16, 24, 32, 48, 64, 128 and 256 px, and the icon the Start Menu shortcut points at (`installer/install.ps1`) |
+| `web/public/favicon.ico` | the same tile at 16, 24, 32, 48, 64, 128 and 256 px, and the icon the Start Menu shortcut points at (`installer/install.ps1`). **Not declared in `index.html`** — a browser that cannot read the SVG asks for this path unprompted, and declaring it beside the SVG made Chrome prefer it, which is a tab that can never follow the logo colour |
 | `web/public/apple-touch-icon.png` | 180 px, for a phone that adds the page to its home screen |
 | `web/src/components/Brandmark.tsx` | the glyph — the trail with no tile, for the header, which already has a surface of its own |
 | `icon-b.svg` *(here)* | the alternative that was not chosen, and the only one with nowhere else to be |

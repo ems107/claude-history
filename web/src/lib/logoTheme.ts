@@ -55,6 +55,10 @@ function swapIcon(href: string): void {
   const fresh = document.createElement('link');
   fresh.rel = 'icon';
   fresh.type = 'image/svg+xml';
+  // The same three attributes `index.html` declares, `sizes` included: a swap
+  // that dropped it would quietly hand the tab back to whatever else is
+  // declared, which is the fault this whole comment is about.
+  fresh.sizes.add('any');
   fresh.href = href;
   link.remove();
   document.head.appendChild(fresh);

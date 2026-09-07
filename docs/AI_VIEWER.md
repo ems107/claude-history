@@ -534,11 +534,17 @@ The tab's icon follows through the server: `routes/brand.ts` tints
 load needs nothing from the client at all. **What the client has to push is the
 colour changing under an OPEN tab, and only a new `<link>` element does that** —
 writing `href` on the one the browser has already read, or `replaceWith`, sends
-no request whatever the DOM then says, which is how this shipped broken and why
-check 56 asserts the request instead of the attribute. `favicon.ico`, the touch
-icon, Android's launcher icon and the Start Menu shortcut are pre-rendered
-rasters and follow nothing, which the row says in its hint rather than leaving
-to be found out.
+no request whatever the DOM then says. **And the tab is not the request**: while
+the `.ico` was also declared, Chrome put the raster in the tab and the tinted
+SVG nowhere, fetched and discarded, immune to `sizes="any"` on the SVG. So the
+SVG is now the ONLY icon `web/index.html` declares, and the swap carries the
+same `sizes` — `favicon.ico` is still on disk, where a browser without SVG
+favicons asks for it and where the Start Menu shortcut points. Both faults
+shipped, one behind the other, and check 56 is written so neither can again:
+assert the request rather than the attribute, then LOOK at the tab. The
+pre-rendered rasters — the `.ico`, the touch icon, Android's launcher icon, the
+shortcut — follow nothing, which the row says in its hint rather than leaving to
+be found out.
 
 ## What folds
 
