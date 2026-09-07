@@ -43,7 +43,12 @@ import { appendedText, safeParse, str } from './jsonl.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
 import { readLiveSessions } from './live.ts';
 import { createLogger } from './logger.ts';
-import { buildProjects, normalizeProjectKey } from './projects.ts';
+import {
+  buildProjects,
+  normalizeProjectKey,
+  sanitizeHiddenProjects,
+  sanitizeProjectGroups,
+} from './projects.ts';
 import { scanSessions, type ScannedSession } from './scanner.ts';
 import { summarizeSession } from './summarizer.ts';
 
@@ -560,6 +565,10 @@ export class SessionIndex {
       // copy behind. Losing them locks every remote device out until someone
       // walks to the machine — recoverable, but only from a backup.
       auth: this.auth ? 1 : 0,
+      // Inside `settings`, and the only thing in there worth counting: every
+      // other setting has a default to fall back on, these are names somebody
+      // typed and nothing else in the file could put them back.
+      projectGroups: this.settings.projectGroups.length,
     };
   }
 
@@ -615,6 +624,14 @@ export class SessionIndex {
     // A dev instance starts from its own defaults (DEV_SETTING_OVERRIDES), and
     // only where nothing was saved: anything switched on there stays on.
     this.settings = { ...defaultSettings(this.config.devInstance), ...(known as Partial<AppSettings>) };
+    // Nothing above checks a single TYPE, which is fine while every setting is a
+    // scalar — a nonsense string is served and then clamped by the next write.
+    // The two project lists are not scalars: a `hiddenProjects: "foo"` put here
+    // by hand would reach the filter sidebar, where `.includes` on a string
+    // answers about letters. Same functions the write path uses, so a file
+    // edited by hand and a `PUT` cannot end up meaning different things.
+    this.settings.hiddenProjects = sanitizeHiddenProjects(this.settings.hiddenProjects);
+    this.settings.projectGroups = sanitizeProjectGroups(this.settings.projectGroups);
   }
 
   /**
@@ -762,6 +779,11 @@ export class SessionIndex {
       // on your own machine. Empty is meaningful here rather than missing — it
       // is what asks for the shipped names back.
       appName: (patch.appName ?? this.settings.appName).trim().slice(0, APP_NAME_MAX),
+      // Normalized, deduplicated and capped — and the groups additionally have
+      // "one project, one group" imposed on them here rather than in the editor,
+      // because the settings page is not the only thing that can PUT here.
+      hiddenProjects: sanitizeHiddenProjects(patch.hiddenProjects ?? this.settings.hiddenProjects),
+      projectGroups: sanitizeProjectGroups(patch.projectGroups ?? this.settings.projectGroups),
     };
     if (patch.remoteAccessEnabled && !this.settings.remoteAccessEnabled) {
       log.warn('remote access cannot be enabled before a username and password are set — the switch stays off');
@@ -856,11 +878,15 @@ export class SessionIndex {
   }
 
   /**
-   * Project key hidden from the browsing views, or null. That is the auto-reload
-   * folder when the user asked for it: it fills up with one throwaway session
-   * every 5 hours, and those would otherwise drown the real ones.
+   * The auto-reload folder, when the user asked for it to be hidden.
+   *
+   * It fills up with one throwaway session every 5 hours, and those would
+   * otherwise drown the real ones. Its own function rather than a line in
+   * `hiddenProjectKeys()` because it is also the one project the settings page
+   * must NOT offer a checkbox for: this switch would override it, and a control
+   * that another setting silently overrides is a trap.
    */
-  private hiddenProjectKey(): string | null {
+  private autoReloadHiddenKey(): string | null {
     const { autoReloadEnabled, autoReloadHideSessions, autoReloadCwd } = this.settings;
     // Gated on the feature being on, and not just on its own checkbox: with the
     // feature off its whole settings block is disabled in the UI, and a greyed
@@ -870,9 +896,32 @@ export class SessionIndex {
     return normalizeProjectKey(autoReloadCwd.trim());
   }
 
-  /** True when this project is the hidden one. */
-  isHiddenProject(projectKey: string): boolean {
-    return this.hiddenProjectKey() === projectKey;
+  /**
+   * Every project key kept out of the browsing views, whatever put it there.
+   *
+   * Two things do, and hidden means exactly the same for both: the auto-reload
+   * folder above, and `settings.hiddenProjects` — the list the user keeps in
+   * *Settings → Projects*. One set rather than two checks, so nothing can come
+   * to hide a project from the list and not from search.
+   *
+   * Public because two things outside the index have to ask: `/api/prompts`,
+   * whose rows come from `~/.claude/history.jsonl` rather than from the session
+   * list, and the notification bell. Both ask ONCE and then use the set — a
+   * per-row `isHiddenProject(key)` helper was allocating a set per prompt in the
+   * whole history file.
+   */
+  hiddenProjectKeys(): ReadonlySet<string> {
+    const keys = new Set(this.settings.hiddenProjects);
+    const auto = this.autoReloadHiddenKey();
+    if (auto !== null) keys.add(auto);
+    return keys;
+  }
+
+  /** Every project key there is, which is what a tag's colour is assigned over. */
+  private allProjectKeys(): Set<string> {
+    const keys = new Set<string>();
+    for (const s of this.sessions.values()) keys.add(s.projectKey);
+    return keys;
   }
 
   /**
@@ -881,9 +930,9 @@ export class SessionIndex {
    * and the stats page can never disagree about what exists.
    */
   private *visible(): Generator<SessionSummary> {
-    const hidden = this.hiddenProjectKey();
+    const hidden = this.hiddenProjectKeys();
     for (const s of this.sessions.values()) {
-      if (hidden !== null && s.projectKey === hidden) continue;
+      if (hidden.has(s.projectKey)) continue;
       yield s;
     }
   }
@@ -903,7 +952,43 @@ export class SessionIndex {
   }
 
   projects(): ProjectInfo[] {
-    return buildProjects(this.visible());
+    return buildProjects(this.visible(), this.allProjectKeys());
+  }
+
+  /**
+   * Every project the settings page may manage — hidden ones included, because
+   * that page is the only place a hidden project can be brought back from.
+   *
+   * The auto-reload folder is the one exception, and deliberately: it is hidden
+   * by a switch of its own, so a "shown" checkbox for it would be one that
+   * another setting silently overrides. Nothing else is filtered.
+   */
+  projectsAll(): ProjectInfo[] {
+    const auto = this.autoReloadHiddenKey();
+    const keys = this.allProjectKeys();
+    if (auto === null) return buildProjects(this.sessions.values(), keys);
+    const shown: SessionSummary[] = [];
+    for (const s of this.sessions.values()) if (s.projectKey !== auto) shown.push(s);
+    return buildProjects(shown, keys);
+  }
+
+  /**
+   * A project by its key, filtered by nothing at all.
+   *
+   * What anything that is not BROWSING has to ask: hiding a project is a
+   * statement about not wanting to read it in a list, and a folder you chose not
+   * to see is still a folder you may start a session in. Goes through
+   * `buildProjects` rather than scanning the sessions itself so the path comes
+   * from the most recently active one — the freshest drive-letter casing, which
+   * is the whole reason that rule exists.
+   */
+  findProject(key: string): ProjectInfo | undefined {
+    return buildProjects(this.sessions.values(), this.allProjectKeys()).find((p) => p.key === key);
+  }
+
+  /** Distinct projects on disk, hidden ones and the auto-reload folder included. */
+  get projectCount(): number {
+    return this.allProjectKeys().size;
   }
 
   get size(): number {

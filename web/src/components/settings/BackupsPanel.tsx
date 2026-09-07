@@ -41,6 +41,12 @@ function contentsLabel(contents: UserdataBackup['contents']): string {
     `${String(contents.pins)} ${contents.pins === 1 ? 'pin' : 'pins'}`,
     `${String(contents.stars)} ${contents.stars === 1 ? 'star' : 'stars'}`,
   ];
+  // Only when there are some: a line reading "0 project groups" spends width on
+  // a feature the reader may never have used, and the other three counts are
+  // always shown precisely because they are always the answer to "how much".
+  if (contents.projectGroups > 0) {
+    parts.push(`${String(contents.projectGroups)} project ${contents.projectGroups === 1 ? 'group' : 'groups'}`);
+  }
   if (contents.hasPrices) parts.push('own prices');
   if (!contents.hasSettings) parts.push('no settings');
   return parts.join(' · ');

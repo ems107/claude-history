@@ -751,9 +751,17 @@ export class SessionChatService implements TranscriptWriter {
     }
   }
 
-  /** The real path behind a project key, straight from the index. */
+  /**
+   * The real path behind a project key, straight from the index.
+   *
+   * `findProject`, not `projects()`: hiding a project is a statement about
+   * BROWSING it, and a folder you chose not to see in the list is still a folder
+   * you may start a session in. Reading the filtered list here made
+   * `POST /api/chat/new` answer "that project is not in the index" for a project
+   * that plainly is — which the auto-reload folder had been doing all along.
+   */
   private projectPath(key: string): string {
-    const project = this.index.projects().find((p) => p.key === key);
+    const project = this.index.findProject(key);
     if (!project) throw new Error('That project is not in the index.');
     if (!fs.existsSync(project.path)) {
       throw new Error(`The project folder no longer exists: ${project.path}`);
