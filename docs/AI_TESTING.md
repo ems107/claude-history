@@ -849,14 +849,23 @@ the three places it has to reach.
   /manifest.webmanifest` is **byte-identical to `web/dist/manifest.webmanifest`**
   — `cmp`, not eyes. A NAMELESS dev instance is the one exception and must NOT
   be identical: its name and its tab title both carry `dev · … :7434`.
-- **A name reaches all three, and reaches them undecorated.** Set one and
-  `document.title`, `name` and `short_name` must all take it EXACTLY: the dev
-  marker is for the nameless case, so a chosen name comes back with nothing
-  added to it, checked on the dev instance where that is easiest to get wrong.
-  **Nothing else in the manifest moves** — diff the
-  served JSON against itself with those two lines cut. The server trims it and
-  caps it at `APP_NAME_MAX`; the row's marker says `default the name it ships
-  with` rather than `default empty`.
+- **A name reaches all three, and reaches them BEHIND the shipped one.** Set
+  `laptop` and read the tab (`claude history laptop`), `name`
+  (`Claude History laptop`) and `short_name` (`claude history laptop`): each
+  field keeps its own shipped spelling and grows the same suffix, and the dev
+  marker is gone — it is for the nameless case, and a typed name is not
+  decorated on top of it. Checked on the dev instance, where that is easiest to
+  get wrong. **Nothing else in the manifest moves** — diff the served JSON
+  against itself with those two lines cut. The server trims it and caps it at
+  `APP_NAME_MAX`; the row's marker says `default the name it ships with` rather
+  than `default empty`, and a set one says the whole name
+  (`claude history laptop`) rather than the stored half.
+- **The box says what it appends to.** The row draws `claude history` inside the
+  input, dimmed, in front of the caret: clicking the dimmed words focuses the
+  box (it is all one `<label>`), typing never touches them, and selecting the
+  field's text selects only what was typed. At 360 px the prefix does not push
+  the caret off the row — it is `shrink-0` beside a `min-w-0` input, so the
+  typing half is what narrows.
 - **Chrome still offers to install it.** `Page.getInstallabilityErrors` empty and
   `Page.getAppManifest` with no `errors`, which is cheap — and then LOOK, because
   neither of those is the button: photograph the omnibox (check 56's recipe) and
@@ -870,8 +879,9 @@ the three places it has to reach.
   is false and it must say so with the host in it, rather than sending a phone
   looking for a button its browser will never draw.
 - **The install itself is the one step that leaves something behind**, so it is
-  the one to ask about first: install it, check the Start Menu entry carries the
-  chosen name and the tinted tile, then uninstall it from the app's own menu.
+  the one to ask about first: install it, check the Start Menu entry reads
+  `Claude History laptop` and carries the tinted tile, then uninstall it from
+  the app's own menu.
   Renaming an app that is ALREADY installed is Chrome's business and may not
   happen at all — that is documented rather than asserted.
 - **The cache is the trap, and a fresh Chrome profile cannot see it.** Every

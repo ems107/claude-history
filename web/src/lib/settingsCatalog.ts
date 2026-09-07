@@ -108,8 +108,15 @@ const toneChoice = (v: unknown): string => (v === TONE_INHERIT ? 'general tone' 
 /** A colour said by the name of its swatch where it has one, not as six digits. */
 const logoColour = (v: unknown): string => (typeof v === 'string' ? (logoPresetLabel(v) ?? v) : valueText(v));
 
-/** An empty name is a choice — the shipped one — rather than a missing value. */
-const appNameText = (v: unknown): string => (v === '' ? 'the name it ships with' : valueText(v));
+/**
+ * A suffix said as the name it makes. What is stored is `laptop`; what the tab
+ * reads is `claude history laptop`, and that is the answer somebody scanning
+ * this page came for — the stored half on its own looks like a whole name that
+ * has lost its front. An empty one is a choice — the shipped name alone —
+ * rather than a missing value.
+ */
+const appNameText = (v: unknown): string =>
+  typeof v === 'string' ? (v === '' ? 'the name it ships with' : `claude history ${v}`) : valueText(v);
 
 /**
  * How many projects are hidden, rather than which ones.
@@ -231,7 +238,7 @@ export const ENTRIES: Entry[] = [
     group: 'app-name',
     field: 'appName',
     label: 'App name',
-    keywords: 'title tab install app pwa standalone shortcut rename call brand',
+    keywords: 'title tab install app pwa standalone shortcut rename call brand suffix after which instance',
     format: appNameText,
   },
   {

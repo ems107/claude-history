@@ -978,17 +978,23 @@ export interface AppSettings {
    */
   logoColor: string;
   /**
-   * What this app calls itself: the browser tab, and the name it INSTALLS
-   * under — the Start Menu entry, the taskbar, a launcher.
+   * What this instance is called after the name the app ships with: the browser
+   * tab, and the name it INSTALLS under — the Start Menu entry, the taskbar, a
+   * launcher.
    *
-   * **Empty means the name it ships with**, which is not the same as a default
-   * string here and is the reason this is not one. The two shipped names differ
-   * on purpose (`Claude History` in the manifest, `claude history` in the tab),
-   * so a single default would have had to change one of them on screen for
-   * everybody who never touches this. Empty leaves both exactly as they were and
-   * makes the served manifest byte-identical to the file — the same rule
-   * `logoColor` follows by REMOVING a property rather than writing the
-   * terracotta back.
+   * **It is a suffix, never a replacement.** The app is called `claude history`
+   * in a tab and `Claude History` in the manifest, and that is what it is called
+   * wherever this setting is used too — what is typed here FOLLOWS it
+   * (`claude history laptop`). So the question this answers is "which instance
+   * is this?" rather than "what is this app?", and the two shipped spellings can
+   * go on differing without anybody choosing between them: each place appends to
+   * the name it already had.
+   *
+   * **Empty means the shipped name alone**, which is not the same as a default
+   * string here and is the reason this is not one: empty leaves both names
+   * exactly as they were and makes the served manifest byte-identical to the
+   * file — the same rule `logoColor` follows by REMOVING a property rather than
+   * writing the terracotta back.
    *
    * It does not rename the mark in the header, and it does not rename the Start
    * Menu shortcut the installer made: that one is a `.lnk` on disk, written at

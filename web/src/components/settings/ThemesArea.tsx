@@ -23,8 +23,9 @@ export function ThemesArea() {
       <GroupCard id="app-name">
         <TextField
           field="appName"
-          placeholder="Claude History"
-          hint="Names the browser tab, and the app if you install it. Empty is the name it ships with."
+          prefix="claude history"
+          placeholder="laptop, work, dev…"
+          hint="Follows the name in the box: the browser tab, and the app if you install it — where it is capitalised. Empty is that name alone."
         />
       </GroupCard>
       <GroupCard id="install">

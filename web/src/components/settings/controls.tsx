@@ -538,6 +538,7 @@ export function TextField({
   field,
   label,
   placeholder,
+  prefix,
   mono,
   disabled,
   hint,
@@ -547,6 +548,17 @@ export function TextField({
   /** Overrides the catalogue's name, for the one row whose label carries a note. */
   label?: ReactNode;
   placeholder?: string;
+  /**
+   * Text that is part of the value but not part of what is edited, drawn inside
+   * the box in front of the caret — for the one field that is a SUFFIX rather
+   * than a whole value (`appName`, which follows the name the app ships with).
+   *
+   * A hint underneath could have said the same words, and did: it read as a
+   * remark about the field instead of as the front of the answer, and every
+   * version of it needed the person to imagine the result. Here the box shows
+   * the whole name and the caret sits exactly where their half starts.
+   */
+  prefix?: string;
   mono?: boolean;
   disabled?: boolean;
   hint?: ReactNode;
@@ -565,27 +577,60 @@ export function TextField({
   const commit = () => {
     if (draft !== value) save({ [field]: draft } as Partial<AppSettings>);
   };
+  const input = (
+    <input
+      type="text"
+      value={draft}
+      placeholder={placeholder}
+      disabled={disabled}
+      spellCheck={false}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          commit();
+          e.currentTarget.blur();
+        }
+        if (e.key === 'Escape') setDraft(value);
+      }}
+      // With a prefix, the border and the dimming belong to the row that holds
+      // both — the focus ring through `focus-within`, `disabled` through the
+      // row's own opacity — so the input gives up all three rather than
+      // multiplying the second one by 0.4 a second time.
+      className={
+        prefix === undefined
+          ? `w-full ${inputClass} ${mono ? 'font-mono text-[11px]' : ''}`
+          : `min-w-0 flex-1 bg-transparent focus:outline-none ${mono ? 'font-mono text-[11px]' : ''}`
+      }
+    />
+  );
   return (
     <Field id={entry?.id} badge={<DefaultBadge field={field} />}>
       <label className={`block ${disabled ? inactiveRow : ''}`}>
         <span className="mb-1 block">{label ?? entry?.label ?? field}</span>
-        <input
-          type="text"
-          value={draft}
-          placeholder={placeholder}
-          disabled={disabled}
-          spellCheck={false}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              commit();
-              e.currentTarget.blur();
-            }
-            if (e.key === 'Escape') setDraft(value);
-          }}
-          className={`w-full ${inputClass} ${mono ? 'font-mono text-[11px]' : ''}`}
-        />
+        {prefix === undefined ? (
+          input
+        ) : (
+          <span
+            className={`flex w-full items-baseline rounded border border-[var(--border)] px-1.5 py-0.5 focus-within:border-[var(--text-dim)] max-md:flex-col max-md:items-stretch ${
+              disabled ? 'opacity-40' : ''
+            }`}
+          >
+            {/* Dimmed and unselectable: it is the app's own name, not part of
+                the field's value, and a click anywhere on it lands in the box
+                because the whole row is inside the `<label>`.
+
+                **It goes ABOVE the caret on a phone rather than beside it**,
+                which is the one place this shape had to give. A row with a
+                `default …` marker beside it is 138 px wide at 360 px — that is
+                what the marker leaves, and it is the same for every field in
+                this card — so 78 px of prefix left 46 px to type in. Stacked,
+                the typing half gets the whole 131 px it had before the prefix
+                existed, and the box still shows both halves of the name. */}
+            <span className="shrink-0 select-none pr-1 text-[var(--text-dim)] max-md:pr-0">{prefix}</span>
+            {input}
+          </span>
+        )}
       </label>
       {(after || hint) && (
         <div className={`mt-1.5 flex flex-wrap items-center gap-2 ${disabled ? inactiveRow : ''}`}>

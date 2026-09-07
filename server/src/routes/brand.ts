@@ -79,9 +79,11 @@ export function registerBrandRoutes(app: FastifyInstance, ctx: AppContext): void
        * the one case where a default instance does not get the file back
        * untouched.
        *
-       * **A name somebody typed is taken as given.** Naming it is the clearest
-       * way there is to say which instance this is, and marking a name that was
-       * chosen is second-guessing whoever chose it — which read as
+       * **A name that was typed replaces that marker rather than being
+       * decorated with it.** It is already the answer the marker exists to
+       * give, said better — and the shipped name is in front of it either way,
+       * so `Claude History dev` cannot be mistaken for the release the way a
+       * bare `dev` once could. Marking it too read as
        * `dev · Claude History dev :7434` the first time somebody did the
        * obvious thing and typed the distinction themselves.
        */
@@ -115,20 +117,28 @@ function parseManifest(text: string | null, log: ReturnType<typeof createLogger>
 }
 
 /**
- * The manifest under another name, and under nothing else.
+ * The manifest with something added to its name, and with nothing else changed.
+ *
+ * **The chosen name is appended to the shipped one, never put in its place** —
+ * `Claude History laptop` — which is the whole of what this setting is
+ * (`AppSettings.appName`) and the reason the shipped pair can go on differing
+ * (`Claude History` / `claude history`): each field keeps its own spelling and
+ * grows the same suffix, so a person typing one name still has not had to
+ * choose two.
  *
  * Only `name` and `short_name` are touched: the description, the colours,
  * `display`, `scope` and the icons stay facts about the file, so there is one
- * copy of them and this cannot drift from it. A chosen name takes BOTH fields,
- * because a person typing one name has not chosen two — the shipped pair
- * differs (`Claude History` / `claude history`) and that difference belongs to
- * the file rather than to anybody's setting.
+ * copy of them and this cannot drift from it.
  */
 function named(manifest: Record<string, unknown>, chosen: string | null, devPort: string | null): Record<string, unknown> {
   const shippedName = typeof manifest.name === 'string' ? manifest.name : '';
   const shippedShort = typeof manifest.short_name === 'string' ? manifest.short_name : shippedName;
+  // Never both: the caller only asks for the port marker when no name was
+  // typed. Written as two independent steps anyway, because which one applies
+  // is that caller's rule to state and not this function's to assume.
+  const after = (value: string): string => (chosen === null ? value : `${value} ${chosen}`);
   const mark = (value: string): string => (devPort === null ? value : `dev · ${value} ${devPort}`);
-  return { ...manifest, name: mark(chosen ?? shippedName), short_name: mark(chosen ?? shippedShort) };
+  return { ...manifest, name: mark(after(shippedName)), short_name: mark(after(shippedShort)) };
 }
 
 /**

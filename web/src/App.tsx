@@ -146,21 +146,27 @@ export function App() {
   // screens above this one cannot read settings, and are right to wear the
   // shipped colour and the shipped name.
   useAppIdentity(settings?.settings.logoColor, settings?.settings.appName);
+  // **The app's own name always leads and the setting FOLLOWS it**, here and in
+  // the served manifest alike: `claude history laptop`, never `laptop`. What
+  // somebody types names this instance, not this app — so the app goes on
+  // saying what it is, and an empty setting is simply the shipped name alone.
+  // The tab's spelling is the one spelled here because the two shipped
+  // spellings differ on purpose; the manifest's is in the file.
+  //
   // Two tabs that look alike on two ports is the one way to confuse them, and
-  // the tab strip is where they are told apart before anything is clicked. So
-  // a NAMELESS dev instance marks itself — but **a name somebody typed is taken
-  // as given**, here and in the served manifest alike: naming it is the
-  // clearest way there is to say which one this is, and decorating that name
-  // would be second-guessing the person who wrote it. Two instances called the
+  // the tab strip is where they are told apart before anything is clicked. So a
+  // NAMELESS dev instance marks itself — and a name that was typed replaces
+  // that marker rather than being decorated with it, because it is already the
+  // answer the marker exists to give, said better. Two instances called the
   // same thing is then a choice rather than an accident, and a tab still has
   // the port in its address bar.
-  //
-  // An empty setting is the shipped name rather than an empty tab, and the
-  // fallback is spelled here because the two shipped spellings differ — the
-  // manifest's is in the file.
   const chosen = settings?.settings.appName ?? '';
   useEffect(() => {
-    document.title = chosen || (dev ? `dev · claude history :${window.location.port}` : 'claude history');
+    document.title = chosen
+      ? `claude history ${chosen}`
+      : dev
+        ? `dev · claude history :${window.location.port}`
+        : 'claude history';
   }, [dev, chosen]);
   return (
     <div className="flex h-full flex-col">

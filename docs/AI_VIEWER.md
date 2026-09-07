@@ -664,25 +664,37 @@ swap that re-asks for the icon re-asks for this, which is why both live in one
 function; `"id": "/"` is in the manifest so that a URL which now carries a query
 can never be mistaken for a different app.
 
-**The name is empty by default, and empty is a choice rather than a gap.**
-`appName` names the browser tab and the app if you install it, and the two names
-this app ships with do not match — `Claude History` in the manifest, `claude
-history` in the tab — so a single default string would have had to change one of
-them on screen for everybody who never touches the setting. Empty leaves both
-where they were and lets `routes/brand.ts` hand back the manifest file
-untouched, which is the same rule `logoColor` follows by REMOVING a property
-rather than writing the terracotta back; the catalogue's `format` is what stops
-the marker reading `default empty`. Only `name` and `short_name` are overridden
+**The name is a SUFFIX, and empty is a choice rather than a gap.** `appName`
+names the browser tab and the app if you install it, and it names them *after*
+the name the app ships with: the tab reads `claude history laptop` and the
+manifest says `Claude History laptop`. That is what makes the setting answerable
+— it asks which instance this is, not what the app is called — and it is why the
+two shipped spellings can go on differing (`Claude History` in the manifest,
+`claude history` in the tab): each place appends to the name it already had, so
+one typed name still does not have to be two, and nothing on screen moves for
+anybody who never touches the setting. Empty is the shipped name alone, which
+lets `routes/brand.ts` hand back the manifest file untouched — the same rule
+`logoColor` follows by REMOVING a property rather than writing the terracotta
+back; the catalogue's `format` is what stops the marker reading `default empty`,
+and it says the whole name rather than the stored half, which on its own reads
+like a name that lost its front. Only `name` and `short_name` are overridden
 there, so the description, the colours and the icons stay facts about the file.
 The one instance that never gets its file back verbatim is a **nameless** dev
 one, which marks its own name exactly as its tab title does: two tabs alike on
 two ports is the known way to confuse them, and two INSTALLED apps alike would
 outlive the confusion — an installed window has no address bar to check the port
-in. **A name somebody typed is taken as given**, in both places and for the same
-reason: naming it is the clearest way there is to say which instance this is,
-and decorating that name is second-guessing whoever chose it. It read as
-`dev · Claude History dev :7434` the first time somebody did the obvious thing
-and typed the distinction themselves.
+in. **A name that was typed replaces that marker rather than being decorated
+with it**, in both places: it is already the answer the marker exists to give,
+said better, and the shipped name is in front of it either way. Marking it too
+read as `dev · Claude History dev :7434` the first time somebody did the obvious
+thing and typed the distinction themselves.
+
+The settings row carries the shipped half INSIDE the box, in front of the caret
+(`TextField`'s `prefix`, its only user). A hint underneath saying the same words
+was what it looked like first, and it read as a remark about the field rather
+than as the front of the answer — every version of it needed the person to
+imagine the result. This way the box shows the whole name and the caret sits
+where their half starts.
 
 **Installing is a readout, not a button, and that is a limit worth knowing.**
 Chrome dropped the service-worker requirement for installing from its own menu
