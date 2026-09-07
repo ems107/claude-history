@@ -529,7 +529,7 @@ export function Composer({
                     aria-label="Send"
                     className={`flex size-7 items-center justify-center rounded-full transition-colors max-md:size-11 ${
                       canSend
-                        ? 'bg-[var(--accent)] text-[#1b1512] hover:brightness-110'
+                        ? 'bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-110'
                         : 'bg-[var(--bg-hover)] text-[var(--text-dim)]'
                     }`}
                   >

@@ -1,13 +1,13 @@
-import { LOGO_DEFAULT_COLOR, normalizeLogoColor } from '@claude-history/shared';
+import { dimLogoColor, LOGO_DEFAULT_COLOR, logoInk, normalizeLogoColor } from '@claude-history/shared';
 import { useEffect } from 'react';
 
 /**
- * What the browser's own chrome shows about this app: the colour of the mark,
- * the tab's icon, and the manifest an install reads its name and icon from.
+ * What the app is coloured and called: the accent the whole UI is drawn in, the
+ * tab's icon, and the manifest an install reads its name and icon from.
  *
  * Three links between a setting and something outside the page, and all three
  * turned out to need the same push. **A browser does not go back and look.**
- * `--logo` and `--logo-dim` are ours to write; the icon and the manifest are
+ * The accent properties are ours to write; the icon and the manifest are
  * files it decided it already had, and nothing about a setting changing makes
  * it ask again. Each of the two is re-asked by REPLACING its `<link>` element —
  * measured, and the only thing that works: writing `href` on a link the browser
@@ -30,10 +30,10 @@ import { useEffect } from 'react';
  * manifest.
  *
  * **The default is still expressed by writing nothing** where writing nothing
- * is possible: removing the properties leaves `styles.css` in charge, where
- * `--logo` is `var(--accent)`, so "no choice made" and "the accent" cannot
- * drift apart. Only the two links are unconditional, because a cache that has
- * to be beaten has to be beaten every time.
+ * is possible: removing the properties leaves `styles.css` in charge, so "no
+ * choice made" and "the terracotta it ships with" cannot drift apart. Only the
+ * two links are unconditional, because a cache that has to be beaten has to be
+ * beaten every time.
  *
  * Cleanup is not housekeeping here, it is the right answer: `App` unmounts when
  * the session is lost, and the login screen it is replaced by cannot read
@@ -64,19 +64,42 @@ export function useAppIdentity(logoColor: string | undefined, appName: string | 
   useEffect(() => () => publish(null, ''), []);
 }
 
+/**
+ * A terminal that was built before the colour changed, told to look again.
+ *
+ * xterm is handed a theme when it is CONSTRUCTED and reads nothing afterwards,
+ * so an open CLI kept the previous accent in its cursor and its selection —
+ * which is exactly the objection that used to keep the logo colour off the
+ * accent, and is answered rather than lived with. An event and not a settings
+ * query in `SessionTerminal.tsx`: the properties below are written by an effect
+ * in `App`, and a parent's effect runs AFTER its children's, so a terminal
+ * reacting to the same settings change would read the previous colour off the
+ * document. Reacting to the write itself cannot be early.
+ */
+export const ACCENT_EVENT = 'ch:accent';
+
+/** What the last `publish` put on the accent, so an unchanged one is silent. */
+let publishedAccent: string | null | undefined;
+
 /** Write the identity into the document: the properties, then the two links. */
 function publish(value: string | null, name: string): void {
   const root = document.documentElement;
   if (value === null) {
-    root.style.removeProperty('--logo');
-    root.style.removeProperty('--logo-dim');
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--accent-dim');
+    root.style.removeProperty('--accent-ink');
   } else {
-    root.style.setProperty('--logo', value);
-    // The faded chevrons, derived rather than chosen: 76 % of the colour over
-    // black reproduces `--accent-dim` from `--accent` to within a couple of
-    // units, and asking somebody to pick two colours for one mark would be
-    // asking them to get the relationship between them right.
-    root.style.setProperty('--logo-dim', `color-mix(in srgb, ${value} 76%, #000)`);
+    // `--accent` and not `--logo`: `styles.css` derives the mark's pair from
+    // the accent's, so writing the accent moves both and the mark's own
+    // properties stay where they are defined. The dim half and the ink are
+    // derived rather than asked for — one colour is the whole choice.
+    root.style.setProperty('--accent', value);
+    root.style.setProperty('--accent-dim', dimLogoColor(value));
+    root.style.setProperty('--accent-ink', logoInk(value));
+  }
+  if (value !== publishedAccent) {
+    publishedAccent = value;
+    window.dispatchEvent(new Event(ACCENT_EVENT));
   }
   const colour = (value ?? LOGO_DEFAULT_COLOR).slice(1);
   swapLink('icon', `/favicon.svg?v=${colour}`, 'image/svg+xml');

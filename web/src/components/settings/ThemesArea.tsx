@@ -104,9 +104,11 @@ function Installed() {
  * closed list to choose from: after the seven comes "any colour", which a
  * `<select>` has no shape for.
  *
- * There is no preview panel, deliberately. A click saves, and the header above
- * this page is the mark at the size it is actually worn — a preview would be a
- * second, smaller copy of what is already on screen.
+ * There is no preview panel, deliberately, and the accent following the mark is
+ * what settled it: a click saves, and the page it saves on is already wearing
+ * the answer — the mark in the header, the swatch's own ring, this area's rail
+ * entry, the toggles further down. A preview would be a small copy of a screen
+ * that has just repainted.
  */
 function LogoColour() {
   const { settings, save } = useSettingsPage();
@@ -209,7 +211,7 @@ function LogoColour() {
       <Hint>
         {typed === null && draft.trim() !== ''
           ? 'Not a colour: three or six hex digits, like #d97757 or #abc. Nothing is saved until it is one.'
-          : 'The tab icon follows too; the pre-rendered ones — favicon.ico, the Windows shortcut, a phone’s home screen — keep the terracotta they shipped in.'}
+          : 'It colours the app as well as the mark — the buttons, the highlights, a terminal’s cursor — and the tab icon with it; the pre-rendered ones — favicon.ico, the Windows shortcut, a phone’s home screen — keep the terracotta they shipped in.'}
       </Hint>
     </Field>
   );

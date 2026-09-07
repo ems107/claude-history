@@ -591,19 +591,37 @@ ids are written out the way `NotificationsArea` already writes one — check 47
 asserts every row id is in the DOM of its own area, which is what keeps them
 in step.
 
-**The logo's colour is a setting, and it is deliberately not the accent.**
+**The logo's colour is a setting, and it is the app's accent.**
 *Themes* is the first area and the one `/settings` opens on, holding one row:
 seven swatches and a box for anything else, drawn as a control of its own
 because a colour is the one value that can be SHOWN — a dropdown reading "Amber"
 and "Teal" is a list of promises — and because the last option is "any colour",
-which a closed list has no shape for. There is no preview: a click saves, and
-the header above the page is already the mark at the size it is worn. What it
-moves is `--logo` / `--logo-dim`, which `styles.css` defines as the accent, and
-`lib/appIdentity.ts` **expresses the default by REMOVING them**, so "nothing
-chosen" and "the accent" cannot drift apart and a default instance draws what it
-drew before any of this existed. Keeping it off `--accent` is not timidity: two
-buttons hardcode a near-black that only works over terracotta, and xterm's theme
-is read once when a terminal is built, so an open one could not have followed.
+which a closed list has no shape for. There is no preview: a click saves and the
+page repaints into the answer — the mark in the header, the rail beside it, the
+swatch's own ring. What it moves is `--accent` / `--accent-dim`, from which
+`styles.css` already derived `--logo` / `--logo-dim`, so **one property written
+is the whole change** and the mark keeps a name of its own for the fade only it
+wears. `lib/appIdentity.ts` **expresses the default by REMOVING them**, so
+"nothing chosen" and "the terracotta it ships with" cannot drift apart and a
+default instance draws exactly what it drew before any of this existed.
+
+**The two things that used to keep it off `--accent` were paid off rather than
+argued with.** A handful of controls fill with the accent and put text inside —
+the composer's *Send*, `/new`'s *Start*, the phone's count badge, the word the
+find bar is standing on — and each hardcoded a near-black that only worked over
+terracotta; that is `--accent-ink` now, decided by `logoInk`, the same
+contrast-the-two-candidates rule that keeps the tile's chevrons visible, so a
+navy gets the light ink instead of unreadable text. And xterm is handed a theme
+when it is CONSTRUCTED and never asked again, so an open terminal kept the
+previous cursor: `SessionTerminal.tsx` re-reads it on `ACCENT_EVENT`, which
+`publish` dispatches at the moment it writes the properties. **An event and not
+the settings query**, because a child's effect runs before its parent's — a
+terminal watching the same setting would read the colour that was still there.
+For that same terminal `--accent-dim` is written as a **hex**: a custom property
+is substituted at its use site, so `getPropertyValue` handed the `color-mix()`
+it used to hold straight to xterm's own parser, which has never heard of one
+(`dimLogoColor`, which does the multiplication `color-mix` would have).
+
 The tab's icon follows through the server: `routes/brand.ts` tints
 `web/public/favicon.svg`, which stays the one place the tile is drawn, so a page
 load needs nothing from the client at all. **What the client has to push is the

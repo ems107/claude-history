@@ -9,6 +9,7 @@ import type { SessionDetailResponse, TerminalServerMessage } from '@claude-histo
 import { api } from '../../api/client.ts';
 import { busyFromLive, cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
+import { ACCENT_EVENT } from '../../lib/appIdentity.ts';
 import { selectionText } from '../../lib/selection.ts';
 import {
   clamp,
@@ -29,6 +30,13 @@ import { PILL_CORNER_PX } from './FollowBottom.tsx';
  * than written twice. The ANSI sixteen are xterm's defaults with the app's
  * accent in the two places a CLI actually shows one — anything more would be a
  * second theme to keep in step with the first.
+ *
+ * Read at construction AND again on `ACCENT_EVENT`, because the accent is a
+ * setting now: xterm consults a theme when it is handed one and never
+ * afterwards, so an open terminal would otherwise keep the previous colour in
+ * its cursor until it was closed and reopened. Every value here has to be
+ * something xterm's own parser accepts — which is why `--accent-dim` is a hex
+ * and not the `color-mix()` it reads like everywhere else (`dimLogoColor`).
  */
 function themeFrom(el: HTMLElement): Record<string, string> {
   const style = getComputedStyle(el);
@@ -1023,6 +1031,23 @@ export function SessionTerminal({
     const frame = requestAnimationFrame(refit);
     return () => cancelAnimationFrame(frame);
   }, [fontSize, refit]);
+  /**
+   * The accent changed under a terminal that is already running.
+   *
+   * Registered once and for the life of the component rather than keyed on the
+   * setting, because the event is dispatched by the write itself
+   * ([ACCENT_EVENT]) — a terminal watching the settings query would be a child
+   * effect reading a property its parent has not written yet. Nothing is
+   * re-measured: a theme is colours, and the cell is exactly the size it was.
+   */
+  useEffect(() => {
+    const apply = () => {
+      const term = termRef.current;
+      if (term && hostRef.current) term.options.theme = themeFrom(hostRef.current);
+    };
+    window.addEventListener(ACCENT_EVENT, apply);
+    return () => window.removeEventListener(ACCENT_EVENT, apply);
+  }, []);
   /**
    * A step up or down, and the keys go back to the CLI.
    *

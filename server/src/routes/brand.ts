@@ -50,7 +50,7 @@ export function registerBrandRoutes(app: FastifyInstance, ctx: AppContext): void
   if (tile !== null) {
     app.get('/favicon.svg', async (_request, reply) => {
       const color = ctx.index.getSettings().logoColor;
-      // The default is served by doing nothing — the same rule `--logo` follows
+      // The default is served by doing nothing — the same rule the accent follows
       // on the page — so a default instance hands out the file in the
       // repository, byte for byte, and there is one fewer thing to have got
       // subtly wrong.

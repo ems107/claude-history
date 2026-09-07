@@ -966,12 +966,15 @@ export interface AppSettings {
    * The colour the mark is drawn in: the glyph beside the wordmark, the word
    * `claude` in the title, and the tile a browser tab shows.
    *
-   * The LOGO's colour and not the app's accent. `--logo` defaults to
-   * `var(--accent)` and only the mark reads it, so a green one here leaves the
-   * buttons, the search highlights and an open terminal's cursor exactly as
-   * they were — which is also what keeps the two hardcoded near-blacks that sit
-   * ON the accent readable. Stored normalised (`#rrggbb`, lower case); see
-   * `normalizeLogoColor`, and `LOGO_PRESETS` for what the picker offers.
+   * **And the app's accent with it**, which is one setting because it is one
+   * colour: `styles.css` derives `--logo` from `--accent`, so writing the
+   * accent moves the buttons, the search highlights and an open terminal's
+   * cursor in the same gesture. What made that safe is that neither of the two
+   * things the accent is worn WITH is hardcoded any more — the ink on top of it
+   * is `--accent-ink` (`logoInk`, the same rule that keeps the tile's chevrons
+   * visible) and xterm's theme is re-read on `ACCENT_EVENT`. Stored normalised
+   * (`#rrggbb`, lower case); see `normalizeLogoColor`, and `LOGO_PRESETS` for
+   * what the picker offers.
    */
   logoColor: string;
   /**

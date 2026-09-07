@@ -10,8 +10,8 @@
  *
  * The three steps are `--logo` rather than three opacities, so the fade stays
  * warm on the app's cool near-black ground instead of greying out — and follows
- * the logo colour, which is a setting (`ThemesArea`) and is the accent until it
- * is changed.
+ * the logo colour, which is a setting (`ThemesArea`) and is the app's accent:
+ * one choice moves the mark and everything drawn in the same colour with it.
  */
 export function Brandmark({ className }: { className?: string }) {
   return (

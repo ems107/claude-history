@@ -630,7 +630,7 @@ export function NewSessionPage() {
                     <button
                       type="submit"
                       disabled={creating || !folder.trim()}
-                      className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[#1b1512] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 max-md:min-h-11 max-md:w-full"
+                      className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-sm text-[var(--accent-ink)] hover:brightness-110 disabled:opacity-40 disabled:hover:brightness-100 max-md:min-h-11 max-md:w-full"
                     >
                       {creating ? 'Starting…' : 'Start here'}
                     </button>

@@ -83,7 +83,7 @@ export function SquareButton({
   return (
     <button type="button" onClick={onClick} aria-label={label} aria-pressed={active} className={squareClass(active)}>
       {children}
-      <CountBadge count={count ?? 0} className="bg-[var(--accent)] text-black" />
+      <CountBadge count={count ?? 0} className="bg-[var(--accent)] text-[var(--accent-ink)]" />
     </button>
   );
 }

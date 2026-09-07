@@ -41,17 +41,26 @@
   --accent: #d97757; /* claude-ish terracotta */
   --accent-dim: #a05a44;
 
-  /* The mark's own colour, and only the mark's: the glyph beside the wordmark,
-     the word `claude` in the title, and the tile a browser tab shows. It is the
-     accent until somebody says otherwise, which is what makes the default here
-     and the default in `AppSettings` one fact rather than two — and what keeps
-     `lib/logoTheme.ts` able to say "back to normal" by REMOVING a property
-     rather than by writing the terracotta back in.
+  /* The ink worn ON the accent, by the handful of controls that fill with it
+     and put text inside: the composer's Send, `/new`'s Start, the count badge
+     on the phone's filter bar, the word the find bar is standing on. It used to
+     be a near-black written out at each of them, which only ever worked
+     because the accent was always terracotta —
+     now that the accent is a setting, `lib/appIdentity.ts` replaces this with
+     whichever of `logoInk`'s two the chosen colour can be read against. */
+  --accent-ink: #1b1512;
 
-     Separate from `--accent` on purpose: the accent is worn by things with text
-     on top of them (two of which hardcode a near-black that only works over
-     terracotta) and by an xterm theme that is read once when a terminal is
-     built. A logo has none of those problems. */
+  /* The mark's own name for the accent: the glyph beside the wordmark, the word
+     `claude` in the title, and the tile a browser tab shows. It is the accent,
+     which is what makes the default here and the default in `AppSettings` one
+     fact rather than two — and what keeps `lib/appIdentity.ts` able to say
+     "back to normal" by REMOVING a property rather than by writing the
+     terracotta back in.
+
+     Kept as a name of its own even though the two now move together: the mark
+     is the one thing whose colour is CHOSEN, and it has a fade of its own that
+     nothing else wears (`Brandmark.tsx`'s three strokes). Setting `--accent`
+     alone is what moves both. */
   --logo: var(--accent);
   --logo-dim: var(--accent-dim);
 
@@ -294,7 +303,7 @@ body {
 
 ::highlight(find-current) {
   background-color: var(--accent);
-  color: #14100e;
+  color: var(--accent-ink);
 }
 
 /* A passage of a plan somebody has commented on. Amber, like every note in this

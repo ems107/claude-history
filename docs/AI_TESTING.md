@@ -768,24 +768,36 @@ up as several failures at once rather than as a setting nobody notices is gone.
   truncating at the deeper indent.
 
 **56. The logo colour, on all four surfaces.** Automatable in full over check 26's
-harness, and cheap: the whole of it is `--logo`, three DOM facts and one HTTP
+harness, and cheap: the whole of it is `--accent`, four DOM facts and one HTTP
 response. **`Emulation.setFocusEmulationEnabled` first, or half of it lies** — a
 headless page dispatches no blur/focusout from a programmatic `.blur()`, so the
 commit-on-blur box reads as a feature that does not work (measured: it cost two
 runs, and Enter always worked while blur never did).
 
-- **Picking a swatch moves the mark and nothing else.** `--logo` becomes the
-  swatch's hex, `--logo-dim` becomes a `color-mix` of it, the word `claude` in
-  the header computes to that colour, the three `path`s of the mark still name
-  `var(--logo-dim)`/`var(--logo)` — and **`--accent` and `--accent-dim` are
-  unchanged**, which is the assertion the whole design exists for. The row's
-  `default …` marker must read `default Claude terracotta` rather than a hex,
-  and the **Changed** tally must go up by exactly one (it is a delta: the dev
-  instance has changed settings of its own).
+- **Picking a swatch moves the whole app.** The INLINE properties are
+  `--accent`, `--accent-dim` and `--accent-ink` and no others: `--accent` is the
+  swatch's hex, `--accent-dim` is a **hex** (`dimLogoColor` — a `color-mix()`
+  here is the bug the terminal cannot parse), and `--accent-ink` is one of
+  `logoInk`'s two. Computed, `--logo` and `--logo-dim` must equal the accent
+  pair — that derivation in `styles.css` is what makes one write move both — the
+  word `claude` in the header computes to the colour, and so does something that
+  is not the mark at all (the rail's selected area, a `default …` marker). **A
+  dark colour must flip the ink**: at `#2b2f5e`, `--accent-ink` is `#f7ece7`, or
+  *Send* and *Start* are unreadable on their own fill. The row's `default …`
+  marker must read `default Claude terracotta` rather than a hex, and the
+  **Changed** tally must go up by exactly one (it is a delta: the dev instance
+  has changed settings of its own).
+- **An open terminal follows too**, which is the half no reload can prove.
+  Open one, let the CLI draw, THEN change the colour in another tab: the cursor
+  and the selection must be the new accent without the panel being closed
+  (`term.options.theme` through the CDP, or a screenshot of the cursor). The
+  failure this guards is an ordering one, so a mount-time check passes it
+  blind — the event is dispatched by the write, because a child's effect runs
+  before its parent's.
 - **The typed box refuses rather than mangles.** `ABC` is stored `#aabbcc`;
   `verde` leaves the saved colour alone and puts *Not a colour* in the hint;
   clicking the `default …` marker REMOVES the inline properties rather than
-  writing terracotta back (`documentElement.style.getPropertyValue('--logo')`
+  writing terracotta back (`documentElement.style.getPropertyValue('--accent')`
   must be empty, and the computed value `#d97757`).
 - **The served tile.** `GET /favicon.svg` at the default must be **byte-identical
   to `web/dist/favicon.svg`** — `cmp`, not eyes — because the default is served
