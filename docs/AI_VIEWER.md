@@ -436,7 +436,7 @@ does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
 state, actions and read-only information, all wearing the same card.
 
 **What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
-list.** Six areas → fifteen groups → forty-eight rows, data only, no JSX. Four
+list.** Six areas → seventeen groups → fifty rows, data only, no JSX. Four
 readers depend on it and that is why it is data: the rail, the search box, the
 changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
 the field in `AppSettings`, an `Entry` here, the row in its area file — and
@@ -524,7 +524,7 @@ and "Teal" is a list of promises — and because the last option is "any colour"
 which a closed list has no shape for. There is no preview: a click saves, and
 the header above the page is already the mark at the size it is worn. What it
 moves is `--logo` / `--logo-dim`, which `styles.css` defines as the accent, and
-`lib/logoTheme.ts` **expresses the default by REMOVING them**, so "nothing
+`lib/appIdentity.ts` **expresses the default by REMOVING them**, so "nothing
 chosen" and "the accent" cannot drift apart and a default instance draws what it
 drew before any of this existed. Keeping it off `--accent` is not timidity: two
 buttons hardcode a near-black that only works over terracotta, and xterm's theme
@@ -545,6 +545,62 @@ assert the request rather than the attribute, then LOOK at the tab. The
 pre-rendered rasters — the `.ico`, the touch icon, Android's launcher icon, the
 shortcut — follow nothing, which the row says in its hint rather than leaving to
 be found out.
+
+**A dynamic route at a URL that was ever `immutable` is a route nobody asks.**
+This is the third fault of the same family and the one that reached a user: for
+the whole life of this app before `routes/brand.ts` existed, the static handler
+served `/favicon.svg` and `/manifest.webmanifest` with `public,
+max-age=31536000, immutable` — so every browser that has ever opened it holds a
+copy of the terracotta tile and the shipped name that it will not revalidate
+until a year later, and a route answering those URLs is answering a question
+that is no longer being asked. It shows up as an install dialog offering the
+name and the icon from months ago, on a server that would have served the right
+ones. So **`lib/appIdentity.ts` points both links at `?v=<token>` always, not
+conditionally** — a URL that has never been cached is the only way past a year
+of `immutable` — the served manifest rewrites its own icon `src` the same way
+whenever the colour is not the default, and the static handler no longer marks
+either name immutable, so the poisoning cannot be recreated by deleting a route.
+The token is the colour and the name, which is exactly what the manifest
+depends on, so it changes when the answer would and never otherwise.
+
+**And the manifest is read ONCE per page load.** Renaming the app and pressing
+Install without a reload offered the previous name — measured through
+`Page.getAppManifest`, which is what the dialog itself reads — because nothing
+about a setting changing makes a browser re-read a manifest. The same element
+swap that re-asks for the icon re-asks for this, which is why both live in one
+function; `"id": "/"` is in the manifest so that a URL which now carries a query
+can never be mistaken for a different app.
+
+**The name is empty by default, and empty is a choice rather than a gap.**
+`appName` names the browser tab and the app if you install it, and the two names
+this app ships with do not match — `Claude History` in the manifest, `claude
+history` in the tab — so a single default string would have had to change one of
+them on screen for everybody who never touches the setting. Empty leaves both
+where they were and lets `routes/brand.ts` hand back the manifest file
+untouched, which is the same rule `logoColor` follows by REMOVING a property
+rather than writing the terracotta back; the catalogue's `format` is what stops
+the marker reading `default empty`. Only `name` and `short_name` are overridden
+there, so the description, the colours and the icons stay facts about the file.
+The one instance that never gets its file back verbatim is a dev one, which
+marks its own name exactly as its tab title does: two tabs alike on two ports is
+the known way to confuse them, and two INSTALLED apps alike would outlive the
+confusion.
+
+**Installing is a readout, not a button, and that is a limit worth knowing.**
+Chrome dropped the service-worker requirement for installing from its own menu
+in 108 (mobile) and 112 (desktop) but kept it for `beforeinstallprompt`, so a
+page with no service worker cannot raise the prompt itself — and a service
+worker whose only purpose is to unlock a button of ours is a cache and a
+lifecycle added to a local tool, bought for a button. So the row points at the
+one the browser already draws and says which of three things is true HERE, read
+rather than assumed: this window IS the installed app (`(display-mode:
+standalone)`), or it can be installed, or it cannot because `isSecureContext` is
+false — which is exactly what a phone reading this over remote access sees, and
+is the truth rather than a fault, since installing needs `https` or a
+`localhost`/`127.0.0.1` address. The installed icon is the tinted tile, so it
+follows the logo colour; the manifest asks for it with `sizes="192x192
+512x512"` rather than `sizes="any"`, which satisfies nothing in Chromium's
+192/512 rule and breaks WebAPK installs on Android outright.
 
 ## What folds
 

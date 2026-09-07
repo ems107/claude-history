@@ -46,8 +46,12 @@ const SHORT_QUERY = '(height < 500px)';
  * `useSyncExternalStore` compares the function it was given by IDENTITY and
  * re-subscribes whenever it changes, so building the closure inside the hook
  * meant tearing down and rebuilding a `matchMedia` listener on every render of
- * every component that asks — and some of them render on every scroll. There
- * are two queries in the app and they are known at module load.
+ * every component that asks — and some of them render on every scroll. The
+ * queries are known at module load, and there are three of them: the two above
+ * and `(display-mode: standalone)`, which the settings page asks to find out
+ * whether this window IS the installed app. That last one is not a phone
+ * question, and `useMedia` is exported for it rather than copied — the
+ * subscriber bookkeeping is the part worth having once.
  */
 const subscribers = new Map<string, (onChange: () => void) => () => void>();
 function subscribe(query: string) {
@@ -63,7 +67,7 @@ function subscribe(query: string) {
   return existing;
 }
 
-function useMedia(query: string): boolean {
+export function useMedia(query: string): boolean {
   return useSyncExternalStore(
     subscribe(query),
     () => window.matchMedia(query).matches,

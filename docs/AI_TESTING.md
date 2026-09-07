@@ -693,7 +693,7 @@ up as several failures at once rather than as a setting nobody notices is gone.
 
 - **The catalogue against `AppSettings`, without a browser**: every field has an
   `Entry`, no `Entry` names a field that does not exist, and none is listed
-  twice — 33 and 33 here. Then internally: every `Entry.group` exists, every
+  twice — 34 and 34 here. Then internally: every `Entry.group` exists, every
   group has at least one entry, no id is used twice, and `remote-access`,
   `backups` and `claude-retention` are still group ids (the README and
   `RetentionFooter` link to them).
@@ -826,6 +826,54 @@ runs, and Enter always worked while blur never did).
   the SAME line as each other — the words are what wrap away from them.
 - Put the colour back afterwards: this is the dev instance's real `userdata.json`.
 
+**57. The name, and installing it as an app.** The app was installable before
+any of this existed — Chrome offers it on `127.0.0.1` and always did — so the
+first thing to establish is that it still is, and the rest is the name reaching
+the three places it has to reach.
+
+- **Empty is the shipped state, and must be indistinguishable from before.** The
+  tab title reads `dev · claude history :7434` exactly as it always did, and on
+  a release-shaped instance (`.\preview.ps1`, port 7435) `GET
+  /manifest.webmanifest` is **byte-identical to `web/dist/manifest.webmanifest`**
+  — `cmp`, not eyes. A dev instance is the one exception and must NOT be
+  identical: its name carries `dev · … :7434` whatever the setting says.
+- **A name reaches all three.** Set one and `document.title`, `name` and
+  `short_name` all take it, **and nothing else in the manifest moves** — diff the
+  served JSON against itself with those two lines cut. The server trims it and
+  caps it at `APP_NAME_MAX`; the row's marker says `default the name it ships
+  with` rather than `default empty`.
+- **Chrome still offers to install it.** `Page.getInstallabilityErrors` empty and
+  `Page.getAppManifest` with no `errors`, which is cheap — and then LOOK, because
+  neither of those is the button: photograph the omnibox (check 56's recipe) and
+  find the *Install* pill. The icon entry must read `sizes="192x192 512x512"`:
+  `any` is what breaks WebAPK installs on Android and satisfies nothing in the
+  192/512 rule.
+- **The readout, in all three branches.** In a tab it says *a browser tab* and
+  points at the button. Under `chrome --app=http://127.0.0.1:7434/` — which is
+  the same `display-mode` an installed window has — it must say **this IS the
+  installed app**. And over the network with remote access on, `isSecureContext`
+  is false and it must say so with the host in it, rather than sending a phone
+  looking for a button its browser will never draw.
+- **The install itself is the one step that leaves something behind**, so it is
+  the one to ask about first: install it, check the Start Menu entry carries the
+  chosen name and the tinted tile, then uninstall it from the app's own menu.
+  Renaming an app that is ALREADY installed is Chrome's business and may not
+  happen at all — that is documented rather than asserted.
+- **The cache is the trap, and a fresh Chrome profile cannot see it.** Every
+  browser that opened this app before `routes/brand.ts` existed holds
+  `/favicon.svg` and `/manifest.webmanifest` under `immutable` for a year, so
+  the install dialog offers the name and the icon from months ago while every
+  automated check passes — all of them run on a new profile, which is exactly
+  why they missed it. Assert the SHAPE instead: the page's `<link rel="icon">`
+  and `<link rel="manifest">` must both carry `?v=`, always and not only when a
+  setting is non-default, and the served manifest's icon `src` must carry one
+  whenever the colour is not the default. Then `cache-control: no-cache` on both
+  bare names from the static handler, against `immutable` on a hashed asset.
+- **The manifest is read once per page load**, so rename WITHOUT reloading and
+  `Page.getAppManifest` must already show the new name — that call is what the
+  install dialog reads. It fails on any build where the `<link rel="manifest">`
+  is not replaced, which is the same lesson as the icon and was learnt twice.
+
 ## The phone
 
 Everything here is about a real device at 360×720 CSS pixels. An emulated narrow window catches the layout faults and none of the others — no soft keyboard, no system Back button, no `@media (hover: hover)` behaving as a phone's does. [AI_MOBILE.md](AI_MOBILE.md) holds the rules these check.
@@ -880,7 +928,7 @@ Four traps, each of which cost time once:
 
 What to confirm when there IS one to hand: with predictive text **off**, typing is clean — every letter as it is pressed, the CLI's cursor after it, and nothing deleted or inserted in the middle of a line that you did not type. That is the supported configuration and it must stay working. With it **on**, expect the three symptoms in that section; if what you see is a FOURTH, something has changed and the account needs updating. And check the keyboard's own layout while you are there: the comma must still be a comma. `inputmode` is deliberately not set (both variations were tried, neither helped, and both cost that key), so a keyboard showing `/` or `@` there means somebody has put it back.
 
-**54. Add to home screen.** The manifest is served and the app opens standalone, without the browser's bars — which is two rows of conversation back on a 620px window. **The launcher icon stays terracotta whatever the logo colour is**, and that is correct rather than a fault: Android takes the maskable PNG, which is pre-rendered (check 56).
+**54. Add to home screen.** The manifest is served and the app opens standalone, without the browser's bars — which is two rows of conversation back on a 620px window. **The launcher icon stays terracotta whatever the logo colour is**, and that is correct rather than a fault: Android takes the maskable PNG, which is pre-rendered (check 56). **It is a shortcut and not an install**, which is why it works here at all: a plain-HTTP LAN address is not a secure context, so the settings row (check 57) says so on this device and the *Install* affordance never appears.
 
 ## Platform and plumbing
 

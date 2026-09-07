@@ -192,11 +192,20 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
       // Asset filenames are content-hashed, so they can be cached hard; the
       // entry document must NOT be, or a cached index.html keeps asking for
       // the previous build's bundles (404s and a blank page after an update).
+      //
+      // **And neither may anything a setting can change**, which cost a real
+      // failure: `favicon.svg` and `manifest.webmanifest` were served from here
+      // with `immutable` for the whole life of the app, so every browser that
+      // has ever opened it holds a copy it will not revalidate until a year
+      // later — and putting a dynamic route at the same URL (`routes/brand.ts`)
+      // answers a question those browsers no longer ask. The routes shadow
+      // these two names whenever there is a static dir at all, so this line
+      // only bites when one of them could not be read; it is here so nobody
+      // recreates the poisoning by removing a route.
       setHeaders(res, filePath) {
-        res.setHeader(
-          'cache-control',
-          filePath.endsWith('index.html') ? 'no-store' : 'public, max-age=31536000, immutable',
-        );
+        const name = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
+        const volatile = name === 'index.html' || name === 'favicon.svg' || name === 'manifest.webmanifest';
+        res.setHeader('cache-control', volatile ? 'no-store' : 'public, max-age=31536000, immutable');
       },
     });
     // SPA fallback: any non-API GET serves index.html

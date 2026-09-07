@@ -15,7 +15,7 @@ import { NotificationToasts } from './components/NotificationToasts.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
-import { useLogoTheme } from './lib/logoTheme.ts';
+import { useAppIdentity } from './lib/appIdentity.ts';
 import { useIsMobile, useIsShort, useKeyboardInset } from './lib/mobile.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
@@ -140,15 +140,23 @@ export function App() {
   // the usage widget keeps ['settings'] mounted for the life of the page.
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings?.settings.chatEnabled ?? false;
-  // The mark's colour, published as `--logo` for the glyph and the wordmark and
-  // as the tab's icon href. Here rather than in `AppGate`: the two screens above
-  // this one cannot read settings, and are right to wear the default.
-  useLogoTheme(settings?.settings.logoColor);
+  // The colour of the mark and the name of the app, published to the browser's
+  // own chrome: the CSS properties the glyph paints from, the tab's icon, and
+  // the manifest an install reads. Here rather than in `AppGate`: the two
+  // screens above this one cannot read settings, and are right to wear the
+  // shipped colour and the shipped name.
+  useAppIdentity(settings?.settings.logoColor, settings?.settings.appName);
   // Two tabs that look alike on two ports is the one way to confuse them, and
-  // the tab strip is where they are told apart before anything is clicked.
+  // the tab strip is where they are told apart before anything is clicked — so
+  // the dev marker is not the name's to lose, whatever the name is.
+  //
+  // An empty setting is the shipped name rather than an empty tab, which is the
+  // same thing the served manifest does with it: the two shipped spellings
+  // differ, so the fallback is spelled here and the other one in the file.
+  const appName = settings?.settings.appName || 'claude history';
   useEffect(() => {
-    document.title = dev ? `dev · claude history :${window.location.port}` : 'claude history';
-  }, [dev]);
+    document.title = dev ? `dev · ${appName} :${window.location.port}` : appName;
+  }, [dev, appName]);
   return (
     <div className="flex h-full flex-col">
       {/* The one row that had to give. It needs about 900px and a phone has
