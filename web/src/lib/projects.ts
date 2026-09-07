@@ -10,8 +10,18 @@ import type { ProjectGroup, ProjectInfo } from '@claude-history/shared';
  * the part that would have drifted first: without it `Git` and `git` sort apart,
  * which is exactly the case `normalizeProjectKey` exists to merge.
  */
+/**
+ * The one comparison every list of these is ordered by.
+ *
+ * A group carries a name too, and it is sorted the same way for the same
+ * reason — writing `{ sensitivity: 'base' }` out a second time is how `Git`
+ * and `git` come to sort apart in one of two lists on the same screen.
+ */
+const byName = (a: { name: string }, b: { name: string }): number =>
+  a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+
 export function sortProjectsByName(projects: ProjectInfo[]): ProjectInfo[] {
-  return [...projects].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return [...projects].sort(byName);
 }
 
 /**
@@ -54,7 +64,7 @@ export function projectFilterRows(projects: ProjectInfo[], groups: ProjectGroup[
   const grouped = new Set<string>();
   const rows: ProjectFilterRow[] = [];
 
-  const sortedGroups = [...groups].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const sortedGroups = [...groups].sort(byName);
   for (const group of sortedGroups) {
     const members: ProjectInfo[] = [];
     for (const key of group.projects) {

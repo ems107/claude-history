@@ -1,4 +1,4 @@
-import type { AppSettings, ProjectGroup, ProjectInfo } from '@claude-history/shared';
+import type { ProjectGroup, ProjectInfo } from '@claude-history/shared';
 import { PROJECT_GROUP_NAME_MAX } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -192,8 +192,15 @@ function VisibleProjects({ projects, loading }: { projects: ProjectInfo[] | unde
  * — the same trap `navigator.clipboard` sets, and the reason `copyPlain` exists.
  * The id is never shown and never parsed; it only has to be unlike the others.
  */
-function newGroupId(): string {
-  return `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+function newGroupId(groups: ProjectGroup[]): string {
+  const taken = new Set(groups.map((g) => g.id));
+  // Astronomically unlikely, and free to rule out — the same reason
+  // `sessionChat` rerolls a session id it has already seen. A collision here
+  // would be the server dropping the second group as a duplicate id, which
+  // reads as the button doing nothing.
+  let id = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  while (taken.has(id)) id = `g${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  return id;
 }
 
 /** "New group", then "New group 2" — a name you can find in order to change it. */
@@ -221,7 +228,7 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
   const byKey = new Map((projects ?? []).map((p) => [p.key, p]));
   const hidden = new Set(settings.hiddenProjects);
 
-  const write = (next: ProjectGroup[]) => save({ projectGroups: next } as Partial<AppSettings>);
+  const write = (next: ProjectGroup[]) => save({ projectGroups: next });
   const rename = (id: string, name: string) => write(groups.map((g) => (g.id === id ? { ...g, name } : g)));
   const take = (key: string) => write(groups.map((g) => ({ ...g, projects: g.projects.filter((k) => k !== key) })));
   const remove = (group: ProjectGroup) => {
@@ -260,7 +267,7 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
         <button
           type="button"
           className={`${actionClass} ml-auto shrink-0`}
-          onClick={() => write([...groups, { id: newGroupId(), name: newGroupName(groups), projects: [] }])}
+          onClick={() => write([...groups, { id: newGroupId(groups), name: newGroupName(groups), projects: [] }])}
         >
           New group
         </button>

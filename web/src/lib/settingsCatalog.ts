@@ -186,7 +186,7 @@ export const GROUPS: Group[] = [
   { id: 'app-name', area: 'theme', title: 'The name' },
   { id: 'install', area: 'theme', title: 'Installing it as an app', short: 'Installing it' },
 
-  { id: 'projects-visible', area: 'projects', title: 'Which projects you see', short: 'What you see' },
+  { id: 'projects-visible', area: 'projects', title: 'Which projects you see' },
   { id: 'projects-groups', area: 'projects', title: 'Groups' },
 
   { id: 'notify-announce', area: 'notifications', title: 'Announcing a stop' },
