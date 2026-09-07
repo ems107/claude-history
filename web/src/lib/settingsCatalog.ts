@@ -1,5 +1,5 @@
 import type { AppSettings } from '@claude-history/shared';
-import { foldText, logoPresetLabel, TONE_INHERIT } from '@claude-history/shared';
+import { APP_NAME, foldText, logoPresetLabel, TONE_INHERIT } from '@claude-history/shared';
 
 /**
  * What settings exist, and where each one lives.
@@ -110,13 +110,13 @@ const logoColour = (v: unknown): string => (typeof v === 'string' ? (logoPresetL
 
 /**
  * A suffix said as the name it makes. What is stored is `laptop`; what the tab
- * reads is `claude history laptop`, and that is the answer somebody scanning
+ * reads is `Claude History laptop`, and that is the answer somebody scanning
  * this page came for — the stored half on its own looks like a whole name that
  * has lost its front. An empty one is a choice — the shipped name alone —
  * rather than a missing value.
  */
 const appNameText = (v: unknown): string =>
-  typeof v === 'string' ? (v === '' ? 'the name it ships with' : `claude history ${v}`) : valueText(v);
+  typeof v === 'string' ? (v === '' ? 'the name it ships with' : `${APP_NAME} ${v}`) : valueText(v);
 
 /**
  * How many projects are hidden, rather than which ones.

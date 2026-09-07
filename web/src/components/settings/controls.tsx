@@ -557,6 +557,11 @@ export function TextField({
    * remark about the field instead of as the front of the answer, and every
    * version of it needed the person to imagine the result. Here the box shows
    * the whole name and the caret sits exactly where their half starts.
+   *
+   * **Do not give a prefixed field a `placeholder`.** They meet at the caret in
+   * the same dim grey and read as one string — `Claude History laptop, work,
+   * dev…` looked like a value that was already set. An empty prefixed box shows
+   * the shipped half alone, which is what the setting means anyway.
    */
   prefix?: string;
   mono?: boolean;

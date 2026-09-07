@@ -756,6 +756,26 @@ export const NOTIFY_VOLUME_MAX = 100;
 export const NOTIFY_VOICE_NAME_MAX = 120;
 
 /**
+ * What this app is called — one spelling, everywhere a NAME is wanted: the
+ * browser tab, the front of whatever `AppSettings.appName` adds to it, and the
+ * marker a nameless dev instance wears.
+ *
+ * **The lower-case `claude history` in the header is a wordmark and not this.**
+ * It is drawn as two spans in two colours, which is a logo; the name is a
+ * string, and the string is capitalised. Getting those two confused is what
+ * made a tab open as `Claude History` (from `web/index.html`'s own `<title>`)
+ * and then rename itself DOWN the moment the settings arrived.
+ *
+ * **The server does not read this**, and that is deliberate: it appends to the
+ * name in `web/public/manifest.webmanifest`, which stays the one place the name
+ * is written for anything an install reads. So the two must agree — this
+ * constant, that file's `name` and `short_name`, and `index.html`'s `<title>`
+ * are four spellings of one fact, and there is no way to make a static file and
+ * a bundle share a literal.
+ */
+export const APP_NAME = 'Claude History';
+
+/**
  * A name for the app, not a sentence: it has to fit under an icon in a launcher
  * and in the width of a browser tab, and every one of those truncates long
  * before this. The cap is here so a paste of something enormous cannot make an
@@ -982,19 +1002,19 @@ export interface AppSettings {
    * tab, and the name it INSTALLS under — the Start Menu entry, the taskbar, a
    * launcher.
    *
-   * **It is a suffix, never a replacement.** The app is called `claude history`
-   * in a tab and `Claude History` in the manifest, and that is what it is called
-   * wherever this setting is used too — what is typed here FOLLOWS it
-   * (`claude history laptop`). So the question this answers is "which instance
-   * is this?" rather than "what is this app?", and the two shipped spellings can
-   * go on differing without anybody choosing between them: each place appends to
-   * the name it already had.
+   * **It is a suffix, never a replacement.** The app is called `APP_NAME`
+   * wherever this setting reaches, and what is typed here FOLLOWS it
+   * (`Claude History laptop`). So the question this answers is "which instance
+   * is this?" rather than "what is this app?" — which is the only question an
+   * instance's own name can answer, and the reason the box on the settings page
+   * draws the shipped half in front of the caret rather than expecting it to be
+   * retyped.
    *
    * **Empty means the shipped name alone**, which is not the same as a default
-   * string here and is the reason this is not one: empty leaves both names
-   * exactly as they were and makes the served manifest byte-identical to the
-   * file — the same rule `logoColor` follows by REMOVING a property rather than
-   * writing the terracotta back.
+   * string here and is the reason this is not one: empty leaves both the
+   * manifest's names exactly as they were and makes the served manifest
+   * byte-identical to the file — the same rule `logoColor` follows by REMOVING a
+   * property rather than writing the terracotta back.
    *
    * It does not rename the mark in the header, and it does not rename the Start
    * Menu shortcut the installer made: that one is a `.lnk` on disk, written at

@@ -1,4 +1,4 @@
-import { LOGO_PRESETS, normalizeLogoColor } from '@claude-history/shared';
+import { APP_NAME, LOGO_PRESETS, normalizeLogoColor } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
 import { useMedia } from '../../lib/mobile.ts';
 import { entryForField } from '../../lib/settingsCatalog.ts';
@@ -23,9 +23,8 @@ export function ThemesArea() {
       <GroupCard id="app-name">
         <TextField
           field="appName"
-          prefix="claude history"
-          placeholder="laptop, work, dev…"
-          hint="Follows the name in the box: the browser tab, and the app if you install it — where it is capitalised. Empty is that name alone."
+          prefix={APP_NAME}
+          hint="Follows the name in the box, in the browser tab and in the app if you install it. Empty is that name on its own."
         />
       </GroupCard>
       <GroupCard id="install">

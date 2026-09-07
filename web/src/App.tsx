@@ -1,3 +1,4 @@
+import { APP_NAME } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
@@ -147,11 +148,16 @@ export function App() {
   // shipped colour and the shipped name.
   useAppIdentity(settings?.settings.logoColor, settings?.settings.appName);
   // **The app's own name always leads and the setting FOLLOWS it**, here and in
-  // the served manifest alike: `claude history laptop`, never `laptop`. What
+  // the served manifest alike: `Claude History laptop`, never `laptop`. What
   // somebody types names this instance, not this app — so the app goes on
   // saying what it is, and an empty setting is simply the shipped name alone.
-  // The tab's spelling is the one spelled here because the two shipped
-  // spellings differ on purpose; the manifest's is in the file.
+  //
+  // **The app is called `Claude History`, in one spelling, everywhere.** This
+  // used to write `claude history` and be the odd one out: `index.html` sets
+  // the same title capitalised, so a tab opened right and was then renamed
+  // DOWN by this effect the moment the settings arrived. The lower-case pair in
+  // the header is the wordmark and not the name — it is drawn as two spans in
+  // two colours, which is a logo — and it stays as it is.
   //
   // Two tabs that look alike on two ports is the one way to confuse them, and
   // the tab strip is where they are told apart before anything is clicked. So a
@@ -160,14 +166,24 @@ export function App() {
   // answer the marker exists to give, said better. Two instances called the
   // same thing is then a choice rather than an accident, and a tab still has
   // the port in its address bar.
-  const chosen = settings?.settings.appName ?? '';
+  //
+  // **And it says nothing until it knows both answers.** `undefined` is "not
+  // asked yet" and not "the default" — the same rule `useAppIdentity` states
+  // for the colour — so writing a title from a pending query is asserting a
+  // name this tab has not been told. Measured: the dev instance opened as
+  // `Claude History` from `index.html`, was renamed to
+  // `dev · Claude History :7434` the moment `['meta']` landed, and renamed
+  // again to `Claude History dev` when the settings did. `index.html` already
+  // carries the right name for the wait.
+  const name = settings?.settings.appName;
   useEffect(() => {
-    document.title = chosen
-      ? `claude history ${chosen}`
+    if (name === undefined || meta === undefined) return;
+    document.title = name
+      ? `${APP_NAME} ${name}`
       : dev
-        ? `dev · claude history :${window.location.port}`
-        : 'claude history';
-  }, [dev, chosen]);
+        ? `dev · ${APP_NAME} :${window.location.port}`
+        : APP_NAME;
+  }, [dev, meta, name]);
   return (
     <div className="flex h-full flex-col">
       {/* The one row that had to give. It needs about 900px and a phone has

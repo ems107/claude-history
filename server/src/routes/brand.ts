@@ -121,10 +121,10 @@ function parseManifest(text: string | null, log: ReturnType<typeof createLogger>
  *
  * **The chosen name is appended to the shipped one, never put in its place** —
  * `Claude History laptop` — which is the whole of what this setting is
- * (`AppSettings.appName`) and the reason the shipped pair can go on differing
- * (`Claude History` / `claude history`): each field keeps its own spelling and
- * grows the same suffix, so a person typing one name still has not had to
- * choose two.
+ * (`AppSettings.appName`). Both fields grow the same suffix off whatever the
+ * file already said, so a person typing one name has not had to choose two;
+ * they say the same thing today (`shared`'s `APP_NAME`, which the tab uses too)
+ * and this would go on working if a `short_name` ever had to be shorter.
  *
  * Only `name` and `short_name` are touched: the description, the colours,
  * `display`, `scope` and the icons stay facts about the file, so there is one

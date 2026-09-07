@@ -843,29 +843,40 @@ any of this existed — Chrome offers it on `127.0.0.1` and always did — so th
 first thing to establish is that it still is, and the rest is the name reaching
 the three places it has to reach.
 
+- **One spelling, and the tab must not change it after the fact.** `Claude
+  History`, capitalised, in all four homes: `shared`'s `APP_NAME`, the shipped
+  manifest's `name` AND `short_name`, and `web/index.html`'s `<title>`. The
+  assertion is the one that caught this — read `document.title` **before** the
+  settings query resolves (`Fetch.requestPaused` on `/api/settings`, or read it
+  on the login screen, which cannot read settings at all) and again after: the
+  second must START with the first, never merely resemble it. It read
+  `Claude History` and then `claude history`, a tab renaming itself DOWN a beat
+  after it opened, and only a set name (or the dev marker) may be added to the
+  front's right. The lower-case pair in the header is the wordmark and is not in
+  scope.
 - **Empty is the shipped state, and must be indistinguishable from before.** The
-  tab title reads `dev · claude history :7434` exactly as it always did, and on
-  a release-shaped instance (`.\preview.ps1`, port 7435) `GET
-  /manifest.webmanifest` is **byte-identical to `web/dist/manifest.webmanifest`**
-  — `cmp`, not eyes. A NAMELESS dev instance is the one exception and must NOT
-  be identical: its name and its tab title both carry `dev · … :7434`.
+  tab title reads `dev · Claude History :7434`, and on a release-shaped instance
+  (`.\preview.ps1`, port 7435) `GET /manifest.webmanifest` is **byte-identical
+  to `web/dist/manifest.webmanifest`** — `cmp`, not eyes. A NAMELESS dev
+  instance is the one exception and must NOT be identical: its name and its tab
+  title both carry `dev · … :7434`.
 - **A name reaches all three, and reaches them BEHIND the shipped one.** Set
-  `laptop` and read the tab (`claude history laptop`), `name`
-  (`Claude History laptop`) and `short_name` (`claude history laptop`): each
-  field keeps its own shipped spelling and grows the same suffix, and the dev
-  marker is gone — it is for the nameless case, and a typed name is not
-  decorated on top of it. Checked on the dev instance, where that is easiest to
-  get wrong. **Nothing else in the manifest moves** — diff the served JSON
-  against itself with those two lines cut. The server trims it and caps it at
-  `APP_NAME_MAX`; the row's marker says `default the name it ships with` rather
-  than `default empty`, and a set one says the whole name
-  (`claude history laptop`) rather than the stored half.
-- **The box says what it appends to.** The row draws `claude history` inside the
+  `laptop` and read the tab, `name` and `short_name`: all three must say
+  `Claude History laptop`, and the dev marker must be gone — it is for the
+  nameless case, and a typed name is not decorated on top of it. Checked on the
+  dev instance, where that is easiest to get wrong. **Nothing else in the
+  manifest moves** — diff the served JSON against itself with those two lines
+  cut. The server trims it and caps it at `APP_NAME_MAX`; the row's marker says
+  `default the name it ships with` rather than `default empty`, and a set one
+  says the whole name (`Claude History laptop`) rather than the stored half.
+- **The box says what it appends to.** The row draws `Claude History` inside the
   input, dimmed, in front of the caret: clicking the dimmed words focuses the
   box (it is all one `<label>`), typing never touches them, and selecting the
-  field's text selects only what was typed. At 360 px the prefix does not push
-  the caret off the row — it is `shrink-0` beside a `min-w-0` input, so the
-  typing half is what narrows.
+  field's text selects only what was typed. One border round both, and the focus
+  ring on that border rather than on the input. **At 360 px it stacks** — prefix
+  on its own line above the caret, the input back to the full width of its
+  column (124 px measured, against 46 px when they shared the row) and
+  `documentElement.scrollWidth` still 360.
 - **Chrome still offers to install it.** `Page.getInstallabilityErrors` empty and
   `Page.getAppManifest` with no `errors`, which is cheap — and then LOOK, because
   neither of those is the button: photograph the omnibox (check 56's recipe) and

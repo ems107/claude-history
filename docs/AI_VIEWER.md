@@ -666,14 +666,11 @@ can never be mistaken for a different app.
 
 **The name is a SUFFIX, and empty is a choice rather than a gap.** `appName`
 names the browser tab and the app if you install it, and it names them *after*
-the name the app ships with: the tab reads `claude history laptop` and the
-manifest says `Claude History laptop`. That is what makes the setting answerable
-— it asks which instance this is, not what the app is called — and it is why the
-two shipped spellings can go on differing (`Claude History` in the manifest,
-`claude history` in the tab): each place appends to the name it already had, so
-one typed name still does not have to be two, and nothing on screen moves for
-anybody who never touches the setting. Empty is the shipped name alone, which
-lets `routes/brand.ts` hand back the manifest file untouched — the same rule
+the name the app ships with: both read `Claude History laptop`. That is what
+makes the setting answerable — it asks which instance this is, not what the app
+is called — and nothing on screen moves for anybody who never touches it. Empty
+is the shipped name alone, which lets `routes/brand.ts` hand back the manifest
+file untouched — the same rule
 `logoColor` follows by REMOVING a property rather than writing the terracotta
 back; the catalogue's `format` is what stops the marker reading `default empty`,
 and it says the whole name rather than the stored half, which on its own reads
@@ -694,7 +691,22 @@ The settings row carries the shipped half INSIDE the box, in front of the caret
 was what it looked like first, and it read as a remark about the field rather
 than as the front of the answer — every version of it needed the person to
 imagine the result. This way the box shows the whole name and the caret sits
-where their half starts.
+where their half starts. On a phone the prefix goes ABOVE the caret rather than
+beside it: a row with a `default …` marker beside it gets 138 px at 360 px — the
+marker's width is what every field in that card is left with — and 78 of them
+spent on the prefix left 46 to type in.
+
+**The app is called `Claude History`, in one spelling, and the name has four
+homes.** `shared`'s `APP_NAME` is what the bundle uses — the tab title, the
+prefix, the changed-list's spelling of a set value; `web/public/manifest.webmanifest`
+holds the `name` and `short_name` the server appends to, which is why the server
+does not import the constant (the file stays the one place an install's name is
+written); and `web/index.html`'s own `<title>` is what a tab wears before any of
+our JavaScript runs. **They must agree, and the way this went wrong is
+instructive**: the tab title was written `claude history` while `index.html` said
+`Claude History`, so every tab opened right and was then renamed DOWN the moment
+the settings query resolved. The lower-case pair in the header is not a fifth
+copy — it is a wordmark, two spans in two colours, and a logo is not a name.
 
 **Installing is a readout, not a button, and that is a limit worth knowing.**
 Chrome dropped the service-worker requirement for installing from its own menu
