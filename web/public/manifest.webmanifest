@@ -2,6 +2,7 @@
   "name": "Claude History",
   "short_name": "claude history",
   "description": "Every Claude Code conversation on this machine, in one place.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

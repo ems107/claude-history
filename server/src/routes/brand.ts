@@ -78,8 +78,11 @@ export function registerBrandRoutes(app: FastifyInstance, ctx: AppContext): void
        * get the file back untouched.
        */
       const mark = ctx.config.devInstance ? `:${String(ctx.config.port)}` : null;
+      const color = ctx.index.getSettings().logoColor;
       const body =
-        chosen === '' && mark === null ? manifest : JSON.stringify(named(parsed, chosen || null, mark), null, 2);
+        chosen === '' && mark === null && color === LOGO_DEFAULT_COLOR
+          ? manifest
+          : JSON.stringify(tinted(named(parsed, chosen || null, mark), color), null, 2);
       return reply
         .header('content-type', 'application/manifest+json; charset=utf-8')
         .header('cache-control', 'no-cache')
@@ -118,4 +121,27 @@ function named(manifest: Record<string, unknown>, chosen: string | null, devPort
   const shippedShort = typeof manifest.short_name === 'string' ? manifest.short_name : shippedName;
   const mark = (value: string): string => (devPort === null ? value : `dev · ${value} ${devPort}`);
   return { ...manifest, name: mark(chosen ?? shippedName), short_name: mark(chosen ?? shippedShort) };
+}
+
+/**
+ * The manifest's own icon, asked for at a URL the browser cannot already have.
+ *
+ * The bare `/favicon.svg` was served with `immutable` for a year by the static
+ * handler for the whole life of this app before the route above existed, so
+ * every browser that has ever opened it holds a terracotta copy it will not
+ * revalidate — and an install reads the icon by the URL the manifest gives it.
+ * `?v=` is a URL that has never been cached, which is the only way past that.
+ *
+ * Only when the colour is not the default, so a default instance still hands
+ * back the file byte for byte: there, a stale copy of the shipped tile is the
+ * right tile, and the property is worth keeping.
+ */
+function tinted(manifest: Record<string, unknown>, color: string): Record<string, unknown> {
+  if (color === LOGO_DEFAULT_COLOR || !Array.isArray(manifest.icons)) return manifest;
+  const icons = manifest.icons.map((icon: unknown) => {
+    if (!icon || typeof icon !== 'object') return icon;
+    const entry = icon as Record<string, unknown>;
+    return entry.src === '/favicon.svg' ? { ...entry, src: `/favicon.svg?v=${color.slice(1)}` } : entry;
+  });
+  return { ...manifest, icons };
 }

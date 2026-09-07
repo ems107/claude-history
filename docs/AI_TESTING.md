@@ -859,6 +859,20 @@ the three places it has to reach.
   chosen name and the tinted tile, then uninstall it from the app's own menu.
   Renaming an app that is ALREADY installed is Chrome's business and may not
   happen at all — that is documented rather than asserted.
+- **The cache is the trap, and a fresh Chrome profile cannot see it.** Every
+  browser that opened this app before `routes/brand.ts` existed holds
+  `/favicon.svg` and `/manifest.webmanifest` under `immutable` for a year, so
+  the install dialog offers the name and the icon from months ago while every
+  automated check passes — all of them run on a new profile, which is exactly
+  why they missed it. Assert the SHAPE instead: the page's `<link rel="icon">`
+  and `<link rel="manifest">` must both carry `?v=`, always and not only when a
+  setting is non-default, and the served manifest's icon `src` must carry one
+  whenever the colour is not the default. Then `cache-control: no-cache` on both
+  bare names from the static handler, against `immutable` on a hashed asset.
+- **The manifest is read once per page load**, so rename WITHOUT reloading and
+  `Page.getAppManifest` must already show the new name — that call is what the
+  install dialog reads. It fails on any build where the `<link rel="manifest">`
+  is not replaced, which is the same lesson as the icon and was learnt twice.
 
 ## The phone
 

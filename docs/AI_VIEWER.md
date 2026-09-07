@@ -524,7 +524,7 @@ and "Teal" is a list of promises — and because the last option is "any colour"
 which a closed list has no shape for. There is no preview: a click saves, and
 the header above the page is already the mark at the size it is worn. What it
 moves is `--logo` / `--logo-dim`, which `styles.css` defines as the accent, and
-`lib/logoTheme.ts` **expresses the default by REMOVING them**, so "nothing
+`lib/appIdentity.ts` **expresses the default by REMOVING them**, so "nothing
 chosen" and "the accent" cannot drift apart and a default instance draws what it
 drew before any of this existed. Keeping it off `--accent` is not timidity: two
 buttons hardcode a near-black that only works over terracotta, and xterm's theme
@@ -545,6 +545,31 @@ assert the request rather than the attribute, then LOOK at the tab. The
 pre-rendered rasters — the `.ico`, the touch icon, Android's launcher icon, the
 shortcut — follow nothing, which the row says in its hint rather than leaving to
 be found out.
+
+**A dynamic route at a URL that was ever `immutable` is a route nobody asks.**
+This is the third fault of the same family and the one that reached a user: for
+the whole life of this app before `routes/brand.ts` existed, the static handler
+served `/favicon.svg` and `/manifest.webmanifest` with `public,
+max-age=31536000, immutable` — so every browser that has ever opened it holds a
+copy of the terracotta tile and the shipped name that it will not revalidate
+until a year later, and a route answering those URLs is answering a question
+that is no longer being asked. It shows up as an install dialog offering the
+name and the icon from months ago, on a server that would have served the right
+ones. So **`lib/appIdentity.ts` points both links at `?v=<token>` always, not
+conditionally** — a URL that has never been cached is the only way past a year
+of `immutable` — the served manifest rewrites its own icon `src` the same way
+whenever the colour is not the default, and the static handler no longer marks
+either name immutable, so the poisoning cannot be recreated by deleting a route.
+The token is the colour and the name, which is exactly what the manifest
+depends on, so it changes when the answer would and never otherwise.
+
+**And the manifest is read ONCE per page load.** Renaming the app and pressing
+Install without a reload offered the previous name — measured through
+`Page.getAppManifest`, which is what the dialog itself reads — because nothing
+about a setting changing makes a browser re-read a manifest. The same element
+swap that re-asks for the icon re-asks for this, which is why both live in one
+function; `"id": "/"` is in the manifest so that a URL which now carries a query
+can never be mistaken for a different app.
 
 **The name is empty by default, and empty is a choice rather than a gap.**
 `appName` names the browser tab and the app if you install it, and the two names
