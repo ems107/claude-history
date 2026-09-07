@@ -4,10 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { groupOfProject, sortProjectsByName } from '../../lib/projects.ts';
-import { entryForField } from '../../lib/settingsCatalog.ts';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
-import { DefaultBadge, Explain, Field, GroupCard, Hint, hintClass, inputClass, selectClass } from './controls.tsx';
+import { Anchored, DefaultBadge, Explain, GroupCard, Hint, hintClass, inputClass, selectClass } from './controls.tsx';
 
 /**
  * Which projects this app shows, and how they are grouped in the filters.
@@ -65,7 +64,6 @@ interface VisibleRow {
  */
 function VisibleProjects({ projects, loading }: { projects: ProjectInfo[] | undefined; loading: boolean }) {
   const { settings, save } = useSettingsPage();
-  const entry = entryForField('hiddenProjects');
   const hidden = new Set(settings.hiddenProjects);
 
   const rows: VisibleRow[] = sortProjectsByName(projects ?? []).map((p) => ({
@@ -87,23 +85,31 @@ function VisibleProjects({ projects, loading }: { projects: ProjectInfo[] | unde
   };
 
   return (
-    <Field id={entry?.id} badge={<DefaultBadge field="hiddenProjects" />}>
+    /*
+     * `Anchored`, not `Field`, and the badge lives in the sentence's row.
+     *
+     * `Field` is a row of "content | badge" side by side, which is right for a
+     * label with a control and wrong for a block with a list in it: the badge
+     * appears the moment the first project is hidden, and it took its width out
+     * of the column holding the list — so ticking one checkbox narrowed all
+     * forty rows. What the two share is only the id and the flash, which is
+     * what `Anchored` is.
+     *
+     * There is no "Show all" button beside it, because the badge IS that
+     * button: this page's own way of saying a setting has left its default is
+     * one that puts the default back when clicked, and it says which default in
+     * its tooltip. Two controls doing one thing, next to each other, was one
+     * too many the moment they ended up in the same row.
+     */
+    <Anchored id="set-hiddenProjects">
       <div className="flex items-baseline gap-2">
-        <span>
+        <span className="min-w-0 flex-1">
           {hidden.size === 0
             ? 'Every project is shown.'
             : `${String(hidden.size)} of ${String(rows.length)} projects hidden.`}
           <Hint>Hidden means out of the list, the filters, the counts, search, the stats and the prompts page.</Hint>
         </span>
-        {hidden.size > 0 && (
-          <button
-            type="button"
-            className={`${actionClass} ml-auto shrink-0`}
-            onClick={() => save({ hiddenProjects: [] })}
-          >
-            Show all
-          </button>
-        )}
+        <DefaultBadge field="hiddenProjects" />
       </div>
 
       {loading ? (
@@ -153,7 +159,7 @@ function VisibleProjects({ projects, loading }: { projects: ProjectInfo[] | unde
           here that another setting silently overrode would be a checkbox that lies.
         </p>
       </Explain>
-    </Field>
+    </Anchored>
   );
 }
 
@@ -190,7 +196,6 @@ function newGroupName(groups: ProjectGroup[]): string {
  */
 function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
   const { settings, save } = useSettingsPage();
-  const entry = entryForField('projectGroups');
   const groups = settings.projectGroups;
   const byKey = new Map((projects ?? []).map((p) => [p.key, p]));
   const hidden = new Set(settings.hiddenProjects);
@@ -216,9 +221,15 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
   const ungrouped = sortProjectsByName((projects ?? []).filter((p) => !groupOfProject(groups, p.key)));
 
   return (
-    <Field id={entry?.id} badge={<DefaultBadge field="projectGroups" />}>
+    /*
+     * `Anchored` for the same reason as above, and no badge at all: this entry
+     * is `noDefault`, so `DefaultBadge` could only ever render nothing here —
+     * putting every group you have written back to none is not "restoring" a
+     * default.
+     */
+    <Anchored id="set-projectGroups">
       <div className="flex items-baseline gap-2">
-        <span>
+        <span className="min-w-0 flex-1">
           {groups.length === 0 ? 'No groups.' : `${String(groups.length)} group${groups.length === 1 ? '' : 's'}.`}
           <Hint>
             In the filters a group is one checkbox that ticks every project under it. It narrows nothing itself.
@@ -354,7 +365,7 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
           here so it can be deleted.
         </p>
       </Explain>
-    </Field>
+    </Anchored>
   );
 }
 
