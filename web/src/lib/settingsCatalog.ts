@@ -22,7 +22,7 @@ import { foldText, logoPresetLabel, TONE_INHERIT } from '@claude-history/shared'
  * having rather than a crash.
  */
 
-export type AreaId = 'theme' | 'notifications' | 'claude' | 'access' | 'data' | 'system';
+export type AreaId = 'theme' | 'projects' | 'notifications' | 'claude' | 'access' | 'data' | 'system';
 
 export interface Area {
   id: AreaId;
@@ -111,11 +111,48 @@ const logoColour = (v: unknown): string => (typeof v === 'string' ? (logoPresetL
 /** An empty name is a choice — the shipped one — rather than a missing value. */
 const appNameText = (v: unknown): string => (v === '' ? 'the name it ships with' : valueText(v));
 
+/**
+ * How many projects are hidden, rather than which ones.
+ *
+ * `valueText` falls through to `String(value)` for an array, and for this one
+ * that is every hidden project's full path joined by commas — in a `shrink-0`
+ * monospace span on the Changed page. The number is also the more useful
+ * answer: the row itself is the list.
+ */
+const hiddenProjectsText = (v: unknown): string => {
+  const n = Array.isArray(v) ? v.length : 0;
+  return n === 0 ? 'nothing hidden' : `${String(n)} project${n === 1 ? '' : 's'} hidden`;
+};
+
+/**
+ * Do these two settings values mean the same thing?
+ *
+ * Every setting was a scalar and `===` was the whole comparison; `hiddenProjects`
+ * is an array, and an array is never `===` its default — so the changed tally
+ * and the "default" badge would both have reported it as changed for ever, on a
+ * fresh install, with nothing hidden.
+ *
+ * A shallow element-wise walk and no deeper, deliberately: the only non-scalar
+ * ever compared here is a list of strings, because the other one (`projectGroups`)
+ * is `noDefault` and is never compared at all. A deep-equal would be machinery
+ * for a case that does not exist.
+ */
+export function sameSettingValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
 export const AREAS: Area[] = [
   {
     id: 'theme',
     title: 'Themes',
     blurb: 'The mark, its colour, and the name this app wears in a tab and in a launcher.',
+  },
+  {
+    id: 'projects',
+    title: 'Projects',
+    blurb: 'Which of your projects this app shows you, and how they are grouped in the filters.',
   },
   {
     id: 'notifications',
@@ -148,6 +185,9 @@ export const GROUPS: Group[] = [
   { id: 'logo', area: 'theme', title: 'The logo' },
   { id: 'app-name', area: 'theme', title: 'The name' },
   { id: 'install', area: 'theme', title: 'Installing it as an app', short: 'Installing it' },
+
+  { id: 'projects-visible', area: 'projects', title: 'Which projects you see', short: 'What you see' },
+  { id: 'projects-groups', area: 'projects', title: 'Groups' },
 
   { id: 'notify-announce', area: 'notifications', title: 'Announcing a stop' },
   { id: 'notify-sound', area: 'notifications', title: 'Sound' },
@@ -199,6 +239,24 @@ export const ENTRIES: Entry[] = [
     group: 'install',
     label: 'Install it as an app',
     keywords: 'pwa standalone chrome edge desktop window shortcut launcher start menu taskbar offline',
+  },
+
+  // Projects
+  {
+    id: 'set-hiddenProjects',
+    group: 'projects-visible',
+    field: 'hiddenProjects',
+    label: 'Which projects you see',
+    keywords: 'hide exclude show ignore project folder repo clone list filters counts search stats',
+    format: hiddenProjectsText,
+  },
+  {
+    id: 'set-projectGroups',
+    group: 'projects-groups',
+    field: 'projectGroups',
+    noDefault: true,
+    label: 'Groups of projects',
+    keywords: 'group folder collect clones repos filters checkbox indent bulk together',
   },
 
   // Notifications
@@ -629,7 +687,7 @@ export function changedSettings(settings: AppSettings, defaults: AppSettings): C
     if (!entry.field || entry.noDefault) continue;
     const value = settings[entry.field];
     const fallback = defaults[entry.field];
-    if (value === fallback) continue;
+    if (sameSettingValue(value, fallback)) continue;
     const group = GROUP_BY_ID.get(entry.group);
     if (!group) continue;
     out.push({ entry, field: entry.field, area: group.area, group, value, fallback });

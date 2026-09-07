@@ -10,6 +10,7 @@ import { ClaudeArea } from '../components/settings/ClaudeArea.tsx';
 import { SettingsContext } from '../components/settings/context.ts';
 import { DataArea } from '../components/settings/DataArea.tsx';
 import { NotificationsArea } from '../components/settings/NotificationsArea.tsx';
+import { ProjectsArea } from '../components/settings/ProjectsArea.tsx';
 import { RemoteAccessArea } from '../components/settings/RemoteAccessArea.tsx';
 import { SettingsNav } from '../components/settings/SettingsNav.tsx';
 import { SystemArea } from '../components/settings/SystemArea.tsx';
@@ -22,6 +23,7 @@ const ANCHOR_FLASH_MS = 2_500;
 
 const AREA_CONTENT: Record<AreaId, () => ReactElement> = {
   theme: ThemesArea,
+  projects: ProjectsArea,
   notifications: NotificationsArea,
   claude: ClaudeArea,
   access: RemoteAccessArea,
@@ -101,8 +103,9 @@ export function SettingsPage() {
         markUsageRead('widget-settings');
         void queryClient.invalidateQueries({ queryKey: ['usage'] });
         void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
-        // The hidden-folder option changes what the browsing views contain.
-        for (const key of ['sessions', 'projects', 'prompts']) {
+        // Hiding a project changes what the browsing views contain — the two
+        // ways in are this page's own list and the auto-reload folder's switch.
+        for (const key of ['sessions', 'projects', 'prompts', 'plans', 'retention', 'meta', 'notifications']) {
           void queryClient.invalidateQueries({ queryKey: [key] });
         }
         setNote(null);
