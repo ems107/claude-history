@@ -750,6 +750,17 @@ export function SessionViewPage() {
   }, [headerBox]);
   const headerFold = useHideOnScroll(mobile);
   /**
+   * A different conversation starts at the top, and the top is where the header
+   * always shows. The page is NOT remounted between sessions — a notification
+   * tapped from inside one reuses it — so a fold left over from the session
+   * before would arrive folded over a conversation scrolled to 0, with the
+   * strip below it standing empty because there is nothing above to fill it.
+   */
+  const revealHeader = headerFold.reveal;
+  useEffect(() => {
+    revealHeader();
+  }, [id, revealHeader]);
+  /**
    * The on-screen keyboard is up, which on a phone leaves about 90px of
    * conversation between the header and the composer. The follow pill is lifted
    * by the composer's height and would be standing in the header; and somebody
@@ -1350,10 +1361,37 @@ export function SessionViewPage() {
                   of a SHORT conversation: the box fills the scroller exactly, so
                   `mt-auto` below has somewhere to push to and nothing becomes
                   scrollable that was not. */}
+              {/* The pixels the folded header gave up, handed straight back at
+                  the TOP of the conversation for exactly as long as it is folded.
+                  **What moves when the header goes is not the scroll — it is the
+                  box the scroll is measured from.** The scroller's top edge rises
+                  by the header's height, so at an unchanged `scrollTop` every line
+                  is drawn that much higher: the conversation jumps under whoever
+                  is reading it, which is the one thing a header stepping aside
+                  must not do. This margin grows by that same height, in the same 200 ms
+                  with the same easing, so the two cancel frame by frame — nothing
+                  on screen moves, and the strip opening above it fills with the
+                  content that had already scrolled past.
+                  It never touches `scrollTop`, which is what makes it right at the
+                  END of a conversation as well: `scrollHeight` and `clientHeight`
+                  grow by the same amount, the maximum does not move, and there is
+                  nothing for the browser to clamp.
+                  **A MARGIN here, and not a spacer box inside the scroller** —
+                  measured, both ways round. A box that grows above the viewport is
+                  content growing above the viewport, so Chrome's scroll anchoring
+                  answers it by putting those same pixels straight back on
+                  `scrollTop`, and the jump is back exactly as it was. A margin on the path between the anchor
+                  and the scroller is a SUPPRESSION TRIGGER instead, so the
+                  adjustment is skipped — on every frame of the transition, folding
+                  and unfolding alike. Anchoring itself stays on, which is what goes
+                  on keeping an image that loads above the view from moving it. */}
               <div
                 ref={follow.contentRef}
-                className="mx-auto flex min-h-full flex-col"
-                style={{ maxWidth: mobile || view.width === WIDTH_FULL ? undefined : `${view.width}px` }}
+                className="mx-auto flex min-h-full flex-col max-md:transition-[margin-top] max-md:duration-200 max-md:ease-out"
+                style={{
+                  maxWidth: mobile || view.width === WIDTH_FULL ? undefined : `${view.width}px`,
+                  marginTop: mobile && headerFold.hidden ? headerHeight : undefined,
+                }}
               >
                 <div style={view.zoom === ZOOM_DEFAULT ? undefined : { zoom: `${view.zoom}%` }}>
                   {/* Only the conversation, deliberately: the drawer below

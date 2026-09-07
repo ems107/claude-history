@@ -147,6 +147,12 @@ const SHOW_AFTER_PX = 24;
  * the DT50 as a header oscillating around −8px for as long as the session
  * stayed live. Longer than the 200ms transition, so what is ignored is the
  * whole of the movement the fold itself caused.
+ *
+ * **The movement it was written for is gone**, since the caller hands the
+ * header's pixels back at the top of the scroller (see below): the content
+ * grows by exactly what the box grew by, the maximum scroll does not move, and
+ * a pinned scroller has nothing to answer. It stays as the guard — nothing else
+ * that folding can shake is worth finding out about from a bug report.
  */
 const SETTLE_MS = 350;
 
@@ -168,6 +174,13 @@ const SETTLE_MS = 350;
  * the header back — something inside it taking the focus, say. The caller owns
  * how "hidden" is drawn; here it is a negative margin, which lets the
  * conversation grow into the space instead of sliding under a floating bar.
+ *
+ * **And whoever draws it owes the conversation those pixels back at the top of
+ * the scroller**, or the fold moves the page under the reader: the scroll
+ * offset does not change, but the box it is measured from rises by the header's
+ * height. `SessionViewPage` pays it with a `margin-top` on the scroller's
+ * content, transitioned in step with this one, and the note there is the whole
+ * of why it may not be a spacer box instead.
  */
 export function useHideOnScroll(active: boolean): {
   hidden: boolean;
