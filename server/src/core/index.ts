@@ -11,6 +11,7 @@ import type {
   StarredMessage,
 } from '@claude-history/shared';
 import {
+  APP_NAME_MAX,
   AUTO_RELOAD_MESSAGE_MAX,
   CHAT_UI_MODES,
   ACTIVE_SESSIONS_MAX,
@@ -757,6 +758,10 @@ export class SessionIndex {
       // refuses one before it gets here; this is for everything that is not the
       // UI.
       logoColor: normalizeLogoColor(patch.logoColor ?? this.settings.logoColor) ?? DEFAULT_SETTINGS.logoColor,
+      // Trimmed and capped, nothing else: any text is a valid name for a thing
+      // on your own machine. Empty is meaningful here rather than missing — it
+      // is what asks for the shipped names back.
+      appName: (patch.appName ?? this.settings.appName).trim().slice(0, APP_NAME_MAX),
     };
     if (patch.remoteAccessEnabled && !this.settings.remoteAccessEnabled) {
       log.warn('remote access cannot be enabled before a username and password are set — the switch stays off');

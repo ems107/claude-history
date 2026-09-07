@@ -747,6 +747,14 @@ export const NOTIFY_VOLUME_MAX = 100;
 /** A voice name is a name Windows gave a voice, not a sentence. */
 export const NOTIFY_VOICE_NAME_MAX = 120;
 
+/**
+ * A name for the app, not a sentence: it has to fit under an icon in a launcher
+ * and in the width of a browser tab, and every one of those truncates long
+ * before this. The cap is here so a paste of something enormous cannot make an
+ * unreadable Start Menu entry rather than to police anybody's taste.
+ */
+export const APP_NAME_MAX = 60;
+
 export interface AppSettings {
   /** Poll GitHub for new releases in the background. */
   updateAutoCheck: boolean;
@@ -942,6 +950,24 @@ export interface AppSettings {
    * `normalizeLogoColor`, and `LOGO_PRESETS` for what the picker offers.
    */
   logoColor: string;
+  /**
+   * What this app calls itself: the browser tab, and the name it INSTALLS
+   * under — the Start Menu entry, the taskbar, a launcher.
+   *
+   * **Empty means the name it ships with**, which is not the same as a default
+   * string here and is the reason this is not one. The two shipped names differ
+   * on purpose (`Claude History` in the manifest, `claude history` in the tab),
+   * so a single default would have had to change one of them on screen for
+   * everybody who never touches this. Empty leaves both exactly as they were and
+   * makes the served manifest byte-identical to the file — the same rule
+   * `logoColor` follows by REMOVING a property rather than writing the
+   * terracotta back.
+   *
+   * It does not rename the mark in the header, and it does not rename the Start
+   * Menu shortcut the installer made: that one is a `.lnk` on disk, written at
+   * install time, and nothing served from here can reach it.
+   */
+  appName: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -978,6 +1004,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   logLevel: 'info',
   logRetentionDays: 14,
   logoColor: LOGO_DEFAULT_COLOR,
+  appName: '',
 };
 
 /**
