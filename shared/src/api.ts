@@ -9,6 +9,7 @@ import type {
   StarredMessage,
   SubagentDetail,
 } from './types.ts';
+import { LOGO_DEFAULT_COLOR } from './logo.ts';
 
 export type IndexState = 'scanning' | 'enriching' | 'ready';
 
@@ -929,6 +930,18 @@ export interface AppSettings {
   logLevel: LogLevel;
   /** Daily log files older than this are deleted (minimum 1). */
   logRetentionDays: number;
+  /**
+   * The colour the mark is drawn in: the glyph beside the wordmark, the word
+   * `claude` in the title, and the tile a browser tab shows.
+   *
+   * The LOGO's colour and not the app's accent. `--logo` defaults to
+   * `var(--accent)` and only the mark reads it, so a green one here leaves the
+   * buttons, the search highlights and an open terminal's cursor exactly as
+   * they were — which is also what keeps the two hardcoded near-blacks that sit
+   * ON the accent readable. Stored normalised (`#rrggbb`, lower case); see
+   * `normalizeLogoColor`, and `LOGO_PRESETS` for what the picker offers.
+   */
+  logoColor: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -964,6 +977,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   remoteAccessEnabled: false,
   logLevel: 'info',
   logRetentionDays: 14,
+  logoColor: LOGO_DEFAULT_COLOR,
 };
 
 /**

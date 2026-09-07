@@ -10,6 +10,7 @@ import { isLocalRequest } from './util/remote.ts';
 import { registerActiveSessionRoutes } from './routes/activeSessions.ts';
 import { isAuthenticated, registerAuthRoutes } from './routes/auth.ts';
 import { registerAutoReloadRoutes } from './routes/autoReload.ts';
+import { registerBrandRoutes } from './routes/brand.ts';
 import { registerChatRoutes } from './routes/chat.ts';
 import { registerEventRoutes } from './routes/events.ts';
 import { registerFileRoutes } from './routes/files.ts';
@@ -181,6 +182,9 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerEventRoutes(app, ctx);
 
   if (config.staticDir) {
+    // Before the static plugin's wildcard, and inside this branch because it is
+    // that folder's own `favicon.svg` it tints.
+    registerBrandRoutes(app, ctx);
     await app.register(fastifyStatic, {
       root: config.staticDir,
       // The plugin's own cache-control would overwrite ours.

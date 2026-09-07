@@ -36,7 +36,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: () => void }) {
     <div className="flex h-full items-center justify-center p-6">
       <form onSubmit={submit} className="w-full max-w-xs space-y-3">
         <h1 className="text-lg font-semibold tracking-tight">
-          <span className="text-[var(--accent)]">claude</span> history
+          <span className="text-[var(--logo)]">claude</span> history
         </h1>
         <p className="text-xs text-[var(--text-dim)]">
           Sign in to browse this machine&apos;s conversations from here.

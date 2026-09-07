@@ -15,6 +15,7 @@ import { NotificationToasts } from './components/NotificationToasts.tsx';
 import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
+import { useLogoTheme } from './lib/logoTheme.ts';
 import { useIsMobile, useIsShort, useKeyboardInset } from './lib/mobile.ts';
 import { LogsPage } from './pages/LogsPage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
@@ -139,6 +140,10 @@ export function App() {
   // the usage widget keeps ['settings'] mounted for the life of the page.
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const chatEnabled = settings?.settings.chatEnabled ?? false;
+  // The mark's colour, published as `--logo` for the glyph and the wordmark and
+  // as the tab's icon href. Here rather than in `AppGate`: the two screens above
+  // this one cannot read settings, and are right to wear the default.
+  useLogoTheme(settings?.settings.logoColor);
   // Two tabs that look alike on two ports is the one way to confuse them, and
   // the tab strip is where they are told apart before anything is clicked.
   useEffect(() => {
@@ -179,7 +184,7 @@ export function App() {
           >
             <Brandmark className="h-5 w-auto shrink-0 self-center max-md:h-4" />
             <span>
-              <span className="text-[var(--accent)]">claude</span> history
+              <span className="text-[var(--logo)]">claude</span> history
             </span>
           </Link>
           {dev ? (

@@ -10,11 +10,18 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <!-- The SVG is what every current browser takes; the .ico is the fallback,
-         and is also the file the Start Menu shortcut points at, so a release
-         carries one icon rather than two copies of the same drawing. -->
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="alternate icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <!-- The SVG is the ONLY icon declared, and declaring the .ico beside it is
+         what used to break the logo colour: measured in Chrome, a
+         `rel="alternate icon"` with `sizes="16x16 …"` wins the tab outright —
+         whatever the SVG says, `sizes="any"` and `48x48` alike — so the tinted
+         tile was fetched and then never shown. `favicon.ico` has not gone
+         anywhere: it sits at the conventional path, which is where a browser
+         with no SVG favicon support asks for one without being told, and it is
+         still the file the Start Menu shortcut points at
+         (`installer/install.ps1`). `sizes="any"` says the true thing about a
+         scalable icon, so anything declared here later has to beat it on
+         purpose rather than by accident. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Added to a phone's home screen this opens without the browser's own bars,
          which on a 360x720 screen is two rows of the conversation back. -->

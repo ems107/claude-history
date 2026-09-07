@@ -8,8 +8,16 @@
     and what Windows pins to a shortcut - a line floating in empty space reads
     as timid at 128 px, whatever it does at 16.
 
-    The dark is warm (#2B2320), not the app's cool near-black: on a terracotta
-    ground a cool black goes muddy.
+    The ink is warm (#2B2320) rather than the app's cool near-black: on a
+    terracotta ground a cool black goes muddy.
+
+    THIS FILE IS THE ONLY PLACE THE TILE IS DRAWN, and the ground colour is a
+    setting. The server serves this file with both hexes substituted -
+    `tintLogoTile` in shared/src/logo.ts, which also picks whichever of the two
+    inks contrasts more with the chosen ground - so what is written here is the
+    default rather than a fact about a running instance. `favicon.ico` and
+    `apple-touch-icon.png` are rendered from this by hand (docs/brand/README.md)
+    and are the copies that do NOT follow the setting.
   -->
   <rect width="48" height="48" rx="10.5" fill="#D97757"/>
   <g fill="none" stroke="#2B2320" stroke-linecap="round" stroke-linejoin="round">

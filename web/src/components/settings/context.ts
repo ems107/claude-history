@@ -6,9 +6,9 @@ import type { SettingsResponse } from '../../api/client.ts';
  * What every control on the settings page needs, and what none of them should
  * have to be handed.
  *
- * A context rather than props for the reason `StarContext` is one: the six area
+ * A context rather than props for the reason `StarContext` is one: the area
  * components sit under the page that knows all of this, and a `save` threaded
- * through each of them would be six signatures to change every time one more
+ * through each of them would be one signature each to change every time one more
  * thing turns out to be needed. There is exactly one provider, in
  * `pages/SettingsPage.tsx`, and it wraps the whole panel — so unlike the
  * viewer's contexts, absent here is a bug rather than a state.

@@ -693,11 +693,11 @@ up as several failures at once rather than as a setting nobody notices is gone.
 
 - **The catalogue against `AppSettings`, without a browser**: every field has an
   `Entry`, no `Entry` names a field that does not exist, and none is listed
-  twice — 32 and 32 here. Then internally: every `Entry.group` exists, every
+  twice — 33 and 33 here. Then internally: every `Entry.group` exists, every
   group has at least one entry, no id is used twice, and `remote-access`,
   `backups` and `claude-retention` are still group ids (the README and
   `RetentionFooter` link to them).
-- **Every id is in the DOM of its own area.** Walk the five areas, collect
+- **Every id is in the DOM of its own area.** Walk the six areas, collect
   `[id]`, and every group id and every row id must be there. **The four
   remote-access ones are the expected absence on a dev instance** — that panel
   returns its one-sentence explanation instead — so assert the sentence rather
@@ -767,6 +767,65 @@ up as several failures at once rather than as a setting nobody notices is gone.
   label, in each of the four areas that have sub-items, with none of them
   truncating at the deeper indent.
 
+**56. The logo colour, on all four surfaces.** Automatable in full over check 26's
+harness, and cheap: the whole of it is `--logo`, three DOM facts and one HTTP
+response. **`Emulation.setFocusEmulationEnabled` first, or half of it lies** — a
+headless page dispatches no blur/focusout from a programmatic `.blur()`, so the
+commit-on-blur box reads as a feature that does not work (measured: it cost two
+runs, and Enter always worked while blur never did).
+
+- **Picking a swatch moves the mark and nothing else.** `--logo` becomes the
+  swatch's hex, `--logo-dim` becomes a `color-mix` of it, the word `claude` in
+  the header computes to that colour, the three `path`s of the mark still name
+  `var(--logo-dim)`/`var(--logo)` — and **`--accent` and `--accent-dim` are
+  unchanged**, which is the assertion the whole design exists for. The row's
+  `default …` marker must read `default Claude terracotta` rather than a hex,
+  and the **Changed** tally must go up by exactly one (it is a delta: the dev
+  instance has changed settings of its own).
+- **The typed box refuses rather than mangles.** `ABC` is stored `#aabbcc`;
+  `verde` leaves the saved colour alone and puts *Not a colour* in the hint;
+  clicking the `default …` marker REMOVES the inline properties rather than
+  writing terracotta back (`documentElement.style.getPropertyValue('--logo')`
+  must be empty, and the computed value `#d97757`).
+- **The served tile.** `GET /favicon.svg` at the default must be **byte-identical
+  to `web/dist/favicon.svg`** — `cmp`, not eyes — because the default is served
+  by not substituting anything. With a colour set it carries that `fill`, with
+  `cache-control: no-cache`. **A dark colour must flip the ink**: `#2b2f5e`
+  comes back stroked `#f7ece7`, or the chevrons are invisible in the tab.
+- **The tab, and this is the one that shipped broken.** Assert what the BROWSER
+  did — `Network.enable`, then a favicon URL in `requestWillBeSent` after the
+  swatch is clicked and again after *restore* — never that the `<link>`'s href
+  changed. Writing `href` on the link a browser has already read sends **no
+  request at all**, and neither does `replaceWith`; the href reads exactly as
+  intended while the tab keeps the old icon until a reload, which is precisely
+  what a check on the attribute passes on. Measured: only removing the node and
+  appending a new one fetches, appending-then-removing fetches twice, and a
+  plain reload is unaffected either way, because the server already tints what
+  it serves.
+- **And a request is still not a tab. This one needs eyes, and the pixels are
+  not in the page.** A fetched icon that Chrome then declines to show looks
+  identical to everything above, and that is how the colour reached the browser
+  and stopped: with `<link rel="alternate icon" href="/favicon.ico"
+  sizes="16x16 …">` also declared, **Chrome puts the raster in the tab and the
+  SVG nowhere** — measured against `sizes="any"` and `sizes="48x48"` on the SVG
+  alike, so nothing said about the SVG rescues it. The fix is that the SVG is
+  the only icon `web/index.html` declares; the `.ico` stays on disk for the
+  Start Menu shortcut and for the browsers that ask for the conventional path
+  unprompted. To see it: a VISIBLE Chrome (`--window-position=0,0`), then
+  PowerShell `SetWindowPos` the window topmost at the origin and
+  `CopyFromScreen` the top 130 px — `CopyFromScreen` alone photographs whatever
+  is in front, which twice meant the release's own tab on 7433 and a reading of
+  "still terracotta" that was not this window at all. Look three times: the
+  default, straight after a swatch, and after a reload.
+- **Server-side, with `curl` from this machine** (a local PUT needs no headers):
+  `"logoColor":"verde"` must come back as the default rather than be stored, and
+  `"ABC"` as `#aabbcc`. The UI refuses both first; this is the half that is not
+  the UI.
+- **At 360 px** the swatch row wraps (three per row, nothing past
+  `clientWidth`), each swatch is ≥ 44 px, and the picker and the hex box stay on
+  the SAME line as each other — the words are what wrap away from them.
+- Put the colour back afterwards: this is the dev instance's real `userdata.json`.
+
 ## The phone
 
 Everything here is about a real device at 360×720 CSS pixels. An emulated narrow window catches the layout faults and none of the others — no soft keyboard, no system Back button, no `@media (hover: hover)` behaving as a phone's does. [AI_MOBILE.md](AI_MOBILE.md) holds the rules these check.
@@ -803,7 +862,7 @@ Four traps, each of which cost time once:
 
 ### The checks
 
-**49. Nothing scrolls sideways.** Walk every route — `/`, `/prompts`, `/starred`, `/plans`, `/stats`, `/logs`, `/new`, `/settings`, each of its five areas and `/settings/changed`, and a session — asserting `document.documentElement.scrollWidth === innerWidth`. Then, in a session, the same of the conversation itself: `scroller.scrollWidth - scroller.clientWidth === 0`. Do it on the biggest sessions in the corpus and on one with an answered question, one with a `/context` snapshot and one with a long path in a code span — those are the three shapes that broke it. An element wider than the window is only a fault when nothing between it and the root can scroll or clip it; a code block and a table are both meant to.
+**49. Nothing scrolls sideways.** Walk every route — `/`, `/prompts`, `/starred`, `/plans`, `/stats`, `/logs`, `/new`, `/settings`, each of its six areas and `/settings/changed`, and a session — asserting `document.documentElement.scrollWidth === innerWidth`. Then, in a session, the same of the conversation itself: `scroller.scrollWidth - scroller.clientWidth === 0`. Do it on the biggest sessions in the corpus and on one with an answered question, one with a `/context` snapshot and one with a long path in a code span — those are the three shapes that broke it. An element wider than the window is only a fault when nothing between it and the root can scroll or clip it; a code block and a table are both meant to.
 
 **50. The desktop is untouched.** The same routes at 1440px, through `Emulation.setDeviceMetricsOverride` **in the same connection as the measurement** — the override is cleared when the socket closes, so a separate call measures the phone again. The session's rail must be 72px wide at x = width − 72, the reading column 896, a list row exactly 64px, the settings rail 224 with its sub-groups drawn, and the header's nav, usage widget, update button and gear all visible with the tab bar `display: none`. Prompts, Plans and Starred must still draw their own row — 1, 3 and 3 `<select>`s, no `h1` — rather than the phone's toolbar. **A list row being exactly 64 is the sharpest of these**: the rows are measured rather than told a height, so a row that comes back at 48 means the box lost its floor and the whole list has silently compacted.
 
@@ -821,7 +880,7 @@ Four traps, each of which cost time once:
 
 What to confirm when there IS one to hand: with predictive text **off**, typing is clean — every letter as it is pressed, the CLI's cursor after it, and nothing deleted or inserted in the middle of a line that you did not type. That is the supported configuration and it must stay working. With it **on**, expect the three symptoms in that section; if what you see is a FOURTH, something has changed and the account needs updating. And check the keyboard's own layout while you are there: the comma must still be a comma. `inputmode` is deliberately not set (both variations were tried, neither helped, and both cost that key), so a keyboard showing `/` or `@` there means somebody has put it back.
 
-**54. Add to home screen.** The manifest is served and the app opens standalone, without the browser's bars — which is two rows of conversation back on a 620px window.
+**54. Add to home screen.** The manifest is served and the app opens standalone, without the browser's bars — which is two rows of conversation back on a 620px window. **The launcher icon stays terracotta whatever the logo colour is**, and that is correct rather than a fault: Android takes the maskable PNG, which is pre-rendered (check 56).
 
 ## Platform and plumbing
 
