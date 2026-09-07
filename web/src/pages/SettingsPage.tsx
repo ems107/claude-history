@@ -13,6 +13,7 @@ import { NotificationsArea } from '../components/settings/NotificationsArea.tsx'
 import { RemoteAccessArea } from '../components/settings/RemoteAccessArea.tsx';
 import { SettingsNav } from '../components/settings/SettingsNav.tsx';
 import { SystemArea } from '../components/settings/SystemArea.tsx';
+import { ThemesArea } from '../components/settings/ThemesArea.tsx';
 import { useIsMobile } from '../lib/mobile.ts';
 import { type AreaId, CHANGED_VIEW, DEFAULT_AREA, findArea, groupIdOf, resolveAnchor } from '../lib/settingsCatalog.ts';
 
@@ -20,6 +21,7 @@ import { type AreaId, CHANGED_VIEW, DEFAULT_AREA, findArea, groupIdOf, resolveAn
 const ANCHOR_FLASH_MS = 2_500;
 
 const AREA_CONTENT: Record<AreaId, () => ReactElement> = {
+  theme: ThemesArea,
   notifications: NotificationsArea,
   claude: ClaudeArea,
   access: RemoteAccessArea,

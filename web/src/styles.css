@@ -41,6 +41,20 @@
   --accent: #d97757; /* claude-ish terracotta */
   --accent-dim: #a05a44;
 
+  /* The mark's own colour, and only the mark's: the glyph beside the wordmark,
+     the word `claude` in the title, and the tile a browser tab shows. It is the
+     accent until somebody says otherwise, which is what makes the default here
+     and the default in `AppSettings` one fact rather than two — and what keeps
+     `lib/logoTheme.ts` able to say "back to normal" by REMOVING a property
+     rather than by writing the terracotta back in.
+
+     Separate from `--accent` on purpose: the accent is worn by things with text
+     on top of them (two of which hardcode a near-black that only works over
+     terracotta) and by an xterm theme that is read once when a terminal is
+     built. A logo has none of those problems. */
+  --logo: var(--accent);
+  --logo-dim: var(--accent-dim);
+
   /* Chat bubbles. Terracotta for the user and emerald for the assistant, the
      two colours those roles already wear everywhere else in the app.
      Deliberately OPAQUE rather than the /5-/15 tints used elsewhere: the tail

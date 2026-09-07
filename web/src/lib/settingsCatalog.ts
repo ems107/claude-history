@@ -1,5 +1,5 @@
 import type { AppSettings } from '@claude-history/shared';
-import { foldText, TONE_INHERIT } from '@claude-history/shared';
+import { foldText, logoPresetLabel, TONE_INHERIT } from '@claude-history/shared';
 
 /**
  * What settings exist, and where each one lives.
@@ -22,7 +22,7 @@ import { foldText, TONE_INHERIT } from '@claude-history/shared';
  * having rather than a crash.
  */
 
-export type AreaId = 'notifications' | 'claude' | 'access' | 'data' | 'system';
+export type AreaId = 'theme' | 'notifications' | 'claude' | 'access' | 'data' | 'system';
 
 export interface Area {
   id: AreaId;
@@ -105,7 +105,15 @@ export function valueText(v: unknown): string {
 /** A tone that defers to the general one, said in words rather than in a key. */
 const toneChoice = (v: unknown): string => (v === TONE_INHERIT ? 'general tone' : valueText(v));
 
+/** A colour said by the name of its swatch where it has one, not as six digits. */
+const logoColour = (v: unknown): string => (typeof v === 'string' ? (logoPresetLabel(v) ?? v) : valueText(v));
+
 export const AREAS: Area[] = [
+  {
+    id: 'theme',
+    title: 'Themes',
+    blurb: 'How the app looks. For now, the colour of the mark it wears.',
+  },
   {
     id: 'notifications',
     title: 'Notifications',
@@ -134,6 +142,8 @@ export const AREAS: Area[] = [
 ];
 
 export const GROUPS: Group[] = [
+  { id: 'logo', area: 'theme', title: 'The logo' },
+
   { id: 'notify-announce', area: 'notifications', title: 'Announcing a stop' },
   { id: 'notify-sound', area: 'notifications', title: 'Sound' },
   { id: 'notify-kinds', area: 'notifications', title: 'Which stops, and what each one sounds like', short: 'Which stops' },
@@ -162,6 +172,16 @@ export const GROUPS: Group[] = [
  * and none of them is a preference.
  */
 export const ENTRIES: Entry[] = [
+  // Themes
+  {
+    id: 'set-logoColor',
+    group: 'logo',
+    field: 'logoColor',
+    label: 'Logo colour',
+    keywords: 'theme colour color accent brand mark terracotta favicon icon tab hex custom swatch',
+    format: logoColour,
+  },
+
   // Notifications
   {
     id: 'set-notifyEnabled',
@@ -502,7 +522,7 @@ const ENTRY_BY_ID = new Map(ENTRIES.map((e) => [e.id, e]));
 const AREA_BY_ID = new Map(AREAS.map((a) => [a.id, a]));
 
 /** The area `/settings` with nothing after it lands on. */
-export const DEFAULT_AREA: AreaId = 'notifications';
+export const DEFAULT_AREA: AreaId = 'theme';
 
 /**
  * The one view in the rail that is not an area: a list of what you have changed,

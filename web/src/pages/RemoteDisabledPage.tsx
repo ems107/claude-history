@@ -17,7 +17,7 @@ export function RemoteDisabledPage() {
     <div className="flex h-full items-center justify-center p-6">
       <div className="max-w-sm space-y-3">
         <h1 className="text-lg font-semibold tracking-tight">
-          <span className="text-[var(--accent)]">claude</span> history
+          <span className="text-[var(--logo)]">claude</span> history
         </h1>
         <p className="text-sm">Remote access is turned off on this machine.</p>
         <p className="text-xs leading-relaxed text-[var(--text-dim)]">
