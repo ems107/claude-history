@@ -3,6 +3,7 @@
 import type {
   LiveInfo,
   PlanRecord,
+  ProjectGroup,
   ProjectInfo,
   SessionDetail,
   SessionSummary,
@@ -762,6 +763,22 @@ export const NOTIFY_VOICE_NAME_MAX = 120;
  */
 export const APP_NAME_MAX = 60;
 
+/** A group's name sits in a 256px sidebar beside a count. It is a label, not a note. */
+export const PROJECT_GROUP_NAME_MAX = 60;
+
+/**
+ * Ceilings on the two project lists, and neither is a policy about how anybody
+ * should organize their work.
+ *
+ * They are here because `userdata.json` is the one file this app cannot rebuild
+ * and both of these arrive from a `PUT /api/settings` that the settings page is
+ * not the only thing that can make. A cap is what stops a mistake — or a loop in
+ * something written against this API — from growing that file without bound.
+ * Both are far above any real corpus: this machine has around forty projects.
+ */
+export const PROJECT_GROUPS_MAX = 50;
+export const PROJECT_KEYS_MAX = 500;
+
 export interface AppSettings {
   /** Poll GitHub for new releases in the background. */
   updateAutoCheck: boolean;
@@ -975,8 +992,47 @@ export interface AppSettings {
    * install time, and nothing served from here can reach it.
    */
   appName: string;
+  /**
+   * Projects left out of every browsing view, by their `ProjectInfo.key`.
+   *
+   * **Empty is the default and it means every project is shown**, which is the
+   * whole shape of this setting: what is managed is what to HIDE out of what
+   * exists, so a project that appears tomorrow appears in the list rather than
+   * waiting to be granted. There is no "shown" list anywhere and there must not
+   * be one — it would have to be extended by hand on every new project, and a
+   * corpus this app only reads has no moment at which to ask.
+   *
+   * It is the second way into `SessionIndex.hiddenProjectKeys()`, beside
+   * `autoReloadHideSessions`, and hidden means the same thing for both: out of
+   * the list, the filters, the counts, search, the stats and the prompts page.
+   * Nothing is deleted, and `index.get(id)` stays unfiltered so a link straight
+   * to one of those sessions still opens it.
+   */
+  hiddenProjects: string[];
+  /**
+   * The user's own groupings of projects, for the filter sidebar.
+   *
+   * A filter list of forty checkboxes ordered by name is one where the three
+   * clones of one repo — always read together, always filtered together — sit
+   * wherever the alphabet put them. A group brings them under one parent
+   * checkbox that ticks all of them at once.
+   *
+   * Presentation only: a group narrows nothing by itself and never reaches the
+   * URL, which carries the member keys exactly as it always did. So a copied
+   * link keeps meaning what it meant after the group behind it is renamed or
+   * deleted.
+   */
+  projectGroups: ProjectGroup[];
 }
 
+/**
+ * The value this server starts from.
+ *
+ * **The two array fields are shared references** — `defaultSettings(false)`
+ * hands `DEFAULT_SETTINGS` back as it stands rather than a copy — so nothing may
+ * ever mutate one in place. Every write replaces the array, which is what the
+ * settings page does anyway (`save({ hiddenProjects: [...] })`).
+ */
 export const DEFAULT_SETTINGS: AppSettings = {
   updateAutoCheck: true,
   updateIntervalMinutes: 10,
@@ -1012,6 +1068,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   logRetentionDays: 14,
   logoColor: LOGO_DEFAULT_COLOR,
   appName: '',
+  hiddenProjects: [],
+  projectGroups: [],
 };
 
 /**
@@ -2056,6 +2114,11 @@ export interface UserdataBackup {
     stars: number;
     hasPrices: boolean;
     hasSettings: boolean;
+    /**
+     * Project groups, counted out of `settings` — the one thing in there that a
+     * default cannot put back, because it is names somebody typed.
+     */
+    projectGroups: number;
   } | null;
 }
 

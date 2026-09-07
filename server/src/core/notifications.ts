@@ -146,13 +146,28 @@ export class NotificationsService {
     });
   }
 
-  /** Newest stop first. */
+  /**
+   * Newest stop first — and nothing from a project you asked not to see.
+   *
+   * The bell is otherwise deliberately deaf to preferences: it goes on counting
+   * whatever stopped even with announcements off, because a list you have to go
+   * and look at costs nothing to have been kept. Hiding a project is not that
+   * kind of preference. It is a statement that the project is not part of the
+   * corpus, and it already means gone from the list, the filters, the counts,
+   * search and the stats — a toast from one would be the one place it could
+   * still interrupt you.
+   *
+   * A stop with no summary behind it is kept: that is a session whose transcript
+   * has not landed yet, and no project can be read off it to hide it by.
+   */
   list(): StoppedSessionEntry[] {
     const open = new Set(this.index.liveSessions.map((l) => l.sessionId));
+    const hidden = this.index.hiddenProjectKeys();
     return [...this.stopped.values()]
       .sort((a, b) => b.at - a.at)
-      .map((stop) => {
+      .flatMap((stop) => {
         const summary = this.index.get(stop.sessionId);
+        if (summary && hidden.has(summary.projectKey)) return [];
         return {
           ...stop,
           title: summary?.title ?? null,

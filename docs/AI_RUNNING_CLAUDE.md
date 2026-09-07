@@ -127,7 +127,12 @@ A manual send takes no mutex of its own and may overlap a check: that is safe be
 
 ### Hiding those sessions
 
-`autoReloadHideSessions` filters that folder's project out of `index.list()` / `projects()` — hence the list, the filters, the counts, search and the stats — plus `/api/prompts`. `index.get(id)` stays unfiltered so a direct link still opens them, and nothing is ever deleted. It is gated on `autoReloadEnabled` as well as on its own flag: the UI disables the whole settings block when the feature is off, and a greyed control that still hid sessions would be a trap.
+`autoReloadHideSessions` is one of the two ways into `hiddenProjectKeys()`, and what "hidden" then means is [one fact kept in one place](AI_ARCHITECTURE.md#a-hidden-project-is-unbrowsable-not-unreachable): out of the list, the filters, the counts, search, the stats and the prompts page, with `index.get(id)` still unfiltered and nothing ever deleted.
+
+What is specific to this one is the gating and the exclusion:
+
+- **Gated on `autoReloadEnabled` as well as on its own flag.** The UI disables the whole settings block when the feature is off, and a greyed control that still hid sessions would be a trap — so switching the feature off brings the folder's sessions back into view.
+- **This folder is the one project *Settings → Projects* does not offer a checkbox for** (`projectsAll()` leaves it out). It already has a switch, and a second control that this one silently overrode would be a control that lies.
 
 ## Two ways to talk to Claude, and one switch between them
 

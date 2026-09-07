@@ -33,7 +33,10 @@ async function main(): Promise<void> {
     applyLogSettings(settings),
   );
   createLogger('index').info(
-    `${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`,
+    // `projectCount`, not `projects().length`: this line says what was SCANNED,
+    // and `projects()` answers what can be browsed — a hidden project would make
+    // the two halves of the sentence count different corpora.
+    `${index.size} sessions across ${index.projectCount} projects in ${Date.now() - t0} ms`,
   );
 
   // Before anything is served: whether this process may listen on the network at

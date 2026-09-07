@@ -209,6 +209,15 @@ export function useEvents(): void {
           void queryClient.invalidateQueries({ queryKey: ['autoReload'] });
           // `maxActiveSessions` is one of them, and it is half of "3 of 10".
           void queryClient.invalidateQueries({ queryKey: ['activeSessions'] });
+          // And `hiddenProjects` decides what the browsing views CONTAIN. The
+          // window that made the change re-asks for these itself; without this
+          // every OTHER window went on drawing the list, the filters and the
+          // stats from the corpus as it was before a project was hidden. Local
+          // reads, all of them — which is exactly why `['usage']` is still not
+          // here: that one would turn a toggle into a network read per window.
+          for (const key of ['sessions', 'projects', 'prompts', 'plans', 'retention', 'meta', 'notifications']) {
+            void queryClient.invalidateQueries({ queryKey: [key] });
+          }
           break;
         // A session stopped, came back, or was cleared. One key, and only this
         // one — the bell and the toast stack both read it, and neither needs

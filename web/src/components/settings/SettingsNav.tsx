@@ -12,7 +12,7 @@ import {
 import { useSettingsPage } from './context.ts';
 
 /**
- * The map: a search box, six areas, the groups of whichever one is open, and how
+ * The map: a search box, seven areas, the groups of whichever one is open, and how
  * many settings in each are no longer at their default.
  *
  * The rail is what the old page had no equivalent of. Ten sections in one scroll
@@ -27,8 +27,8 @@ import { useSettingsPage } from './context.ts';
  * **On a phone the rail is a SCREEN**, which is the shape a rail takes when
  * there is no room beside the thing it navigates. It was a strip of chips
  * scrolling sideways under the header, and a strip that scrolls is a list you
- * cannot see the end of: six areas, of which two were off the right edge, above
- * a panel whose own scroll then fought it. A list of six rows with their blurbs
+ * cannot see the end of: the areas, of which two were off the right edge, above
+ * a panel whose own scroll then fought it. A list of rows with their blurbs
  * is the same six choices, readable at once, and the area gets the whole window
  * once one is picked.
  */

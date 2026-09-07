@@ -358,6 +358,30 @@ export interface ProjectInfo {
   lastActivityMs: number;
 }
 
+/**
+ * A grouping of projects the user made by hand, for the filter sidebar.
+ *
+ * **A project belongs to at most one group**, which is what makes the sidebar's
+ * order expressible at all: every group with its members indented under it, then
+ * everything left over. The server enforces it rather than trusting the UI —
+ * `sanitizeProjectGroups` drops a key from the second group it appears in.
+ *
+ * `id` exists so a rename keeps the membership: the name is what the reader
+ * sees and the thing they will change, and keying the members on it would empty
+ * the group on the first typo corrected.
+ *
+ * The members are `ProjectInfo.key`s — normalized paths, the same strings the
+ * filters carry — and one that matches no project any more is KEPT rather than
+ * pruned: `~/.claude` sweeps a project's transcripts on its own schedule and the
+ * folder is still there, so a key that resolves to nothing today is a project
+ * that can come back tomorrow. Nothing draws it in the meantime.
+ */
+export interface ProjectGroup {
+  id: string;
+  name: string;
+  projects: string[];
+}
+
 // ---- Conversation detail (viewer) ----
 
 /**

@@ -11,6 +11,7 @@
 - **A path or a cwd never comes from the request** — it comes from the index, or is composed from it. One exception, and it is named below: the folder a new session is started in.
 - **The API shape lives in `shared/src/api.ts`** and the domain in `shared/src/types.ts`; documentation points at them instead of restating them.
 - **Never hardcode a user path** — `config.ts` resolves them.
+- **What the browsing views may show goes through `visible()`**, and `index.get(id)` never does — a hidden project is unbrowsable, not unreachable.
 
 ## Packages
 
@@ -178,6 +179,54 @@ written.
   is exactly the one that has to stay removable, so only the starring path needs
   the session in the index.
 
+## A hidden project is unbrowsable, not unreachable
+
+Two settings hide one, and hidden means the same thing for both:
+`hiddenProjects` — the list kept in *Settings → Projects* — and the auto-reload
+folder's own switch ([AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md#hiding-those-sessions)).
+`SessionIndex.hiddenProjectKeys()` is the union, and it exists as ONE set rather
+than two checks so that nothing can come to hide a project from the list and not
+from search.
+
+- **`visible()` is the only gate, and everything that browses goes through it.**
+  `list()` and `projects()` do, so the session list, the filter checkboxes, the
+  counts, `/api/search`, `/api/plans`, `/api/meta` and the stats page cannot
+  disagree about what exists. `/api/prompts` is the one view built from
+  something else — `~/.claude/history.jsonl` — so it asks for the set itself,
+  **once**, above the map: it is one line per prompt ever typed.
+- **`index.get(id)` is unfiltered, deliberately.** A link straight to a hidden
+  project's conversation still opens it, and nothing is ever deleted. Hiding is a
+  statement about what is put in front of you when you are browsing.
+- **Anything that is NOT browsing asks `findProject(key)`**, which is filtered by
+  nothing at all. A folder you chose not to read in a list is still a folder you
+  may start a session in, and `sessionChat` reading `projects()` was answering
+  "that project is not in the index" for a project that plainly was.
+- **`projectsAll()` is the settings page's list**: everything, because that page
+  is where a hidden project is brought back from. Its one exclusion is the
+  auto-reload folder, which has a switch of its own — a checkbox that another
+  setting silently overrode would be a checkbox that lies.
+- **The bell obeys it too.** `notifications.list()` is otherwise deaf to
+  preferences on purpose, but a toast from a hidden project would be the one
+  place it could still interrupt you. A stop with no summary behind it is kept:
+  no transcript means no project to hide it by.
+- **A tag's colour may not depend on what is visible.** `assignColors` resolves
+  hue collisions by walking the golden angle over the set it is handed, so
+  `buildProjects` takes the full key set as a separate `colorBasis`. Without it,
+  hiding one project recoloured unrelated ones everywhere, and the same project
+  came back a different colour from `projects()` and from `projectsAll()`.
+- **Both settings are the first non-scalar ones**, and that costs one rule:
+  `applyUserdata` checks no types, so `sanitizeHiddenProjects` and
+  `sanitizeProjectGroups` (`core/projects.ts`) run on the way IN as well as on
+  every write. A `hiddenProjects: "foo"` written by hand would otherwise be
+  served by `/api/settings` and reach a `.includes` that answers about letters.
+  The same functions impose **one project, one group**, because the settings page
+  is not the only thing that can PUT. They always return a NEW array: nothing may
+  mutate one in place, since `defaultSettings(false)` hands back
+  `DEFAULT_SETTINGS` itself.
+- **`projectGroups` is counted for the `pre-loss` guard.** It lives inside
+  `settings`, which is not otherwise counted — every other setting is a value
+  with a default to fall back on, and these are names somebody typed.
+
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 1, 5, 21 (the files endpoint), 25 (starred messages), 28 (the image endpoint), 48 (the scratchpad listing), and the same-origin cases in 19.
+[AI_TESTING.md](AI_TESTING.md) — checks 1, 5, 8 (hiding), 21 (the files endpoint), 25 (starred messages), 28 (the image endpoint), 48 (the scratchpad listing), and the same-origin cases in 19.

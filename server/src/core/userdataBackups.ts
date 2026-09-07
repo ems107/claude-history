@@ -19,6 +19,15 @@ export interface UserdataCounts {
   stars: number;
   /** 0 or 1: the remote-access credentials are one record or none. */
   auth: number;
+  /**
+   * The project groups. They live inside `settings`, which is not otherwise
+   * counted — every other setting is a value with a default to fall back on, and
+   * these are names somebody typed. Nothing else in the file could put them back.
+   *
+   * A `state.json` written before this key existed reads `undefined`, and
+   * `undefined > 0` is false, so an older file cannot raise a false `pre-loss`.
+   */
+  projectGroups: number;
 }
 
 /** Days of daily copies kept. Older ones are pruned as they are made. */
@@ -84,14 +93,16 @@ function summarize(text: string): UserdataBackup['contents'] {
       pins?: string[];
       stars?: unknown[];
       prices?: unknown;
-      settings?: unknown;
+      settings?: { projectGroups?: unknown } | null;
     };
+    const groups = data.settings?.projectGroups;
     return {
       titleOverrides: Object.keys(data.titleOverrides ?? {}).length,
       pins: (data.pins ?? []).length,
       stars: (data.stars ?? []).length,
       hasPrices: data.prices != null,
       hasSettings: data.settings != null,
+      projectGroups: Array.isArray(groups) ? groups.length : 0,
     };
   } catch {
     // A copy that does not parse is worth listing anyway: it says the file was
@@ -131,7 +142,7 @@ export class UserdataBackups {
    * updated on every write, because `saveUserdata()` is called AFTER the index
    * has already mutated itself — by then the only record of "before" is here.
    */
-  private lastCounts: UserdataCounts = { titleOverrides: 0, pins: 0, stars: 0, auth: 0 };
+  private lastCounts: UserdataCounts = { titleOverrides: 0, pins: 0, stars: 0, auth: 0, projectGroups: 0 };
   /** Day of the newest copy, so the common path costs no disk at all. */
   private newestDay: string | null = null;
   /** Summaries by `<name>:<size>`; a stored copy never changes once written. */

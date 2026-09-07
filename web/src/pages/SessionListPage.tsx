@@ -211,6 +211,28 @@ export function SessionListPage() {
     [filters, setFilters],
   );
 
+  /**
+   * Drop project filters that name nothing.
+   *
+   * A key in `?projects=` with no project behind it filters the list down to
+   * nothing, and there is no checkbox left to untick it with — the desktop
+   * column has no "Clear all", and `saveListParams` puts the dead filter back
+   * every time you come out of a session, so it survives being navigated away
+   * from. Hiding a project in Settings is the ordinary way to arrive there, and
+   * a project whose transcripts `~/.claude` has swept is the other.
+   *
+   * **Gated on the query having ANSWERED**, or a deep link would wipe its own
+   * filter on the render before the projects arrive. `replace: true` (which
+   * `setFilters` uses) keeps it out of the history: nothing was navigated, a
+   * URL was corrected.
+   */
+  useEffect(() => {
+    if (!projects.isSuccess || filters.projects.length === 0) return;
+    const known = new Set(projects.data.map((p) => p.key));
+    const live = filters.projects.filter((key) => known.has(key));
+    if (live.length !== filters.projects.length) setFilters({ ...filters, projects: live });
+  }, [projects.isSuccess, projects.data, filters, setFilters]);
+
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: rows.length,

@@ -9,7 +9,7 @@ The detail lives in `docs/`, one document per area. **Load the ones that match w
 | [Transcripts](docs/AI_TRANSCRIPTS.md) | anything that reads `~/.claude`: the JSONL format, who wrote a line, the tree a `/rewind` leaves, forks, replays, live sessions, retention |
 | [Tokens, cost and context](docs/AI_COST_AND_CONTEXT.md) | counting tokens, pricing a message, cost/context pills, re-cached context, compaction |
 | [Subagents, questions and plans](docs/AI_AGENTS_QUESTIONS_PLANS.md) | the ⑂ panel, `AskUserQuestion`, plan mode, offloaded tool output |
-| [The viewer](docs/AI_VIEWER.md) | anything under `web/src/`: folding, deep links, highlighting, the find bar, file references, the working indicator, the settings page |
+| [The viewer](docs/AI_VIEWER.md) | anything under `web/src/`: folding, deep links, highlighting, the find bar, file references, the working indicator, the project filter, the settings page |
 | [The phone](docs/AI_MOBILE.md) | anything that has to work at 360px: the breakpoint, the sheets, the Back button, touch sizes, the on-screen keyboard |
 | [Search](docs/AI_SEARCH.md) | the index, the deep scan, folding/matching, the paged match list |
 | [Architecture](docs/AI_ARCHITECTURE.md) | the scan → summarize → cache → enrich pipeline, a new endpoint, where state lives, containment rules |
@@ -103,10 +103,11 @@ scripts/        package.mjs · release.mjs
 - **The installed release is never touched from here** — not its port, not its data folder, not its scheduled task. Everything this repo runs is the dev instance. → [Two instances](#two-instances-and-the-line-between-them)
 - **A stop is a TRANSITION, and nothing on disk records one.** `idle` is the resting state of every open session, so the bell keeps its own memory of what each session was doing — in memory, never persisted, because a restart loses the transitions with it. → [Transcripts](docs/AI_TRANSCRIPTS.md)
 - **A phone is a supported browser, and the desktop is what must not change for it.** One threshold in three spellings (`max-md:`, `@media (width < 48rem)`, `MOBILE_QUERY`), nothing revealed on hover as the only way to a feature, no `title=` as the only explanation, nothing that can only work on the machine drawn at all (`useHideLocalOnly` — the server still refuses all thirteen), and no route that scrolls the document sideways. → [The phone](docs/AI_MOBILE.md)
-- **What settings exist lives in `web/src/lib/settingsCatalog.ts`**, and adding one is three edits: the field in `AppSettings`, an entry there, the row in its area file. The rail, the search, the changed-from-default tally and the deep-link anchors all read that one list. → [The viewer](docs/AI_VIEWER.md#the-settings-page-is-a-catalogue-and-six-areas)
+- **What settings exist lives in `web/src/lib/settingsCatalog.ts`**, and adding one is three edits: the field in `AppSettings`, an entry there, the row in its area file. The rail, the search, the changed-from-default tally and the deep-link anchors all read that one list. → [The viewer](docs/AI_VIEWER.md#the-settings-page-is-a-catalogue-and-seven-areas)
+- **A hidden project is unbrowsable, not unreachable.** Everything that browses goes through `visible()` and `index.get(id)` never does; anything that is not browsing asks `findProject`, because a folder you chose not to read in a list is still one you may start a session in. → [Architecture](docs/AI_ARCHITECTURE.md#a-hidden-project-is-unbrowsable-not-unreachable)
 - **Never log with `console.*`** in new code. → [Logging](docs/AI_LOGGING.md)
 - **Wrap every `JSON.parse` of a transcript line in try/catch.** Lines can be corrupt or half-written, and active files grow while being read.
 
 ## Verifying a change
 
-There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 60 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.
+There is no automated test suite: this is a personal tool and it is checked against real data. [docs/AI_TESTING.md](docs/AI_TESTING.md) holds the 58 checks, grouped by area and referenced by number from the other documents, plus the fixture survey — **the session ids used as fixtures expire**, so start there rather than trusting an id you read elsewhere.

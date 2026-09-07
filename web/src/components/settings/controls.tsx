@@ -1,6 +1,6 @@
 import type { AppSettings } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
-import { entryForField, findGroup, valueText } from '../../lib/settingsCatalog.ts';
+import { entryForField, findGroup, sameSettingValue, valueText } from '../../lib/settingsCatalog.ts';
 import { Fold } from '../Fold.tsx';
 import { useSettingsPage } from './context.ts';
 
@@ -280,7 +280,7 @@ export function DefaultBadge<K extends keyof AppSettings>({ field }: { field: K 
   // The two fields whose default cannot be restored by a click say so in the
   // catalogue, and the marker is the thing that must not appear for them.
   if (entry?.noDefault) return null;
-  if (value === fallback) return null;
+  if (sameSettingValue(value, fallback)) return null;
   const shown = (entry?.format ?? valueText)(fallback);
   return (
     <button

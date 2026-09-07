@@ -428,7 +428,52 @@ and would reset it on every click. The session list keeps its own machinery
 (`filters.ts`: five sort fields, day/project grouping, all of it in the URL) and
 shares nothing with this but the look of the controls.
 
-## The settings page is a catalogue and six areas
+## The project filter is a list of groups and then everything else
+
+`FilterSidebar`'s first section was a flat strip of a checkbox per project by
+name, which on a machine that clones every repository three times leaves the
+three clones wherever the alphabet put them. It is now every group
+alphabetically with its own projects indented under it, then every project in no
+group — and the order lives in `lib/projects.ts` (`projectFilterRows`) rather
+than in the component, because the desktop column and the phone's sheet are the
+same component and the rule is worth reasoning about without a render.
+
+- **A group narrows nothing.** Its checkbox ticks its members and that is all it
+  does; nothing about a group reaches the URL, which carries project keys
+  exactly as it always did. So a copied link keeps meaning what it meant after
+  the group behind it is renamed or deleted, and `parseFilters` /
+  `filtersToParams` are untouched.
+- **Membership is resolved through the project list, never read off the group.**
+  One lookup answers three ordinary situations: a member whose transcripts
+  `~/.claude` has swept, a member hidden in Settings, and a member that is the
+  auto-reload folder. None is drawn and none is removed from the stored group — a
+  project can come back, and the group is the user's to edit.
+- **A group with nothing left in it is not drawn at all.** Its checkbox would be
+  one whose "every member is ticked" is vacuously true — so it would render as
+  CHECKED while nothing was selected — and whose click did nothing. It stays in
+  Settings, which is where it can be deleted. For the same reason the count on a
+  group row is the SURVIVING members' count, not the stored list's length.
+- **`toggle` is a set operation.** Appending was harmless while only one row
+  could produce a key; a group produces several and the rows under it produce
+  the same ones again, so ticking a group and then one of its members put the
+  key in twice — after which unticking that member removed both copies and the
+  parent jumped from "all" to "some" in one click. Adding is a union, removing a
+  difference.
+- **`indeterminate` is not an attribute.** React neither knows nor reconciles it,
+  so it is written to the node on every render through an inline callback ref —
+  new identity each time, which is what makes that happen — with a BLOCK body,
+  because React 19 refuses a callback ref that returns anything but a cleanup.
+- **A dead key in `?projects=` is pruned, once the query has answered.** A key
+  with no project behind it filtered the list to nothing with no checkbox left to
+  untick it, and `saveListParams` put it back on every return from a session.
+  Gated on `isSuccess`, or a deep link wipes its own filter on the render before
+  the projects arrive.
+- **A hidden project is a shorter list with no filter to explain it**, which is
+  the one thing `activeFilterCount` exists to prevent and the one thing it cannot
+  count — hiding is not a filter and this panel cannot undo it. So the section
+  says it in a line that links to `/settings/projects#projects-visible`.
+
+## The settings page is a catalogue and seven areas
 
 `pages/SettingsPage.tsx` is the shell alone — which area is showing, what a save
 does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
@@ -436,7 +481,7 @@ does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
 state, actions and read-only information, all wearing the same card.
 
 **What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
-list.** Six areas → seventeen groups → fifty rows, data only, no JSX. Four
+list.** Seven areas → nineteen groups → fifty-two rows, data only, no JSX. Four
 readers depend on it and that is why it is data: the rail, the search box, the
 changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
 the field in `AppSettings`, an `Entry` here, the row in its area file — and
@@ -515,6 +560,36 @@ what it costs. They were a `flex-wrap` beside *Open data folder* once, which was
 too little separation, and then an area of their own in the rail, which was too
 much: a whole destination for two buttons, exiled from what they operate on. Both
 are local-only, so over the network they grey together.
+
+**A setting that is a LIST needed three small things nothing else did.** The two
+in *Projects* are the first non-scalar preferences, and every comparison on this
+page was `===`: an array is never `===` its default, so both would have read as
+changed for ever on a fresh install. `sameSettingValue` is that comparison, in
+one place, read by the tally and by `DefaultBadge` — a shallow element-wise walk
+and no deeper, because the only non-scalar ever compared is a list of strings.
+`format` stops being optional too: `valueText` falls through to `String(value)`,
+which for `hiddenProjects` is every hidden path joined by commas in a `shrink-0`
+monospace span. And `noDefault` is what keeps the GROUPS out of the tally and out
+of *Restore all* — wiping every group somebody has written is not "restoring"
+anything, which is the same reason the auto-reload folder and the voice carry it.
+The editor there also breaks one of this page's own habits on purpose: **the
+groups are listed in AUTHORING order, and only the filter sorts them by name**,
+because a list sorted by name re-sorts itself while the name is being typed and
+unmounts the input mid-word. That is the whole of what `ProjectGroup.id` buys.
+
+**A `Field` is a ROW, and a block with a list in it is not one.** `Field` draws
+its content and its badge side by side, so a marker that appears when the
+setting leaves its default takes its width out of the column beside it — which
+for a row with one input is invisible, and for a block holding forty checkboxes
+means ticking one of them narrows all forty. Those two blocks use `Anchored`
+instead (the id and the flash, and nothing else) and put the badge in their own
+heading row, where what moves when it appears is one line of prose. Which makes
+a second thing true: **the badge IS the "put it back" button**, so a block that
+also drew a *Show all* of its own was drawing one action twice, a few pixels
+apart. `Anchored` takes a required id where `Field`'s is optional, so those two
+ids are written out the way `NotificationsArea` already writes one — check 47
+asserts every row id is in the DOM of its own area, which is what keeps them
+in step.
 
 **The logo's colour is a setting, and it is deliberately not the accent.**
 *Themes* is the first area and the one `/settings` opens on, holding one row:

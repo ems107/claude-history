@@ -168,6 +168,16 @@ export const api = {
   },
   sessions: () => getJson<SessionsResponse>('/api/sessions'),
   projects: () => getJson<ProjectsResponse>('/api/projects'),
+  /**
+   * Every project the settings page may manage, hidden ones included.
+   *
+   * Its query key is `['projects', 'all']` at the one place that asks, which is
+   * not a detail: TanStack matches keys by prefix, so every
+   * `invalidateQueries({ queryKey: ['projects'] })` already in the app — the
+   * settings save, the SSE burst, a restored backup — refreshes this list too,
+   * with nothing added anywhere.
+   */
+  projectsAll: () => getJson<ProjectsResponse>('/api/projects?all=1'),
   prompts: () => getJson<PromptsResponse>('/api/prompts'),
   plans: () => getJson<PlansResponse>('/api/plans'),
   live: () => getJson<LiveResponse>('/api/live'),
