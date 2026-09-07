@@ -63,6 +63,8 @@ Chrome or Edge, on this machine, will put claude-history in its own window with 
 
 The name it installs under is yours to pick, in *Settings → Themes → The name*, and so is the icon's colour; the icon it takes is the same tinted tile the browser tab shows. Two things that stay put: the Start Menu shortcut the installer above made (a `.lnk` written at install time, which nothing served from the app can rename) and the name of an app you already installed — Chrome re-reads the manifest on its own schedule, so reinstalling is the way to be sure.
 
+Coming from an older version, **reload the page once before installing**: the icon and the manifest are files your browser was told to keep for a year, so until it asks again the install dialog offers the name and the colour it saw last time.
+
 **From another machine it cannot be installed**, and that is the browser's rule rather than a setting: installing needs `https` or a `localhost` / `127.0.0.1` address, and this serves plain HTTP. *Add to home screen* in Chrome for Android still works and still opens without the browser's bars — it is a shortcut rather than an install. *Settings → Themes* says which of the three you are looking at on the device you are reading it on.
 
 ## Use it from another machine

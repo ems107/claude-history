@@ -68,7 +68,8 @@ export function registerBrandRoutes(app: FastifyInstance, ctx: AppContext): void
   const parsed = parseManifest(manifest, log);
   if (manifest !== null && parsed !== null) {
     app.get('/manifest.webmanifest', async (_request, reply) => {
-      const chosen = ctx.index.getSettings().appName.trim();
+      const settings = ctx.index.getSettings();
+      const chosen = settings.appName.trim();
       /**
        * A dev instance says so in its name whatever the setting holds, exactly
        * as its tab title does (`App.tsx`), and for a sharper version of the
@@ -78,7 +79,7 @@ export function registerBrandRoutes(app: FastifyInstance, ctx: AppContext): void
        * get the file back untouched.
        */
       const mark = ctx.config.devInstance ? `:${String(ctx.config.port)}` : null;
-      const color = ctx.index.getSettings().logoColor;
+      const color = settings.logoColor;
       const body =
         chosen === '' && mark === null && color === LOGO_DEFAULT_COLOR
           ? manifest

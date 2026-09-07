@@ -47,29 +47,44 @@ export function useAppIdentity(logoColor: string | undefined, appName: string | 
     // requests per page load to say something we did not yet know.
     if (logoColor === undefined) return;
     const hex = normalizeLogoColor(logoColor);
-    const root = document.documentElement;
-    const apply = (value: string | null, name: string) => {
-      if (value === null) {
-        root.style.removeProperty('--logo');
-        root.style.removeProperty('--logo-dim');
-      } else {
-        root.style.setProperty('--logo', value);
-        // The faded chevrons, derived rather than chosen: 76 % of the colour
-        // over black reproduces `--accent-dim` from `--accent` to within a
-        // couple of units, and asking somebody to pick two colours for one mark
-        // would be asking them to get the relationship between them right.
-        root.style.setProperty('--logo-dim', `color-mix(in srgb, ${value} 76%, #000)`);
-      }
-      const colour = (value ?? LOGO_DEFAULT_COLOR).slice(1);
-      swapLink('icon', `/favicon.svg?v=${colour}`, 'image/svg+xml');
-      // The token is what the manifest DEPENDS on — the name it will carry and
-      // the colour its icon is tinted in — so it changes exactly when the
-      // served manifest would, and never otherwise.
-      swapLink('manifest', `/manifest.webmanifest?v=${colour}.${encodeURIComponent(name)}`);
-    };
-    apply(hex === null || hex === LOGO_DEFAULT_COLOR ? null : hex, appName ?? '');
-    return () => apply(null, '');
+    publish(hex === null || hex === LOGO_DEFAULT_COLOR ? null : hex, appName ?? '');
   }, [logoColor, appName]);
+
+  /**
+   * Back to the shipped identity when `App` goes, and ONLY then.
+   *
+   * As the effect above's own cleanup this also ran between every change —
+   * React runs a cleanup before each re-run, not just at unmount — so renaming
+   * the app took the colour off the mark and re-fetched both files on its way
+   * to setting them again. An effect of its own with no dependencies is the
+   * shape that means "on unmount", which is what was meant: `App` is replaced
+   * by the login screen when a session is lost, and that screen cannot read
+   * settings and is right to wear what the app ships with.
+   */
+  useEffect(() => () => publish(null, ''), []);
+}
+
+/** Write the identity into the document: the properties, then the two links. */
+function publish(value: string | null, name: string): void {
+  const root = document.documentElement;
+  if (value === null) {
+    root.style.removeProperty('--logo');
+    root.style.removeProperty('--logo-dim');
+  } else {
+    root.style.setProperty('--logo', value);
+    // The faded chevrons, derived rather than chosen: 76 % of the colour over
+    // black reproduces `--accent-dim` from `--accent` to within a couple of
+    // units, and asking somebody to pick two colours for one mark would be
+    // asking them to get the relationship between them right.
+    root.style.setProperty('--logo-dim', `color-mix(in srgb, ${value} 76%, #000)`);
+  }
+  const colour = (value ?? LOGO_DEFAULT_COLOR).slice(1);
+  swapLink('icon', `/favicon.svg?v=${colour}`, 'image/svg+xml');
+  // The token is what the manifest DEPENDS on — the name it will carry and the
+  // colour its icon is tinted in — so it changes exactly when the served
+  // manifest would, and never otherwise.
+  const token = name === '' ? colour : `${colour}.${encodeURIComponent(name)}`;
+  swapLink('manifest', `/manifest.webmanifest?v=${token}`);
 }
 
 /**
