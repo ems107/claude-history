@@ -145,10 +145,16 @@ export function App() {
   // this one cannot read settings, and are right to wear the default.
   useLogoTheme(settings?.settings.logoColor);
   // Two tabs that look alike on two ports is the one way to confuse them, and
-  // the tab strip is where they are told apart before anything is clicked.
+  // the tab strip is where they are told apart before anything is clicked — so
+  // the dev marker is not the name's to lose, whatever the name is.
+  //
+  // An empty setting is the shipped name rather than an empty tab, which is the
+  // same thing the served manifest does with it: the two shipped spellings
+  // differ, so the fallback is spelled here and the other one in the file.
+  const appName = settings?.settings.appName || 'claude history';
   useEffect(() => {
-    document.title = dev ? `dev · claude history :${window.location.port}` : 'claude history';
-  }, [dev]);
+    document.title = dev ? `dev · ${appName} :${window.location.port}` : appName;
+  }, [dev, appName]);
   return (
     <div className="flex h-full flex-col">
       {/* The one row that had to give. It needs about 900px and a phone has

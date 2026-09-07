@@ -108,6 +108,9 @@ const toneChoice = (v: unknown): string => (v === TONE_INHERIT ? 'general tone' 
 /** A colour said by the name of its swatch where it has one, not as six digits. */
 const logoColour = (v: unknown): string => (typeof v === 'string' ? (logoPresetLabel(v) ?? v) : valueText(v));
 
+/** An empty name is a choice — the shipped one — rather than a missing value. */
+const appNameText = (v: unknown): string => (v === '' ? 'the name it ships with' : valueText(v));
+
 export const AREAS: Area[] = [
   {
     id: 'theme',
@@ -143,6 +146,8 @@ export const AREAS: Area[] = [
 
 export const GROUPS: Group[] = [
   { id: 'logo', area: 'theme', title: 'The logo' },
+  { id: 'app-name', area: 'theme', title: 'The name' },
+  { id: 'install', area: 'theme', title: 'Installing it as an app', short: 'Installing it' },
 
   { id: 'notify-announce', area: 'notifications', title: 'Announcing a stop' },
   { id: 'notify-sound', area: 'notifications', title: 'Sound' },
@@ -180,6 +185,20 @@ export const ENTRIES: Entry[] = [
     label: 'Logo colour',
     keywords: 'theme colour color accent brand mark terracotta favicon icon tab hex custom swatch',
     format: logoColour,
+  },
+  {
+    id: 'set-appName',
+    group: 'app-name',
+    field: 'appName',
+    label: 'App name',
+    keywords: 'title tab install app pwa standalone shortcut rename call brand',
+    format: appNameText,
+  },
+  {
+    id: 'info-install',
+    group: 'install',
+    label: 'Install it as an app',
+    keywords: 'pwa standalone chrome edge desktop window shortcut launcher start menu taskbar offline',
   },
 
   // Notifications

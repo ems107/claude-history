@@ -1,23 +1,97 @@
 import { LOGO_PRESETS, normalizeLogoColor } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
+import { useMedia } from '../../lib/mobile.ts';
 import { entryForField } from '../../lib/settingsCatalog.ts';
 import { useSettingsPage } from './context.ts';
-import { DefaultBadge, Field, GroupCard, Hint, inputClass } from './controls.tsx';
+import { Anchored, DefaultBadge, Explain, Field, GroupCard, Hint, inputClass, Readout, ReadoutRow, TextField } from './controls.tsx';
 
 /**
- * How the app looks — one group, and for now one setting in it.
+ * How the app looks, and what it is called.
  *
  * It is the first area in the rail and the one `/settings` lands on, which is
- * where appearance belongs and is also the honest place for the emptiest area
- * on the page: what it holds is the first thing anybody would come here to
- * change, and the rest of the page is what a machine does rather than what it
- * looks like.
+ * where appearance belongs. Three groups, and the order is the order the
+ * answers depend on each other: the mark, the name it wears, and then the one
+ * place both of them end up that is not a browser tab — an installed app, whose
+ * icon is the mark and whose label is the name.
  */
 export function ThemesArea() {
   return (
-    <GroupCard id="logo">
-      <LogoColour />
-    </GroupCard>
+    <>
+      <GroupCard id="logo">
+        <LogoColour />
+      </GroupCard>
+      <GroupCard id="app-name">
+        <TextField
+          field="appName"
+          placeholder="Claude History"
+          hint="Names the browser tab, and the app if you install it. Empty is the name it ships with."
+        />
+      </GroupCard>
+      <GroupCard id="install">
+        <Installed />
+      </GroupCard>
+    </>
+  );
+}
+
+/** Is this window the installed app rather than a tab? */
+const STANDALONE_QUERY = '(display-mode: standalone)';
+
+/**
+ * Whether this app can be installed on this machine, from this address — read
+ * from the browser rather than guessed, because the answer really does differ
+ * per device and getting it wrong would be telling somebody to look for a
+ * button that is not there.
+ *
+ * State and not a preference, so it is a `Readout`: there is nothing here to
+ * change. **And there is no Install button of ours**, which is a limit rather
+ * than an omission — Chrome dropped the service-worker requirement for
+ * installing from its own menu (108 on mobile, 112 on desktop) but kept it for
+ * `beforeinstallprompt`, so a page with no service worker cannot raise the
+ * prompt itself. A service worker with no other purpose than to unlock a button
+ * is a cache and a lifecycle in a local tool, bought for a button; pointing at
+ * the one the browser already draws costs nothing and cannot go stale.
+ */
+function Installed() {
+  const standalone = useMedia(STANDALONE_QUERY);
+  // `localhost` and `127.0.0.1` are secure contexts whatever the scheme; a LAN
+  // address over plain HTTP is not, and installing needs one. So a phone
+  // reading this over remote access is told the truth instead of being sent
+  // looking for a button its browser will never draw.
+  const secure = window.isSecureContext;
+  return (
+    <Anchored id="info-install">
+      <Readout>
+        <ReadoutRow label="this window">
+          {standalone ? 'the installed app' : 'a browser tab'}
+        </ReadoutRow>
+        <ReadoutRow label="installable">
+          {standalone
+            ? 'already — this IS the installed app'
+            : secure
+              ? 'yes — the ⊕ Install button at the right of the address bar, in Chrome or Edge'
+              : `no from this address (${window.location.host}) — plain HTTP outside localhost is not a secure context`}
+        </ReadoutRow>
+      </Readout>
+      <Explain label="What installing does, and what it does not">
+        <p>
+          It gets its own window with no address bar and no tabs, its own entry in the Start Menu and the taskbar, and
+          the tinted tile as its icon. It is the same server on the same port — nothing is copied to disk and nothing
+          works offline, so with the server stopped the window is as empty as the tab would be.
+        </p>
+        <p>
+          <strong>The name is taken when you install.</strong> Renaming it here renames the tab at once, and an app that
+          is already installed follows later or not at all: Chrome re-reads the manifest on its own schedule.
+          Reinstalling is the way to be sure.
+        </p>
+        <p>
+          Two things this cannot rename: the <strong>Start Menu shortcut the installer made</strong>, which is a
+          <code>.lnk</code> written on disk when claude-history was installed, and anything on a phone —{' '}
+          <em>Add to home screen</em> in Chrome for Android is a shortcut rather than an install, which is why it works
+          over the network where this does not.
+        </p>
+      </Explain>
+    </Anchored>
   );
 }
 
