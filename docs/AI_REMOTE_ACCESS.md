@@ -11,7 +11,7 @@
 - **The wide bind and the session check are ONE feature** — never widen one without the other.
 - **Local means the socket, never a header.** `isLocalRequest` reads `request.socket.remoteAddress`; `X-Forwarded-For` and `Host` are written by the caller and are ignored on purpose. **This app must not be put behind a reverse proxy** — every request would arrive from loopback and the authentication would vanish silently.
 - **A local request never authenticates.** No password, no cookie, exactly as before this existed.
-- **A remote request gets nothing until it signs in** — not the session list, not the version, not the paths. Only `/api/auth/*` and the static bundle answer first.
+- **A remote request gets nothing until it signs in** — not the session list, not the version, not the paths. Only `/api/auth/*` and the static bundle answer first, and the bundle now includes one setting: `/favicon.svg` is served in the chosen logo colour, because an icon a browser asks for before running any of our code cannot wait for a login.
 - **Credentials can only be SET locally**, and setting them never asks for the old one.
 - **A `userdata.json` restore replaces the credentials and the switch like everything else** — no exceptions, including the ones that would be convenient.
 - **The switch cannot be on without credentials** (clamped in `setSettings`, not just hidden in the UI).
@@ -78,7 +78,7 @@ Read it as **"is the traffic already permitted?"**, which is stronger than "woul
 
 What is lost, deliberately: with the switch off, nothing listens, so a browser on the LAN gets a refused connection instead of the page that used to explain where to turn remote access on. That page was the whole argument for the permanent wide bind. It still appears in the window between switching remote access off and restarting, which is the one moment it says something true.
 
-The port answering "off" to the whole network leaks nothing: `GET /api/auth/status` is four booleans, and every other route is refused before it runs.
+The port answering "off" to the whole network leaks almost nothing: `GET /api/auth/status` is four booleans and every other API route is refused before it runs. The static bundle answers, as it must for those four booleans to be drawn, and one file in it now carries a setting — `/favicon.svg` and its logo colour. That is the whole of it.
 
 ### Why the rules are read through COM
 

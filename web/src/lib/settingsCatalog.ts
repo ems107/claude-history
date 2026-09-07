@@ -651,7 +651,7 @@ const hasWord = (text: string, query: string) => text.split(/[^\p{L}\p{N}]+/u).i
 /**
  * The rank a hit gets, lowest first — or `null` for no hit at all.
  *
- * Deliberately a handful of tiers rather than a score: with forty-six entries
+ * Deliberately a handful of tiers rather than a score: with forty-eight entries
  * the only thing that has to be true is that a word in the NAME beats the same
  * word buried in somebody's keywords.
  *

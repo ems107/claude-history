@@ -428,7 +428,7 @@ and would reset it on every click. The session list keeps its own machinery
 (`filters.ts`: five sort fields, day/project grouping, all of it in the URL) and
 shares nothing with this but the look of the controls.
 
-## The settings page is a catalogue and five areas
+## The settings page is a catalogue and six areas
 
 `pages/SettingsPage.tsx` is the shell alone — which area is showing, what a save
 does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
@@ -436,7 +436,7 @@ does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
 state, actions and read-only information, all wearing the same card.
 
 **What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
-list.** Five areas → fourteen groups → forty-six rows, data only, no JSX. Four
+list.** Six areas → fifteen groups → forty-eight rows, data only, no JSX. Four
 readers depend on it and that is why it is data: the rail, the search box, the
 changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
 the field in `AppSettings`, an `Entry` here, the row in its area file — and
@@ -515,6 +515,26 @@ what it costs. They were a `flex-wrap` beside *Open data folder* once, which was
 too little separation, and then an area of their own in the rail, which was too
 much: a whole destination for two buttons, exiled from what they operate on. Both
 are local-only, so over the network they grey together.
+
+**The logo's colour is a setting, and it is deliberately not the accent.**
+*Themes* is the first area and the one `/settings` opens on, holding one row:
+seven swatches and a box for anything else, drawn as a control of its own
+because a colour is the one value that can be SHOWN — a dropdown reading "Amber"
+and "Teal" is a list of promises — and because the last option is "any colour",
+which a closed list has no shape for. There is no preview: a click saves, and
+the header above the page is already the mark at the size it is worn. What it
+moves is `--logo` / `--logo-dim`, which `styles.css` defines as the accent, and
+`lib/logoTheme.ts` **expresses the default by REMOVING them**, so "nothing
+chosen" and "the accent" cannot drift apart and a default instance draws what it
+drew before any of this existed. Keeping it off `--accent` is not timidity: two
+buttons hardcode a near-black that only works over terracotta, and xterm's theme
+is read once when a terminal is built, so an open one could not have followed.
+The tab's icon follows through the server — `routes/brand.ts` tints
+`web/public/favicon.svg`, which stays the one place the tile is drawn, and the
+hook only moves the `<link>`'s href so a browser asks again — while
+`favicon.ico`, the touch icon, Android's launcher icon and the Start Menu
+shortcut are pre-rendered rasters and do not, which the row says in its hint
+rather than leaving to be found out.
 
 ## What folds
 
