@@ -590,7 +590,7 @@ Then in the viewer, on that same session: the row leads with `HH:mm:ss` (the cal
 - "Send it now" answers in a few seconds and logs the reply, then flips to "started a window" on its own about a minute later without touching the page. The useful part cannot be scheduled: read the log viewer (source `auto-reload`) afterwards.
 - Press it twice: the second press must be refused **with the reason next to the button** ("a message is being sent right now"), and pressing again straight after the first finished must go through. No wait may ever leave it disabled and silent. Refusals are logged too, so `"Send it now" refused` answers "I pressed it and nothing happened".
 - **The no-floor rule without waiting five hours**: press it while a window is running. The log must read `the window was already running, so a reload is still due at its expiry`, the panel must *not* say "started a window", and `nextCheckAt` must land on that expiry + 1 min — never on the send + 30 min.
-- Toggle `autoReloadHideSessions` against a folder that HAS sessions: `/api/sessions`, `/api/projects`, `/api/prompts` and `/api/search` must all drop together and come back.
+- Toggle `autoReloadHideSessions` against a folder that HAS sessions: `/api/sessions`, `/api/projects`, `/api/prompts`, `/api/search`, `/api/plans` and `/api/meta`'s `projectCount` must all drop together and come back. **That folder must NOT appear in `/api/projects?all=1`** — it is the one project *Settings → Projects* does not offer a checkbox for. The other way in is check 61.
 
 **19. Sending a prompt from the app.** The two rules above apply first. Make a throwaway session (`claude -p "Reply with exactly: FIRST" --model haiku --output-format json` in a temp folder gives you its id), then drive the API with curl:
 
@@ -693,11 +693,11 @@ up as several failures at once rather than as a setting nobody notices is gone.
 
 - **The catalogue against `AppSettings`, without a browser**: every field has an
   `Entry`, no `Entry` names a field that does not exist, and none is listed
-  twice — 34 and 34 here. Then internally: every `Entry.group` exists, every
+  twice — 36 and 36 here. Then internally: every `Entry.group` exists, every
   group has at least one entry, no id is used twice, and `remote-access`,
   `backups` and `claude-retention` are still group ids (the README and
   `RetentionFooter` link to them).
-- **Every id is in the DOM of its own area.** Walk the six areas, collect
+- **Every id is in the DOM of its own area.** Walk the seven areas, collect
   `[id]`, and every group id and every row id must be there. **The four
   remote-access ones are the expected absence on a dev instance** — that panel
   returns its one-sentence explanation instead — so assert the sentence rather
@@ -764,7 +764,7 @@ up as several failures at once rather than as a setting nobody notices is gone.
 - **A sub-item is INDENTED past its area**, and this is a measurement rather than
   an eye: they used to start at 22.4 px against an area label's 22, which is the
   same column and not an indent at all. At least 12 px to the right of the area
-  label, in each of the four areas that have sub-items, with none of them
+  label, in each of the areas that have sub-items, with none of them
   truncating at the deeper indent.
 
 **56. The logo colour, on all four surfaces.** Automatable in full over check 26's
@@ -877,6 +877,68 @@ the three places it has to reach.
   install dialog reads. It fails on any build where the `<link rel="manifest">`
   is not replaced, which is the same lesson as the icon and was learnt twice.
 
+**58. Hiding a project, and grouping them.** Two settings in one area, and the
+half worth automating is the arithmetic: nothing here needs a browser until the
+last three bullets. Use a project that HAS sessions and put both settings back
+afterwards — this is the dev instance's real `userdata.json`, and clearing the
+groups is what check 43's `pre-loss` guard fires on.
+
+- **Hidden means gone from everything that browses, together.** Note the counts,
+  `PUT /api/settings` with two `hiddenProjects`, and `/api/sessions`,
+  `/api/projects`, `/api/prompts`, `/api/search?q=…`, `/api/plans` and
+  `/api/meta`'s `projectCount` must all drop by that project's share and come
+  back when it is unhidden — the same pair of passes check 8 asks for the other
+  way in. `/api/projects?all=1` must be unmoved throughout: it is the settings
+  page's own list and the only place a hidden project can be seen.
+- **And unreachable from nothing.** `GET /api/sessions/<id>` of one of that
+  project's sessions must still answer 200 with its real project name (take an id
+  straight out of `~/.claude/projects/<encoded>/`, since the list no longer has
+  it). `POST /api/chat/new` with its `projectKey` must still answer 200 with the
+  folder's freshest-cased path — that is a reservation and spawns nothing — while
+  a key that names nothing must still be refused with *That project is not in the
+  index*. Getting this wrong is silent: the auto-reload folder had failed that
+  second call for as long as the feature existed.
+- **A tag's colour is a property of the project.** Diff `/api/projects` against
+  `/api/projects?all=1` by key: every colour must be identical in both. They are
+  different key sets through the same `assignColors`, so a drift here means the
+  `colorBasis` argument went missing and hiding one project silently recoloured
+  others.
+- **The sanitizer, on both paths.** `PUT` a deliberate mess — a key as a number,
+  a blank one, the same project twice, one written `C:/Users/...` with a trailing
+  slash, a group with a duplicate `id`, one with a blank name, one with no `id`,
+  a string instead of an object, an 80-character name, and one project claimed by
+  two groups. What comes back must be normalized, deduplicated, capped at 60
+  characters, missing every malformed group, and holding that project in the
+  FIRST group only. Then the load path, which is the one with no types at all:
+  stop the server, write `"hiddenProjects": "foo"` and a few of those broken
+  groups into `userdata.json` by hand, start it again — `/api/settings` must
+  answer with an array and the surviving groups, `/api/projects` must still
+  answer, and the filter sidebar must render. A string reaching `.includes` is
+  what this is for.
+- **The panel, in Chrome over CDP** (check 26's harness) with one group of three
+  and one project hidden. The `Projects` section must read: group rows at the
+  section's own indent with no colour dot, their members indented behind them,
+  groups alphabetical **whatever order they were authored in**, then every
+  ungrouped project alphabetically. A group with no surviving members must not
+  appear at all. Ticking a group must tick its members and put exactly their keys
+  in `?projects=`; unticking one member must leave the parent
+  `input.indeterminate`; **unticking a member and ticking it again must leave the
+  key count unchanged** — that is the duplicate bug, and the parent must read
+  checked rather than indeterminate afterwards. The hidden count must appear as a
+  line linking to `/settings/projects#projects-visible`.
+- **Dead keys leave the URL.** `/?projects=<a hidden key>` must end with no
+  `projects` param at all; the same beside a live key must keep only the live
+  one; a live key alone must survive. `history.length` must not grow — a
+  correction is not a navigation.
+- **The area itself.** Check 47 applies to it like any other, and two things are
+  specific: *Changed* must list `Which projects you see` reading
+  `1 project hidden was nothing hidden` — never a comma-joined list of paths —
+  and must NOT list the groups, nor let *Restore all* touch them. In the editor,
+  renaming a group must not move its row (authoring order) and must not lose the
+  focus mid-word; the name commits on blur or Enter and Escape reverts it. At
+  360 px every row of both lists must be ≥ 44 px and nothing may scroll the
+  document sideways.
+
 ## The phone
 
 Everything here is about a real device at 360×720 CSS pixels. An emulated narrow window catches the layout faults and none of the others — no soft keyboard, no system Back button, no `@media (hover: hover)` behaving as a phone's does. [AI_MOBILE.md](AI_MOBILE.md) holds the rules these check.
@@ -913,7 +975,7 @@ Four traps, each of which cost time once:
 
 ### The checks
 
-**49. Nothing scrolls sideways.** Walk every route — `/`, `/prompts`, `/starred`, `/plans`, `/stats`, `/logs`, `/new`, `/settings`, each of its six areas and `/settings/changed`, and a session — asserting `document.documentElement.scrollWidth === innerWidth`. Then, in a session, the same of the conversation itself: `scroller.scrollWidth - scroller.clientWidth === 0`. Do it on the biggest sessions in the corpus and on one with an answered question, one with a `/context` snapshot and one with a long path in a code span — those are the three shapes that broke it. An element wider than the window is only a fault when nothing between it and the root can scroll or clip it; a code block and a table are both meant to.
+**49. Nothing scrolls sideways.** Walk every route — `/`, `/prompts`, `/starred`, `/plans`, `/stats`, `/logs`, `/new`, `/settings`, each of its seven areas and `/settings/changed`, and a session — asserting `document.documentElement.scrollWidth === innerWidth`. Then, in a session, the same of the conversation itself: `scroller.scrollWidth - scroller.clientWidth === 0`. Do it on the biggest sessions in the corpus and on one with an answered question, one with a `/context` snapshot and one with a long path in a code span — those are the three shapes that broke it. An element wider than the window is only a fault when nothing between it and the root can scroll or clip it; a code block and a table are both meant to.
 
 **50. The desktop is untouched.** The same routes at 1440px, through `Emulation.setDeviceMetricsOverride` **in the same connection as the measurement** — the override is cleared when the socket closes, so a separate call measures the phone again. The session's rail must be 72px wide at x = width − 72, the reading column 896, a list row exactly 64px, the settings rail 224 with its sub-groups drawn, and the header's nav, usage widget, update button and gear all visible with the tab bar `display: none`. Prompts, Plans and Starred must still draw their own row — 1, 3 and 3 `<select>`s, no `h1` — rather than the phone's toolbar. **A list row being exactly 64 is the sharpest of these**: the rows are measured rather than told a height, so a row that comes back at 48 means the box lost its floor and the whole list has silently compacted.
 

@@ -59,7 +59,7 @@ export function SettingsPage() {
    * `/settings` is a LIST on a phone, and an area on a desktop.
    *
    * The rail has nowhere to be beside a 360px panel, and as a strip above one it
-   * was six chips scrolling sideways over a panel that scrolled the other way.
+   * was seven chips scrolling sideways over a panel that scrolled the other way.
    * So the bare path shows what there is, and picking one gives it the window.
    * A path that names an area is unaffected, and so is a hash that implies one:
    * `/settings#backups` is a bookmark and a README link, and landing it on a

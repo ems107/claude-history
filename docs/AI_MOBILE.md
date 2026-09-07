@@ -40,7 +40,7 @@ The rows are **measured at every width** (`virtualizer.measureElement`), and the
 
 ## Settings is a list before it is a page
 
-`/settings` on a phone draws the six areas as rows with their blurbs and their changed-counts (`SettingsNav index`), and the area gets the whole window once one is picked, with `‹ All settings` as the way back. The 224px rail has nowhere to be beside a 360px panel, and as a strip across the top it was six chips scrolling sideways over a panel scrolling the other way, two of them always off the right edge. A path that names an area is unaffected, and so is a hash that implies one: `/settings#backups` is a bookmark and a README link, and landing it on a menu would be landing it nowhere.
+`/settings` on a phone draws the seven areas as rows with their blurbs and their changed-counts (`SettingsNav index`), and the area gets the whole window once one is picked, with `‹ All settings` as the way back. The 224px rail has nowhere to be beside a 360px panel, and as a strip across the top it was seven chips scrolling sideways over a panel scrolling the other way, several of them always off the right edge. A path that names an area is unaffected, and so is a hash that implies one: `/settings#backups` is a bookmark and a README link, and landing it on a menu would be landing it nowhere.
 
 ## The session view
 

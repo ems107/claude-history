@@ -9,7 +9,7 @@ import { useSettingsPage } from './context.ts';
  *
  * `DefaultBadge` has always known this one setting at a time, and one setting at
  * a time was the only way to ask: "what have I changed here?" meant scanning
- * thirty-four rows across six areas. The catalogue already holds the names and
+ * thirty-six rows across seven areas. The catalogue already holds the names and
  * the spellings, so the whole view is a filter over it.
  *
  * The two fields marked `noDefault` are absent by the same rule that keeps their
