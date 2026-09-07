@@ -529,12 +529,16 @@ chosen" and "the accent" cannot drift apart and a default instance draws what it
 drew before any of this existed. Keeping it off `--accent` is not timidity: two
 buttons hardcode a near-black that only works over terracotta, and xterm's theme
 is read once when a terminal is built, so an open one could not have followed.
-The tab's icon follows through the server — `routes/brand.ts` tints
-`web/public/favicon.svg`, which stays the one place the tile is drawn, and the
-hook only moves the `<link>`'s href so a browser asks again — while
-`favicon.ico`, the touch icon, Android's launcher icon and the Start Menu
-shortcut are pre-rendered rasters and do not, which the row says in its hint
-rather than leaving to be found out.
+The tab's icon follows through the server: `routes/brand.ts` tints
+`web/public/favicon.svg`, which stays the one place the tile is drawn, so a page
+load needs nothing from the client at all. **What the client has to push is the
+colour changing under an OPEN tab, and only a new `<link>` element does that** —
+writing `href` on the one the browser has already read, or `replaceWith`, sends
+no request whatever the DOM then says, which is how this shipped broken and why
+check 56 asserts the request instead of the attribute. `favicon.ico`, the touch
+icon, Android's launcher icon and the Start Menu shortcut are pre-rendered
+rasters and follow nothing, which the row says in its hint rather than leaving
+to be found out.
 
 ## What folds
 

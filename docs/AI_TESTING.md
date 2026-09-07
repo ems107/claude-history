@@ -790,10 +790,18 @@ runs, and Enter always worked while blur never did).
 - **The served tile.** `GET /favicon.svg` at the default must be **byte-identical
   to `web/dist/favicon.svg`** — `cmp`, not eyes — because the default is served
   by not substituting anything. With a colour set it carries that `fill`, with
-  `cache-control: no-cache`, and the page's `<link rel="icon">` must read
-  `/favicon.svg?v=<hex>`, back to the bare `/favicon.svg` at the default.
-  **A dark colour must flip the ink**: `#2b2f5e` comes back stroked
-  `#f7ece7`, or the chevrons are invisible in the tab.
+  `cache-control: no-cache`. **A dark colour must flip the ink**: `#2b2f5e`
+  comes back stroked `#f7ece7`, or the chevrons are invisible in the tab.
+- **The tab, and this is the one that shipped broken.** Assert what the BROWSER
+  did — `Network.enable`, then a favicon URL in `requestWillBeSent` after the
+  swatch is clicked and again after *restore* — never that the `<link>`'s href
+  changed. Writing `href` on the link a browser has already read sends **no
+  request at all**, and neither does `replaceWith`; the href reads exactly as
+  intended while the tab keeps the old icon until a reload, which is precisely
+  what a check on the attribute passes on. Measured: only removing the node and
+  appending a new one fetches, appending-then-removing fetches twice, and a
+  plain reload is unaffected either way, because the server already tints what
+  it serves.
 - **Server-side, with `curl` from this machine** (a local PUT needs no headers):
   `"logoColor":"verde"` must come back as the default rather than be stored, and
   `"ABC"` as `#aabbcc`. The UI refuses both first; this is the half that is not
