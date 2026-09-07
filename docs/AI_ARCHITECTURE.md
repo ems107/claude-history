@@ -6,7 +6,7 @@
 
 - **`~/.claude` is read-only to this app** — never write, create or lock anything inside it.
 - **Our writes go to exactly four places**: the cache dir, `userdata.json`, its `backups\` and `logs\`.
-- **A release binds `0.0.0.0`, a dev instance `127.0.0.1`** — and a request from another machine gets nothing until it signs in ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
+- **Any instance binds `0.0.0.0` only once it has EARNED it** — switch, credentials and a firewall rule for its own port, dev instances included — and a request from another machine gets nothing until it signs in ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
 - **Every state-changing request must come from our own pages** (`isSameOrigin`, 403 otherwise).
 - **A path or a cwd never comes from the request** — it comes from the index, or is composed from it. One exception, and it is named below: the folder a new session is started in.
 - **The API shape lives in `shared/src/api.ts`** and the domain in `shared/src/types.ts`; documentation points at them instead of restating them.

@@ -32,7 +32,7 @@ const credentialClass = `w-44 ${inputClass}`;
  * beside a port nothing can reach.
  */
 export function RemoteAccessPanel() {
-  const { settings, save, dev } = useSettingsPage();
+  const { settings, save } = useSettingsPage();
   const queryClient = useQueryClient();
   const guard = useActiveSessionsGuard();
   const auth = useQuery({ queryKey: ['auth'], queryFn: api.authStatus });
@@ -43,8 +43,10 @@ export function RemoteAccessPanel() {
   // desktop — so from a phone they are two dead controls and a paragraph.
   const hideLocal = useHideLocalOnly();
   // Only asked for where it can be acted on, and it shells out to PowerShell:
-  // no reason to pay for it in every remote tab.
-  const firewall = useQuery({ queryKey: ['firewall'], queryFn: api.firewall, enabled: !firewallOnly.disabled && !dev });
+  // no reason to pay for it in every remote tab. A dev instance asks like any
+  // other now — it has a port and a rule of its own, and this panel is where
+  // both are looked at.
+  const firewall = useQuery({ queryKey: ['firewall'], queryFn: api.firewall, enabled: !firewallOnly.disabled });
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -61,17 +63,6 @@ export function RemoteAccessPanel() {
   const remote = auth.data?.remote ?? false;
   const formOpen = settingUp || (!configured && settings.remoteAccessEnabled);
 
-  if (dev) {
-    return (
-      <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
-        Remote access belongs to the installed release — the switch, the credentials and the firewall button are all
-        its, and there is nothing here to turn on.{' '}
-        {remote
-          ? 'This dev instance was started with --host, which is the one thing that skips that gate: you are reading this from another machine, and you still had to sign in to do it.'
-          : 'This dev instance listens on 127.0.0.1 unless it is started with --host (dev.ps1 -Remote), which skips the gate rather than exercising it.'}
-      </p>
-    );
-  }
 
   const submitCredentials = () => {
     setError(null);

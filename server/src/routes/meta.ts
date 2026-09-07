@@ -18,5 +18,8 @@ export function registerMetaRoutes(app: FastifyInstance, ctx: AppContext): void 
     // Per request, not per server: the same server answers both, and this is
     // the only place the browser can learn which kind of client it is.
     remote: !isLocalRequest(request),
+    // Per server, and the other half of the same question. Already decided
+    // before `listen()`, so this is a field read rather than a probe.
+    network: ctx.bind.network,
   }));
 }

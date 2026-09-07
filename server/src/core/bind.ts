@@ -26,7 +26,7 @@ export interface BindDecision {
   /** Reachable from other machines. */
   network: boolean;
   reason: BindReason;
-  /** The switch is on, credentials exist, and this is not a dev instance. */
+  /** The switch is on and credentials exist — whatever the firewall then says. */
   wantsNetwork: boolean;
   /** What the firewall said, or null when it was not asked. */
   probe: FirewallProbe | null;
@@ -50,7 +50,15 @@ export function localReason(
   hasCredentials: boolean,
 ): BindReason | null {
   if (config.hostOverride !== null) return 'explicit-host';
-  if (config.devInstance) return 'dev-instance';
+  // A dev instance used to be answered right here, before the firewall was
+  // asked anything, and that made the one thing it is for impossible: trying
+  // the code being written on a phone meant `--host`, which SKIPS this gate
+  // rather than passing it — so the firewall was never consulted, Windows could
+  // ask about the bind, and the panel that sets the switch and the credentials
+  // was not drawn at all. There was never a safety argument for it: the gate is
+  // the safety, and a dev instance meets it exactly as a release does. Its port
+  // is its own (7434) and so is the rule that opens it (`ruleNameFor`), so
+  // earning the bind here cannot touch the release's.
   if (!settings.remoteAccessEnabled) return 'switch-off';
   if (!hasCredentials) return 'no-credentials';
   if (process.platform !== 'win32') return 'not-windows';
@@ -107,7 +115,7 @@ export async function decideBind(
   hasCredentials: boolean,
 ): Promise<BindDecision> {
   const exePath = resolvedExePath();
-  const wantsNetwork = !config.devInstance && settings.remoteAccessEnabled && hasCredentials;
+  const wantsNetwork = settings.remoteAccessEnabled && hasCredentials;
   const base = { port: config.port, wantsNetwork, probe: null, verdict: null, exePath };
   const local = (reason: BindReason): BindDecision => ({ ...base, host: LOOPBACK_HOST, network: false, reason });
 

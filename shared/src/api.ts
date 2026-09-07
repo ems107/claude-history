@@ -37,6 +37,16 @@ export interface MetaResponse {
    * the server is (see `localOnly.ts`).
    */
   remote: boolean;
+  /**
+   * This process is listening on the network, so another machine can reach it.
+   *
+   * A fact about the SERVER, where `remote` above is a fact about the request —
+   * and the pair is what makes "why can my phone not reach this" answerable
+   * from one call. It comes off the bind decision already in memory
+   * (`core/bind.ts`), so it costs nothing; `/api/firewall` is where the same
+   * question is asked in full, and that one pays for a PowerShell probe.
+   */
+  network: boolean;
 }
 
 // ---- Remote access ----
@@ -77,8 +87,6 @@ export const MIN_PASSWORD_LENGTH = 8;
  * switch, then what the firewall said.
  */
 export type BindReason =
-  /** A checkout: loopback always. Remote access belongs to the release. */
-  | 'dev-instance'
   /** `--host` was given by hand, and it wins over all of this — dialog included. */
   | 'explicit-host'
   | 'switch-off'
@@ -119,7 +127,6 @@ export type BindReason =
  */
 export const BIND_REASONS: Record<BindReason, string> = {
   'explicit-host': '--host was given on the command line, so the firewall was never consulted.',
-  'dev-instance': 'this is a dev instance, and remote access belongs to the installed release.',
   'switch-off': 'remote access is switched off.',
   'no-credentials': 'remote access has no username and password yet.',
   'no-rule':

@@ -9,14 +9,16 @@
 #                              (renames, pins, stars, prices) so it opens warm.
 #                              Settings are NEVER copied - see below.
 #
-# WHY THIS EXISTS, next to dev.ps1: the dev instance binds 127.0.0.1 always, so
-# remote access cannot be tried on it at all. This one runs WITHOUT
-# --dev-instance, so it decides its bind exactly as a release does - loopback
-# until the firewall allows its port, then every interface. That is the only way
-# to use the feature, or to run checks 30-36, without publishing a release.
-# To reach it over the network before that rule exists, pass --host 0.0.0.0 by
-# hand: the one escape hatch, and the one thing that can still make Windows ask
-# for permission.
+# WHY THIS EXISTS, next to dev.ps1: a dev instance meets the same bind gate a
+# release does - own port, own firewall rule, own switch - so remote access can
+# be tried there and this is no longer what that is for. What preview answers is
+# a different question: what does a RELEASE do. It runs WITHOUT --dev-instance,
+# so it starts from the shipped defaults instead of DEV_SETTING_OVERRIDES, which
+# is what checks 30-36 have to be asked of. Its bind is decided the same way as
+# everywhere else: loopback until the firewall allows its own port, then every
+# interface. To reach it over the network before that rule exists, pass
+# --host 0.0.0.0 by hand: the one escape hatch, and the one thing that can still
+# make Windows ask for permission.
 #
 # Three things it must never do, and does not:
 #
@@ -177,7 +179,7 @@ if (-not $meta) {
   throw "The preview server did not answer on $appUrl/api/meta after 30s. Check $previewData\logs."
 }
 if ($meta.devInstance) {
-  throw "Something answered on $Port but it is a DEV instance - it would bind 127.0.0.1 only and remote access could not be tried."
+  throw "Something answered on $Port but it is a DEV instance - it starts from the dev defaults, so it cannot answer for what a release does."
 }
 if ($meta.cacheDir -notlike "$previewData*") {
   throw "The server on $Port is using $($meta.cacheDir), which is NOT the preview folder. Stop it before it writes there."

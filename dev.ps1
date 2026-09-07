@@ -5,17 +5,16 @@
 #   .\dev.ps1 -Restart     stop whatever is on the dev port, then start
 #   .\dev.ps1 -Stop        stop the dev instance and leave
 #   .\dev.ps1 -Foreground  run in this window (Ctrl+C stops it)
-#   .\dev.ps1 -Remote      listen on every interface instead of 127.0.0.1, so a
-#                          phone on the LAN can reach the dev instance. This is
-#                          "--host 0.0.0.0", the ONE input that skips the bind
-#                          gate, and it is meant to be typed on purpose: it does
-#                          not consult the firewall, so it is also the one thing
-#                          that can still make Windows ask permission. The port
-#                          still needs an inbound rule for anything to arrive,
-#                          and the browser still has to sign in - a request from
-#                          the LAN is remote here exactly as it is on a release.
-#                          The bind GATE is not exercised this way; that is what
-#                          preview.ps1 is for.
+#   .\dev.ps1 -Remote      bind 0.0.0.0 WITHOUT asking the firewall. No longer
+#                          how you reach a dev instance from a phone: turn
+#                          remote access on in Settings and it earns the wide
+#                          bind exactly as a release does, own rule and all,
+#                          and the ordinary start then prints the address. This
+#                          is "--host 0.0.0.0", the ONE input that skips the
+#                          bind gate, and it is meant to be typed on purpose:
+#                          nothing consults the firewall, so it is also the one
+#                          thing that can still make Windows ask permission.
+#                          Keep it for when the gate itself is in the way.
 #   .\dev.ps1 -Seed        first run only: copy the release's cache and DATA
 #                          (renames, pins, stars, prices) into the dev folder,
 #                          so it opens warm and realistic. Settings are NOT
@@ -175,7 +174,13 @@ if (-not $meta.devInstance) {
 Write-Host "claude-history dev ($($meta.version)) on $appUrl"
 Write-Host "  data:    $devData"
 Write-Host "  release: untouched on http://127.0.0.1:7433"
-if ($Remote) {
+# Whether another machine can reach this is the SERVER’s answer (`network` on
+# /api/meta, straight off the bind decision in core/bind.ts) rather than
+# something re-derived here: two copies of that order would drift, and the
+# first symptom would be this script naming an obstacle that is no longer
+# there. It is also why the address is printed however the bind was earned -
+# through the gate, or by skipping it with -Remote.
+if ($meta.network) {
   # Where a phone would point. Link-local dropped, which is the only part of the
   # app's own ordering that can be reproduced without asking the app for it.
   $addresses = @(
@@ -183,13 +188,20 @@ if ($Remote) {
       Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
       Select-Object -ExpandProperty IPAddress -Unique
   )
-  $ruleName = "claude-history (port $Port)"
-  $hasRule = $null -ne (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)
-  Write-Host "  bind:    0.0.0.0 (--host, so the firewall was never consulted)"
-  foreach ($a in $addresses) { Write-Host "  phone:   http://$($a):$Port" }
-  if (-not $hasRule) {
-    Write-Host "  WARNING: no inbound rule named '$ruleName', so nothing will arrive."
-    Write-Host "           POST http://127.0.0.1:$Port/api/firewall from this machine makes one (one UAC prompt)."
+  if ($Remote) {
+    Write-Host "  bind:    0.0.0.0 (--host, so the firewall was never consulted)"
+    $ruleName = "claude-history (port $Port)"
+    if ($null -eq (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue)) {
+      Write-Host "  WARNING: no inbound rule named '$ruleName', so nothing will arrive."
+      Write-Host "           Settings > Remote access makes one (one UAC prompt)."
+    }
+  } else {
+    # Through the gate, so the switch is on, the credentials exist and the
+    # firewall already allowed the port - there is nothing left to warn about.
+    Write-Host "  bind:    0.0.0.0 (remote access is on and the firewall allows $Port)"
   }
+  foreach ($a in $addresses) { Write-Host "  phone:   http://$($a):$Port" }
+} elseif ($Remote) {
+  Write-Host "  bind:    127.0.0.1 - --host was passed and the server did not take it."
 }
 if (-not $NoBrowser) { Start-Process $appUrl }
