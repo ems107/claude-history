@@ -30,6 +30,7 @@ import {
   NOTIFY_VOICE_NAME_MAX,
   NOTIFY_VOLUME_MAX,
   NOTIFY_VOLUME_MIN,
+  normalizeLogoColor,
   TONE_INHERIT,
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
@@ -751,6 +752,11 @@ export class SessionIndex {
       // be on without them — clamped here rather than trusted to the UI, which
       // sets both in one gesture but is not the only thing that can PUT here.
       remoteAccessEnabled: (patch.remoteAccessEnabled ?? this.settings.remoteAccessEnabled) && this.auth !== null,
+      // A hex nothing can parse would leave the mark unpainted, so an
+      // unreadable value becomes the default rather than being stored. The UI
+      // refuses one before it gets here; this is for everything that is not the
+      // UI.
+      logoColor: normalizeLogoColor(patch.logoColor ?? this.settings.logoColor) ?? DEFAULT_SETTINGS.logoColor,
     };
     if (patch.remoteAccessEnabled && !this.settings.remoteAccessEnabled) {
       log.warn('remote access cannot be enabled before a username and password are set — the switch stays off');
