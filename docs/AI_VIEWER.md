@@ -581,10 +581,15 @@ untouched, which is the same rule `logoColor` follows by REMOVING a property
 rather than writing the terracotta back; the catalogue's `format` is what stops
 the marker reading `default empty`. Only `name` and `short_name` are overridden
 there, so the description, the colours and the icons stay facts about the file.
-The one instance that never gets its file back verbatim is a dev one, which
-marks its own name exactly as its tab title does: two tabs alike on two ports is
-the known way to confuse them, and two INSTALLED apps alike would outlive the
-confusion.
+The one instance that never gets its file back verbatim is a **nameless** dev
+one, which marks its own name exactly as its tab title does: two tabs alike on
+two ports is the known way to confuse them, and two INSTALLED apps alike would
+outlive the confusion — an installed window has no address bar to check the port
+in. **A name somebody typed is taken as given**, in both places and for the same
+reason: naming it is the clearest way there is to say which instance this is,
+and decorating that name is second-guessing whoever chose it. It read as
+`dev · Claude History dev :7434` the first time somebody did the obvious thing
+and typed the distinction themselves.
 
 **Installing is a readout, not a button, and that is a limit worth knowing.**
 Chrome dropped the service-worker requirement for installing from its own menu

@@ -835,10 +835,13 @@ the three places it has to reach.
   tab title reads `dev · claude history :7434` exactly as it always did, and on
   a release-shaped instance (`.\preview.ps1`, port 7435) `GET
   /manifest.webmanifest` is **byte-identical to `web/dist/manifest.webmanifest`**
-  — `cmp`, not eyes. A dev instance is the one exception and must NOT be
-  identical: its name carries `dev · … :7434` whatever the setting says.
-- **A name reaches all three.** Set one and `document.title`, `name` and
-  `short_name` all take it, **and nothing else in the manifest moves** — diff the
+  — `cmp`, not eyes. A NAMELESS dev instance is the one exception and must NOT
+  be identical: its name and its tab title both carry `dev · … :7434`.
+- **A name reaches all three, and reaches them undecorated.** Set one and
+  `document.title`, `name` and `short_name` must all take it EXACTLY: the dev
+  marker is for the nameless case, so a chosen name comes back with nothing
+  added to it, checked on the dev instance where that is easiest to get wrong.
+  **Nothing else in the manifest moves** — diff the
   served JSON against itself with those two lines cut. The server trims it and
   caps it at `APP_NAME_MAX`; the row's marker says `default the name it ships
   with` rather than `default empty`.

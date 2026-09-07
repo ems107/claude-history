@@ -147,16 +147,21 @@ export function App() {
   // shipped colour and the shipped name.
   useAppIdentity(settings?.settings.logoColor, settings?.settings.appName);
   // Two tabs that look alike on two ports is the one way to confuse them, and
-  // the tab strip is where they are told apart before anything is clicked — so
-  // the dev marker is not the name's to lose, whatever the name is.
+  // the tab strip is where they are told apart before anything is clicked. So
+  // a NAMELESS dev instance marks itself — but **a name somebody typed is taken
+  // as given**, here and in the served manifest alike: naming it is the
+  // clearest way there is to say which one this is, and decorating that name
+  // would be second-guessing the person who wrote it. Two instances called the
+  // same thing is then a choice rather than an accident, and a tab still has
+  // the port in its address bar.
   //
-  // An empty setting is the shipped name rather than an empty tab, which is the
-  // same thing the served manifest does with it: the two shipped spellings
-  // differ, so the fallback is spelled here and the other one in the file.
-  const appName = settings?.settings.appName || 'claude history';
+  // An empty setting is the shipped name rather than an empty tab, and the
+  // fallback is spelled here because the two shipped spellings differ — the
+  // manifest's is in the file.
+  const chosen = settings?.settings.appName ?? '';
   useEffect(() => {
-    document.title = dev ? `dev · ${appName} :${window.location.port}` : appName;
-  }, [dev, appName]);
+    document.title = chosen || (dev ? `dev · claude history :${window.location.port}` : 'claude history');
+  }, [dev, chosen]);
   return (
     <div className="flex h-full flex-col">
       {/* The one row that had to give. It needs about 900px and a phone has

@@ -71,14 +71,21 @@ export function registerBrandRoutes(app: FastifyInstance, ctx: AppContext): void
       const settings = ctx.index.getSettings();
       const chosen = settings.appName.trim();
       /**
-       * A dev instance says so in its name whatever the setting holds, exactly
-       * as its tab title does (`App.tsx`), and for a sharper version of the
-       * same reason: two tabs that look alike on two ports is the one way to
-       * confuse them, and two INSTALLED apps that look alike would outlive the
-       * confusion. So this is the one case where a default instance does not
-       * get the file back untouched.
+       * A NAMELESS dev instance says so in its name, exactly as its tab title
+       * does (`App.tsx`), and for a sharper version of the same reason: two
+       * tabs that look alike on two ports is the one way to confuse them, and
+       * two INSTALLED apps that look alike would outlive the confusion — an
+       * installed window has no address bar to check the port in. So this is
+       * the one case where a default instance does not get the file back
+       * untouched.
+       *
+       * **A name somebody typed is taken as given.** Naming it is the clearest
+       * way there is to say which instance this is, and marking a name that was
+       * chosen is second-guessing whoever chose it — which read as
+       * `dev · Claude History dev :7434` the first time somebody did the
+       * obvious thing and typed the distinction themselves.
        */
-      const mark = ctx.config.devInstance ? `:${String(ctx.config.port)}` : null;
+      const mark = ctx.config.devInstance && chosen === '' ? `:${String(ctx.config.port)}` : null;
       const color = settings.logoColor;
       const body =
         chosen === '' && mark === null && color === LOGO_DEFAULT_COLOR
