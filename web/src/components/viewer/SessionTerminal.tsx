@@ -89,6 +89,24 @@ interface Key {
 const ESC: Key = { label: 'Esc', data: '\u001b', title: 'Escape' };
 /** After the modifiers, because Shift+Tab is what it is most often pressed with. */
 const TAB: Key = { label: 'Tab', data: '\t', title: 'Tab — completion, and Shift+Tab cycles the CLI’s modes' };
+/**
+ * After Tab, and it is here for the SHIFT rather than for the Enter.
+ *
+ * A soft keyboard has an Enter of its own; what it has no way of sending is a
+ * shifted one, which in Claude Code is a newline rather than the prompt being
+ * submitted. So this is the other key the modifiers are pressed with, and the
+ * armed Shift is what it exists to be the target of ([applyMods]).
+ *
+ * It is also, deliberately, the key that runs off the edge first at 360px — the
+ * only one on the row the soft keyboard already has, so the feature survives
+ * the button being off screen: arm Shift here, press the keyboard's own Enter,
+ * same path.
+ */
+const ENTER: Key = {
+  label: 'Enter',
+  data: '\r',
+  title: 'Enter — and Shift+Enter is a newline instead of sending the prompt',
+};
 
 /** The rest, in the order a thumb reaches for them. */
 const TERMINAL_KEYS: Key[] = [
@@ -116,6 +134,19 @@ const SHIFTED: Record<string, string> = {
   '\u001b[C': '\u001b[1;2C',
   '\u001b[D': '\u001b[1;2D',
 };
+
+/**
+ * Enter with shift, which the CLI reads as a newline.
+ *
+ * The one shifted form that is CONDITIONAL, which is why it is not in [SHIFTED]
+ * with the others: it may only be sent while the program has asked to hear
+ * about modifiers, because one that has not gets it as text typed into its
+ * prompt. Both places a Shift+Enter can come from read it here — a real
+ * keyboard's chord, caught before xterm can flatten it to a CR, and the bar's
+ * armed Shift on an [ENTER] — and the measurement behind the encoding is where
+ * that chord is caught, further down.
+ */
+const SHIFT_ENTER = '\u001b[13;2u';
 
 /**
  * The font xterm is asked for.
@@ -158,20 +189,32 @@ function isKeystroke(data: string): boolean {
  *
  * Applied in the order a terminal encodes them. **Shift first**, because it
  * changes the key itself — a real back-tab or an arrow with its modifier
- * parameter, and for an ordinary character the capital. **Then Ctrl**, which is
- * the letter's own code with the top three bits cleared, exactly as the
- * keyboard does it. **Then Alt**, which is an ESC in front of whatever came out
- * of the other two, which is how every terminal has sent Meta since before it
- * was called Alt.
+ * parameter, a newline for an Enter, and for an ordinary character the capital.
+ * **Then Ctrl**, which is the letter's own code with the top three bits
+ * cleared, exactly as the keyboard does it. **Then Alt**, which is an ESC in
+ * front of whatever came out of the other two, which is how every terminal has
+ * sent Meta since before it was called Alt.
  *
  * Anything that is not a single character and has no shifted form of its own
  * passes through untouched, and still disarms them: Ctrl plus an escape
  * sequence is not what a bar like this is for.
+ *
+ * **The CR is the one that needs an answer from outside**, which is what
+ * `enhancedKeys` is: Shift+Enter has a sequence of its own ([SHIFT_ENTER]) and
+ * it may only be sent while the program has asked to hear about modifiers, so
+ * the answer the server gave us has to reach this far. With that gate shut a
+ * shifted CR stays a bare CR and the prompt is submitted, which is exactly what
+ * a real keyboard's Shift+Enter does on such a program — the two paths agree by
+ * construction rather than by coincidence.
  */
-function applyMods(data: string, mods: Mods): string {
+function applyMods(data: string, mods: Mods, enhancedKeys: boolean): string {
   let out = data;
   if (mods.shift) {
-    if (SHIFTED[out]) out = SHIFTED[out];
+    // Before the two below, and before them for a reason: a CR is one character
+    // long, so without this it reaches the `toUpperCase` and comes out a CR —
+    // unchanged, unremarked, and submitting the prompt.
+    if (out === '\r' && enhancedKeys) out = SHIFT_ENTER;
+    else if (SHIFTED[out]) out = SHIFTED[out];
     else if (out.length === 1) out = out.toUpperCase();
   }
   if (mods.ctrl && out.length === 1) {
@@ -313,13 +356,13 @@ function TerminalKey({
 const MOD_TITLE: Record<Mod, string> = {
   ctrl: 'Ctrl — the next key goes through as a control code',
   alt: 'Alt — the next key is sent with an Escape in front of it, which is what Meta is',
-  shift: 'Shift — the next key is sent shifted: Tab becomes back-tab, an arrow carries the modifier',
+  shift: 'Shift — the next key is sent shifted: Tab becomes back-tab, Enter a newline, an arrow carries the modifier',
 };
 
 /**
  * The row, in the order a thumb wants it: the way out, the three modifiers,
- * the key they are most often pressed with, the paste this page cannot do any
- * other way, then movement, then punctuation the soft keyboard buries.
+ * the two keys they are most often pressed with, the paste this page cannot do
+ * any other way, then movement, then punctuation the soft keyboard buries.
  */
 function TerminalKeys({
   onKey,
@@ -345,6 +388,7 @@ function TerminalKeys({
         />
       ))}
       <TerminalKey label={TAB.label} title={TAB.title} onPress={() => onKey(TAB.data)} />
+      <TerminalKey label={ENTER.label} title={ENTER.title} onPress={() => onKey(ENTER.data)} />
       <TerminalKey
         label="Paste"
         title="Paste — opens a box to paste into, because a page served over plain HTTP cannot read the clipboard"
@@ -916,7 +960,7 @@ export function SessionTerminal({
       if ((armed.ctrl || armed.alt || armed.shift) && isKeystroke(data)) {
         modsRef.current = NO_MODS;
         setMods(NO_MODS);
-        out = applyMods(data, armed);
+        out = applyMods(data, armed, enhancedKeysRef.current);
       }
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ t: 'i', d: out }));
     });
@@ -935,6 +979,12 @@ export function SessionTerminal({
      * program understands and the GATE by what it asked for: sent only while it
      * has asked to hear about modifiers, because otherwise the sequence lands in
      * the prompt as text, which is a worse bug than the one being fixed.
+     *
+     * This is the CHORD — a real keyboard's, caught before xterm can flatten it
+     * to a CR. The other way a Shift+Enter arrives is the phone's, where there
+     * is no chord to catch: the bar's Shift is armed and spent by [applyMods],
+     * which reads the same [SHIFT_ENTER] behind the same gate. Two entry points
+     * because there are genuinely two, not because the fact is written twice.
      */
     term.attachCustomKeyEventHandler((e) => {
       /**
@@ -958,8 +1008,19 @@ export function SessionTerminal({
       if (!shiftEnter || !enhancedKeysRef.current) return true;
       if (e.type === 'keydown') {
         e.preventDefault();
+        // This path never reaches `onData`, so it owes the bar the disarming
+        // `onData` would have done. Reachable rather than theoretical: the bar
+        // is drawn off a WIDTH query, so a desktop window narrowed under 48rem
+        // has both the bar and a real keyboard — and a Shift armed there would
+        // otherwise stay lit and shift whatever was pressed next. The field
+        // test, not an identity one: `armMod` builds a fresh object every tap.
+        const armed = modsRef.current;
+        if (armed.ctrl || armed.alt || armed.shift) {
+          modsRef.current = NO_MODS;
+          setMods(NO_MODS);
+        }
         if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ t: 'i', d: '\u001b[13;2u' }));
+          socket.send(JSON.stringify({ t: 'i', d: SHIFT_ENTER }));
         }
       }
       // FALSE FOR THE KEYPRESS TOO, and that line is the fix.
