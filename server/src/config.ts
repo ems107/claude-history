@@ -148,16 +148,18 @@ export function loadConfig(argv: string[] = process.argv.slice(2)): AppConfig {
     );
   }
   if (devInstance && hostOverride !== null && !isLoopbackHost(hostOverride)) {
-    // This used to say "a dev instance has no remote access and no
-    // authentication: anything reaching it is treated as local", and none of it
-    // was true. `isLocalRequest` reads the socket address and knows nothing
-    // about dev instances, so a browser on the LAN is remote HERE exactly as it
-    // is on a release: the switch on, credentials set, a signed-in cookie, or
-    // 401. What a dev instance really lacks is the two things named below — and
-    // getting the sentence right matters, because it is printed at every start
-    // of a server somebody has just opened to the network.
+    // Two sentences have been wrong here, and both were printed at every start
+    // of a server somebody had just opened to the network. The first claimed a
+    // dev instance had no authentication — it has exactly the release’s, because
+    // `isLocalRequest` reads the socket address and has never heard of dev
+    // instances. The second said its Remote access panel was not drawn, which
+    // stopped being true when a dev instance started meeting the bind gate like
+    // any other: it has its own switch, its own credentials and its own firewall
+    // rule now, so `--host` is no longer the way to reach one from a phone. It is
+    // the way to reach one WITHOUT asking the firewall, which is a different and
+    // much narrower thing.
     warnings.push(
-      `--dev-instance was asked to bind ${hostOverride}. The bind gate was skipped, so nothing consulted the firewall, and the Remote access panel is not drawn on a dev instance — its switch and credentials have to be set through the API. A request from another machine is still remote, and still has to sign in.`,
+      `--dev-instance was asked to bind ${hostOverride}, so the bind gate was skipped and nothing consulted the firewall. Turning remote access on in Settings is the way that does consult it. A request from another machine is remote either way, and still has to sign in.`,
     );
   }
 

@@ -119,7 +119,7 @@ pnpm build && pnpm start    # everything on http://127.0.0.1:7434 (Ctrl+C stops 
 
 The dev instance starts with the automatic update check and the interval usage read **off**: neither belongs to a second instance running beside the release (updates cannot be applied from source, and usage reads rate-limit per account). Both are ordinary settings you can switch on.
 
-Remote access cannot be tried from a dev instance — it binds `127.0.0.1`, so there is no remote request to make against it. `.\preview.ps1` is a third instance for exactly that: port `7435`, its own data folder `%LOCALAPPDATA%\claude-history-preview`, and no `--dev-instance`, so it decides its bind exactly as a release does — loopback until its own firewall rule exists. Same flags as `dev.ps1`, and it refuses to go near 7433 or 7434. Its first run writes a `userdata.json` with the update poll, the usage read and the auto-reload off — a safety measure rather than a preference, since a usage 429 is earned per *account* and would blank the real release's widget.
+A dev instance can be used from another machine exactly as a release can: turn remote access on in its own Settings, set a username and password, open its port (7434, and it gets a firewall rule of its own), restart. `.\preview.ps1` is a third instance for the case where what is being tested is what a *release* does: port `7435`, its own data folder `%LOCALAPPDATA%\claude-history-preview`, and no `--dev-instance`, so it starts from the shipped defaults rather than the dev ones. Same flags as `dev.ps1`, and it refuses to go near 7433 or 7434. Its first run writes a `userdata.json` with the update poll, the usage read and the auto-reload off — a safety measure rather than a preference, since a usage 429 is earned per *account* and would blank the real release's widget.
 
 Cut a release (build + tag + push + publish, all from this machine — there is no CI):
 
@@ -143,7 +143,7 @@ A source instance reports version `dev` and can check for updates but not apply 
 | Dev instance (port `7434`, data in `…\claude-history-dev`) | off | `--dev-instance` or `CLAUDE_HISTORY_DEV=1` |
 | Update feed repo | `ems107/claude-history` | `CLAUDE_HISTORY_UPDATE_REPO` |
 
-The app is read-only over `~/.claude`. An installed release listens on **every** interface and a dev instance on `127.0.0.1` only — the wide bind is safe because nothing answers a non-local request until it signs in (see [Use it from another machine](#use-it-from-another-machine)).
+The app is read-only over `~/.claude`. Any instance listens on `127.0.0.1` until it has earned more — the switch on, a username and password set, and its own port already allowed by the Windows Firewall — and the wide bind is safe because nothing answers a non-local request until it signs in (see [Use it from another machine](#use-it-from-another-machine)).
 
 ## Local data & state
 

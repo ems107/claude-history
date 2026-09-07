@@ -957,16 +957,19 @@ Everything here is about a real device at 360×720 CSS pixels. An emulated narro
 
 ### Reaching the dev instance from a phone
 
-`.\dev.ps1 -Remote` runs it with `--host 0.0.0.0`. **This proves nothing about the bind gate** — `--host` is what skips it — so it is for trying the UI on a device, never for checks 30-36, which are `preview.ps1`'s. What it does NOT skip is the trust model: the phone is a remote browser exactly as it is on a release.
+**A dev instance meets the bind gate like any other**, so this is the four steps a release takes, all of them in *Settings → Remote access* on 7434 — the panel is drawn there like anywhere else. Once, on a fresh dev data folder:
 
-Once, on a fresh dev data folder, with the server already up on loopback:
-
-1. `PUT /api/auth/credentials` with `{"username":…,"password":…}` (≥ 8 characters) from 127.0.0.1. Then `PUT /api/settings` with `{"remoteAccessEnabled":true}` — **in that order**: `setSettings` clamps the switch back to false when there are no credentials. `curl.exe` with `--data-binary "@file"`; PowerShell mangles inline JSON.
-2. `POST /api/firewall` from 127.0.0.1 — one UAC, and it makes `claude-history (port 7434)`, TCP inbound, profile **Private**. Without a rule nothing arrives however the server is bound. Check `Get-NetConnectionProfile` says Private for the adapter the phone can see.
-3. `pnpm build && .\dev.ps1 -Restart -Remote -NoBrowser`. It prints the LAN addresses and warns when the port has no rule.
+1. Set a username and password (≥ 8 characters), then turn the switch on. **In that order**, and the panel does both in one gesture for exactly this reason: `setSettings` clamps the switch back to false when there are no credentials.
+2. Press the firewall button — one UAC, and it makes `claude-history (port 7434)`, TCP inbound, profile **Private**. Its own rule, named after its own port (`ruleNameFor`), so nothing here can touch the release’s. Without a rule nothing arrives however the server is bound; check `Get-NetConnectionProfile` says Private for the adapter the phone can see.
+3. Restart (`.\dev.ps1 -Restart -NoBrowser`) — the bind is fixed at `listen()`, and the panel offers the restart itself. The script prints the LAN addresses when the bind came out wide.
 4. On the phone: `http://<that address>:7434`, sign in.
 
-The Remote access panel is **not drawn on a dev instance**, so the switch, the credentials and the firewall button are API-only there. Undo it by deleting the rule and restarting without `-Remote`.
+Then the two halves worth asserting, and neither needs a second machine — this machine’s own LAN address is a remote socket:
+
+- **Switch on, rule there**: `/api/meta` reports `network: true`, `/api/firewall` says `listening: network` and `bindReason: allowed`, and from the LAN address every `/api/*` is **401** until signed in, while `GET /` still serves the page so the SPA can draw the sign-in. Loopback is unchanged.
+- **Switch off**, after a restart: `network: false`, `bindReason: switch-off`, and the LAN address refuses the connection outright. That is the half that says the gate is still a gate; run it second, so the instance is left as it was found.
+
+`--host 0.0.0.0` (`.\dev.ps1 -Remote`) is the escape hatch and **proves nothing about the gate** — it is what skips it. Keep it for when the gate is in the way; checks 30-36 stay `preview.ps1`'s.
 
 **Driving it from here.** `adb` gives real touch and a real Back button; Chrome's remote debugging gives measurement:
 
@@ -1013,7 +1016,7 @@ What to confirm when there IS one to hand: with predictive text **off**, typing 
 
 ### Remote access
 
-**`.\preview.ps1`**, never the release: it is the only instance the bind GATE applies to, and the gate is what checks 30-36 are about. (A dev instance can be reached from a phone, but only by skipping that gate with `--host`, so it proves nothing about it — see *Reaching the dev instance from a phone* below, which is for trying the UI on a real device rather than for these checks.) That script is the whole setup — port 7435, `%LOCALAPPDATA%\claude-history-preview`, no `--dev-instance` so the bind gate treats it exactly like a release, and a `userdata.json` written with the update poll and the usage reads **off**. That last part is not tidiness: without `--dev-instance` the defaults apply, and usage rate-limits per ACCOUNT, so a 429 earned here blanks the real release's widget.
+**`.\preview.ps1`**, never the release: what these checks are about is what a RELEASE does, and preview is the only instance that starts where a release starts. A dev instance meets the same bind gate now (*Reaching the dev instance from a phone*, below), but it begins from `DEV_SETTING_OVERRIDES`, so asking it about a release's behaviour is asking the wrong instance. That script is the whole setup — port 7435, `%LOCALAPPDATA%\claude-history-preview`, no `--dev-instance` so the bind gate treats it exactly like a release, and a `userdata.json` written with the update poll and the usage reads **off**. That last part is not tidiness: without `--dev-instance` the defaults apply, and usage rate-limits per ACCOUNT, so a 429 earned here blanks the real release's widget.
 
 **Preview is subject to the bind gate too**, which is the thing being tested in 35: with no firewall rule for 7435 it listens on loopback and there is no remote socket to make. So 30-34 are run either after creating that rule (the panel's own button, one UAC) or with **`--host 0.0.0.0`** passed by hand — the one escape hatch, and the one thing that can still raise the Windows dialog. Whichever way, 35 must be done on a clean slate first, because creating the rule is what makes it stop being interesting.
 

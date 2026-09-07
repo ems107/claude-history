@@ -5,7 +5,7 @@
 ## Invariants
 
 - **Nothing this app does on its own may make Windows ask for permission.** The only Windows dialog in its whole life is the UAC of the firewall button in Settings, pressed on purpose. Everything else waits.
-- **The wide bind is earned, not assumed.** A release listens on the network only when the switch is on, credentials exist, and the firewall ALREADY permits the port — decided in `core/bind.ts` before `listen()`, re-decided on every start, never from a remembered verdict. A dev instance is always loopback. `--host` skips the lot, and is the only thing that may still raise the dialog.
+- **The wide bind is earned, not assumed.** An instance listens on the network only when the switch is on, credentials exist, and the firewall ALREADY permits the port — decided in `core/bind.ts` before `listen()`, re-decided on every start, never from a remembered verdict. **A dev instance is no exception**: it has its own port, its own rule and its own switch, and it meets the same gate. `--host` skips the lot, and is the only thing that may still raise the dialog.
 - **A firewall read that FAILED must never be reported as a firewall that permits nothing.** A denial and an absence are different facts and lead to different buttons; conflating them is what pinned this server to loopback for weeks beside a rule that existed six times over. `probe.error` → `firewall-unreadable` → `ruleExists: null`, and the same rule holds for the blocking-rule scan.
 - **The bind cannot change while the process runs**, so switching remote access on or off is a wish until a restart grants it. `POST /api/server/restart` is that restart, and it is local-only.
 - **The wide bind and the session check are ONE feature** — never widen one without the other.
@@ -62,7 +62,7 @@ Hence the gate in [`core/bind.ts`](../server/src/core/bind.ts):
 
 ```
 network ⇔ --host given
-        ∨ ( not a dev instance ∧ remoteAccessEnabled ∧ credentials
+        ∨ ( remoteAccessEnabled ∧ credentials
             ∧ ( an enabled inbound Allow rule covers TCP <port> on the active profile
               ∨ DefaultInboundAction is Allow there ) )
 ```
@@ -204,9 +204,15 @@ One fact keeps the risk in proportion: every rule this app actually creates or d
 
 ## Trying it without publishing a release
 
-`.\preview.ps1` — a third instance, port 7435, `%LOCALAPPDATA%\claude-history-preview`, run **without** `--dev-instance` so it is subject to exactly the gate a release is. It exists because the gate is what has to be tested, and a dev instance never meets it: `core/bind.ts` answers `dev-instance` before it asks the firewall anything.
+**A dev instance is reached from a phone the same way a release is**: set a username and password in *Settings → Remote access*, turn the switch on, press the firewall button once, restart. It has its own port (7434), and `ruleNameFor` gives that port its own rule — `claude-history (port 7434)` — so nothing it does can touch the release’s.
 
-**A dev instance CAN be reached from another machine, and that is a different claim.** `.\dev.ps1 -Remote` launches it with `--host 0.0.0.0`, the same escape hatch preview offers, so a phone on the LAN can use the code being written without cutting a release. What that skips is the GATE — nothing consults the firewall, so the port still needs an inbound rule of its own before anything arrives, and Windows may ask about the bind. What it does NOT skip is the trust model: `isLocalRequest` reads the socket address and knows nothing about dev instances, so that browser is remote exactly as it is on a release, and gets 403 or 401 until the switch is on, credentials are set and it has signed in. The Remote access panel is not drawn on a dev instance, so those two are set through the API — the recipe is in [AI_TESTING.md](AI_TESTING.md#reaching-the-dev-instance-from-a-phone).
+`core/bind.ts` used to answer `dev-instance` before asking the firewall anything, which made the one thing a dev instance is FOR — trying the code being written on a real device — reachable only by skipping the gate with `--host`. **There was never a safety argument for it**: the gate is the safety, and a dev instance meets every part of it. What it did instead was hide the panel that sets the switch and the credentials, so the two of them had to be poked in through the API, and put Windows in a position to ask about a bind nothing had checked.
+
+`.\dev.ps1` prints the LAN address whenever the bind came out wide, and it reads that from the server (`network` on `/api/meta`, straight off the bind decision already in memory) rather than re-deriving the gate in PowerShell — two copies of that order would drift, and the first symptom would be the script naming an obstacle that is no longer there.
+
+`.\preview.ps1` — a third instance, port 7435, `%LOCALAPPDATA%\claude-history-preview` — is still where the gate is tested, and the reason is no longer the gate itself. It runs **without** `--dev-instance`, so the plain defaults apply: a check about what a RELEASE does has to be asked of an instance that starts where a release starts.
+
+**What `--host` still is.** `.\dev.ps1 -Remote` launches with `--host 0.0.0.0`, and that SKIPS the gate rather than passing it: nothing consults the firewall, the port still needs an inbound rule before anything arrives, and Windows may ask about the bind. Keep it for when the gate itself is what is in the way. What it does not skip is the trust model — `isLocalRequest` reads the socket address and knows nothing about dev instances, so that browser is remote exactly as it is on a release, and gets 403 or 401 until it has signed in.
 
 Being subject to the gate means preview binds loopback too until its own rule exists, which is the point when the gate itself is what is being tested. To exercise the remote path without a rule, pass `--host 0.0.0.0` by hand — the one escape hatch, and the one thing that can still make Windows ask.
 
