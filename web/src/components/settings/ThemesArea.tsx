@@ -1,8 +1,8 @@
 import { LOGO_PRESETS, normalizeLogoColor } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
 import { entryForField } from '../../lib/settingsCatalog.ts';
-import { inputClass, DefaultBadge, Field, GroupCard, Hint } from './controls.tsx';
 import { useSettingsPage } from './context.ts';
+import { DefaultBadge, Field, GroupCard, Hint, inputClass } from './controls.tsx';
 
 /**
  * How the app looks — one group, and for now one setting in it.
@@ -27,7 +27,7 @@ export function ThemesArea() {
  * A row of its own rather than a `SelectField`, because a colour is the one
  * value that can be SHOWN — a dropdown of the words "Amber" and "Teal" is a
  * list of promises, and the swatch is the thing itself. And because there is no
- * closed list to choose from: the seventh option is "any colour", which a
+ * closed list to choose from: after the seven comes "any colour", which a
  * `<select>` has no shape for.
  *
  * There is no preview panel, deliberately. A click saves, and the header above
