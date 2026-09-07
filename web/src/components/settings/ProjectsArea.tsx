@@ -3,7 +3,7 @@ import { PROJECT_GROUP_NAME_MAX } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client.ts';
-import { groupOfProject, sortProjectsByName } from '../../lib/projects.ts';
+import { ambiguousProjectNames, groupOfProject, sortProjectsByName } from '../../lib/projects.ts';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
 import { Anchored, DefaultBadge, Explain, GroupCard, Hint, hintClass, inputClass, selectClass } from './controls.tsx';
@@ -46,6 +46,12 @@ interface VisibleRow {
   color: string | null;
   /** Null for the same reason: nothing on disk to count. */
   count: number | null;
+  /**
+   * Another project in this list carries the same name, so the path is the only
+   * thing that tells them apart and has to be DRAWN — a `title` is no answer on
+   * a phone, which has no tooltips.
+   */
+  ambiguous: boolean;
 }
 
 /**
@@ -65,6 +71,7 @@ interface VisibleRow {
 function VisibleProjects({ projects, loading }: { projects: ProjectInfo[] | undefined; loading: boolean }) {
   const { settings, save } = useSettingsPage();
   const hidden = new Set(settings.hiddenProjects);
+  const ambiguous = ambiguousProjectNames(projects ?? []);
 
   const rows: VisibleRow[] = sortProjectsByName(projects ?? []).map((p) => ({
     key: p.key,
@@ -72,10 +79,13 @@ function VisibleProjects({ projects, loading }: { projects: ProjectInfo[] | unde
     path: p.path,
     color: p.color,
     count: p.sessionCount,
+    ambiguous: ambiguous.has(p.name),
   }));
   const known = new Set(rows.map((r) => r.key));
   for (const key of settings.hiddenProjects) {
-    if (!known.has(key)) rows.push({ key, name: key, path: key, color: null, count: null });
+    // Its name IS its key: there is no project behind it to take a basename
+    // from, so the row already shows the whole path and needs no second line.
+    if (!known.has(key)) rows.push({ key, name: key, path: key, color: null, count: null, ambiguous: false });
   }
 
   const setShown = (key: string, shown: boolean) => {
@@ -136,8 +146,19 @@ function VisibleProjects({ projects, loading }: { projects: ProjectInfo[] | unde
                 className="size-2 shrink-0 rounded-full"
                 style={row.color ? { backgroundColor: row.color } : { border: '1px solid var(--border)' }}
               />
-              <span className={`min-w-0 flex-1 truncate ${row.count === null ? 'text-[var(--text-dim)]' : ''}`}>
-                {row.name}
+              <span className="min-w-0 flex-1">
+                <span className={`block truncate ${row.count === null ? 'text-[var(--text-dim)]' : ''}`}>
+                  {row.name}
+                </span>
+                {/* Only where the name is not enough, and truncated from the
+                    FRONT: six folders called `scratchpad` share every character
+                    of their path up to the last two segments, so cutting the
+                    end is cutting the only half that answers the question. */}
+                {row.ambiguous && (
+                  <span className="truncate-start block truncate font-mono text-[10px] text-[var(--text-dim)]">
+                    {row.path}
+                  </span>
+                )}
               </span>
               <span className="shrink-0 text-[10px] text-[var(--text-dim)]">
                 {row.count === null ? 'no sessions on disk' : row.count}
@@ -218,6 +239,7 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
       })),
     );
 
+  const ambiguous = ambiguousProjectNames(projects ?? []);
   const ungrouped = sortProjectsByName((projects ?? []).filter((p) => !groupOfProject(groups, p.key)));
 
   return (
@@ -255,7 +277,7 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
               type="button"
               onClick={() => remove(group)}
               title={`Delete "${group.name}"`}
-              className="shrink-0 cursor-pointer rounded border border-transparent px-1.5 py-px text-[10px] text-[var(--text-dim)] hover:border-red-500/40 hover:text-red-300"
+              className="shrink-0 cursor-pointer rounded border border-transparent px-1.5 py-px text-[10px] text-[var(--text-dim)] hover:border-red-500/40 hover:text-red-300 max-md:min-h-11 max-md:px-3 max-md:text-xs"
             >
               Delete
             </button>
@@ -276,8 +298,15 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
                       className="size-2 shrink-0 rounded-full"
                       style={project ? { backgroundColor: project.color } : { border: '1px solid var(--border)' }}
                     />
-                    <span className={`min-w-0 flex-1 truncate ${project ? '' : 'text-[var(--text-dim)]'}`}>
-                      {project?.name ?? key}
+                    <span className="min-w-0 flex-1">
+                      <span className={`block truncate ${project ? '' : 'text-[var(--text-dim)]'}`}>
+                        {project?.name ?? key}
+                      </span>
+                      {project && ambiguous.has(project.name) && (
+                        <span className="truncate-start block truncate font-mono text-[10px] text-[var(--text-dim)]">
+                          {project.path}
+                        </span>
+                      )}
                     </span>
                     {/* Both reasons a member is not drawn in the filters, said
                         where it can be acted on rather than left to be found. */}
@@ -293,9 +322,15 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
                       type="button"
                       onClick={() => take(key)}
                       title="Take it out of this group"
-                      className="shrink-0 cursor-pointer rounded border border-transparent px-1.5 text-[11px] text-[var(--text-dim)] hover:border-[var(--border)] hover:text-[var(--text)]"
+                      aria-label={`Take ${project?.name ?? key} out of ${group.name}`}
+                      className="shrink-0 cursor-pointer rounded border border-transparent px-1.5 text-[11px] text-[var(--text-dim)] hover:border-[var(--border)] hover:text-[var(--text)] max-md:min-h-11 max-md:border-[var(--border)] max-md:px-2.5 max-md:text-xs"
                     >
-                      ×
+                      <span aria-hidden className="max-md:hidden">
+                        ×
+                      </span>
+                      <span aria-hidden className="hidden max-md:inline">
+                        Remove
+                      </span>
                     </button>
                   </div>
                 );
@@ -316,7 +351,14 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
             {ungrouped.map((p) => (
               <div key={p.key} title={p.path} className="flex items-center gap-2 py-0.5 max-md:min-h-11">
                 <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
-                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{p.name}</span>
+                  {ambiguous.has(p.name) && (
+                    <span className="truncate-start block truncate font-mono text-[10px] text-[var(--text-dim)]">
+                      {p.path}
+                    </span>
+                  )}
+                </span>
                 {hidden.has(p.key) && (
                   <span className="shrink-0 rounded border border-[var(--border)] px-1 text-[10px] text-[var(--text-dim)]">
                     hidden
@@ -331,7 +373,7 @@ function Groups({ projects }: { projects: ProjectInfo[] | undefined }) {
                   disabled={groups.length === 0}
                   onChange={(e) => assign(p.key, e.target.value)}
                   aria-label={`Add ${p.name} to a group`}
-                  className={`${selectClass} shrink-0 text-[11px]`}
+                  className={`${selectClass} shrink-0 text-[11px] max-md:min-h-11 max-md:px-2 max-md:text-sm`}
                 >
                   <option value="">{groups.length === 0 ? 'no groups yet' : 'add to…'}</option>
                   {groups.map((g) => (
@@ -407,7 +449,7 @@ function GroupName({ value, onCommit }: { value: string; onCommit: (name: string
         }
         if (e.key === 'Escape') setDraft(value);
       }}
-      className={`min-w-0 flex-1 ${inputClass}`}
+      className={`min-w-0 flex-1 ${inputClass} max-md:min-h-11 max-md:px-2 max-md:text-sm`}
     />
   );
 }

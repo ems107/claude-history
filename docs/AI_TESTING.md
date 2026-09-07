@@ -935,9 +935,21 @@ groups is what check 43's `pre-loss` guard fires on.
   `1 project hidden was nothing hidden` — never a comma-joined list of paths —
   and must NOT list the groups, nor let *Restore all* touch them. In the editor,
   renaming a group must not move its row (authoring order) and must not lose the
-  focus mid-word; the name commits on blur or Enter and Escape reverts it. At
-  360 px every row of both lists must be ≥ 44 px and nothing may scroll the
-  document sideways.
+  focus mid-word; the name commits on blur or Enter and Escape reverts it.
+- **The phone, measured rather than eyeballed.** At 360 px, walk every
+  `button`, `input`, `select` and `a` in the area and assert `height >= 44`,
+  with two named exceptions that are older than it and app-wide: `DefaultBadge`
+  (17 px) and *New group*, which is `actionClass`’s own 38. Then the same walk
+  at 1440 px must find those controls SMALL again — a `max-md:` size that leaked
+  above the line is a desktop regression, and this is the assertion that says
+  so. The remove button must read *Remove* at 360 and `×` at 1440, with an
+  `aria-label` naming the project at both. Every row of both lists is 44 px on
+  the phone and unchanged (24-25 px) on the desktop, and no route scrolls the
+  document sideways at 360 / 700 / 1100 / 1440 — **900 px is a known
+  pre-existing overflow on `/`**, and it is `SortBar`’s own control group
+  running out of room beside a 256 px sidebar, nothing to do with this.
+  Wherever a project name repeats in the corpus (six `scratchpad`s here), those
+  rows must draw the path, `truncate-start`, and no other row may.
 
 ## The phone
 

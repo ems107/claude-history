@@ -42,6 +42,41 @@ The rows are **measured at every width** (`virtualizer.measureElement`), and the
 
 `/settings` on a phone draws the seven areas as rows with their blurbs and their changed-counts (`SettingsNav index`), and the area gets the whole window once one is picked, with `‹ All settings` as the way back. The 224px rail has nowhere to be beside a 360px panel, and as a strip across the top it was seven chips scrolling sideways over a panel scrolling the other way, several of them always off the right edge. A path that names an area is unaffected, and so is a hash that implies one: `/settings#backups` is a bookmark and a README link, and landing it on a menu would be landing it nowhere.
 
+**A settings block that is a LIST is the first thing on that page a thumb has
+to aim inside of**, and *Projects* is where that came up. Every other block is
+a switch or a box per row, so `toggleClass` and `actionClass` carried the whole
+question; a list of forty projects with a control on each row carries it per
+control, and the ones written for it came out at 17-23px — the group name box,
+*Delete*, the remove button and the *add to…* select, measured on the device
+metrics rather than guessed. They all carry their own `max-md:min-h-11` now.
+Three facts came with it:
+
+- **The `CheckRow`s were already right**, because the tap target is the
+  `<label>` and that had `max-md:min-h-11` from the day the sheet did. A 20px
+  checkbox inside a 44px label is not a 20px target, and "fixing" the box would
+  have been fixing the wrong thing.
+- **A glyph gets a word on a phone.** The remove button is `×` at the end of a
+  desktop row, which is idiomatic there and unlabelled everywhere — its only
+  explanation was a `title`, and Android has no tooltips. Two spans, one
+  `max-md:hidden` and one `hidden max-md:inline`, so the phone reads *Remove*
+  and the desktop keeps the glyph; the `aria-label` names the project on both,
+  which the glyph never did.
+- **A name that is not unique needs its path DRAWN.** A project is named
+  `basename(cwd)`, and this corpus has six folders called `scratchpad` and two
+  called `probe` — six identical rows whose only distinguishing mark lived in a
+  `title=`. `ambiguousProjectNames` answers which names repeat, so the path is
+  drawn on those rows and nowhere else, and it is `truncate-start`: those six
+  share every character up to the last two segments, so cutting the END cuts
+  the only half that answers the question. Same reason the terminal’s title bar
+  shows the end of its cwd.
+
+**Two known gaps, both older than that area and both app-wide.** `DefaultBadge`
+— the *default …* marker that puts a setting back — is 17px tall on a phone on
+all thirty-six rows that can show it, and `inputClass` gives every text setting
+a 22px box. Neither is reachable by a change inside one area: they are shared
+recipes, and giving them a `max-md:` size reflows every area on the phone and
+wants checking across all seven.
+
 ## The session view
 
 The desktop session page is a row: a 72px rail, the conversation, an inspector, a side column. At 360px the rail and the conversation's own floor already do not fit, and opening a panel left the conversation four pixels wide. So on a phone `useSideLayout` returns zeros, **the rail is not drawn**, and **every panel is a sheet over the conversation** — the inspector, a subagent's transcript, the file viewer. Nothing inside them changed: they were all written to read at 320px, which is what that floor was for.

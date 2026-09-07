@@ -95,3 +95,25 @@ export function projectFilterRows(projects: ProjectInfo[], groups: ProjectGroup[
 export function groupOfProject(groups: ProjectGroup[], key: string): ProjectGroup | undefined {
   return groups.find((g) => g.projects.includes(key));
 }
+
+/**
+ * The names that appear more than once in a list of projects.
+ *
+ * A project's name is `basename(cwd)`, so a corpus with six folders called
+ * `scratchpad` has six rows spelled identically — and the only thing that tells
+ * them apart is the path. That is why the new-session picker draws the path
+ * beside every name (`NewSessionPage`), and why a `title=` cannot be the answer
+ * on a phone, where there are no tooltips at all.
+ *
+ * Rather than spend a line on every row, the lists ask this and draw the path
+ * only where there is something to tell apart.
+ */
+export function ambiguousProjectNames(projects: ProjectInfo[]): Set<string> {
+  const seen = new Set<string>();
+  const twice = new Set<string>();
+  for (const p of projects) {
+    if (seen.has(p.name)) twice.add(p.name);
+    seen.add(p.name);
+  }
+  return twice;
+}

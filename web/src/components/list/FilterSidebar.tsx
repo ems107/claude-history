@@ -238,7 +238,10 @@ export function FilterSidebar({
         {hiddenCount > 0 && (
           <Link
             to="/settings/projects#projects-visible"
-            className="mt-1.5 block px-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--accent)]"
+            // A link is a decision, so it gets a thumb: `block` at 17px tall is
+            // a desktop target, and this section is a full-screen sheet on a
+            // phone where it is the only way to what it points at.
+            className="mt-1.5 flex items-center px-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--accent)] max-md:min-h-11 max-md:px-2 max-md:text-[13px]"
           >
             {hiddenCount} project{hiddenCount === 1 ? '' : 's'} hidden in Settings
           </Link>
