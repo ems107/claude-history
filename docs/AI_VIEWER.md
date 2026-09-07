@@ -577,6 +577,20 @@ groups are listed in AUTHORING order, and only the filter sorts them by name**,
 because a list sorted by name re-sorts itself while the name is being typed and
 unmounts the input mid-word. That is the whole of what `ProjectGroup.id` buys.
 
+**A `Field` is a ROW, and a block with a list in it is not one.** `Field` draws
+its content and its badge side by side, so a marker that appears when the
+setting leaves its default takes its width out of the column beside it — which
+for a row with one input is invisible, and for a block holding forty checkboxes
+means ticking one of them narrows all forty. Those two blocks use `Anchored`
+instead (the id and the flash, and nothing else) and put the badge in their own
+heading row, where what moves when it appears is one line of prose. Which makes
+a second thing true: **the badge IS the "put it back" button**, so a block that
+also drew a *Show all* of its own was drawing one action twice, a few pixels
+apart. `Anchored` takes a required id where `Field`'s is optional, so those two
+ids are written out the way `NotificationsArea` already writes one — check 47
+asserts every row id is in the DOM of its own area, which is what keeps them
+in step.
+
 **The logo's colour is a setting, and it is deliberately not the accent.**
 *Themes* is the first area and the one `/settings` opens on, holding one row:
 seven swatches and a box for anything else, drawn as a control of its own
