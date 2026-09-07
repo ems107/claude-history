@@ -239,7 +239,7 @@ function SearchBox({ query, setQuery }: { query: string; setQuery: (v: string) =
 /**
  * What matches, and what picking one does.
  *
- * A hit is a ROW, not an area, so following one has to say which of the forty-eight
+ * A hit is a ROW, not an area, so following one has to say which of the fifty
  * it meant — hence `/settings/<area>#<row>`, which the page's own anchor
  * handling then scrolls to and flashes. That is the same route a bookmark takes,
  * so there is one way in and one thing to keep working.

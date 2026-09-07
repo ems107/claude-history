@@ -115,7 +115,7 @@ export const AREAS: Area[] = [
   {
     id: 'theme',
     title: 'Themes',
-    blurb: 'How the app looks. For now, the colour of the mark it wears.',
+    blurb: 'The mark, its colour, and the name this app wears in a tab and in a launcher.',
   },
   {
     id: 'notifications',
@@ -670,7 +670,7 @@ const hasWord = (text: string, query: string) => text.split(/[^\p{L}\p{N}]+/u).i
 /**
  * The rank a hit gets, lowest first — or `null` for no hit at all.
  *
- * Deliberately a handful of tiers rather than a score: with forty-eight entries
+ * Deliberately a handful of tiers rather than a score: with fifty entries
  * the only thing that has to be true is that a word in the NAME beats the same
  * word buried in somebody's keywords.
  *

@@ -436,7 +436,7 @@ does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
 state, actions and read-only information, all wearing the same card.
 
 **What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
-list.** Six areas → fifteen groups → forty-eight rows, data only, no JSX. Four
+list.** Six areas → seventeen groups → fifty rows, data only, no JSX. Four
 readers depend on it and that is why it is data: the rail, the search box, the
 changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
 the field in `AppSettings`, an `Entry` here, the row in its area file — and
@@ -545,6 +545,37 @@ assert the request rather than the attribute, then LOOK at the tab. The
 pre-rendered rasters — the `.ico`, the touch icon, Android's launcher icon, the
 shortcut — follow nothing, which the row says in its hint rather than leaving to
 be found out.
+
+**The name is empty by default, and empty is a choice rather than a gap.**
+`appName` names the browser tab and the app if you install it, and the two names
+this app ships with do not match — `Claude History` in the manifest, `claude
+history` in the tab — so a single default string would have had to change one of
+them on screen for everybody who never touches the setting. Empty leaves both
+where they were and lets `routes/brand.ts` hand back the manifest file
+untouched, which is the same rule `logoColor` follows by REMOVING a property
+rather than writing the terracotta back; the catalogue's `format` is what stops
+the marker reading `default empty`. Only `name` and `short_name` are overridden
+there, so the description, the colours and the icons stay facts about the file.
+The one instance that never gets its file back verbatim is a dev one, which
+marks its own name exactly as its tab title does: two tabs alike on two ports is
+the known way to confuse them, and two INSTALLED apps alike would outlive the
+confusion.
+
+**Installing is a readout, not a button, and that is a limit worth knowing.**
+Chrome dropped the service-worker requirement for installing from its own menu
+in 108 (mobile) and 112 (desktop) but kept it for `beforeinstallprompt`, so a
+page with no service worker cannot raise the prompt itself — and a service
+worker whose only purpose is to unlock a button of ours is a cache and a
+lifecycle added to a local tool, bought for a button. So the row points at the
+one the browser already draws and says which of three things is true HERE, read
+rather than assumed: this window IS the installed app (`(display-mode:
+standalone)`), or it can be installed, or it cannot because `isSecureContext` is
+false — which is exactly what a phone reading this over remote access sees, and
+is the truth rather than a fault, since installing needs `https` or a
+`localhost`/`127.0.0.1` address. The installed icon is the tinted tile, so it
+follows the logo colour; the manifest asks for it with `sizes="192x192
+512x512"` rather than `sizes="any"`, which satisfies nothing in Chromium's
+192/512 rule and breaks WebAPK installs on Android outright.
 
 ## What folds
 
