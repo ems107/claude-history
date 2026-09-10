@@ -1,16 +1,19 @@
 import type { ActiveConnection } from '@claude-history/shared';
-import { BIND_REASONS, MIN_PASSWORD_LENGTH } from '@claude-history/shared';
+import { BIND_REASONS, MAX_USERNAME_LENGTH, MIN_PASSWORD_LENGTH } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type KeyboardEvent, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
 import { actionClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
-import { Anchored, inputClass, Switch } from './controls.tsx';
+import { Anchored, hintClass, inputClass, Switch } from './controls.tsx';
 
 /** The shared box, at the width three credentials fields want. */
-const credentialClass = `w-44 ${inputClass}`;
+const credentialClass = `w-44 ${inputClass} max-md:min-h-11`;
+
+/** What the disabled Save button points a screen reader at. */
+const RULE_ID = 'act-credentials-rule';
 
 /**
  * Turning remote access on, and the three things that have to be true for it to
@@ -63,13 +66,43 @@ export function RemoteAccessPanel() {
   const remote = auth.data?.remote ?? false;
   const formOpen = settingUp || (!configured && settings.remoteAccessEnabled);
 
+  /**
+   * What still stands between these three boxes and a saved credential, or null
+   * when nothing does.
+   *
+   * It exists because *this panel was reported as a broken checkbox*, and the
+   * report was fair: a seven-character password left **Save** grey, the rule
+   * that made it grey was written down nowhere but a placeholder that vanished
+   * as soon as anything was typed, and the switch above sat unmoved through
+   * every click. A disabled button is a refusal, and a refusal that will not
+   * say what it wants is indistinguishable from a dead control.
+   *
+   * So one sentence does both jobs — it disables the button and it is printed
+   * under it — and the rules it checks are the server's own
+   * ([validateCredentials](../../../../server/src/core/auth.ts)) rather than a
+   * second copy free to drift from them. The username's ceiling is absent on
+   * purpose: the box carries it as `maxLength`, so it cannot be reached.
+   */
+  const missing: string | null = (() => {
+    if (!username.trim()) return 'a username';
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      const short = MIN_PASSWORD_LENGTH - password.length;
+      return password.length === 0
+        ? `a password of ${String(MIN_PASSWORD_LENGTH)} characters or more`
+        : `${String(short)} more character${short === 1 ? '' : 's'} in the password — ${String(
+            MIN_PASSWORD_LENGTH,
+          )} is the minimum`;
+    }
+    if (!repeat) return 'the password typed again in the third box';
+    if (repeat !== password) return 'the two passwords to match — the second box is different';
+    return null;
+  })();
 
   const submitCredentials = () => {
+    // The braces for the two belts: the button is disabled and the Enter key
+    // is guarded, and neither is a reason for this to trust its caller.
+    if (missing !== null || busy !== null) return;
     setError(null);
-    if (password !== repeat) {
-      setError('The two passwords are different.');
-      return;
-    }
     setBusy('credentials');
     api
       .setCredentials(username.trim(), password)
@@ -85,6 +118,19 @@ export function RemoteAccessPanel() {
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setBusy(null));
+  };
+
+  /** Has anybody typed in any of the three boxes yet? */
+  const typed = username !== '' || password !== '' || repeat !== '';
+
+  /**
+   * Enter, in any of the three boxes, is the gesture a form this shape is
+   * expected to answer — and this one is not a `<form>`, so it has to be said
+   * out loud. Guarded by the same sentence as the button: a keystroke may not
+   * do what a click is refused.
+   */
+  const onCredentialKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') submitCredentials();
   };
 
   const toggle = (on: boolean) => {
@@ -209,7 +255,13 @@ export function RemoteAccessPanel() {
               <span className="mt-0.5 block text-[11px] leading-relaxed text-[var(--text-dim)]">
                 {credentials.disabled
                   ? credentials.reason
-                  : 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'}
+                  : configured
+                    ? 'They have to sign in first. Anything on this machine keeps working with no password, as it always has.'
+                    : // Said BEFORE the first click, which is the one moment it
+                      // is needed: the switch cannot go on without credentials,
+                      // so clicking it opens the form and leaves the switch
+                      // where it was. Unexplained, that is a dead control.
+                      'They have to sign in first, so this needs a username and password before it can be on — clicking asks for them, and the switch follows as soon as they are saved.'}
               </span>
             </span>
           </div>
@@ -218,60 +270,97 @@ export function RemoteAccessPanel() {
 
       {(formOpen || configured) && !credentials.disabled && (
         <Anchored id="act-credentials" className="space-y-2 border border-[var(--border)] p-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[var(--text-dim)]">{configured && !formOpen ? 'Signing in uses' : 'Set'}</span>
-            {configured && !formOpen ? (
-              <>
-                <span className="font-mono">a username and password</span>
-                <button type="button" className={actionClass} onClick={() => setSettingUp(true)}>
-                  Change them
-                </button>
-              </>
-            ) : (
-              <>
-                <input
-                  className={credentialClass}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Username"
-                  autoComplete="username"
-                />
-                <input
-                  className={credentialClass}
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={`Password (${MIN_PASSWORD_LENGTH}+)`}
-                  autoComplete="new-password"
-                />
-                <input
-                  className={credentialClass}
-                  type="password"
-                  value={repeat}
-                  onChange={(e) => setRepeat(e.target.value)}
-                  placeholder="Repeat it"
-                  autoComplete="new-password"
-                />
+          {configured && !formOpen ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[var(--text-dim)]">Signing in uses</span>
+              <span className="font-mono">a username and password</span>
+              <button type="button" className={actionClass} onClick={() => setSettingUp(true)}>
+                Change them
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* What the box is for — and, the first time, what the switch
+                  above is waiting for. It stays visibly off while these three
+                  boxes are being filled in, and that is precisely how it was
+                  reported as broken: clicked, nothing moved, nothing said why. */}
+              <p className={hintClass}>
+                Any username, and a password of {MIN_PASSWORD_LENGTH} characters or more.{' '}
+                {configured
+                  ? 'Whatever is signed in stays signed in — signing those out is a button of its own, below.'
+                  : 'Remote access cannot be on before they exist, which is why the switch above is still off — it turns itself on as soon as they are saved.'}
+              </p>
+              {/* `items-end` so the button keeps the boxes' own baseline now
+                  that each of them carries a name above it. */}
+              <div className="flex flex-wrap items-end gap-2">
+                {/* Names ABOVE the boxes rather than placeholders inside them. A
+                    placeholder is gone the moment anything is typed — it takes
+                    the field's name away with it, and it was the only place the
+                    password's one rule was ever written down. */}
+                <label className="block">
+                  <span className="mb-1 block">Username</span>
+                  <input
+                    className={credentialClass}
+                    value={username}
+                    maxLength={MAX_USERNAME_LENGTH}
+                    onChange={(e) => setUsername(e.target.value)}
+                    onKeyDown={onCredentialKey}
+                    autoComplete="username"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block">Password</span>
+                  <input
+                    className={credentialClass}
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={onCredentialKey}
+                    autoComplete="new-password"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block">Repeat the password</span>
+                  <input
+                    className={credentialClass}
+                    type="password"
+                    value={repeat}
+                    onChange={(e) => setRepeat(e.target.value)}
+                    onKeyDown={onCredentialKey}
+                    autoComplete="new-password"
+                  />
+                </label>
                 <button
                   type="button"
                   className={actionClass}
-                  disabled={busy !== null || !username.trim() || password.length < MIN_PASSWORD_LENGTH}
+                  aria-describedby={missing === null ? undefined : RULE_ID}
+                  disabled={busy !== null || missing !== null}
                   onClick={submitCredentials}
                 >
                   Save
                 </button>
                 {busy === 'credentials' && (
-                  <span className="inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent text-[var(--text-dim)]" />
+                  <span className="mb-1 inline-block size-3 animate-spin rounded-full border-2 border-current border-t-transparent text-[var(--text-dim)]" />
                 )}
                 {settingUp && configured && (
                   <button type="button" className={actionClass} onClick={() => setSettingUp(false)}>
                     Cancel
                   </button>
                 )}
-              </>
-            )}
-          </div>
-          <p className="text-[11px] leading-relaxed text-[var(--text-dim)]">
+              </div>
+              {/* What a grey button owes whoever is looking at it. Amber only
+                  once something has been typed: on a form nobody has touched
+                  yet the same sentence is an instruction, not a complaint, and
+                  a box that opens already warning about a mistake nobody has
+                  made reads as broken in its own way. */}
+              {missing !== null && (
+                <p id={RULE_ID} className={typed ? 'text-[11px] leading-relaxed text-amber-400' : hintClass}>
+                  Save is waiting for {missing}.
+                </p>
+              )}
+            </>
+          )}
+          <p className={hintClass}>
             No old password is ever asked for: being at this machine is already enough to run anything on it, so it is
             what gets you back in after forgetting one.
           </p>

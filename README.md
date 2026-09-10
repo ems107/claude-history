@@ -69,7 +69,7 @@ Coming from an older version, **reload the page once before installing**: the ic
 
 ## Use it from another machine
 
-Off by default, and turning it on is deliberate in **Settings → Remote access**: set a username and password — only possible while you are at this machine — and then tick *Let other machines on this network use claude-history*. The switch cannot be turned on before the credentials exist.
+Off by default, and turning it on is deliberate in **Settings → Remote access**: tick *Let other machines on this network use claude-history* and it asks for a username and password before anything else — only possible while you are at this machine — then turns itself on as soon as they are saved. The switch cannot be on before the credentials exist, so until then it stays where it was and the panel says so.
 
 Turning the switch on does not open anything by itself, and that is on purpose. Windows asks "do you want to allow this app to access your networks?" the moment a program listens on the network without a firewall rule permitting it — every update, because the rule Windows writes is tied to a path that changes with each version. So **the server listens on the network only once Windows already allows it**, and never asks you anything on its own: installing, updating and starting at logon are silent, always.
 

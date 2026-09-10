@@ -76,6 +76,13 @@ export interface AuthStatusResponse {
 export const MIN_PASSWORD_LENGTH = 8;
 
 /**
+ * Ceiling on the username, shared for the same reason and used as the box's own
+ * `maxLength`: what the server would refuse to save cannot be typed in, so it
+ * never becomes a refusal anybody has to be told about.
+ */
+export const MAX_USERNAME_LENGTH = 64;
+
+/**
  * Why this process is, or is not, listening on the network.
  *
  * A release only binds every interface once it has been earned: Windows raises

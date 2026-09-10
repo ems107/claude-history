@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
-import { MIN_PASSWORD_LENGTH } from '@claude-history/shared';
+import { MAX_USERNAME_LENGTH, MIN_PASSWORD_LENGTH } from '@claude-history/shared';
 import { createLogger } from './logger.ts';
 
 const log = createLogger('auth');
@@ -202,7 +202,9 @@ export async function checkCredentials(auth: AuthConfig, username: string, passw
 /** Both halves of what a caller may set, validated in one place. */
 export function validateCredentials(username: string, password: string): string | null {
   if (!username.trim()) return 'The username is empty.';
-  if (username.length > 64) return 'The username is too long (64 characters maximum).';
+  if (username.length > MAX_USERNAME_LENGTH) {
+    return `The username is too long (${String(MAX_USERNAME_LENGTH)} characters maximum).`;
+  }
   if (password.length < MIN_PASSWORD_LENGTH) {
     return `The password must be at least ${String(MIN_PASSWORD_LENGTH)} characters.`;
   }

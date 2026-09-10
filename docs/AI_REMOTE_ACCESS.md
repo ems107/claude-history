@@ -14,7 +14,7 @@
 - **A remote request gets nothing until it signs in** — not the session list, not the version, not the paths. Only `/api/auth/*` and the static bundle answer first, and the bundle now includes one setting: `/favicon.svg` is served in the chosen logo colour, because an icon a browser asks for before running any of our code cannot wait for a login.
 - **Credentials can only be SET locally**, and setting them never asks for the old one.
 - **A `userdata.json` restore replaces the credentials and the switch like everything else** — no exceptions, including the ones that would be convenient.
-- **The switch cannot be on without credentials** (clamped in `setSettings`, not just hidden in the UI).
+- **The switch cannot be on without credentials** (clamped in `setSettings`, not just hidden in the UI) — and the panel says so *before* it is clicked, because it is [the only door to them](#the-switch-is-the-only-door-to-the-credentials).
 - **Anything that opens a window on the server's desktop answers 409 when remote.** Silent success is the failure mode this prevents.
 
 ## The trust model
@@ -134,6 +134,15 @@ The panel only offers the button when a restart would change something: the netw
 | `server/src/app.ts` | the three `onRequest` hooks, in order: session → local-only → same-origin |
 | `web/src/App.tsx` | `AppGate`: the app, the login, or "remote access is off" |
 | `web/src/api/useLocal.ts` | `useIsRemote` / `useLocalOnly` for the UI |
+
+### The switch is the only door to the credentials
+
+On a machine that never had remote access the panel is **one switch**: the credentials box is not drawn until that switch is clicked, and clicking it does not turn anything on, because the server clamps the setting off while `auth` is null. That is everything a first-time user has to work with, and it was reported from a real 1.22.0 installation as *the check does not work* — clicked, nothing moved, nothing said why; then *Save* under the three boxes stayed grey because the password was seven characters, a rule written down nowhere but a placeholder that disappeared as soon as anything was typed.
+
+Two things in `RemoteAccessPanel` carry that weight now, and neither is decoration:
+
+- **The switch's own line says what clicking it will do** while no credentials exist, and the box that opens says the switch follows as soon as they are saved. A control that cannot move when pressed has to say why in the same breath, or it is indistinguishable from a broken one.
+- **`missing` is one sentence that both disables *Save* and is printed under it** — grey until something has been typed, amber after, since an untouched form is being instructed rather than corrected. It checks `validateCredentials`' own rules, so the form cannot refuse for a reason the server does not have, nor accept what the server would reject. The username's ceiling is the exception, and deliberately: the box carries it as `maxLength`, so it can never become a refusal at all.
 
 ### The session cookie has no server-side store
 
