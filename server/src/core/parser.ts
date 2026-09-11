@@ -4,6 +4,10 @@ import type {
   ContentBlock,
   FileChange,
   FileEdit,
+  McpEvent,
+  McpPicture,
+  McpServer,
+  McpStatus,
   MessageItem,
   MessageUsage,
   PlanOutcome,
@@ -471,6 +475,7 @@ export interface ParsedTranscript {
   /** From `forkedFrom`: the session this transcript's opening context was copied from. */
   forkedFrom: string | null;
   fileChanges: FileChange[];
+  mcp: McpPicture;
 }
 
 /**
@@ -631,6 +636,183 @@ function recordFileEdits(
 }
 
 /**
+ * The join key for an MCP server, because Claude Code spells one two ways:
+ * `claude_ai_Canva` inside a tool name, `claude.ai Canva` in the needs-auth
+ * list. Lowercase, and every run of non-alphanumerics to `_`, makes those one
+ * server instead of two. Two real servers differing only in `-` vs `_` would
+ * merge — none exists here, and merging beats splitting a server across two rows.
+ */
+function mcpKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+/** `mcp__<server>__<tool>` split at the FIRST `__` after the prefix, which is where Claude Code puts it. */
+function mcpToolName(name: string): { server: string; tool: string } | null {
+  if (!name.startsWith('mcp__')) return null;
+  const rest = name.slice('mcp__'.length);
+  const cut = rest.indexOf('__');
+  if (cut <= 0) return null;
+  const tool = rest.slice(cut + 2);
+  return tool ? { server: rest.slice(0, cut), tool } : null;
+}
+
+interface McpState extends Omit<McpServer, 'status'> {
+  /** `null` until the first thing is known about it, which is what makes the first event's `from` null. */
+  status: McpStatus | null;
+  toolSet: Set<string>;
+}
+
+/**
+ * The MCP picture, accumulated from `deferred_tools_delta` attachment lines —
+ * the only record of it there is, and one nothing read until this panel.
+ *
+ * Four rules, each measured against this machine's corpus rather than assumed:
+ *
+ * 1. **There is no list of servers that WORKED.** A server counts as connected
+ *    once a `mcp__<server>__*` tool of its own has been announced, and that is
+ *    the only evidence of it the file holds.
+ * 2. **An absent status list is not an empty one.** `pendingMcpServers`,
+ *    `failedMcpServers` and `needsAuthMcpServers` are often missing outright
+ *    (of 599 deltas, `failedMcpServers` was absent in 374 and empty in 189), and
+ *    CC 2.1.267 writes deltas with all three gone while the failure is still
+ *    real — `5121cb77` fails, says nothing, then fails again. So a list PRESENT
+ *    is the whole truth for that instant and a list ABSENT says nothing at all.
+ * 3. **Leaving a bad state resolves by the tools**: connected if any were ever
+ *    seen, `unknown` if not. All 34 such transitions here are the account
+ *    connector leaving `needs-auth`, and every one has tools.
+ * 4. **`removedNames` is not a disconnection.** The only withdrawals in the
+ *    corpus are that same connector going and coming back as the tool budget
+ *    moves, so it is deliberately not read: a server does not stop having been
+ *    connected because its tools were parked.
+ *
+ * `wireHiddenNames` is ignored: present on 220 lines, non-empty on none.
+ */
+function createMcpTracker() {
+  const byKey = new Map<string, McpState>();
+  const events: McpEvent[] = [];
+
+  const get = (name: string, when: string | null): McpState => {
+    const key = mcpKey(name);
+    let s = byKey.get(key);
+    if (!s) {
+      s = {
+        key,
+        name,
+        status: null,
+        errorCode: null,
+        error: null,
+        tools: [],
+        toolSet: new Set(),
+        callCount: 0,
+        firstSeen: when,
+        since: when,
+      };
+      byKey.set(key, s);
+    }
+    return s;
+  };
+
+  const move = (s: McpState, to: McpStatus, errorCode: string | null, error: string | null, when: string | null) => {
+    // Only a real change is an event. Without this the three identical
+    // re-announcements a resumed session writes (`f3384d17`, 5th-7th August)
+    // would read as three things happening.
+    if (s.status === to && s.errorCode === errorCode) return;
+    events.push({ when, key: s.key, from: s.status, to, errorCode, error });
+    s.status = to;
+    s.errorCode = errorCode;
+    s.error = error;
+    s.since = when;
+  };
+
+  const addTool = (s: McpState, tool: string) => {
+    if (s.toolSet.has(tool)) return;
+    s.toolSet.add(tool);
+    s.tools.push(tool);
+  };
+
+  return {
+    /** One `deferred_tools_delta`. */
+    delta(attachment: Record<string, unknown>, when: string | null): void {
+      for (const field of ['addedNames', 'readdedNames'] as const) {
+        const names = attachment[field];
+        if (!Array.isArray(names)) continue;
+        for (const raw of names) {
+          const n = str(raw);
+          const parsed = n ? mcpToolName(n) : null;
+          if (!parsed) continue;
+          const s = get(parsed.server, when);
+          // The slug wins over whatever a status list called it (rule above).
+          s.name = parsed.server;
+          addTool(s, parsed.tool);
+          move(s, 'connected', null, null, when);
+        }
+      }
+
+      const authoritative = (
+        field: string,
+        status: McpStatus,
+        read: (v: unknown) => { name: string; errorCode: string | null; error: string | null } | null,
+      ) => {
+        if (!(field in attachment)) return; // absent says nothing
+        const listed = attachment[field];
+        if (!Array.isArray(listed)) return;
+        const stillThere = new Set<string>();
+        for (const v of listed) {
+          const e = read(v);
+          if (!e) continue;
+          stillThere.add(mcpKey(e.name));
+          move(get(e.name, when), status, e.errorCode, e.error, when);
+        }
+        for (const s of byKey.values()) {
+          if (s.status === status && !stillThere.has(s.key)) {
+            move(s, s.tools.length > 0 ? 'connected' : 'unknown', null, null, when);
+          }
+        }
+      };
+
+      authoritative('pendingMcpServers', 'pending', (v) => {
+        const n = str(v);
+        return n ? { name: n, errorCode: null, error: null } : null;
+      });
+      authoritative('failedMcpServers', 'failed', (v) => {
+        if (!isRec(v)) return null;
+        const n = str(v.name);
+        return n ? { name: n, errorCode: str(v.errorCode), error: str(v.error) } : null;
+      });
+      authoritative('needsAuthMcpServers', 'needs-auth', (v) => {
+        const n = str(v);
+        return n ? { name: n, errorCode: null, error: null } : null;
+      });
+    },
+
+    /**
+     * A tool call. It also ADOPTS a server no delta ever announced: nothing on
+     * this machine calls an MCP tool without a delta (0 of 479 sessions), but a
+     * call is proof the server was there, and a transcript old enough to predate
+     * these lines deserves the panel rather than an empty one.
+     */
+    call(toolName: string, when: string | null): void {
+      const parsed = mcpToolName(toolName);
+      if (!parsed) return;
+      const s = get(parsed.server, when);
+      s.name = parsed.server;
+      addTool(s, parsed.tool);
+      if (s.status === null) move(s, 'connected', null, null, when);
+      s.callCount++;
+    },
+
+    result(): McpPicture {
+      const rank = (s: McpServer) =>
+        s.status === 'failed' ? 0 : s.status === 'needs-auth' ? 1 : s.status === 'pending' ? 2 : s.status === 'unknown' ? 3 : 4;
+      const servers: McpServer[] = [...byKey.values()]
+        .map(({ toolSet: _toolSet, status, ...rest }) => ({ ...rest, status: status ?? 'unknown' }))
+        .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+      return { servers, events, failing: servers.filter((s) => s.status === 'failed').length };
+    },
+  };
+}
+
+/**
  * Full parse of a transcript (session or subagent file — same format) into
  * renderable turns. Turn boundary = a real (non-meta) user message; assistant
  * lines sharing message.id (streamed chunks) merge into one item.
@@ -648,6 +830,7 @@ export async function parseTranscript(
   const toolBlocksById = new Map<string, ToolBlock>();
   const assistantItems = new Map<string, MessageItem>();
   const fileEdits = new Map<string, FileEdit[]>();
+  const mcp = createMcpTracker();
   const MUTATING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
   const isReplay = replayFilter();
   let current: Turn | null = null;
@@ -974,6 +1157,15 @@ export async function parseTranscript(
       // as a summary line.
       const attachment = isRec(o.attachment) ? o.attachment : null;
 
+      // The MCP servers, which are NOT a message: this line is the only place
+      // their state is written down, and it belongs to the panel rather than to
+      // the conversation. Taken before anything else because it is the one
+      // attachment type that is read for a fact instead of for something to draw.
+      if (attachment?.type === 'deferred_tools_delta') {
+        mcp.delta(attachment, str(o.timestamp));
+        continue;
+      }
+
       // Plan mode announces itself here, and this is the only record of it that
       // has a clock: the `permission-mode` sidecar carries no timestamp and no
       // uuid, so it can only ever be read positionally.
@@ -1128,6 +1320,7 @@ export async function parseTranscript(
             if (MUTATING_TOOLS.has(toolName) && isRec(c.input)) {
               recordFileEdits(fileEdits, toolName, c.input, str(o.timestamp));
             }
+            mcp.call(toolName, str(o.timestamp));
           }
         }
       }
@@ -1222,7 +1415,7 @@ export async function parseTranscript(
     .map(([path, edits]) => ({ path, edits }))
     .sort((a, b) => b.edits.length - a.edits.length);
 
-  return { turns, prLinks, forkedFrom, fileChanges };
+  return { turns, prLinks, forkedFrom, fileChanges, mcp: mcp.result() };
 }
 
 export async function parseSession(
@@ -1232,7 +1425,7 @@ export async function parseSession(
 ): Promise<SessionDetail> {
   const subagents = await loadSubagents(scanned.sessionDir);
   const agentIdByToolUse = new Map(subagents.filter((a) => a.toolUseId).map((a) => [a.toolUseId, a.agentId]));
-  const { turns, prLinks, forkedFrom, fileChanges } = await parseTranscript(
+  const { turns, prLinks, forkedFrom, fileChanges, mcp } = await parseTranscript(
     scanned.filePath,
     agentIdByToolUse,
     projectsDir,
@@ -1248,5 +1441,6 @@ export async function parseSession(
     },
     prLinks: prLinks.length > 0 ? prLinks : (summary.enrichment?.prLinks ?? []),
     fileChanges,
+    mcp,
   };
 }
