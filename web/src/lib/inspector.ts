@@ -40,10 +40,11 @@ export interface PanelItem {
   /** `null` while the number cannot be known yet — the mentions, which ask the disk. */
   count: number | null;
   /**
-   * How many things in this panel are WRONG — drawn on the rail button as the
-   * amber `CountBadge`, so that "something went badly here" is legible without
-   * opening anything. 0 in every panel that has no such state, and required
-   * rather than optional so that a panel which ought to warn cannot forget to.
+   * How many things in this panel are WRONG — drawn as an amber `⚠ N` in the
+   * rail button's corner, and in the session header on a phone, so that
+   * "something went badly here" is legible without opening anything. 0 in every
+   * panel that has no such state, and required rather than optional so that a
+   * panel which ought to warn cannot forget to.
    */
   alert: number;
   hint: string;

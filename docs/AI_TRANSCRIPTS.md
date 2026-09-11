@@ -221,7 +221,7 @@ And `sqlserver-dat`'s `CONNECT_TIMEOUT` turns out to be *"Sources changed, rebui
 
 Also here and nowhere else: `Successfully connected (transport: stdio) in Nms` — the real handshake, 10,267 ms for `sqlserver-dat` in `b7505527` — the server's declared capabilities, and every tool call with its own duration.
 
-**It is read lazily, by its own endpoint** (`/api/sessions/:id/mcp-logs`), because it is ~39 files per project and no conversation should pay for them. Its stderr carries connection details (`MCP SQL Server initialized for localhost\SQLENTDEV:1433, Database: dat1, User: pccom`): local-only, so not a leak, but it is drawn and never indexed.
+**It is read lazily, by its own endpoint** (`/api/sessions/:id/mcp-logs`), because answering means reading a project’s whole log folder and filtering it by session — 239 files and 670 KB at the busiest project here — and no conversation should pay for that. Its stderr carries connection details (`MCP SQL Server initialized for localhost\SQLENTDEV:1433, Database: dat1, User: pccom`): local-only, so not a leak, but it is drawn and never indexed.
 
 ### The stop marker (`[Request interrupted by user]`)
 

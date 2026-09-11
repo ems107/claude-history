@@ -705,7 +705,6 @@ function createMcpTracker() {
         tools: new Map(),
         callCount: 0,
         errorCount: 0,
-        firstSeen: when,
         since: when,
       };
       byKey.set(key, s);

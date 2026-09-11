@@ -18,7 +18,8 @@ const STATUS: Record<McpStatus, { label: string; warn: boolean; title: string }>
   connected: {
     label: 'connected',
     warn: false,
-    title: 'Its tools were offered to the model. Claude Code writes no list of servers that worked, so this is what "connected" is made of.',
+    title:
+      'Its tools were offered to the model. Claude Code writes no list of servers that worked, so this is what "connected" is made of.',
   },
   failed: {
     label: 'failed',
@@ -38,7 +39,8 @@ const STATUS: Record<McpStatus, { label: string; warn: boolean; title: string }>
   unknown: {
     label: 'unknown',
     warn: false,
-    title: 'It stopped being listed as failed, pending or unauthenticated without its tools ever being offered — so it was neither connected nor broken, and saying so beats guessing',
+    title:
+      'It stopped being listed as failed, pending or unauthenticated without its tools ever being offered — so it was neither connected nor broken, and saying so beats guessing',
   },
 };
 
@@ -70,7 +72,8 @@ function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | nul
             server it leaned on from one that merely sat there. */}
         {server.callCount > 0 && (
           <span title="Tool calls this session actually made to it">
-            <b className="text-[var(--text)]">{server.callCount}</b> call{server.callCount === 1 ? '' : 's'}
+            <b className="text-[var(--text)]">{server.callCount}</b> call
+            {server.callCount === 1 ? '' : 's'}
           </span>
         )}
         {/* RED, where the status chip above is amber, and the two colours are
@@ -78,10 +81,7 @@ function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | nul
             connected fine and the call came back an error. Mixing them would
             lose the distinction that makes either worth drawing. */}
         {server.errorCount > 0 && (
-          <span
-            className="text-red-400"
-            title="Calls that came back an error — the server worked, the call did not"
-          >
+          <span className="text-red-400" title="Calls that came back an error — the server worked, the call did not">
             <b>{server.errorCount}</b> failed
           </span>
         )}
@@ -115,11 +115,16 @@ function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | nul
               <div key={t.name} className="flex items-baseline gap-2">
                 {/* A tool nobody called is dimmed rather than hidden: it is
                     what the model was offered, and what it ignored. */}
-                <span className={`min-w-0 flex-1 truncate font-mono ${t.calls > 0 ? 'text-[var(--text)]' : 'text-[var(--text-dim)]/60'}`}>
+                <span
+                  className={`min-w-0 flex-1 truncate font-mono ${t.calls > 0 ? 'text-[var(--text)]' : 'text-[var(--text-dim)]/60'}`}
+                >
                   {t.name}
                 </span>
                 {t.errors > 0 && (
-                  <span className="shrink-0 tabular-nums text-red-400" title={`${t.errors} of those came back an error`}>
+                  <span
+                    className="shrink-0 tabular-nums text-red-400"
+                    title={`${t.errors} of those came back an error`}
+                  >
                     {t.errors} failed
                   </span>
                 )}
@@ -130,53 +135,61 @@ function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | nul
         </Fold>
       )}
 
-      {/* What the CLI itself saw. The transcript knows two error codes and a
-          templated sentence; this is the server's own stderr, which is where
-          the reason actually is — a `CONNECT_TIMEOUT` above against "Sources
-          changed, rebuilding MCP server" down here. */}
-      {log && log.entries.length > 0 && (
-        <Fold
-          label={`${log.entries.length}${log.truncated ? '+' : ''} log line${log.entries.length === 1 ? '' : 's'}`}
-        >
-          <div className="flex flex-col gap-1 text-[11px]">
-            {log.truncated && (
-              <div className="text-[var(--text-dim)]/60 italic">
-                the newest {log.entries.length} only — a failure is at the end
-              </div>
-            )}
-            {log.entries.map((e, i) => {
-              // A day heading where the day turns over, and bare clocks under
-              // it — which is what `formatTimeOfDay` is documented for. These
-              // logs span a session's whole life: `b7505527` reaches over
-              // eleven days, and eleven days of bare `12:06` say nothing.
-              const day = e.when ? e.when.slice(0, 10) : null;
-              const newDay = day !== null && day !== (log.entries[i - 1]?.when?.slice(0, 10) ?? null);
-              return (
-                <div key={i}>
-                  {newDay && (
-                    <div className="mt-1 mb-0.5 text-[10px] font-semibold text-[var(--text-dim)]/70">
-                      {formatDateTime(e.when).split(' ')[0]}
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60">
-                      {formatTimeOfDay(e.when)}
-                    </span>
-                    <span
-                      className={`min-w-0 flex-1 font-mono break-words whitespace-pre-wrap ${
-                        e.kind === 'error' ? 'text-amber-300/80' : 'text-[var(--text-dim)]'
-                      }`}
-                    >
-                      {e.text}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </Fold>
-      )}
+      <LogFold log={log} />
     </div>
+  );
+}
+
+/**
+ * What the CLI itself saw.
+ *
+ * The transcript knows two error codes and a templated sentence; this is the
+ * server's own stderr, which is where the reason actually is — a
+ * `CONNECT_TIMEOUT` above against "Sources changed, rebuilding MCP server" down
+ * here. Its own component because two things draw it: a server the transcript
+ * knows, and one only the log does.
+ */
+function LogFold({ log }: { log: McpServerLog | null }) {
+  if (!log || log.entries.length === 0) return null;
+  return (
+    <Fold label={`${log.entries.length}${log.truncated ? '+' : ''} log line${log.entries.length === 1 ? '' : 's'}`}>
+      <div className="flex flex-col gap-1 text-[11px]">
+        {log.truncated && (
+          <div className="text-[var(--text-dim)]/60 italic">
+            the newest {log.entries.length} only — a failure is at the end
+          </div>
+        )}
+        {log.entries.map((e, i) => {
+          // A day heading where the day turns over, and bare clocks under
+          // it — which is what `formatTimeOfDay` is documented for. These
+          // logs span a session's whole life: `b7505527` reaches over
+          // eleven days, and eleven days of bare `12:06` say nothing.
+          const day = e.when ? e.when.slice(0, 10) : null;
+          const newDay = day !== null && day !== (log.entries[i - 1]?.when?.slice(0, 10) ?? null);
+          return (
+            <div key={i}>
+              {newDay && (
+                <div className="mt-1 mb-0.5 text-[10px] font-semibold text-[var(--text-dim)]/70">
+                  {formatDateTime(e.when).split(' ')[0]}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]/60">
+                  {formatTimeOfDay(e.when)}
+                </span>
+                <span
+                  className={`min-w-0 flex-1 font-mono break-words whitespace-pre-wrap ${
+                    e.kind === 'error' ? 'text-amber-300/80' : 'text-[var(--text-dim)]'
+                  }`}
+                >
+                  {e.text}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Fold>
   );
 }
 
@@ -202,13 +215,19 @@ export function McpPanel({
   mcp: McpPicture;
   onGoToMessage: (uuid: string) => void;
 }) {
-  // Lazily, and only here: it is ~39 files per project on disk, and the session
+  // Lazily, and only here: answering reads a project’s whole log folder (239
+  // files at the busiest one here) and filters it, and the session
   // payload must not pay for them to draw a conversation.
-  const logs = useQuery({ queryKey: ['mcp-logs', sessionId], queryFn: () => api.mcpLogs(sessionId) });
-  const logByKey = useMemo(
-    () => new Map((logs.data?.servers ?? []).map((s) => [s.key, s])),
-    [logs.data],
-  );
+  const logs = useQuery({
+    queryKey: ['mcp-logs', sessionId],
+    queryFn: () => api.mcpLogs(sessionId),
+  });
+  const logByKey = useMemo(() => new Map((logs.data?.servers ?? []).map((s) => [s.key, s])), [logs.data]);
+  /** Logged, but never named by the transcript — see where they are drawn. */
+  const orphanLogs = useMemo(() => {
+    const known = new Set(mcp.servers.map((s) => s.key));
+    return (logs.data?.servers ?? []).filter((l) => !known.has(l.key));
+  }, [logs.data, mcp.servers]);
 
   const nameOf = useMemo(() => {
     const byKey = new Map(mcp.servers.map((s) => [s.key, s.name]));
@@ -240,6 +259,36 @@ export function McpPanel({
           <ServerRow key={s.key} server={s} log={logByKey.get(s.key) ?? null} />
         ))}
       </div>
+
+      {/* A server the CLI logged and the transcript never mentioned — and they
+          exist: `f3384d17` has 109 log lines for `claude-in-chrome`, which
+          never reached a `deferred_tools_delta` of that session and so has no
+          row above. Drawn rather than dropped, because the log is evidence the
+          server was there and the panel's whole claim is to say what a session
+          had. Its status is simply not something the transcript knows. */}
+      {orphanLogs.length > 0 && (
+        <div className="mt-1 space-y-1">
+          {orphanLogs.map((l) => (
+            <div key={l.key} className="rounded border border-dashed border-[var(--border)] px-2 py-1.5">
+              <div className="flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--text)]">{l.server}</span>
+                <Chip
+                  tone="quiet"
+                  title="The CLI logged this server for this session, but its transcript never named it"
+                >
+                  logged only
+                </Chip>
+              </div>
+              {l.connectMs != null && (
+                <div className="mt-1 text-[11px] text-[var(--text-dim)]">
+                  handshake <b className="text-[var(--text)]">{formatMs(l.connectMs)}</b>
+                </div>
+              )}
+              <LogFold log={l} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* No logs is ordinary rather than a failure — this is a folder Claude
           Code keeps for its own reasons, outside `~/.claude`, and a session
@@ -297,6 +346,15 @@ export function McpPanel({
                       <span className={STATUS[e.to].warn ? 'text-amber-300/90' : 'text-[var(--text-dim)]'}>
                         {e.from === null ? STATUS[e.to].label : `${STATUS[e.from].label} → ${STATUS[e.to].label}`}
                       </span>
+                      {/* WHY, on the line that says it happened. The row above
+                          carries only the server's LAST error, so a session
+                          that failed one way and then another says so only
+                          here. */}
+                      {e.errorCode !== null && (
+                        <span className="font-mono text-amber-300/60" title={e.error ?? undefined}>
+                          {e.errorCode}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>

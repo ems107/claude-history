@@ -859,7 +859,6 @@ export interface McpServer {
   callCount: number;
   /** How many of those came back an error — the sum of `tools[].errors`. */
   errorCount: number;
-  firstSeen: string | null;
   /** When it entered the status it is in now. */
   since: string | null;
 }

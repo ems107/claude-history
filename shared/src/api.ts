@@ -570,8 +570,10 @@ export interface ScratchpadResponse {
  * `~/.claude/projects` one, so nothing re-implements that encoding — and every
  * line carries a `sessionId`, so the join is equality rather than a guess.
  *
- * Lazily fetched, like the scratchpad: it is ~39 files per project, and no
- * session view should pay for them until the panel is open.
+ * Lazily fetched, like the scratchpad: answering means reading a project's
+ * whole log folder and filtering it by session — 239 files and 670 KB at the
+ * busiest project here — and no session view should pay for that until the
+ * panel is open.
  */
 export interface McpLogEntry {
   when: string | null;
