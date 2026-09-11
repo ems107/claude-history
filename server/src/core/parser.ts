@@ -748,41 +748,62 @@ function createMcpTracker() {
         }
       }
 
-      const authoritative = (
+      // **The three status lists are read together, and that order is the
+      // whole of it.** They describe ONE instant, so a server that leaves
+      // `pending` in the same line that puts it in `failed` moved once — read
+      // one list at a time it moved twice, through the `unknown` of having left
+      // `pending` with no tools, and the history said `pending → unknown` and
+      // `unknown → failed` about a server that was simply still connecting and
+      // then timed out.
+      const claimed = new Map<string, { name: string; status: McpStatus; errorCode: string | null; error: string | null }>();
+      const listOf = (
         field: string,
         status: McpStatus,
         read: (v: unknown) => { name: string; errorCode: string | null; error: string | null } | null,
-      ) => {
-        if (!(field in attachment)) return; // absent says nothing
+      ): Set<string> | null => {
+        if (!(field in attachment)) return null; // absent says nothing
         const listed = attachment[field];
-        if (!Array.isArray(listed)) return;
-        const stillThere = new Set<string>();
+        if (!Array.isArray(listed)) return null;
+        const named = new Set<string>();
         for (const v of listed) {
           const e = read(v);
           if (!e) continue;
-          stillThere.add(mcpKey(e.name));
-          move(get(e.name, when), status, e.errorCode, e.error, when);
+          named.add(mcpKey(e.name));
+          claimed.set(mcpKey(e.name), { ...e, status });
         }
-        for (const s of byKey.values()) {
-          if (s.status === status && !stillThere.has(s.key)) {
-            move(s, s.tools.length > 0 ? 'connected' : 'unknown', null, null, when);
-          }
-        }
+        return named; // present: authoritative for this instant
       };
 
-      authoritative('pendingMcpServers', 'pending', (v) => {
+      const pending = listOf('pendingMcpServers', 'pending', (v) => {
         const n = str(v);
         return n ? { name: n, errorCode: null, error: null } : null;
       });
-      authoritative('failedMcpServers', 'failed', (v) => {
+      const failed = listOf('failedMcpServers', 'failed', (v) => {
         if (!isRec(v)) return null;
         const n = str(v.name);
         return n ? { name: n, errorCode: str(v.errorCode), error: str(v.error) } : null;
       });
-      authoritative('needsAuthMcpServers', 'needs-auth', (v) => {
+      const needsAuth = listOf('needsAuthMcpServers', 'needs-auth', (v) => {
         const n = str(v);
         return n ? { name: n, errorCode: null, error: null } : null;
       });
+
+      // Claims first, so a server that moved between two of these lists is
+      // already in its new state before anything asks who LEFT one.
+      for (const c of claimed.values()) move(get(c.name, when), c.status, c.errorCode, c.error, when);
+
+      for (const [named, status] of [
+        [pending, 'pending'],
+        [failed, 'failed'],
+        [needsAuth, 'needs-auth'],
+      ] as const) {
+        if (!named) continue;
+        for (const s of byKey.values()) {
+          if (s.status === status && !named.has(s.key)) {
+            move(s, s.tools.length > 0 ? 'connected' : 'unknown', null, null, when);
+          }
+        }
+      }
     },
 
     /**

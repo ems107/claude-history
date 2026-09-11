@@ -2,7 +2,6 @@ import type { FoldState } from '../../lib/folding.ts';
 import type { InspectorState } from '../../lib/inspector.ts';
 import type { ReadingPrefs } from '../../lib/readingPrefs.ts';
 import type { ViewPrefs } from '../../lib/viewPrefs.ts';
-import { CountBadge } from '../CountBadge.tsx';
 import { PANEL_ICONS } from './InspectorRail.tsx';
 import { ViewMenuBody } from './ViewMenu.tsx';
 
@@ -57,7 +56,7 @@ export function SessionSheetSections({
                 inspector.toggle(item.key);
                 close();
               }}
-              className={`relative flex min-h-12 items-center gap-2 rounded border px-2.5 text-left text-sm ${
+              className={`flex min-h-12 items-center gap-2 rounded border px-2.5 text-left text-sm ${
                 active
                   ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
                   : 'border-[var(--border)] text-[var(--text)]'
@@ -70,9 +69,13 @@ export function SessionSheetSections({
               )}
               {/* The phone has no rail, so this is the ONLY place a warning can
                   reach it — and a `title` it cannot hover would be no warning
-                  at all. Same badge, same amber, same silence to a screen
-                  reader as on the rail. */}
-              <CountBadge count={item.alert} />
+                  at all. Same sign, same amber as the rail; there is room for
+                  it beside the count here, so it does not need a line. */}
+              {item.alert > 0 && (
+                <span aria-hidden className="shrink-0 font-semibold text-amber-400">
+                  ⚠ {item.alert}
+                </span>
+              )}
             </button>
           );
         })}

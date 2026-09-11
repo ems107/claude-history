@@ -1,6 +1,5 @@
 import type { InspectorState, PanelKey } from '../../lib/inspector.ts';
 import { RAIL_PX } from '../../lib/sideColumns.ts';
-import { CountBadge } from '../CountBadge.tsx';
 
 const base = {
   viewBox: '0 0 16 16',
@@ -115,9 +114,7 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
             onClick={() => inspector.toggle(item.key)}
             title={item.hint}
             aria-pressed={active}
-            // `relative` for the badge alone: `CountBadge` positions itself
-            // against the nearest positioned ancestor.
-            className={`relative flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
+            className={`flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
               active
                 ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                 : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'
@@ -133,12 +130,24 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
               {item.count !== null ? ` ${item.count}` : ''}
             </span>
             {/* Something in there is wrong, and the point is to know it without
-                opening anything. Amber rather than red, per `BlockedBar`: the
-                session ran, it just ran without something it expected. The
-                count is spelled out in `item.hint`, which is this button's
-                `title`, so the badge stays `aria-hidden` and says nothing
-                twice. Nothing is drawn at 0, so this is unconditional. */}
-            <CountBadge count={item.alert} />
+                opening anything.
+
+                A LINE OF ITS OWN, not a badge riding the corner: the rail is
+                72 px and its right edge is the window's, so a corner badge is
+                clipped in half by the page and reads as a stray dot rather
+                than as a warning. Here it is the sign and the number, in the
+                flow, on the one button that ever has one — which also makes
+                that button taller than its neighbours, and that is the point.
+
+                Amber rather than red, per `BlockedBar`: the session ran, it
+                just ran without something it expected. The words are in
+                `item.hint`, which is this button's `title`, so this stays
+                `aria-hidden` and nothing is announced twice. */}
+            {item.alert > 0 && (
+              <span aria-hidden className="w-full text-center font-semibold text-amber-400">
+                ⚠ {item.alert}
+              </span>
+            )}
           </button>
         );
       })}
