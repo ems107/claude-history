@@ -10,7 +10,7 @@ import { ViewMenuBody } from './ViewMenu.tsx';
  *
  * Three things lived beside the title on a desktop and a fourth down the right
  * edge of the window: find, the view menu, the session's own actions, and the
- * seven inspector panels. At 360px that came to a strip of chips under the
+ * inspector panels. At 360px that came to a strip of chips under the
  * header — which is a list you cannot see the end of — plus a row of controls
  * that left the title about a third of its own line.
  *
@@ -66,6 +66,15 @@ export function SessionSheetSections({
               <span className="min-w-0 flex-1 truncate">{item.short}</span>
               {item.count !== null && (
                 <span className="shrink-0 font-mono text-[11px] text-[var(--text-dim)]">{item.count}</span>
+              )}
+              {/* The phone has no rail, so this is the ONLY place a warning can
+                  reach it — and a `title` it cannot hover would be no warning
+                  at all. Same sign, same amber as the rail; there is room for
+                  it beside the count here, so it does not need a line. */}
+              {item.alert > 0 && (
+                <span aria-hidden className="shrink-0 font-semibold text-amber-400">
+                  ⚠ {item.alert}
+                </span>
               )}
             </button>
           );

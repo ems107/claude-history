@@ -172,6 +172,58 @@ Two things arrive in that envelope, and both were being lost. 144 `queued_comman
 
 **Nothing in this envelope opens a turn — it joins the one already open** (`ensureTurn`), prompts and notifications alike, because being in this envelope IS the evidence that a turn was running. Claude Code agrees for the prompt: the `last-prompt` written straight after delivery still names the PREVIOUS prompt, in both cases here. A turn of its own cut the conversation where nothing had ended — in `b343d4ac` the line lands between a `tool_result` and three more `tool_use` calls of one piece of work. Drawn inside the thread its clock also stops reading backwards. It cuts the tool run it landed in, and for once that is free: the cut falls BETWEEN items, never inside one, so no assistant message has its calls split across two runs and `costOwner` has nothing to undo (checked: priced entries equal assistant-messages-with-usage, 13/75/609/736, zero double-billed).
 
+### The MCP servers (`attachment` / `deferred_tools_delta`)
+
+**This line is the only record anywhere of which MCP servers a session had**, and until the MCP panel nothing read it: it fell out of the parser's attachment branch unexamined. `/mcp` in a terminal answers for the machine NOW; this answers for a session that ran in August, months later, with the error text of whatever was down that afternoon. **820 lines over 647 files; 445 of the 479 top-level sessions have at least one**, 299 of those with servers of their own and 22 ending with something that never connected.
+
+It is written at CLI startup — line index p50 **3**, max 22, so it is inside the summarizer's head-25 — and **again in full on every resume**, at the point in the file where work continued. Nothing is ever rewritten: `f3384d17` carries three (lines 5, 2230, 4701, 5th–7th August), each re-announcing all 70 tools.
+
+| Field | What it is |
+| --- | --- |
+| `addedNames` / `readdedNames` | tool names now offered. The MCP ones are `mcp__<server>__<tool>` — **the only evidence a server connected**, because there is no list of servers that worked |
+| `removedNames` | tools withdrawn |
+| `pendingMcpServers` | plain strings: still connecting |
+| `failedMcpServers` | `{name, errorCode, error}` — e.g. `siaqodb` / `CONNECTION_CLOSED` / `"Connection closed"`, `sqlserver-dat` / `CONNECT_TIMEOUT` / `"…timed out after 30000ms"` |
+| `needsAuthMcpServers` | waiting to be signed into |
+| `wireHiddenNames` | present on 220 lines, **non-empty on none** — unmodelled, not ignored on purpose |
+
+Four rules, each measured, all four implemented in `createMcpTracker` (`parser.ts`):
+
+- **`failedMcpServers` did not exist before CC 2.1.247**, and the boundary is clean: every version from 2.1.247 on writes the field, and no version up to 2.1.246 ever does. So in an older session a server that never connected leaves **no trace at all** in the transcript — not a failure, not even a mention — and the CLI log below is its only witness. All 34 of this corpus's log-only failures sit in such sessions and none in a session whose transcript carries the field, which is what makes the rail's ⚠ (a transcript fact) complete for anything Claude Code writes today and incomplete only for July and August.
+- **An ABSENT status list is not an empty one.** The three MCP lists are frequently missing outright — of 599 deltas, `failedMcpServers` was absent in 374, empty in 189, non-empty in 36 — and **CC 2.1.267 writes deltas with all three gone while the failure is still real**. `5121cb77` is the proof: 09/09 `siaqodb` failed, 10/09 the fields are not there at all, 11/09 `siaqodb` failed again. Reading absence as "nothing is failing" invents a recovery that never happened. **Present ⇒ the whole truth for that instant; absent ⇒ says nothing.**
+- **`needsAuthMcpServers` holds a DISPLAY name, not the key.** The only value in the corpus is `"claude.ai Canva"` while its tools spell it `claude_ai_Canva`; `pendingMcpServers` and `failedMcpServers[].name` do use the key (`siaqodb`, `sqlserver-dat`). So servers join on a normalised key — lowercase, every run of non-alphanumerics to `_` — and the tool slug wins for display. Join on the raw string and one server becomes two rows.
+- **The three lists describe ONE instant, so they are read together** — every claim applied before anything asks who LEFT a list. Read one at a time, a server that goes from `pending` to `failed` in the same line moves twice: out of `pending` into the `unknown` of having no tools, then into `failed`. `83b844a0` showed it plainly — `pending → unknown` and `unknown → failed`, six lines of history about three servers that had simply timed out.
+- **Leaving a bad state resolves by the tools**: connected if any were ever announced, `unknown` if not. All 34 such transitions here are that same connector leaving `needs-auth`, and every one has tools.
+- **`removedNames` is NOT a disconnection.** Every withdrawal in the corpus is the account connector going and coming back as the tool budget moves. A server does not stop having been connected because its tools were parked.
+
+**An event is only a real change**, which is what collapses those three identical re-announcements of `f3384d17` into one and keeps the `pending → connected` of `4b0aa12e` six seconds after startup. 276 of 299 sessions have exactly one moment; the most is 16.
+
+**There is no reliable way to group these by CLI run, so nothing tries.** `session_id` is absent from most of them (they are written before any request goes out — `enricher.ts` already comments on the same thing), and "re-announces the built-in tools" is a false discriminator: deltas of 2 tools do it every time plan mode is toggled. The timeline of stamped events says the same thing without inventing a structure the file does not have.
+
+Every one of the 820 carries a `uuid`, so `replayFilter` drops a replayed copy for free. Two sibling types are unread: `deferred_tools_record` (91 lines) holds `name` + `description` + `input_schema` for the tools a `ToolSearch` actually fetched, and `mcp_instructions_delta` (5) the instruction block a server contributes (`claude-in-chrome`).
+
+### The CLI's own MCP logs — the only place that says WHY
+
+`%LOCALAPPDATA%\claude-cli-nodejs\Cache\<encodedDir>\mcp-logs-<server>\<ISO>.jsonl`. **The third place on disk this app reads**, after `~/.claude` and the temp scratchpad, and it exists for one reason: the transcript knows *that* a server failed and this knows *why*.
+
+743 files, 8,005 lines, 2.1 MB, 17/07 → today. Two shapes, `{debug, timestamp, sessionId, cwd}` and `{error, timestamp, sessionId, cwd}` — `error` is the server's own **stderr**, or a `Connection failed (CODE)` line.
+
+Three facts make it usable, and each was measured:
+
+- **`sessionId` is on all 8,005 lines**, so the join to a session is equality rather than a guess.
+- **The project folder is the index's own `encodedDir`** — the CLI slugifies the cwd once and spells it identically here, in `~/.claude/projects` and in the temp scratchpad (17 of the 19 folders here match a projects dir exactly). Nothing re-implements that encoding.
+- **Coverage where it matters is total**: all **23 of 23** sessions whose transcript records a failure have a log. Logs reach back to 17/07 and so does the oldest transcript, so nothing is missing today — but nothing promises that either, and a session older than the logs is an ordinary `available: false`.
+
+What it adds over the transcript, in one comparison. `siaqodb` has read `CONNECTION_CLOSED — "Connection closed"` for months; the log says:
+
+> `Server stderr:` **`The build failed. Fix the build errors and run again.`**
+
+And `sqlserver-dat`'s `CONNECT_TIMEOUT` turns out to be *"Sources changed, rebuilding MCP server. This can outlast your MCP client's connection timeout: if the server shows up as timed out, just reconnect it."* Neither sentence is anywhere in `~/.claude`.
+
+Also here and nowhere else: `Successfully connected (transport: stdio) in Nms` — the real handshake, 10,267 ms for `sqlserver-dat` in `b7505527` — the server's declared capabilities, and every tool call with its own duration.
+
+**It is read lazily, by its own endpoint** (`/api/sessions/:id/mcp-logs`), because answering means reading a project’s whole log folder and filtering it by session — 239 files and 670 KB at the busiest project here — and no conversation should pay for that. Its stderr carries connection details (`MCP SQL Server initialized for localhost\SQLENTDEV:1433, Database: dat1, User: pccom`): local-only, so not a leak, but it is drawn and never indexed.
+
 ### The stop marker (`[Request interrupted by user]`)
 
 **When the user presses stop, Claude Code closes the turn by writing a `user` line that looks exactly like a message**: `message.content` an ARRAY holding one `text` block, the marker and nothing else, no `origin`, `isMeta` false. Two wordings, 9 lines over 7 sessions here — `[Request interrupted by user]` (6) and `[Request interrupted by user for tool use]` (3), the second when the stop landed on a tool call.

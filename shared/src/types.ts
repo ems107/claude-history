@@ -813,6 +813,91 @@ export interface FileChange {
   edits: FileEdit[];
 }
 
+/**
+ * What an MCP server was doing for a session, as its transcript records it.
+ *
+ * `connected` is the only one that is INFERRED rather than stated: Claude Code
+ * writes no list of servers that worked, so a server counts as connected once
+ * its tools have been announced. The other three are quoted from the line that
+ * named them, and `unknown` is a server that left a bad state without its tools
+ * ever being seen — it was neither, and saying so beats guessing.
+ */
+export type McpStatus = 'connected' | 'pending' | 'failed' | 'needs-auth' | 'unknown';
+
+export interface McpTool {
+  name: string;
+  /**
+   * Calls in this session. **A 0 is a fact, not a gap**: it is the tool that was
+   * offered — and paid for in the tool budget — and never used.
+   */
+  calls: number;
+  /**
+   * How many of those came back `is_error`. A DIFFERENT axis from the server's
+   * status and drawn in a different colour for that reason: the server worked,
+   * the call did not. Amber is the connection; red is the call.
+   */
+  errors: number;
+}
+
+export interface McpServer {
+  /**
+   * The join key, not a display string: lowercased with every run of
+   * non-alphanumerics collapsed to `_`. Claude Code spells the same server two
+   * ways — `claude_ai_Canva` in a tool name, `claude.ai Canva` in the
+   * needs-auth list — and this is what makes those one row instead of two.
+   */
+  key: string;
+  /** What to draw: the tool-name slug where there is one, else the name the status list gave. */
+  name: string;
+  status: McpStatus;
+  /** Quoted from `failedMcpServers`, and only ever set on `failed`. */
+  errorCode: string | null;
+  error: string | null;
+  /** Its tools, first seen first — with the `mcp__<server>__` prefix already gone. */
+  tools: McpTool[];
+  /** How many times this session actually called one of them. */
+  callCount: number;
+  /** How many of those came back an error — the sum of `tools[].errors`. */
+  errorCount: number;
+  /** When it entered the status it is in now. */
+  since: string | null;
+}
+
+/** A status CHANGE. A line that re-states what was already true writes none. */
+export interface McpEvent {
+  /** Every one of the 820 lines these come from carries a stamp; the null is defensive, not expected. */
+  when: string | null;
+  /**
+   * The server, by key and only by key. No name: a server can be renamed
+   * mid-session — the needs-auth list names it first and its own tools rename it
+   * — so a name copied in here would be the OLD one, and the row above would
+   * disagree with the history below it. Look it up in `servers`.
+   */
+  key: string;
+  /** `null` the first time a server is seen at all. */
+  from: McpStatus | null;
+  to: McpStatus;
+  errorCode: string | null;
+  error: string | null;
+  /**
+   * The uuid of the last message drawn before this happened — where in the
+   * conversation to stand to see it. The line this comes from is not itself
+   * drawn (it is not a message), so it cannot be its own anchor; the item above
+   * it can, and being an item it is certainly on screen. `null` for anything
+   * that lands before the session's first message, which is the startup of a
+   * session that has not begun — nowhere to go, and nothing to see there.
+   */
+  anchor: string | null;
+}
+
+export interface McpPicture {
+  /** Failed and blocked first — what you opened the panel for — then by name. */
+  servers: McpServer[];
+  events: McpEvent[];
+  /** Servers whose FINAL status is `failed`: the number the rail warns with. */
+  failing: number;
+}
+
 export interface SessionDetail {
   summary: SessionSummary;
   turns: Turn[];
@@ -822,6 +907,8 @@ export interface SessionDetail {
   prLinks: PrLink[];
   /** Files touched by Edit/Write tool calls in THIS transcript (subagent edits live in their own transcripts). */
   fileChanges: FileChange[];
+  /** The MCP servers this session had, and what became of them. Empty where the CLI wrote nothing. */
+  mcp: McpPicture;
 }
 
 export interface SubagentDetail {

@@ -554,6 +554,70 @@ export interface ScratchpadResponse {
   truncated: boolean;
 }
 
+/**
+ * What Claude Code's CLI logged about one MCP server while this session ran.
+ *
+ * **The third place on disk this app reads**, after `~/.claude` and the temp
+ * scratchpad, and the only one that answers "why did it fail". The transcript
+ * knows two error codes and five sentences, four of which are a template; these
+ * logs carry the server's own stderr, which is where the real answer lives — a
+ * `CONNECT_TIMEOUT` in the transcript against *"Sources changed, rebuilding MCP
+ * server. This can outlast your MCP client's connection timeout"* here.
+ *
+ * `%LOCALAPPDATA%\claude-cli-nodejs\Cache\<encodedDir>\mcp-logs-<server>\*.jsonl`,
+ * and the two things that make it safe and exact: **`encodedDir` is the index's
+ * own slug** — the CLI names this folder with the same string it names the
+ * `~/.claude/projects` one, so nothing re-implements that encoding — and every
+ * line carries a `sessionId`, so the join is equality rather than a guess.
+ *
+ * Lazily fetched, like the scratchpad: answering means reading a project's
+ * whole log folder and filtering it by session — 239 files and 670 KB at the
+ * busiest project here — and no session view should pay for that until the
+ * panel is open.
+ */
+export interface McpLogEntry {
+  when: string | null;
+  /** `error` is the server's own stderr, or a connection failure; `debug` is the CLI narrating. */
+  kind: 'error' | 'debug';
+  text: string;
+}
+
+export interface McpServerLog {
+  /** The server, spelled as the folder names it. */
+  server: string;
+  /**
+   * The same normalisation `McpServer.key` uses. Done here so the join to the
+   * panel's rows happens once, on the side that already owns the rule — the
+   * browser must not carry a second copy of how a server name is folded.
+   */
+  key: string;
+  entries: McpLogEntry[];
+  /**
+   * What the LOG says became of it, from the last `Successfully connected` or
+   * `Connection failed` line it holds — `null` when it says neither.
+   *
+   * Only ever read for a server the transcript never named, and there it is the
+   * whole answer rather than a hint: the log states the outcome outright, so a
+   * panel that drew such a row as "unknown" would be hiding something it knows.
+   */
+  status: 'connected' | 'failed' | null;
+  /** From `Successfully connected … in Nms`: how long it really took, where it says so. */
+  connectMs: number | null;
+  /** The cap was reached; the newest are kept, because a failure is at the end. */
+  truncated: boolean;
+}
+
+export interface McpLogsResponse {
+  /**
+   * Whether the folder is THERE. `false` is ordinary rather than a failure —
+   * the logs on this machine reach back exactly as far as the transcripts do,
+   * but nothing promises that, and a session older than them is a session with
+   * no logs, not a broken endpoint.
+   */
+  available: boolean;
+  servers: McpServerLog[];
+}
+
 export interface PromptEntry {
   display: string; // full typed prompt text
   timestamp: number; // epoch ms

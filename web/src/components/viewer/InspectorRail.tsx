@@ -13,12 +13,12 @@ const base = {
 };
 
 /**
- * Seven shapes that have to be told apart at 16 px, so each one says what its
+ * Eight shapes that have to be told apart at 16 px, so each one says what its
  * panel is ABOUT rather than what kind of thing it is: three bars for the
  * ledger, a pencil for what was edited, an arrow leaving a tray for what was
  * handed over, a link for a path merely named, an open folder for the
- * workspace it wrote in, a fork for the agents, a graph for the lineage. Same
- * stroke and same grid as `components/icons.tsx`.
+ * workspace it wrote in, a fork for the agents, a plug for what was plugged in,
+ * a graph for the lineage. Same stroke and same grid as `components/icons.tsx`.
  */
 export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> = {
   tokens: () => (
@@ -60,6 +60,16 @@ export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> =
       <path d="M8 9l4-3V2.5" />
     </svg>
   ),
+  // A plug: two pins going into a socket. What an MCP server IS to a session —
+  // something outside it, plugged in — rather than a server or a network.
+  mcp: () => (
+    <svg {...base}>
+      <path d="M6 2v3" />
+      <path d="M10 2v3" />
+      <path d="M3.5 5h9v2.5a4.5 4.5 0 0 1-9 0Z" />
+      <path d="M8 12v2" />
+    </svg>
+  ),
   lineage: () => (
     <svg {...base}>
       <circle cx="4.5" cy="4" r="1.6" />
@@ -81,7 +91,7 @@ export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> =
  *
  * **Not drawn at all on a phone.** It was a strip of chips under the header
  * there, and a strip that scrolls sideways is a list you cannot see the end of:
- * with seven panels, two of them were always off the right edge. The same seven
+ * with seven panels, two of them were always off the right edge. The same items
  * are a section of the session sheet instead ([SessionSheetSections]), where
  * they are all visible at once and cost no permanent room.
  */
@@ -104,7 +114,7 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
             onClick={() => inspector.toggle(item.key)}
             title={item.hint}
             aria-pressed={active}
-            className={`flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
+            className={`relative flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
               active
                 ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                 : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'
@@ -119,6 +129,31 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
               {item.short}
               {item.count !== null ? ` ${item.count}` : ''}
             </span>
+            {/* Something in there is wrong, and the point is to know it without
+                opening anything.
+
+                In the corner, and INSIDE it — every row of this rail is the
+                same height whether or not anything went wrong, because a
+                column of buttons that changes shape is harder to read than one
+                that does not. `CountBadge` was the obvious reuse and is the one
+                thing that cannot work here: it hangs off the top-right corner
+                by 6 px, and this rail's right edge is the WINDOW's, so the page
+                clipped the circle in half and it read as a stray dot. Placed
+                within the padding box instead, beside the icon, where 72 px
+                wide leaves ~28 px free either side of a 16 px glyph.
+
+                Amber rather than red, per `BlockedBar`: the session ran, it
+                just ran without something it expected. The words are in
+                `item.hint`, which is this button's `title`, so this stays
+                `aria-hidden` and nothing is announced twice. */}
+            {item.alert > 0 && (
+              <span
+                aria-hidden
+                className="absolute top-0.5 right-0.5 px-1 text-[10px] leading-none font-semibold text-amber-400"
+              >
+                ⚠ {item.alert}
+              </span>
+            )}
           </button>
         );
       })}

@@ -1,4 +1,4 @@
-import type {
+import type { McpLogsResponse,
   ActiveAppSession,
   ActiveSessionsResponse,
   AppSettings,
@@ -595,6 +595,7 @@ export const api = {
   },
   session: (id: string) => getJson<SessionDetailResponse>(`/api/sessions/${id}`),
   lineage: (id: string) => getJson<LineageResponse>(`/api/sessions/${id}/lineage`),
+  mcpLogs: (id: string) => getJson<McpLogsResponse>(`/api/sessions/${id}/mcp-logs`),
   subagent: (id: string, agentId: string) =>
     getJson<SubagentDetailResponse>(`/api/sessions/${id}/subagents/${agentId}`),
   toolResult: (path: string) => getJson<ToolResultFileResponse>(`/api/tool-results?path=${encodeURIComponent(path)}`),

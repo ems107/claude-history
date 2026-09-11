@@ -74,5 +74,6 @@ export function draftSessionDetail(id: string, cwd: string | null): SessionDetai
     ancestry: { forkedFrom: null, descendants: [] },
     prLinks: [],
     fileChanges: [],
+    mcp: { servers: [], events: [], failing: 0 },
   };
 }

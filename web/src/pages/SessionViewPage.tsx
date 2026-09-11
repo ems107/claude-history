@@ -42,6 +42,7 @@ import { FollowBottomButton, PILL_CORNER_PX, useFollowBottom } from '../componen
 import { Inspector } from '../components/viewer/Inspector.tsx';
 import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
+import { McpPanel } from '../components/viewer/McpPanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SessionSheetSections } from '../components/viewer/SessionSheetSections.tsx';
@@ -781,6 +782,7 @@ export function SessionViewPage() {
     mentionCount: mentioned ? mentioned.rows.length : null,
     scratchpadCount: scratchpad.data?.entries.length ?? 0,
     agentCount: session?.subagents.length ?? 0,
+    mcp: session?.mcp ?? null,
     hasLineage: !!session && (session.ancestry.forkedFrom !== null || session.ancestry.descendants.length > 0),
     agents: { open: agentsOpen, toggle: toggleAgents, close: closeAgents },
   });
@@ -849,7 +851,7 @@ export function SessionViewPage() {
       // between them is only what it costs to read; the order that matters is
       // that a column closes before the panel it was opened from.
       //
-      // The inspector is one branch for all six panels, which is what makes this
+      // The inspector is one branch for every panel, which is what makes this
       // list honest: only the subagent list was ever in it, because putting one
       // file panel in and not the other would have been worse than neither.
       //
@@ -1164,7 +1166,7 @@ export function SessionViewPage() {
   const convGutter = sideLayout.gutter;
 
   /**
-   * Whichever panel the rail has open. One node rather than six conditionals,
+   * Whichever panel the rail has open. One node rather than a conditional each,
    * because there is one place it can go now — and a panel with nothing to show
    * cannot be reached at all: the rail only offers the ones this session has.
    */
@@ -1218,6 +1220,8 @@ export function SessionViewPage() {
             now={now}
           />
         );
+      case 'mcp':
+        return <McpPanel sessionId={id} mcp={session.mcp} onGoToMessage={(uuid) => jumpTo('msg', uuid)} />;
       case 'lineage':
         return <LineagePanel sessionId={id} />;
       default:
@@ -1265,6 +1269,11 @@ export function SessionViewPage() {
               // grows, so the badge would still read "live" through a turn the
               // app itself is running.
               live={liveInfo}
+              // The rail is not drawn on a phone, so the warning has to reach
+              // the header there — and pressing it must OPEN, never toggle shut.
+              onOpenMcp={() => {
+                if (inspector.open !== 'mcp') inspector.toggle('mcp');
+              }}
               actions={
                 <>
                   <FindButton
@@ -1279,7 +1288,7 @@ export function SessionViewPage() {
                   />
                 </>
               }
-              // The same three, plus the seven panels, as sections of the sheet
+              // The same three, plus the inspector panels, as sections of the sheet
               // the ⋮ opens on a phone — where the title row has room for a name
               // and one button, and nothing else.
               menuSections={(close) => (

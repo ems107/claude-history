@@ -153,8 +153,15 @@ export function SessionHeader({
   actions,
   menuSections,
   live,
+  onOpenMcp,
 }: {
   detail: SessionDetail;
+  /**
+   * Opens the MCP panel — used only by the phone's warning below, because a
+   * phone has no rail and a mark nobody can see is not a warning. Absent on a
+   * desktop, where the rail says it and this row is not drawn at all.
+   */
+  onOpenMcp?: () => void;
   /**
    * This session has no transcript yet — the app is running a CLI in it and
    * Claude Code has not written the file ([draftSession.ts]). Everything that
@@ -214,7 +221,7 @@ export function SessionHeader({
     <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2 max-md:px-3">
       {/* On a phone: the name, and one button. Everything that used to sit
           beside it — find, the view menu, the session's own actions and the
-          seven panels — is behind that button, because a title is what somebody
+          inspector panels — is behind that button, because a title is what somebody
           opens a session to see and the row was spending two thirds of itself on
           controls used a few times each.
           The ← went with them, from BOTH sizes. Escape has always been the way
@@ -308,6 +315,24 @@ export function SessionHeader({
           />
         )}
         <SessionBadges session={s} omitPr omitNews live={live} />
+        {/* The one thing about this session that is WRONG, on the phone only.
+            The rail says it on a desktop and this row is not drawn there; here
+            there is no rail at all, and a mark that lives inside the ⋮ sheet is
+            a warning nobody receives until they go looking. So it is in the
+            header, it names what it is about, and it opens the panel. */}
+        {detail.mcp.failing > 0 && onOpenMcp && (
+          <button
+            type="button"
+            onClick={onOpenMcp}
+            title={`${detail.mcp.failing} MCP server${detail.mcp.failing === 1 ? '' : 's'} never connected — open the panel`}
+            // `py-1`, which is the `more` button's on this same row: the row has
+            // its own scale and a target twice as tall as everything beside it
+            // would break the line it lives in.
+            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded bg-amber-500/15 px-1.5 py-1 text-[11px] font-semibold tracking-wide text-amber-400"
+          >
+            ⚠ {detail.mcp.failing} MCP
+          </button>
+        )}
         <span className="ml-auto" />
         <button
           type="button"

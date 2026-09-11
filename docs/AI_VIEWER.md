@@ -147,9 +147,30 @@ arriving, now true of a panel opening too.
   stops existing cannot stay open (`useInspector` re-checks on every render), or
   a session whose last agent row went away with a re-parse would leave the
   inspector holding a title with nothing under it.
+- **A rail button can say that something in it is WRONG**, and `MCP` is the only
+  one that ever does: `PanelItem.alert` is drawn as an amber `⚠ N` in the
+  button's top-right corner, so a server that never connected is legible without
+  opening anything. **On a phone it moves to the HEADER**, beside the project
+  tag, as `⚠ N MCP` — there is no rail there at all, and a mark that lives
+  inside the ⋮ sheet is a warning nobody receives until they go looking. It
+  names what it is about, because unlike a rail button it has no label of its
+  own, and pressing it OPENS the panel rather than toggling it: a warning is not
+  a switch. Its `py-1` is the `more` button's on that same row — a target twice
+  as tall as everything beside it would break the line it lives in. **It is a third case of the rule
+  the bell and the unseen count already follow** ([below](#what-a-list-row-says-you-have-not-seen)):
+  amber, and NOT `CountBadge`. That component hangs off a control's top-right
+  corner by 6 px, and this rail's right edge is the WINDOW's — the page clipped
+  the circle in half and it read as a stray dot rather than as a warning. Placed
+  WITHIN the padding box instead, beside the icon, where 72 px leaves ~28 px
+  either side of a 16 px glyph. **Every row of the rail stays 44 px** whether or
+  not anything went wrong: a column of buttons that changes shape is harder to
+  read than one that does not, so the alert may not take a line of its own.
+  Amber and not red, per `BlockedBar`: the session ran, it just ran without
+  something it expected. `alert` is required rather than optional so a panel
+  that ought to warn cannot quietly forget to; the other seven pass 0.
 - **One at a time, which is what gives Escape one meaning.** The unwind is
   `file → agent → inspector → find bar → back`, and the inspector is one branch
-  for all seven panels — see [the three file panels](#the-three-file-panels) for
+  for every panel — see [the three file panels](#the-three-file-panels) for
   the objection this answers.
 - **What is open is ONE value, and `?agents=1` is a mirror of it** — not half of
   the answer. The parameter has to stay, because the link can be copied and
@@ -258,7 +279,7 @@ inspector's are all consequences of one choice.
 - **The four numbers, and why none of them is borrowed.** `SIDE_MIN` is 240 — a
   column dragged narrow is usually somebody keeping a file in the corner of their
   eye, which is not the same thing as reading it, and the 360 it started at was a
-  limit nobody had asked for. `INSPECTOR_MIN` stays 320 because its seven panels
+  limit nobody had asked for. `INSPECTOR_MIN` stays 320 because its panels
   are WRITTEN for 320: a file viewer at 240 is still a file viewer, a token
   ledger at 240 is a broken table. `CONV_MIN` is 320, the same floor — see below.
   And `WIDTH_MIN` is deliberately none of them: it is the narrowest reading
@@ -1118,7 +1139,7 @@ The third is the weakest of them by nature and says so on every row that needs i
 - **The answer is joined on the `ref` the server echoed back**, normalised — never on the resolved path, which is the server's answer and not the key any row was built with, and never positionally.
 - **One state column, one meaning: `on disk` / `changed since` / `no longer on disk`.** The raw `modifiedAt` was in that column for one draft and had to come out: beside the row's own timestamp it was a second unlabelled date, and two dates that mean different things read as neither. What is interesting about it is computed instead — `changed since` is earned by a size that differs from what was sent OR, for a row that records no size, by an mtime later than the line that named it, which is the one thing worth knowing about a file holding only the LATEST plan for its slug.
 - **The jump names what it lands on**: `↑ the call` for a delivery or a publish, `↑ the line` for a plan file, which no call handed over. Both go through the page's `jumpTo`, so they clear the other anchor and bump `jumpNonce` — pressing the same row twice must jump twice.
-- **All seven panels are one value now** (`useInspector`), which answers the objection that kept these two out of the Escape unwind — putting one in and not the other would have been worse than neither. There is one thing open and one thing to close. `?agents=1` is still the only one in the URL, because the session list links straight onto it.
+- **Every panel is one value now** (`useInspector`), which answers the objection that kept these two out of the Escape unwind — putting one in and not the other would have been worse than neither. There is one thing open and one thing to close. `?agents=1` is still the only one in the URL, because the session list links straight onto it.
 - **Their rows wrap.** Each is a flex line of `shrink-0` columns — a name, a type, a size, a state chip, a date, a folder tail, a jump — and six of those do not fit the 320 px the inspector can be dragged to, however small the type: `Sent files` wanted 789 px and scrolled sideways. `flex-wrap` with a row gap leaves them unchanged wherever there is room.
 
 ## The scratchpad is the fourth file question
@@ -1134,6 +1155,26 @@ The three above it read the CONVERSATION. This one reads the disk: what the sess
 - **The tree is flat.** Entries arrive in walk order carrying their own `depth`, so a fold is a linear pass — a directory's contents are exactly the rows after it that are deeper than it — and the indent is capped like the subagent panel's, because every level of it is width taken off the name at 320 px. Everything starts folded: `595fa12d` opens on 74 rows and holds 415.
 - **A directory says how many children it has, counted rather than listed.** So a folded row is honest about what is under it, and a row the cap cut short still says how much was there. An unreadable one says `cannot be read` where its number would be — the row is still true, and the count is the part that is not knowable.
 - **Opening the folder is the panel's one local-only control**, and it greys out under `openFile` rather than `openFolder`: the key has to name the endpoint the button calls (`/api/files/open`), or the tooltip and the 409 become two sentences about one fact.
+
+## The MCP panel answers a question `/mcp` cannot
+
+`/mcp` in a terminal describes the machine NOW. **Nothing else describes the session that ran in August** — which servers it had, which of them it leaned on, and the error text of the one that was down that afternoon. The reading rules are [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)'s; what the panel does with them is here.
+
+- **A snapshot with a time on it, never "now".** A server can die mid-session without the transcript hearing a thing, so every row says when it entered the state it is in rather than claiming it is still in it. This is the same honesty as the scratchpad's `no longer on disk`: the panel's value is that it does not overclaim.
+- **The panel exists whenever the session had a server at all**, the account connector included — the rail's ordinary rule, applied to a fact rather than to a judgement about which servers are interesting. A session with NO data is the case that matters and it gets no item: the CLI writes nothing at all in a stub or an old enough build, and **"nothing is known" is not "there were none"**, which is exactly what a `0` would have claimed.
+- **`failed` is the only thing that lights the rail's badge** — not `pending`, not `needs-auth`. A server that took six seconds or was signed into and then worked did not go wrong, and a warning that fires on those fires on most sessions in a PCCOM repo, which is a warning that means nothing. The history below the rows still records them.
+- **The error text is quoted, never summarised.** `CONNECTION_CLOSED — "Connection closed"` is the whole reason to open this on a session that went wrong — and **under it sits the CLI's own log**, which is the only place that says why: `Server stderr: The build failed. Fix the build errors and run again.` The two are drawn as what they are, a claim and its evidence. Where those logs live and why they can be trusted is [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)'s; what the panel owes them is being **lazy** (its own query, opened with the panel), saying **"no logs" as an ordinary state** rather than a failure, and giving them **day headings** — they span a session's whole life, and eleven days of bare `12:06` say nothing.
+- **A server the log knows and the transcript does not is still drawn**, under a dashed border, **and it says what the LOG says became of it** — in the same chip as every row above. They exist: `f3384d17` carries 109 log lines for `claude-in-chrome`, which never reached a `deferred_tools_delta` of that session and so has no row of its own. Dropping it would be the panel failing its own claim: it says what a session HAD, and a log is evidence the server was there.
+  - **The chip read `logged only` for one draft, and that was the one thing this panel must not do** — describe where a fact came from instead of what the fact is. The log states the outcome outright (`Successfully connected in 7ms`; `Connection failed (CONNECT_TIMEOUT)`), so a neutral word there made the reader ask the very question the panel exists to answer. Provenance belongs in a sentence underneath, not in the slot where a state goes.
+  - **When such a server FAILED, that sentence also says why the ⚠ does not count it.** The mark reads the transcript and this failure is not in the transcript — Claude Code wrote no failure list before 2.1.247 ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)) — so the count and the row disagree, and the row is the one that explains. Reading the logs during the parse would close that gap and was measured rather than assumed: 126 ms for the busiest project, paid by every session opened, to fix a case that cannot arise in anything the CLI writes today. Not worth it, and the ⚠ is deliberately the transcript’s.
+- **The handshake is a fact only the log has.** `handshake 10.3 s` beside a server that connected is the difference between one that works and one you are about to watch time out; nothing in the transcript comes near it.
+- **A tool nobody called is dimmed, not hidden.** `18 tools · 2 used` is the interesting shape: the session paid the tool budget for all 18 and touched two. Hiding the sixteen would hide the point.
+- **Two colours, because there are two axes, and this is the panel that must not confuse them.** The status chip is AMBER and means the server never connected; the call counts are RED and mean it connected fine and the call came back an error — `execute_query 6 failed 46×`, which is six queries that were wrong rather than anything being down. Red is right here by the house rule (`BlockedBar`: red for what actually broke) and the call did break; running them together would lose the distinction that makes either worth drawing. The count is on the tool AND summed on the server, so `47 calls · 7 failed` is legible without opening the fold.
+- **The history is drawn only when more than one thing ever happened.** One moment is the startup, and every row above already carries its stamp; two or more mean something CHANGED — a server that took its time, one that came back on the next resume — which the rows alone cannot tell. Events are grouped by instant, because a startup moves five servers at once and five lines saying the same time is not a timeline.
+- **The GAP is the fact, not the clock.** `+33 s` against `+24 hr 9 min` is the whole difference between a server that took its time and a session picked up the next morning — and the two absolute times differ by two characters. The clock stays; the gap is what is read.
+- **Each moment says where in the conversation it happened.** The line it came off is not drawn (it is not a message), so it cannot be its own anchor — the item ABOVE it is, and being an item it is certainly on screen. Measured: the delta's own `parentUuid` is a `user` message in 541 of 600 cases and never missing, so the item above is almost always that prompt. On a resumed session that button is *"here is where you picked it back up"*, which nothing else in the app can point at.
+- **An event names its server by key and looks the name up**, because a server gets renamed mid-session: the needs-auth list spells it one way and its own tools another, so a name copied into the event would be the OLD one and the history would disagree with the rows above it.
+- **The parser pays for it, not the cache.** It rides the `SessionDetail` the viewer already fetches, so there is no new endpoint, no index field and **no `CACHE_VERSION` bump** — and `replayFilter` is applied before the attachment branch, so a replayed line is dropped without this having to know replays exist.
 
 ## The end of the conversation
 
