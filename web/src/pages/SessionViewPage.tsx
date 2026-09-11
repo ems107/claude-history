@@ -42,6 +42,7 @@ import { FollowBottomButton, PILL_CORNER_PX, useFollowBottom } from '../componen
 import { Inspector } from '../components/viewer/Inspector.tsx';
 import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
+import { McpPanel } from '../components/viewer/McpPanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SessionSheetSections } from '../components/viewer/SessionSheetSections.tsx';
@@ -781,6 +782,7 @@ export function SessionViewPage() {
     mentionCount: mentioned ? mentioned.rows.length : null,
     scratchpadCount: scratchpad.data?.entries.length ?? 0,
     agentCount: session?.subagents.length ?? 0,
+    mcp: session?.mcp ?? null,
     hasLineage: !!session && (session.ancestry.forkedFrom !== null || session.ancestry.descendants.length > 0),
     agents: { open: agentsOpen, toggle: toggleAgents, close: closeAgents },
   });
@@ -1218,6 +1220,8 @@ export function SessionViewPage() {
             now={now}
           />
         );
+      case 'mcp':
+        return <McpPanel mcp={session.mcp} />;
       case 'lineage':
         return <LineagePanel sessionId={id} />;
       default:

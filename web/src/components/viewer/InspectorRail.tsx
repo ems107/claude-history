@@ -1,5 +1,6 @@
 import type { InspectorState, PanelKey } from '../../lib/inspector.ts';
 import { RAIL_PX } from '../../lib/sideColumns.ts';
+import { CountBadge } from '../CountBadge.tsx';
 
 const base = {
   viewBox: '0 0 16 16',
@@ -60,6 +61,16 @@ export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> =
       <path d="M8 9l4-3V2.5" />
     </svg>
   ),
+  // A plug: two pins going into a socket. What an MCP server IS to a session —
+  // something outside it, plugged in — rather than a server or a network.
+  mcp: () => (
+    <svg {...base}>
+      <path d="M6 2v3" />
+      <path d="M10 2v3" />
+      <path d="M3.5 5h9v2.5a4.5 4.5 0 0 1-9 0Z" />
+      <path d="M8 12v2" />
+    </svg>
+  ),
   lineage: () => (
     <svg {...base}>
       <circle cx="4.5" cy="4" r="1.6" />
@@ -104,7 +115,9 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
             onClick={() => inspector.toggle(item.key)}
             title={item.hint}
             aria-pressed={active}
-            className={`flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
+            // `relative` for the badge alone: `CountBadge` positions itself
+            // against the nearest positioned ancestor.
+            className={`relative flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
               active
                 ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                 : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'
@@ -119,6 +132,13 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
               {item.short}
               {item.count !== null ? ` ${item.count}` : ''}
             </span>
+            {/* Something in there is wrong, and the point is to know it without
+                opening anything. Amber rather than red, per `BlockedBar`: the
+                session ran, it just ran without something it expected. The
+                count is spelled out in `item.hint`, which is this button's
+                `title`, so the badge stays `aria-hidden` and says nothing
+                twice. Nothing is drawn at 0, so this is unconditional. */}
+            <CountBadge count={item.alert} />
           </button>
         );
       })}

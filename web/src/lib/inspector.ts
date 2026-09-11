@@ -1,3 +1,4 @@
+import type { McpPicture } from '@claude-history/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { INSPECTOR_MAX, INSPECTOR_MIN, trackPointer } from './sideColumns.ts';
 
@@ -28,7 +29,7 @@ import { INSPECTOR_MAX, INSPECTOR_MIN, trackPointer } from './sideColumns.ts';
 const WIDTH_KEY = 'inspectorWidth';
 const INSPECTOR_DEFAULT = 400;
 
-export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'scratchpad' | 'agents' | 'lineage';
+export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'scratchpad' | 'agents' | 'mcp' | 'lineage';
 
 export interface PanelItem {
   key: PanelKey;
@@ -38,6 +39,13 @@ export interface PanelItem {
   title: string;
   /** `null` while the number cannot be known yet — the mentions, which ask the disk. */
   count: number | null;
+  /**
+   * How many things in this panel are WRONG — drawn on the rail button as the
+   * amber `CountBadge`, so that "something went badly here" is legible without
+   * opening anything. 0 in every panel that has no such state, and required
+   * rather than optional so that a panel which ought to warn cannot forget to.
+   */
+  alert: number;
   hint: string;
 }
 
@@ -69,6 +77,7 @@ export function useInspector({
   mentionCount,
   scratchpadCount,
   agentCount,
+  mcp,
   hasLineage,
   agents,
 }: {
@@ -86,6 +95,13 @@ export function useInspector({
    */
   scratchpadCount: number;
   agentCount: number;
+  /**
+   * The MCP servers, or null before the session has loaded. A session with no
+   * servers gets no item — and that is not the same as "this session had no
+   * MCP": the CLI writes nothing at all in a stub or an old enough build, and
+   * an absent panel says "nothing is known" where a `0` would have lied.
+   */
+  mcp: McpPicture | null;
   hasLineage: boolean;
   /**
    * The subagent list is the one panel whose open/closed lives in the URL, and
@@ -185,6 +201,8 @@ export function useInspector({
         short: 'Tokens',
         title: 'Tokens',
         count: null,
+
+        alert: 0,
         hint: 'What this session spent, per model, and how its context grew',
       },
       // The words are the feature and they are not interchangeable: one lists
@@ -196,6 +214,8 @@ export function useInspector({
             short: 'Changed',
             title: 'Changed files',
             count: changed,
+
+            alert: 0,
             hint: 'Files this session edited or wrote — from the Edit/Write calls in this transcript',
           }
         : null,
@@ -205,6 +225,8 @@ export function useInspector({
             short: 'Sent',
             title: 'Sent files',
             count: sent,
+
+            alert: 0,
             hint: 'Files this session handed over: delivered to you with SendUserFile, published as an artifact, or written as a plan — with the state of each on disk right now',
           }
         : null,
@@ -214,6 +236,8 @@ export function useInspector({
             short: 'Mentioned',
             title: 'Mentioned files',
             count: mentionCount,
+
+            alert: 0,
             hint: 'Files this session only talked about: the paths its own answers named. Most of what an answer names is written for a person to read — a partial path, a placeholder — so a row that finds nothing is listed and marked rather than hidden.',
           }
         : null,
@@ -227,6 +251,8 @@ export function useInspector({
             short: 'Scratch',
             title: 'Scratchpad',
             count: scratchpadCount,
+
+            alert: 0,
             hint: 'What this session left in its temp working folder: the scripts, notes, screenshots and downloads it wrote while it worked. Windows sweeps this folder, so it is what is there NOW rather than everything the session ever wrote.',
           }
         : null,
@@ -236,7 +262,27 @@ export function useInspector({
             short: 'Subagents',
             title: '⑂ Subagents',
             count: agentCount,
+
+            alert: 0,
             hint: 'The agents this session sent out: what each was asked, what it reported back, and what it cost',
+          }
+        : null,
+      // The only item that can be WRONG rather than merely long, which is why
+      // it is the only one carrying an alert.
+      mcp && mcp.servers.length > 0
+        ? {
+            key: 'mcp',
+            short: 'MCP',
+            title: 'MCP servers',
+            count: mcp.servers.length,
+            alert: mcp.failing,
+            hint:
+              mcp.failing > 0
+                ? `${mcp.failing} MCP server${mcp.failing === 1 ? '' : 's'} never connected: ${mcp.servers
+                    .filter((s) => s.status === 'failed')
+                    .map((s) => s.name)
+                    .join(', ')}`
+                : 'The MCP servers this session had, what they offered, and what became of them',
           }
         : null,
       hasLineage
@@ -245,12 +291,14 @@ export function useInspector({
             short: 'Lineage',
             title: 'Lineage',
             count: null,
+
+            alert: 0,
             hint: 'The full fork chain of this session',
           }
         : null,
     ];
     return all.filter((p): p is PanelItem => p !== null);
-  }, [changed, sent, mentionCandidates, mentionCount, scratchpadCount, agentCount, hasLineage]);
+  }, [changed, sent, mentionCandidates, mentionCount, scratchpadCount, agentCount, mcp, hasLineage]);
 
   return useMemo(
     // A panel that stopped existing cannot stay open: a session whose last
