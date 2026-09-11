@@ -148,19 +148,21 @@ arriving, now true of a panel opening too.
   a session whose last agent row went away with a re-parse would leave the
   inspector holding a title with nothing under it.
 - **A rail button can say that something in it is WRONG**, and `MCP` is the only
-  one that ever does: `PanelItem.alert` is drawn as an amber `⚠ N` on a line of
-  its own under the label, so a server that never connected is legible without
+  one that ever does: `PanelItem.alert` is drawn as an amber `⚠N` in the
+  button's top-right corner, so a server that never connected is legible without
   opening anything — and on the phone's sheet too, where there is no rail and a
   `title` nobody can hover is not a warning. **It is a third case of the rule
   the bell and the unseen count already follow** ([below](#what-a-list-row-says-you-have-not-seen)):
-  amber, and NOT `CountBadge`. That component rides a control's top-right
-  corner in absolute position, and the rail's corner is the window's own edge —
-  the circle was clipped in half by the page and read as a stray dot rather than
-  as a warning. A sign and a number in the flow cannot be clipped, and it makes
-  the one button that has a problem taller than its neighbours, which is the
-  whole intent. Amber and not red, per `BlockedBar`: the session ran, it just
-  ran without something it expected. `alert` is required rather than optional so
-  a panel that ought to warn cannot quietly forget to; the other seven pass 0.
+  amber, and NOT `CountBadge`. That component hangs off a control's top-right
+  corner by 6 px, and this rail's right edge is the WINDOW's — the page clipped
+  the circle in half and it read as a stray dot rather than as a warning. Placed
+  WITHIN the padding box instead, beside the icon, where 72 px leaves ~28 px
+  either side of a 16 px glyph. **Every row of the rail stays 44 px** whether or
+  not anything went wrong: a column of buttons that changes shape is harder to
+  read than one that does not, so the alert may not take a line of its own.
+  Amber and not red, per `BlockedBar`: the session ran, it just ran without
+  something it expected. `alert` is required rather than optional so a panel
+  that ought to warn cannot quietly forget to; the other seven pass 0.
 - **One at a time, which is what gives Escape one meaning.** The unwind is
   `file → agent → inspector → find bar → back`, and the inspector is one branch
   for every panel — see [the three file panels](#the-three-file-panels) for

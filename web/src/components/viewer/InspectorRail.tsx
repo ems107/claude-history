@@ -114,7 +114,7 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
             onClick={() => inspector.toggle(item.key)}
             title={item.hint}
             aria-pressed={active}
-            className={`flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
+            className={`relative flex cursor-pointer flex-col items-center gap-1 px-1 py-1.5 text-[10px] leading-3 ${
               active
                 ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
                 : 'text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]'
@@ -132,20 +132,26 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
             {/* Something in there is wrong, and the point is to know it without
                 opening anything.
 
-                A LINE OF ITS OWN, not a badge riding the corner: the rail is
-                72 px and its right edge is the window's, so a corner badge is
-                clipped in half by the page and reads as a stray dot rather
-                than as a warning. Here it is the sign and the number, in the
-                flow, on the one button that ever has one — which also makes
-                that button taller than its neighbours, and that is the point.
+                In the corner, and INSIDE it — every row of this rail is the
+                same height whether or not anything went wrong, because a
+                column of buttons that changes shape is harder to read than one
+                that does not. `CountBadge` was the obvious reuse and is the one
+                thing that cannot work here: it hangs off the top-right corner
+                by 6 px, and this rail's right edge is the WINDOW's, so the page
+                clipped the circle in half and it read as a stray dot. Placed
+                within the padding box instead, beside the icon, where 72 px
+                wide leaves ~28 px free either side of a 16 px glyph.
 
                 Amber rather than red, per `BlockedBar`: the session ran, it
                 just ran without something it expected. The words are in
                 `item.hint`, which is this button's `title`, so this stays
                 `aria-hidden` and nothing is announced twice. */}
             {item.alert > 0 && (
-              <span aria-hidden className="w-full text-center font-semibold text-amber-400">
-                ⚠ {item.alert}
+              <span
+                aria-hidden
+                className="absolute top-1 right-1 text-[9px] leading-none font-semibold text-amber-400"
+              >
+                ⚠{item.alert}
               </span>
             )}
           </button>
