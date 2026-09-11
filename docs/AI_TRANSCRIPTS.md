@@ -201,6 +201,28 @@ Four rules, each measured, all four implemented in `createMcpTracker` (`parser.t
 
 Every one of the 820 carries a `uuid`, so `replayFilter` drops a replayed copy for free. Two sibling types are unread: `deferred_tools_record` (91 lines) holds `name` + `description` + `input_schema` for the tools a `ToolSearch` actually fetched, and `mcp_instructions_delta` (5) the instruction block a server contributes (`claude-in-chrome`).
 
+### The CLI's own MCP logs — the only place that says WHY
+
+`%LOCALAPPDATA%\claude-cli-nodejs\Cache\<encodedDir>\mcp-logs-<server>\<ISO>.jsonl`. **The third place on disk this app reads**, after `~/.claude` and the temp scratchpad, and it exists for one reason: the transcript knows *that* a server failed and this knows *why*.
+
+743 files, 8,005 lines, 2.1 MB, 17/07 → today. Two shapes, `{debug, timestamp, sessionId, cwd}` and `{error, timestamp, sessionId, cwd}` — `error` is the server's own **stderr**, or a `Connection failed (CODE)` line.
+
+Three facts make it usable, and each was measured:
+
+- **`sessionId` is on all 8,005 lines**, so the join to a session is equality rather than a guess.
+- **The project folder is the index's own `encodedDir`** — the CLI slugifies the cwd once and spells it identically here, in `~/.claude/projects` and in the temp scratchpad (17 of the 19 folders here match a projects dir exactly). Nothing re-implements that encoding.
+- **Coverage where it matters is total**: all **23 of 23** sessions whose transcript records a failure have a log. Logs reach back to 17/07 and so does the oldest transcript, so nothing is missing today — but nothing promises that either, and a session older than the logs is an ordinary `available: false`.
+
+What it adds over the transcript, in one comparison. `siaqodb` has read `CONNECTION_CLOSED — "Connection closed"` for months; the log says:
+
+> `Server stderr:` **`The build failed. Fix the build errors and run again.`**
+
+And `sqlserver-dat`'s `CONNECT_TIMEOUT` turns out to be *"Sources changed, rebuilding MCP server. This can outlast your MCP client's connection timeout: if the server shows up as timed out, just reconnect it."* Neither sentence is anywhere in `~/.claude`.
+
+Also here and nowhere else: `Successfully connected (transport: stdio) in Nms` — the real handshake, 10,267 ms for `sqlserver-dat` in `b7505527` — the server's declared capabilities, and every tool call with its own duration.
+
+**It is read lazily, by its own endpoint** (`/api/sessions/:id/mcp-logs`), because it is ~39 files per project and no conversation should pay for them. Its stderr carries connection details (`MCP SQL Server initialized for localhost\SQLENTDEV:1433, Database: dat1, User: pccom`): local-only, so not a leak, but it is drawn and never indexed.
+
 ### The stop marker (`[Request interrupted by user]`)
 
 **When the user presses stop, Claude Code closes the turn by writing a `user` line that looks exactly like a message**: `message.content` an ARRAY holding one `text` block, the marker and nothing else, no `origin`, `isMeta` false. Two wordings, 9 lines over 7 sessions here — `[Request interrupted by user]` (6) and `[Request interrupted by user for tool use]` (3), the second when the stop landed on a tool call.
