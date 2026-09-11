@@ -272,18 +272,39 @@ export function McpPanel({
             <div key={l.key} className="rounded border border-dashed border-[var(--border)] px-2 py-1.5">
               <div className="flex items-baseline gap-2">
                 <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--text)]">{l.server}</span>
-                <Chip
-                  tone="quiet"
-                  title="The CLI logged this server for this session, but its transcript never named it"
-                >
-                  logged only
-                </Chip>
+                {/* The state the LOG states, in the same chip as every row
+                    above. It was `logged only` for one draft, and that was the
+                    one thing this panel must not do: describe where a fact came
+                    from instead of what the fact is. The log says
+                    `Successfully connected in 7ms` or `Connection failed
+                    (CONNECT_TIMEOUT)` outright — hiding that behind a neutral
+                    word made the reader ask the question the panel exists to
+                    answer. */}
+                {l.status !== null ? (
+                  <Chip tone={l.status === 'failed' ? 'warn' : 'quiet'} title={STATUS[l.status].title}>
+                    {STATUS[l.status].label}
+                  </Chip>
+                ) : (
+                  <Chip tone="quiet" title="Its log says neither that it connected nor that it failed">
+                    unknown
+                  </Chip>
+                )}
               </div>
               {l.connectMs != null && (
                 <div className="mt-1 text-[11px] text-[var(--text-dim)]">
                   handshake <b className="text-[var(--text)]">{formatMs(l.connectMs)}</b>
                 </div>
               )}
+              {/* Where it comes from, and — when it failed — why the count at
+                  the top of the rail does not include it. Said rather than
+                  papered over: Claude Code only began writing `failedMcpServers`
+                  in 2.1.247, so in an older session a failure like this one is
+                  knowable ONLY from the log, and the mark that reads the
+                  transcript cannot see it. */}
+              <div className="mt-1 text-[10px] text-[var(--text-dim)]/70">
+                only Claude Code's own log mentions this one — this session's transcript never named it
+                {l.status === 'failed' ? ', so the ⚠ above does not count it' : ''}
+              </div>
               <LogFold log={l} />
             </div>
           ))}

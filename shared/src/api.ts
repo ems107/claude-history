@@ -592,6 +592,15 @@ export interface McpServerLog {
    */
   key: string;
   entries: McpLogEntry[];
+  /**
+   * What the LOG says became of it, from the last `Successfully connected` or
+   * `Connection failed` line it holds — `null` when it says neither.
+   *
+   * Only ever read for a server the transcript never named, and there it is the
+   * whole answer rather than a hint: the log states the outcome outright, so a
+   * panel that drew such a row as "unknown" would be hiding something it knows.
+   */
+  status: 'connected' | 'failed' | null;
   /** From `Successfully connected … in Nms`: how long it really took, where it says so. */
   connectMs: number | null;
   /** The cap was reached; the newest are kept, because a failure is at the end. */

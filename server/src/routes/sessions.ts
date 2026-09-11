@@ -159,6 +159,10 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
         }
         const entries: McpLogEntry[] = [];
         let connectMs: number | null = null;
+        // The last thing the log SAYS became of it, which is the whole answer for
+        // a server the transcript never named. Last wins: a server can connect,
+        // be restarted and fail on the next attempt inside one session.
+        let status: 'connected' | 'failed' | null = null;
         for (const f of files) {
           let raw: string;
           try {
@@ -181,6 +185,8 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
             if (!text) continue;
             const ms = debug ? /Successfully connected .* in (\d+)ms/.exec(debug) : null;
             if (ms) connectMs = Number(ms[1]);
+            if (debug?.startsWith('Successfully connected')) status = 'connected';
+            else if (error?.startsWith('Connection failed')) status = 'failed';
             entries.push({
               when: typeof o.timestamp === 'string' ? o.timestamp : null,
               kind: error ? 'error' : 'debug',
@@ -196,6 +202,7 @@ export function registerSessionRoutes(app: FastifyInstance, ctx: AppContext): vo
           server: d.name.slice(MCP_LOG_PREFIX.length),
           key: mcpKey(d.name.slice(MCP_LOG_PREFIX.length)),
           entries: truncated ? entries.slice(-MAX_LOG_ENTRIES) : entries,
+          status,
           connectMs,
           truncated,
         });
