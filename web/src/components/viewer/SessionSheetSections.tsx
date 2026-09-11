@@ -11,7 +11,7 @@ import { ViewMenuBody } from './ViewMenu.tsx';
  *
  * Three things lived beside the title on a desktop and a fourth down the right
  * edge of the window: find, the view menu, the session's own actions, and the
- * seven inspector panels. At 360px that came to a strip of chips under the
+ * inspector panels. At 360px that came to a strip of chips under the
  * header — which is a list you cannot see the end of — plus a row of controls
  * that left the title about a third of its own line.
  *

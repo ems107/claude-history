@@ -172,6 +172,34 @@ Two things arrive in that envelope, and both were being lost. 144 `queued_comman
 
 **Nothing in this envelope opens a turn — it joins the one already open** (`ensureTurn`), prompts and notifications alike, because being in this envelope IS the evidence that a turn was running. Claude Code agrees for the prompt: the `last-prompt` written straight after delivery still names the PREVIOUS prompt, in both cases here. A turn of its own cut the conversation where nothing had ended — in `b343d4ac` the line lands between a `tool_result` and three more `tool_use` calls of one piece of work. Drawn inside the thread its clock also stops reading backwards. It cuts the tool run it landed in, and for once that is free: the cut falls BETWEEN items, never inside one, so no assistant message has its calls split across two runs and `costOwner` has nothing to undo (checked: priced entries equal assistant-messages-with-usage, 13/75/609/736, zero double-billed).
 
+### The MCP servers (`attachment` / `deferred_tools_delta`)
+
+**This line is the only record anywhere of which MCP servers a session had**, and until the MCP panel nothing read it: it fell out of the parser's attachment branch unexamined. `/mcp` in a terminal answers for the machine NOW; this answers for a session that ran in August, months later, with the error text of whatever was down that afternoon. **820 lines over 647 files; 445 of the 479 top-level sessions have at least one**, 299 of those with servers of their own and 22 ending with something that never connected.
+
+It is written at CLI startup — line index p50 **3**, max 22, so it is inside the summarizer's head-25 — and **again in full on every resume**, at the point in the file where work continued. Nothing is ever rewritten: `f3384d17` carries three (lines 5, 2230, 4701, 5th–7th August), each re-announcing all 70 tools.
+
+| Field | What it is |
+| --- | --- |
+| `addedNames` / `readdedNames` | tool names now offered. The MCP ones are `mcp__<server>__<tool>` — **the only evidence a server connected**, because there is no list of servers that worked |
+| `removedNames` | tools withdrawn |
+| `pendingMcpServers` | plain strings: still connecting |
+| `failedMcpServers` | `{name, errorCode, error}` — e.g. `siaqodb` / `CONNECTION_CLOSED` / `"Connection closed"`, `sqlserver-dat` / `CONNECT_TIMEOUT` / `"…timed out after 30000ms"` |
+| `needsAuthMcpServers` | waiting to be signed into |
+| `wireHiddenNames` | present on 220 lines, **non-empty on none** — unmodelled, not ignored on purpose |
+
+Four rules, each measured, all four implemented in `createMcpTracker` (`parser.ts`):
+
+- **An ABSENT status list is not an empty one.** The three MCP lists are frequently missing outright — of 599 deltas, `failedMcpServers` was absent in 374, empty in 189, non-empty in 36 — and **CC 2.1.267 writes deltas with all three gone while the failure is still real**. `5121cb77` is the proof: 09/09 `siaqodb` failed, 10/09 the fields are not there at all, 11/09 `siaqodb` failed again. Reading absence as "nothing is failing" invents a recovery that never happened. **Present ⇒ the whole truth for that instant; absent ⇒ says nothing.**
+- **`needsAuthMcpServers` holds a DISPLAY name, not the key.** The only value in the corpus is `"claude.ai Canva"` while its tools spell it `claude_ai_Canva`; `pendingMcpServers` and `failedMcpServers[].name` do use the key (`siaqodb`, `sqlserver-dat`). So servers join on a normalised key — lowercase, every run of non-alphanumerics to `_` — and the tool slug wins for display. Join on the raw string and one server becomes two rows.
+- **Leaving a bad state resolves by the tools**: connected if any were ever announced, `unknown` if not. All 34 such transitions here are that same connector leaving `needs-auth`, and every one has tools.
+- **`removedNames` is NOT a disconnection.** Every withdrawal in the corpus is the account connector going and coming back as the tool budget moves. A server does not stop having been connected because its tools were parked.
+
+**An event is only a real change**, which is what collapses those three identical re-announcements of `f3384d17` into one and keeps the `pending → connected` of `4b0aa12e` six seconds after startup. 276 of 299 sessions have exactly one moment; the most is 16.
+
+**There is no reliable way to group these by CLI run, so nothing tries.** `session_id` is absent from most of them (they are written before any request goes out — `enricher.ts` already comments on the same thing), and "re-announces the built-in tools" is a false discriminator: deltas of 2 tools do it every time plan mode is toggled. The timeline of stamped events says the same thing without inventing a structure the file does not have.
+
+Every one of the 820 carries a `uuid`, so `replayFilter` drops a replayed copy for free. Two sibling types are unread: `deferred_tools_record` (91 lines) holds `name` + `description` + `input_schema` for the tools a `ToolSearch` actually fetched, and `mcp_instructions_delta` (5) the instruction block a server contributes (`claude-in-chrome`).
+
 ### The stop marker (`[Request interrupted by user]`)
 
 **When the user presses stop, Claude Code closes the turn by writing a `user` line that looks exactly like a message**: `message.content` an ARRAY holding one `text` block, the marker and nothing else, no `origin`, `isMeta` false. Two wordings, 9 lines over 7 sessions here — `[Request interrupted by user]` (6) and `[Request interrupted by user for tool use]` (3), the second when the stop landed on a tool call.

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
  * A column beside the session — the file viewer, a subagent's transcript.
  *
  * `Inspector` under another name, and deliberately not the same component: that
- * one owns its panel's title bar, because its six panels are interchangeable
+ * one owns its panel's title bar, because its panels are interchangeable
  * contents of one host. These two arrive with a header of their own — a path, a
  * size, four launcher buttons; an agent type, a clock, two jumps — so what is
  * shared is only the seam, the width and the box.

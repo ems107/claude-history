@@ -14,12 +14,12 @@ const base = {
 };
 
 /**
- * Seven shapes that have to be told apart at 16 px, so each one says what its
+ * Eight shapes that have to be told apart at 16 px, so each one says what its
  * panel is ABOUT rather than what kind of thing it is: three bars for the
  * ledger, a pencil for what was edited, an arrow leaving a tray for what was
  * handed over, a link for a path merely named, an open folder for the
- * workspace it wrote in, a fork for the agents, a graph for the lineage. Same
- * stroke and same grid as `components/icons.tsx`.
+ * workspace it wrote in, a fork for the agents, a plug for what was plugged in,
+ * a graph for the lineage. Same stroke and same grid as `components/icons.tsx`.
  */
 export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> = {
   tokens: () => (
@@ -92,7 +92,7 @@ export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> =
  *
  * **Not drawn at all on a phone.** It was a strip of chips under the header
  * there, and a strip that scrolls sideways is a list you cannot see the end of:
- * with seven panels, two of them were always off the right edge. The same seven
+ * with seven panels, two of them were always off the right edge. The same items
  * are a section of the session sheet instead ([SessionSheetSections]), where
  * they are all visible at once and cost no permanent room.
  */

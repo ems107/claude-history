@@ -851,7 +851,7 @@ export function SessionViewPage() {
       // between them is only what it costs to read; the order that matters is
       // that a column closes before the panel it was opened from.
       //
-      // The inspector is one branch for all six panels, which is what makes this
+      // The inspector is one branch for every panel, which is what makes this
       // list honest: only the subagent list was ever in it, because putting one
       // file panel in and not the other would have been worse than neither.
       //
@@ -1166,7 +1166,7 @@ export function SessionViewPage() {
   const convGutter = sideLayout.gutter;
 
   /**
-   * Whichever panel the rail has open. One node rather than six conditionals,
+   * Whichever panel the rail has open. One node rather than a conditional each,
    * because there is one place it can go now — and a panel with nothing to show
    * cannot be reached at all: the rail only offers the ones this session has.
    */
@@ -1283,7 +1283,7 @@ export function SessionViewPage() {
                   />
                 </>
               }
-              // The same three, plus the seven panels, as sections of the sheet
+              // The same three, plus the inspector panels, as sections of the sheet
               // the ⋮ opens on a phone — where the title row has room for a name
               // and one button, and nothing else.
               menuSections={(close) => (

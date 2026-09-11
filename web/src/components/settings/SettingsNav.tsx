@@ -21,7 +21,7 @@ import { useSettingsPage } from './context.ts';
  * finding a thing here was hard.
  *
  * Labels rather than icons, deliberately. Six abstract categories cannot be told
- * apart at 16 px — `InspectorRail` gets away with icons because its six are
+ * apart at 16 px — `InspectorRail` gets away with icons because its own are
  * concrete nouns (files, agents, tokens) and these are not.
  *
  * **On a phone the rail is a SCREEN**, which is the shape a rail takes when

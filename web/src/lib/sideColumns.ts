@@ -97,7 +97,7 @@ export const COLUMN_KEY = 'sideColumnWidth';
 export const COLUMN_DEFAULT = 620;
 
 /**
- * The inspector's own floor, and it is not `SIDE_MIN`: every one of its six
+ * The inspector's own floor, and it is not `SIDE_MIN`: every one of its
  * panels was written to READ at 320 px, which is the work that turned the token
  * table into a stack of cards and made every file row wrap. A file viewer at 240
  * is still a file viewer; a token ledger at 240 is a broken table.

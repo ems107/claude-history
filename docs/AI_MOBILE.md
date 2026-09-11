@@ -83,7 +83,7 @@ The desktop session page is a row: a 72px rail, the conversation, an inspector, 
 
 **The header is a name and one button.** Row one is the title and a square ⋮; row two is what the session IS — the project tag, the rename mark, the live badges — ending in `more`, which grows the header UNDERNEATH that row instead of swapping it, so nothing you were looking at moves. The ← went from both sizes: Escape has always been the way out on a desktop, Back is the way out on a phone, and the mark in the app's own header goes to the list from either.
 
-**Everything else is behind the ⋮**, as one sheet with sections: the seven panels, find, the view menu's own controls drawn flat, then the session's own actions. `SessionMenu` grows the sheet on a phone and stays a popover above 48rem; the page passes what it owns in through `menuSections`, and `ViewMenuBody` exists so the view controls can be drawn without a popover inside a sheet — a second layer for Back to disagree about.
+**Everything else is behind the ⋮**, as one sheet with sections: the inspector panels, find, the view menu's own controls drawn flat, then the session's own actions. `SessionMenu` grows the sheet on a phone and stays a popover above 48rem; the page passes what it owns in through `menuSections`, and `ViewMenuBody` exists so the view controls can be drawn without a popover inside a sheet — a second layer for Back to disagree about.
 
 **The header steps aside while you read downwards** (`useHideOnScroll`) and comes back the moment you scroll up. A negative margin rather than a transform or a `fixed` bar, so the conversation gets the pixels instead of sliding under something; the pane above already clips. Three rules earned the hard way:
 

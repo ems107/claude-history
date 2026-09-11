@@ -214,7 +214,7 @@ export function SessionHeader({
     <div data-session-header className="border-b border-[var(--border)] px-4 pt-2.5 pb-2 max-md:px-3">
       {/* On a phone: the name, and one button. Everything that used to sit
           beside it — find, the view menu, the session's own actions and the
-          seven panels — is behind that button, because a title is what somebody
+          inspector panels — is behind that button, because a title is what somebody
           opens a session to see and the row was spending two thirds of itself on
           controls used a few times each.
           The ← went with them, from BOTH sizes. Escape has always been the way
