@@ -642,7 +642,7 @@ function recordFileEdits(
  * server instead of two. Two real servers differing only in `-` vs `_` would
  * merge — none exists here, and merging beats splitting a server across two rows.
  */
-function mcpKey(name: string): string {
+export function mcpKey(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
 }
 
@@ -656,10 +656,11 @@ function mcpToolName(name: string): { server: string; tool: string } | null {
   return tool ? { server: rest.slice(0, cut), tool } : null;
 }
 
-interface McpState extends Omit<McpServer, 'status'> {
+interface McpState extends Omit<McpServer, 'status' | 'tools'> {
   /** `null` until the first thing is known about it, which is what makes the first event's `from` null. */
   status: McpStatus | null;
-  toolSet: Set<string>;
+  /** Name → calls. A Map keeps insertion order, so `tools` comes out first-seen-first without sorting. */
+  tools: Map<string, number>;
 }
 
 /**
@@ -701,8 +702,7 @@ function createMcpTracker() {
         status: null,
         errorCode: null,
         error: null,
-        tools: [],
-        toolSet: new Set(),
+        tools: new Map(),
         callCount: 0,
         firstSeen: when,
         since: when,
@@ -712,12 +712,15 @@ function createMcpTracker() {
     return s;
   };
 
+  /** Where in the conversation the line being read sits — see `McpEvent.anchor`. */
+  let anchor: string | null = null;
+
   const move = (s: McpState, to: McpStatus, errorCode: string | null, error: string | null, when: string | null) => {
     // Only a real change is an event. Without this the three identical
     // re-announcements a resumed session writes (`f3384d17`, 5th-7th August)
     // would read as three things happening.
     if (s.status === to && s.errorCode === errorCode) return;
-    events.push({ when, key: s.key, from: s.status, to, errorCode, error });
+    events.push({ when, key: s.key, from: s.status, to, errorCode, error, anchor });
     s.status = to;
     s.errorCode = errorCode;
     s.error = error;
@@ -725,14 +728,13 @@ function createMcpTracker() {
   };
 
   const addTool = (s: McpState, tool: string) => {
-    if (s.toolSet.has(tool)) return;
-    s.toolSet.add(tool);
-    s.tools.push(tool);
+    if (!s.tools.has(tool)) s.tools.set(tool, 0);
   };
 
   return {
     /** One `deferred_tools_delta`. */
-    delta(attachment: Record<string, unknown>, when: string | null): void {
+    delta(attachment: Record<string, unknown>, when: string | null, at: string | null): void {
+      anchor = at;
       for (const field of ['addedNames', 'readdedNames'] as const) {
         const names = attachment[field];
         if (!Array.isArray(names)) continue;
@@ -800,7 +802,7 @@ function createMcpTracker() {
         if (!named) continue;
         for (const s of byKey.values()) {
           if (s.status === status && !named.has(s.key)) {
-            move(s, s.tools.length > 0 ? 'connected' : 'unknown', null, null, when);
+            move(s, s.tools.size > 0 ? 'connected' : 'unknown', null, null, when);
           }
         }
       }
@@ -812,13 +814,15 @@ function createMcpTracker() {
      * call is proof the server was there, and a transcript old enough to predate
      * these lines deserves the panel rather than an empty one.
      */
-    call(toolName: string, when: string | null): void {
+    call(toolName: string, when: string | null, at: string | null): void {
       const parsed = mcpToolName(toolName);
       if (!parsed) return;
+      anchor = at;
       const s = get(parsed.server, when);
       s.name = parsed.server;
       addTool(s, parsed.tool);
       if (s.status === null) move(s, 'connected', null, null, when);
+      s.tools.set(parsed.tool, (s.tools.get(parsed.tool) ?? 0) + 1);
       s.callCount++;
     },
 
@@ -826,7 +830,11 @@ function createMcpTracker() {
       const rank = (s: McpServer) =>
         s.status === 'failed' ? 0 : s.status === 'needs-auth' ? 1 : s.status === 'pending' ? 2 : s.status === 'unknown' ? 3 : 4;
       const servers: McpServer[] = [...byKey.values()]
-        .map(({ toolSet: _toolSet, status, ...rest }) => ({ ...rest, status: status ?? 'unknown' }))
+        .map(({ tools, status, ...rest }) => ({
+          ...rest,
+          status: status ?? 'unknown',
+          tools: [...tools].map(([name, calls]) => ({ name, calls })),
+        }))
         .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
       return { servers, events, failing: servers.filter((s) => s.status === 'failed').length };
     },
@@ -1183,7 +1191,7 @@ export async function parseTranscript(
       // the conversation. Taken before anything else because it is the one
       // attachment type that is read for a fact instead of for something to draw.
       if (attachment?.type === 'deferred_tools_delta') {
-        mcp.delta(attachment, str(o.timestamp));
+        mcp.delta(attachment, str(o.timestamp), lastItem()?.uuid ?? null);
         continue;
       }
 
@@ -1341,7 +1349,7 @@ export async function parseTranscript(
             if (MUTATING_TOOLS.has(toolName) && isRec(c.input)) {
               recordFileEdits(fileEdits, toolName, c.input, str(o.timestamp));
             }
-            mcp.call(toolName, str(o.timestamp));
+            mcp.call(toolName, str(o.timestamp), item.uuid);
           }
         }
       }

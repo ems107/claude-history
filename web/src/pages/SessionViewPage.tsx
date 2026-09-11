@@ -1221,7 +1221,7 @@ export function SessionViewPage() {
           />
         );
       case 'mcp':
-        return <McpPanel mcp={session.mcp} />;
+        return <McpPanel sessionId={id} mcp={session.mcp} onGoToMessage={(uuid) => jumpTo('msg', uuid)} />;
       case 'lineage':
         return <LineagePanel sessionId={id} />;
       default:

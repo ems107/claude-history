@@ -824,6 +824,15 @@ export interface FileChange {
  */
 export type McpStatus = 'connected' | 'pending' | 'failed' | 'needs-auth' | 'unknown';
 
+export interface McpTool {
+  name: string;
+  /**
+   * Calls in this session. **A 0 is a fact, not a gap**: it is the tool that was
+   * offered — and paid for in the tool budget — and never used.
+   */
+  calls: number;
+}
+
 export interface McpServer {
   /**
    * The join key, not a display string: lowercased with every run of
@@ -838,8 +847,8 @@ export interface McpServer {
   /** Quoted from `failedMcpServers`, and only ever set on `failed`. */
   errorCode: string | null;
   error: string | null;
-  /** Tool names with the `mcp__<server>__` prefix already gone, first seen first. */
-  tools: string[];
+  /** Its tools, first seen first — with the `mcp__<server>__` prefix already gone. */
+  tools: McpTool[];
   /** How many times this session actually called one of them. */
   callCount: number;
   firstSeen: string | null;
@@ -863,6 +872,15 @@ export interface McpEvent {
   to: McpStatus;
   errorCode: string | null;
   error: string | null;
+  /**
+   * The uuid of the last message drawn before this happened — where in the
+   * conversation to stand to see it. The line this comes from is not itself
+   * drawn (it is not a message), so it cannot be its own anchor; the item above
+   * it can, and being an item it is certainly on screen. `null` for anything
+   * that lands before the session's first message, which is the startup of a
+   * session that has not begun — nowhere to go, and nothing to see there.
+   */
+  anchor: string | null;
 }
 
 export interface McpPicture {
