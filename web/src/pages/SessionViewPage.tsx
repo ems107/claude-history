@@ -1269,6 +1269,11 @@ export function SessionViewPage() {
               // grows, so the badge would still read "live" through a turn the
               // app itself is running.
               live={liveInfo}
+              // The rail is not drawn on a phone, so the warning has to reach
+              // the header there — and pressing it must OPEN, never toggle shut.
+              onOpenMcp={() => {
+                if (inspector.open !== 'mcp') inspector.toggle('mcp');
+              }}
               actions={
                 <>
                   <FindButton

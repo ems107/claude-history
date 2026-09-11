@@ -149,9 +149,9 @@ export function InspectorRail({ inspector }: { inspector: InspectorState }) {
             {item.alert > 0 && (
               <span
                 aria-hidden
-                className="absolute top-1 right-1 text-[9px] leading-none font-semibold text-amber-400"
+                className="absolute top-0.5 right-0.5 px-1 text-[10px] leading-none font-semibold text-amber-400"
               >
-                ⚠{item.alert}
+                ⚠ {item.alert}
               </span>
             )}
           </button>

@@ -148,10 +148,15 @@ arriving, now true of a panel opening too.
   a session whose last agent row went away with a re-parse would leave the
   inspector holding a title with nothing under it.
 - **A rail button can say that something in it is WRONG**, and `MCP` is the only
-  one that ever does: `PanelItem.alert` is drawn as an amber `⚠N` in the
+  one that ever does: `PanelItem.alert` is drawn as an amber `⚠ N` in the
   button's top-right corner, so a server that never connected is legible without
-  opening anything — and on the phone's sheet too, where there is no rail and a
-  `title` nobody can hover is not a warning. **It is a third case of the rule
+  opening anything. **On a phone it moves to the HEADER**, beside the project
+  tag, as `⚠ N MCP` — there is no rail there at all, and a mark that lives
+  inside the ⋮ sheet is a warning nobody receives until they go looking. It
+  names what it is about, because unlike a rail button it has no label of its
+  own, and pressing it OPENS the panel rather than toggling it: a warning is not
+  a switch. Its `py-1` is the `more` button's on that same row — a target twice
+  as tall as everything beside it would break the line it lives in. **It is a third case of the rule
   the bell and the unseen count already follow** ([below](#what-a-list-row-says-you-have-not-seen)):
   amber, and NOT `CountBadge`. That component hangs off a control's top-right
   corner by 6 px, and this rail's right edge is the WINDOW's — the page clipped
