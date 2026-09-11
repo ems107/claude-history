@@ -73,6 +73,18 @@ function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | nul
             <b className="text-[var(--text)]">{server.callCount}</b> call{server.callCount === 1 ? '' : 's'}
           </span>
         )}
+        {/* RED, where the status chip above is amber, and the two colours are
+            the two axes: amber says the server never connected, red says it
+            connected fine and the call came back an error. Mixing them would
+            lose the distinction that makes either worth drawing. */}
+        {server.errorCount > 0 && (
+          <span
+            className="text-red-400"
+            title="Calls that came back an error — the server worked, the call did not"
+          >
+            <b>{server.errorCount}</b> failed
+          </span>
+        )}
         {/* How long it really took to answer — the CLI's own measurement, and
             nothing in the transcript comes close to it. 10 s of handshake is
             the difference between a server that works and one you are about to
@@ -106,11 +118,12 @@ function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | nul
                 <span className={`min-w-0 flex-1 truncate font-mono ${t.calls > 0 ? 'text-[var(--text)]' : 'text-[var(--text-dim)]/60'}`}>
                   {t.name}
                 </span>
-                {t.calls > 0 && (
-                  <span className="shrink-0 tabular-nums text-[var(--text-dim)]">
-                    {t.calls}×
+                {t.errors > 0 && (
+                  <span className="shrink-0 tabular-nums text-red-400" title={`${t.errors} of those came back an error`}>
+                    {t.errors} failed
                   </span>
                 )}
+                {t.calls > 0 && <span className="shrink-0 tabular-nums text-[var(--text-dim)]">{t.calls}×</span>}
               </div>
             ))}
           </div>

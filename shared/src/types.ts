@@ -831,6 +831,12 @@ export interface McpTool {
    * offered — and paid for in the tool budget — and never used.
    */
   calls: number;
+  /**
+   * How many of those came back `is_error`. A DIFFERENT axis from the server's
+   * status and drawn in a different colour for that reason: the server worked,
+   * the call did not. Amber is the connection; red is the call.
+   */
+  errors: number;
 }
 
 export interface McpServer {
@@ -851,6 +857,8 @@ export interface McpServer {
   tools: McpTool[];
   /** How many times this session actually called one of them. */
   callCount: number;
+  /** How many of those came back an error — the sum of `tools[].errors`. */
+  errorCount: number;
   firstSeen: string | null;
   /** When it entered the status it is in now. */
   since: string | null;

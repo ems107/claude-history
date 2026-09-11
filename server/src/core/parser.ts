@@ -659,8 +659,8 @@ function mcpToolName(name: string): { server: string; tool: string } | null {
 interface McpState extends Omit<McpServer, 'status' | 'tools'> {
   /** `null` until the first thing is known about it, which is what makes the first event's `from` null. */
   status: McpStatus | null;
-  /** Name → calls. A Map keeps insertion order, so `tools` comes out first-seen-first without sorting. */
-  tools: Map<string, number>;
+  /** Name → its counters. A Map keeps insertion order, so `tools` comes out first-seen-first without sorting. */
+  tools: Map<string, { calls: number; errors: number }>;
 }
 
 /**
@@ -704,6 +704,7 @@ function createMcpTracker() {
         error: null,
         tools: new Map(),
         callCount: 0,
+        errorCount: 0,
         firstSeen: when,
         since: when,
       };
@@ -728,7 +729,7 @@ function createMcpTracker() {
   };
 
   const addTool = (s: McpState, tool: string) => {
-    if (!s.tools.has(tool)) s.tools.set(tool, 0);
+    if (!s.tools.has(tool)) s.tools.set(tool, { calls: 0, errors: 0 });
   };
 
   return {
@@ -822,8 +823,28 @@ function createMcpTracker() {
       s.name = parsed.server;
       addTool(s, parsed.tool);
       if (s.status === null) move(s, 'connected', null, null, when);
-      s.tools.set(parsed.tool, (s.tools.get(parsed.tool) ?? 0) + 1);
+      s.tools.get(parsed.tool)!.calls++;
       s.callCount++;
+    },
+
+    /**
+     * That call came back an error. A SECOND axis, and deliberately not mixed
+     * with the server's status: `sqlserver-dat` answering `Invalid column name`
+     * is a query that was wrong, not a server that was down, and the panel draws
+     * the two in different colours for exactly that reason.
+     *
+     * Counted from the `tool_result` rather than the call, so it arrives later
+     * in the file and through a different branch — which is why it is its own
+     * entry point instead of an argument to `call`.
+     */
+    callFailed(toolName: string): void {
+      const parsed = mcpToolName(toolName);
+      if (!parsed) return;
+      const s = byKey.get(mcpKey(parsed.server));
+      const t = s?.tools.get(parsed.tool);
+      if (!s || !t) return; // a result with no call is not ours to count
+      t.errors++;
+      s.errorCount++;
     },
 
     result(): McpPicture {
@@ -833,7 +854,7 @@ function createMcpTracker() {
         .map(({ tools, status, ...rest }) => ({
           ...rest,
           status: status ?? 'unknown',
-          tools: [...tools].map(([name, calls]) => ({ name, calls })),
+          tools: [...tools].map(([name, c]) => ({ name, calls: c.calls, errors: c.errors })),
         }))
         .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
       return { servers, events, failing: servers.filter((s) => s.status === 'failed').length };
@@ -1147,6 +1168,7 @@ export async function parseTranscript(
                 tool.toolName === 'ExitPlanMode' ? planOutcome : null,
                 tool.toolName === 'SendUserFile' ? sentAttachments : null,
               );
+              if (tool.result?.isError) mcp.callFailed(tool.toolName);
             }
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             userBlocks.push({ kind: 'text', text: c.text });
