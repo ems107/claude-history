@@ -2,7 +2,7 @@ import type { McpPicture, McpServer, McpServerLog, McpStatus } from '@claude-his
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api } from '../../api/client.ts';
-import { durationBetween, formatDateTime, formatMs, formatTimeOfDay } from '../../lib/format.ts';
+import { durationBetween, formatDateTime, formatDateTimeShort, formatMs, formatTimeOfDay } from '../../lib/format.ts';
 import { Fold } from '../Fold.tsx';
 import { Chip } from './Chip.tsx';
 
@@ -46,6 +46,8 @@ const STATUS: Record<McpStatus, { label: string; warn: boolean; title: string }>
 
 function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | null }) {
   const s = STATUS[server.status];
+  const live = server.tools.filter((t) => t.withdrawn === null).length;
+  const withdrawn = server.tools.length - live;
   const used = server.tools.filter((t) => t.calls > 0).length;
   return (
     <div className="rounded border border-[var(--border)] px-2 py-1.5">
@@ -102,24 +104,51 @@ function ServerRow({ server, log }: { server: McpServer; log: McpServerLog | nul
       {server.tools.length > 0 && (
         <Fold
           label={
-            // Two numbers, because the interesting one is the gap: a server
-            // offering 18 tools of which the session touched 2 still paid the
-            // tool budget for all 18.
-            server.callCount > 0
-              ? `${server.tools.length} tools · ${used} used`
-              : `${server.tools.length} tool${server.tools.length === 1 ? '' : 's'}`
+            // The live count leads, because that is what the server offers. The
+            // other two are the interesting gaps: a server offering 18 of which
+            // the session touched 2 still paid the budget for all 18, and one
+            // that lost two along the way is a server that CHANGED mid-session.
+            [
+              `${live} tool${live === 1 ? '' : 's'}`,
+              server.callCount > 0 ? `${used} used` : null,
+              withdrawn > 0 ? `${withdrawn} withdrawn` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')
           }
         >
           <div className="flex flex-col gap-0.5 text-[11px]">
             {server.tools.map((t) => (
               <div key={t.name} className="flex items-baseline gap-2">
-                {/* A tool nobody called is dimmed rather than hidden: it is
-                    what the model was offered, and what it ignored. */}
+                {/* Three states, and none of them is hidden. A tool nobody
+                    called is dimmed — it is what the model was offered and
+                    ignored. One WITHDRAWN is struck through and keeps its row:
+                    it was offered for part of this session, so a call to it
+                    earlier in the conversation has something to point at, and
+                    dropping it would leave that call unexplained. */}
                 <span
-                  className={`min-w-0 flex-1 truncate font-mono ${t.calls > 0 ? 'text-[var(--text)]' : 'text-[var(--text-dim)]/60'}`}
+                  className={`min-w-0 flex-1 truncate font-mono ${
+                    t.withdrawn !== null
+                      ? 'text-[var(--text-dim)]/50 line-through'
+                      : t.calls > 0
+                        ? 'text-[var(--text)]'
+                        : 'text-[var(--text-dim)]/60'
+                  }`}
                 >
                   {t.name}
                 </span>
+                {/* "Withdrawn", never "gone": the transcript cannot tell a
+                    server that dropped the tool from the tool budget parking
+                    it, so the word says what the file says and the time says
+                    when. */}
+                {t.withdrawn !== null && (
+                  <span
+                    className="shrink-0 text-[var(--text-dim)]/60 italic"
+                    title={`No longer offered as of ${formatDateTime(t.withdrawn)} — either the server stopped having it or the tool budget parked it; the transcript does not say which`}
+                  >
+                    withdrawn {formatDateTimeShort(t.withdrawn)}
+                  </span>
+                )}
                 {t.errors > 0 && (
                   <span
                     className="shrink-0 tabular-nums text-red-400"

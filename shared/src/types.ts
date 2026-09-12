@@ -837,6 +837,20 @@ export interface McpTool {
    * the call did not. Amber is the connection; red is the call.
    */
   errors: number;
+  /**
+   * When it was withdrawn and never came back — `null` for one still offered at
+   * the end of the session.
+   *
+   * **Withdrawn, and deliberately not "gone".** The transcript cannot tell the
+   * two reasons apart: `update_comment` left `9941d852` because the server
+   * stopped having it, and the account connector's two leave other sessions
+   * because the tool budget parked them. The word describes what the file says.
+   *
+   * Reading this needs the whole sequence rather than a tally: a tool that is
+   * removed and later re-added is still offered, and that is the common case by
+   * far — 86 returns across this corpus against 4 real withdrawals.
+   */
+  withdrawn: string | null;
 }
 
 export interface McpServer {

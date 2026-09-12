@@ -660,7 +660,7 @@ interface McpState extends Omit<McpServer, 'status' | 'tools'> {
   /** `null` until the first thing is known about it, which is what makes the first event's `from` null. */
   status: McpStatus | null;
   /** Name → its counters. A Map keeps insertion order, so `tools` comes out first-seen-first without sorting. */
-  tools: Map<string, { calls: number; errors: number }>;
+  tools: Map<string, { calls: number; errors: number; withdrawn: string | null }>;
 }
 
 /**
@@ -681,10 +681,15 @@ interface McpState extends Omit<McpServer, 'status' | 'tools'> {
  * 3. **Leaving a bad state resolves by the tools**: connected if any were ever
  *    seen, `unknown` if not. All 34 such transitions here are the account
  *    connector leaving `needs-auth`, and every one has tools.
- * 4. **`removedNames` is not a disconnection.** The only withdrawals in the
- *    corpus are that same connector going and coming back as the tool budget
- *    moves, so it is deliberately not read: a server does not stop having been
- *    connected because its tools were parked.
+ * 4. **`removedNames` is not a disconnection, but it IS a withdrawal.** The two
+ *    levels take it differently, and conflating them was a bug. A SERVER does
+ *    not stop having been connected because its tools were parked, so its
+ *    status never reads this. A TOOL does stop being offered, and the file says
+ *    so outright: `9941d852` reopened with `edit_content` and five more added
+ *    and `update_comment`/`update_issue` removed, and listing all 19 as if they
+ *    were still there was simply wrong. It needs the whole SEQUENCE rather than
+ *    a tally, because removal is usually temporary — 86 tools come back across
+ *    this corpus against 4 that stay gone.
  *
  * `wireHiddenNames` is ignored: present on 220 lines, non-empty on none.
  */
@@ -727,8 +732,24 @@ function createMcpTracker() {
     s.since = when;
   };
 
+  /** Offered — for the first time, or again after having been parked. */
   const addTool = (s: McpState, tool: string) => {
-    if (!s.tools.has(tool)) s.tools.set(tool, { calls: 0, errors: 0 });
+    const t = s.tools.get(tool);
+    if (!t) s.tools.set(tool, { calls: 0, errors: 0, withdrawn: null });
+    else t.withdrawn = null;
+  };
+
+  /**
+   * No longer offered, as of `when` — and undone by the next `addTool`, which is
+   * the whole of rule 4: removal is usually temporary, so only the LAST word on
+   * a tool counts. Never creates a row: a name removed that was never added is
+   * nothing this session ever had.
+   */
+  const dropTool = (name: string, when: string | null) => {
+    const parsed = mcpToolName(name);
+    if (!parsed) return;
+    const t = byKey.get(mcpKey(parsed.server))?.tools.get(parsed.tool);
+    if (t) t.withdrawn = when;
   };
 
   return {
@@ -747,6 +768,17 @@ function createMcpTracker() {
           s.name = parsed.server;
           addTool(s, parsed.tool);
           move(s, 'connected', null, null, when);
+        }
+      }
+
+      // Withdrawn tools. AFTER the two lists above, because one line can both
+      // re-add and remove, and what a tool ends the line as is what it is.
+      // Nothing here touches the server's status — that is the other half of
+      // rule 4, and mixing them was the bug this fixes.
+      if (Array.isArray(attachment.removedNames)) {
+        for (const raw of attachment.removedNames) {
+          const n = str(raw);
+          if (n) dropTool(n, when);
         }
       }
 
@@ -853,7 +885,7 @@ function createMcpTracker() {
         .map(({ tools, status, ...rest }) => ({
           ...rest,
           status: status ?? 'unknown',
-          tools: [...tools].map(([name, c]) => ({ name, calls: c.calls, errors: c.errors })),
+          tools: [...tools].map(([name, c]) => ({ name, calls: c.calls, errors: c.errors, withdrawn: c.withdrawn })),
         }))
         .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
       return { servers, events, failing: servers.filter((s) => s.status === 'failed').length };
