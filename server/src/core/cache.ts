@@ -21,8 +21,10 @@ import { createLogger } from './logger.ts';
  * 16: version 9 again, for the shape it missed — a queued prompt with an image
  * pasted into it, whose payload is an array and not a string. 17: every indexed
  * block says WHEN it was written, so a match row can carry its own clock.
+ * 18: the commentary Claude Code printed while it worked (`narration`) joined it
+ * — it is drawn now, so it is searched.
  */
-export const CACHE_VERSION = 17;
+export const CACHE_VERSION = 18;
 
 const cacheLog = createLogger('cache');
 

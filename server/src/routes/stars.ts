@@ -20,13 +20,17 @@ import { UUID_RE } from '../core/scanner.ts';
  * answer), images are left out (megabytes of base64), and so are the tool calls
  * — they are lifted out of the bubble on screen too, and a starred message is
  * the thing said, not the traffic around it.
+ *
+ * `narration` is in, on the same test: it is drawn in the bubble, unfolded and
+ * behind no switch, and a message whose only prose is narration would otherwise
+ * be starred as an empty string.
  */
 function messageText(item: MessageItem): string {
-  return item.blocks
-    .filter((b) => b.kind === 'text' || b.kind === 'command')
-    .map((b) => (b.kind === 'text' || b.kind === 'command' ? b.text : ''))
-    .join('\n\n')
-    .trim();
+  const said: string[] = [];
+  for (const b of item.blocks) {
+    if (b.kind === 'text' || b.kind === 'command' || b.kind === 'narration') said.push(b.text);
+  }
+  return said.join('\n\n').trim();
 }
 
 /**

@@ -110,6 +110,72 @@ export function queuedByHuman(o: RawLine): unknown {
   return kind === 'human' ? attachment.prompt : null;
 }
 
+/**
+ * How far into the decoded signature the label may start. The prefix is a fixed
+ * handful of protobuf fields, so a scan that runs past it starts reading the
+ * opaque payload and could find anything.
+ */
+const SIGNATURE_PREFIX_BYTES = 24;
+/** Enough base64 to cover that, and a whole number of 4-character groups. */
+const SIGNATURE_HEAD = 44;
+/** What a label may be: the two seen are 8 and 9 characters. */
+const LABEL_MIN = 3;
+const LABEL_MAX = 24;
+
+/**
+ * What a `thinking` block SAYS it is — `thinking`, `narration`, or null for a
+ * block whose signature carries no label at all.
+ *
+ * Both arrive as `type: 'thinking'` and they are not the same thing. Raw
+ * thinking is never stored (every labelled `thinking` block here holds an empty
+ * string, and the viewer has said so for a year); `narration` is the running
+ * commentary Claude Code PRINTS between the tool calls, addressed to the user,
+ * in the user's own language, and stored in full. Treating it as thinking hid
+ * it behind a switch that is off by default — which is how a prompt typed
+ * mid-turn came to sit in this app with no answer under it while the terminal
+ * showed one four lines below the question.
+ *
+ * The label is the opening of the block's `signature`: a short protobuf prefix
+ * carrying one length-delimited string (`0x42 <len> <ascii>`) before the opaque
+ * payload starts. Read exactly — a byte scan for `0x42`, a plausible length,
+ * lowercase ASCII — and only within that prefix, which is what the constants
+ * above are for. Over 21,197 blocks it answers exactly three things and never a
+ * fourth: `thinking` (1,456), `narration` (185) and nothing at all (19,556).
+ *
+ * **Null is `thinking`, not narration**, and that is the safe way round. An
+ * unlabelled block is NOT an old one: the label belongs to the model rather
+ * than to the CLI — of the blocks written by CLIs ≥ 2.1.258 here, every labelled
+ * one is `claude-fable-5-1`'s, while `claude-opus-5`, `claude-sonnet-5` and
+ * `claude-haiku-4-5` label nothing and narrate nothing. So a missing label means
+ * "this model does not label", never "this is narration", and if the prefix ever
+ * changes, narration goes back to being hidden rather than every stored thought
+ * becoming prose the user never saw. See
+ * docs/AI_TRANSCRIPTS.md#narration-is-not-thinking.
+ */
+export function thinkingLabel(signature: unknown): string | null {
+  if (typeof signature !== 'string' || signature.length < 8) return null;
+  let head: Buffer;
+  try {
+    head = Buffer.from(signature.slice(0, SIGNATURE_HEAD), 'base64');
+  } catch {
+    return null;
+  }
+  const end = Math.min(head.length - 2, SIGNATURE_PREFIX_BYTES);
+  for (let i = 0; i < end; i++) {
+    if (head[i] !== 0x42) continue;
+    const len = head[i + 1];
+    if (len < LABEL_MIN || len > LABEL_MAX || i + 2 + len > head.length) continue;
+    const label = head.subarray(i + 2, i + 2 + len).toString('latin1');
+    if (/^[a-z][a-z_]*$/.test(label)) return label;
+  }
+  return null;
+}
+
+/** Which block a `thinking` line really holds: the commentary, or the thought. */
+export function thinkingKind(block: RawLine): 'narration' | 'thinking' {
+  return thinkingLabel(block.signature) === 'narration' ? 'narration' : 'thinking';
+}
+
 /** The line a `<task-notification>` is worth showing: its own summary of itself. */
 function notificationText(content: string): string {
   const summary = /<summary>([\s\S]*?)<\/summary>/.exec(content);

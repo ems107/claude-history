@@ -14,7 +14,7 @@ import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { planFeedback, planTitle, toMessageUsage, toolIntent } from './parser.ts';
 import { INTENT_ROLE, PLAN_ROLE, RECAP_ROLE, RECAP_SUBTYPE, systemChars } from './searchText.ts';
-import { extractPrompt, injectedOrigin, queuedPrompt } from './summarizer.ts';
+import { extractPrompt, injectedOrigin, queuedPrompt, thinkingKind } from './summarizer.ts';
 
 // It moved to `shared` when the viewer grew a search of its own over a corpus
 // this file never produces; re-exported so the modules written against it here
@@ -353,6 +353,16 @@ export async function enrichSession(
           if (!isRec(block)) continue;
           if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
             searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.text, when: str(o.timestamp) });
+          } else if (
+            block.type === 'thinking' &&
+            typeof block.thinking === 'string' &&
+            block.thinking.trim() &&
+            thinkingKind(block) === 'narration'
+          ) {
+            // Prose the user read in the terminal is prose the search must find.
+            // The thought beside it stays out, with the rest of what is not
+            // drawn — this indexes what the viewer now draws, and nothing more.
+            searchBlocks.push({ uuid: str(o.uuid), role: 'assistant', text: block.thinking, when: str(o.timestamp) });
           } else if (block.type === 'tool_use') {
             toolUseCount++;
             // The second exception to "tool calls are never indexed", and the

@@ -28,6 +28,7 @@ import {
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
 } from './searchText.ts';
+import { thinkingKind } from './summarizer.ts';
 
 const log = createLogger('deep-search');
 
@@ -449,6 +450,16 @@ export class DeepSearchService {
               if (!isRec(block)) continue;
               if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
                 yield { uuid: null, role: 'agent', text: block.text, when };
+              } else if (
+                block.type === 'thinking' &&
+                typeof block.thinking === 'string' &&
+                block.thinking.trim() &&
+                thinkingKind(block) === 'narration'
+              ) {
+                // An agent narrates too (23 blocks here), and the drawer draws
+                // it — so the scan that exists to reach what the index cannot
+                // has to carry it. Thinking itself stays out, as everywhere.
+                yield { uuid: null, role: 'agent', text: block.thinking, when };
               } else if (block.type === 'tool_use') {
                 yield { uuid: null, role: 'agent', text: toolCallText(block, false), when };
               } else if (block.type === 'tool_result') {
