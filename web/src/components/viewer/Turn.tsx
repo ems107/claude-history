@@ -23,6 +23,7 @@ import { InjectedNotice } from './InjectedNotice.tsx';
 import { InterruptMarker } from './InterruptMarker.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
+import { NarrationBlock } from './NarrationBlock.tsx';
 import { PlanCard, PlanModeMarker } from './PlanCard.tsx';
 import { useRevealTarget } from './RevealContext.ts';
 import { SentFilesCard } from './SentFilesCard.tsx';
@@ -1015,6 +1016,12 @@ export function TurnView({
       }
       if (b.kind === 'thinking') {
         rendered.push(<ThinkingBlock key={i} text={b.text} owner={item.uuid} />);
+        prose.push(b);
+      } else if (b.kind === 'narration') {
+        // Not behind the thinking switch and not folded: the user read this in
+        // the terminal as the work went past. It joins `prose` like any other
+        // thing the assistant said, so Copy and the export carry it too.
+        rendered.push(<NarrationBlock key={i} text={b.text} />);
         prose.push(b);
       } else if (b.kind === 'text') {
         // The one place the code-block bar is turned on. It reaches the

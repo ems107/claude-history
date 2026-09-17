@@ -22,7 +22,14 @@ import type {
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
-import { extractPrompt, injectedOrigin, parseNotification, queuedByHuman, queuedText } from './summarizer.ts';
+import {
+  extractPrompt,
+  injectedOrigin,
+  parseNotification,
+  queuedByHuman,
+  queuedText,
+  thinkingKind,
+} from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
 
@@ -1382,7 +1389,11 @@ export async function parseTranscript(
           if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             item.blocks.push({ kind: 'text', text: c.text });
           } else if (c.type === 'thinking' && typeof c.thinking === 'string' && c.thinking.trim()) {
-            item.blocks.push({ kind: 'thinking', text: c.thinking });
+            // Two different things come down this one type, and only the block's
+            // own signature tells them apart (`thinkingKind`): the thought, which
+            // the thinking switch hides, and the commentary Claude Code printed
+            // while it worked, which the user has already read in the terminal.
+            item.blocks.push({ kind: thinkingKind(c), text: c.thinking });
           } else if (c.type === 'tool_use') {
             const toolUseId = str(c.id) ?? '';
             const toolName = str(c.name) ?? 'tool';

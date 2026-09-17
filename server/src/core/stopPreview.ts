@@ -4,6 +4,7 @@ import { isRec, type RawLine, safeParse, str, tailLines } from './jsonl.ts';
 import { createLogger } from './logger.ts';
 import { resolvePlan } from './planFile.ts';
 import { planTitle, summarizeInput, toMessageUsage, toolIntent } from './parser.ts';
+import { thinkingKind } from './summarizer.ts';
 
 // The bell's other half, on the bell's own channel: an installed instance's log
 // has to read as one story about one feature.
@@ -243,9 +244,23 @@ function assistantText(o: RawLine): string {
   if (!content) return '';
   const parts: string[] = [];
   for (const c of content) {
-    // `thinking` blocks are deliberately not read: they are not what the
-    // session said, and a card quoting them would be quoting the working out.
-    if (isRec(c) && c.type === 'text' && typeof c.text === 'string' && c.text.trim()) parts.push(c.text);
+    if (!isRec(c)) continue;
+    if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) parts.push(c.text);
+    // A `thinking` block is deliberately not read: it is not what the session
+    // said, and a card quoting it would be quoting the working out. **The same
+    // test is why `narration` IS read** — it is not the working out, it is the
+    // sentence Claude Code printed to the terminal, and the walk above already
+    // takes what was on screen when a turn was stopped rather than only what
+    // closed it. Left out, a turn interrupted mid-run fell through to an older
+    // turn's answer and quoted that as what the session had just said.
+    else if (
+      c.type === 'thinking' &&
+      typeof c.thinking === 'string' &&
+      c.thinking.trim() &&
+      thinkingKind(c) === 'narration'
+    ) {
+      parts.push(c.thinking);
+    }
   }
   return parts.join('\n\n');
 }

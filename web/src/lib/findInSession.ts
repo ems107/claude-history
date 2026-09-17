@@ -334,12 +334,16 @@ export function buildFindCorpus(turns: Turn[]): FindUnit[] {
           if (unit) held.push(unit);
           continue;
         }
-        if (b.kind !== 'thinking' && b.kind !== 'text') continue;
+        if (b.kind !== 'thinking' && b.kind !== 'text' && b.kind !== 'narration') continue;
         if (held.length > 0) {
           if (prose.length === 0) leadsWithTools = true;
           inside.push(...held);
           held = [];
         }
+        // `narration` files under `assistant`, where it is drawn and where the
+        // server indexes it: putting it under `thinking` would take it off the
+        // page the moment somebody turned that role off, and it is not hidden
+        // by anything.
         prose.push({ text: b.text, role: b.kind === 'thinking' ? 'thinking' : 'assistant' });
       }
       const bubble = unitOf(item, null, prose, null);

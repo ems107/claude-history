@@ -113,6 +113,19 @@ function contentLines(
         writeHeader();
         out.push('<details>', '<summary>💭 Thinking</summary>', '', block.text, '', '</details>', '');
         break;
+      // Said out loud while the work went past, so it leaves with the prose and
+      // not with the thinking the export can be asked to drop. Quoted, for the
+      // same reason the viewer rules it off: it is not the answer.
+      case 'narration':
+        writeHeader();
+        out.push(
+          block.text
+            .split('\n')
+            .map((line) => `> ${line}`)
+            .join('\n'),
+          '',
+        );
+        break;
       case 'tool': {
         // A plan is prose, and a plan run through `JSON.stringify` is prose
         // with every newline escaped — i.e. the one block of an export nobody

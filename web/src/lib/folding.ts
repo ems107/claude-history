@@ -71,7 +71,11 @@ export function foldedCounts(turn: Turn, showThinking: boolean): FoldCounts {
       continue;
     }
     const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
-    if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
+    // `narration` needs no switch to be visible and counts like the answer it
+    // reads as: a message holding only that is a response the strip must admit
+    // to hiding, or the count says the turn produced nothing where the terminal
+    // printed a sentence.
+    if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking' || b.kind === 'narration')) responses += 1;
     tools += visible.filter((b) => b.kind === 'tool').length;
   }
   return { responses, tools, notices, recaps, planMode };

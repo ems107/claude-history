@@ -544,6 +544,17 @@ export interface ToolResultInfo {
 export type ContentBlock =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string }
+  /**
+   * Prose Claude Code PRINTED while it was working — the running commentary
+   * that shows up between the tool calls in the terminal, and the only thing a
+   * prompt typed mid-turn usually gets as an answer. It arrives as a `thinking`
+   * block and is not thinking at all ([AI_TRANSCRIPTS.md](../../docs/AI_TRANSCRIPTS.md#narration-is-not-thinking)):
+   * it is written to the user, in the user's own language, and it is the only
+   * copy of itself. So it is drawn like an answer and never hidden by the
+   * thinking switch — hiding it left a queued question standing with a reply
+   * that existed on disk, in the terminal and nowhere in this app.
+   */
+  | { kind: 'narration'; text: string }
   | { kind: 'command'; text: string }
   /**
    * An image attached to a prompt. The transcript stores it inline as base64
