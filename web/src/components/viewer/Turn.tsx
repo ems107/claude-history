@@ -1,20 +1,32 @@
-import type { ContentBlock, MessageItem, PriceTable, Turn as TurnType } from '@claude-history/shared';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { RECAP_SUBTYPE, type ContentBlock, type MessageItem, type PriceTable, type Turn as TurnType } from '@claude-history/shared';
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react';
 import type { ContextPoint, ContextTurn } from '../../lib/context.ts';
-import { type CostEntry, costEntries, costEntry } from '../../lib/cost.ts';
-import { formatDateTime, formatDateTimeFull, relativeTime, shortModel } from '../../lib/format.ts';
-import { foldedCounts } from '../../lib/folding.ts';
+import { type CostEntry, costEntries, costEntry, summariseRecache } from '../../lib/cost.ts';
+import { systemChars } from '../../lib/findInSession.ts';
+import { parseFindings } from '../../lib/findings.ts';
+import { formatDateTime, formatDateTimeFull, formatDuration, relativeTime, shortModel } from '../../lib/format.ts';
+import { anythingToFold, type FoldCounts, foldedCounts } from '../../lib/folding.ts';
+import { parsePlan } from '../../lib/plans.ts';
 import { isPromptItem } from '../../lib/segments.ts';
+import { parseSentFiles } from '../../lib/sentFiles.ts';
+import { systemLabel, systemTitle } from '../../lib/systemLines.ts';
+import { type TurnSpan, turnSpan } from '../../lib/turnActivity.ts';
 import { AnsweredQuestionCard, parseAskUserQuestion } from './AnsweredQuestion.tsx';
 import { Bubble } from './Bubble.tsx';
 import { ContextPill } from './ContextPill.tsx';
 import { CompactBoundaryPanel, CompactSummaryPanel, ContextSnapshotPanel } from './ContextSnapshotPanel.tsx';
 import { CostPill } from './CostPill.tsx';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FindingsCard } from './FindingsCard.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { ImageBlock } from './ImageBlock.tsx';
 import { InjectedNotice } from './InjectedNotice.tsx';
+import { InterruptMarker } from './InterruptMarker.tsx';
 import { Markdown } from './Markdown.tsx';
 import { MessageActions } from './MessageActions.tsx';
+import { NarrationBlock } from './NarrationBlock.tsx';
+import { PlanCard, PlanModeMarker } from './PlanCard.tsx';
+import { useRevealTarget } from './RevealContext.ts';
+import { SentFilesCard } from './SentFilesCard.tsx';
 import { ThinkingBlock } from './ThinkingBlock.tsx';
 import { ToolBlock } from './ToolBlock.tsx';
 
@@ -26,8 +38,15 @@ type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
  * fold yet, and the working indicator has to line up with the replies all the
  * same — at the root level it read as a sibling of the prompt rather than as
  * the answer arriving.
+ *
+ * Half the indent on a phone. 12px of margin plus a 2px line plus 12px of
+ * padding is 26px a level, and nesting runs three deep in an ordinary turn:
+ * 78px of a 360px screen spent on saying which level you are at, taken from the
+ * text that says what happened. The line itself is what carries the meaning and
+ * it is unchanged; only the air around it gives way.
  */
-export const RAIL = 'ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3';
+export const RAIL =
+  'ml-3 space-y-1.5 border-l-2 border-emerald-500/25 pt-1 pl-3 max-md:ml-1 max-md:pl-1.5';
 
 /**
  * A tool call plus the assistant message that made it. `costOwner` is false when
@@ -47,6 +66,23 @@ interface CostContext {
   sessionTotal: number | null;
   /** Context window per request, keyed by the assistant item's uuid. */
   context: Map<string, ContextPoint>;
+}
+
+/**
+ * The requests these messages made, deduped the way `costEntries` dedupes them:
+ * a message counted twice would have its re-cache billed twice, and the whole
+ * point of the three pill levels is that each message appears in exactly one.
+ */
+function pointsOf(items: MessageItem[], costs: CostContext): ContextPoint[] {
+  const seen = new Set<string>();
+  const points: ContextPoint[] = [];
+  for (const item of items) {
+    if (seen.has(item.uuid)) continue;
+    seen.add(item.uuid);
+    const point = costs.context.get(item.uuid);
+    if (point) points.push(point);
+  }
+  return points;
 }
 
 function Anchors({ item }: { item: MessageItem }) {
@@ -76,11 +112,39 @@ function UserItem({
       id={item.uuid}
       bodyRef={body}
       header={
-        <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
+        // Wrapped on a phone, and only there. The rule this breaks is a real
+        // one — a header that can grow a line must never do it under the
+        // pointer, because `MessageActions` appear on hover and the whole
+        // thread would jump as the mouse swept down it. On a phone there is no
+        // pointer and no hover: those buttons are drawn always, the row's
+        // height is settled before anybody touches it, and the alternative was
+        // `ctx 480k` hanging off the side of the screen.
+        <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase max-md:flex-wrap max-md:gap-x-1.5 max-md:gap-y-0.5">
           <span>user</span>
           {item.timestamp && (
             <span className="font-normal text-[var(--text-dim)] normal-case" title={formatDateTimeFull(item.timestamp)}>
               {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
+            </span>
+          )}
+          {/* Typed while Claude was working, so it sat in the queue until the
+              turn ended — which is why its clock reads EARLIER than the answer
+              above it. Without the chip that looks like a parsing error. */}
+          {item.queued && (
+            <span
+              className="rounded border border-[var(--border)] px-1 py-px font-normal text-[var(--text-dim)] normal-case"
+              title="Typed while Claude was working, so it waited in the queue and was sent when the turn ended. The time shown is when it was typed."
+            >
+              queued
+            </span>
+          )}
+          {/* Only `plan` is marked. Every other mode is the ordinary state of
+              affairs, and a chip for it would sit on every prompt ever sent. */}
+          {item.permissionMode === 'plan' && (
+            <span
+              className="rounded bg-violet-500/15 px-1 py-px font-semibold text-violet-300 normal-case"
+              title="Sent in plan mode: Claude could explore and design, but not edit files or run anything that changes the machine."
+            >
+              plan
             </span>
           )}
           {/* An explicit spacer rather than `ml-auto` on the run: the actions
@@ -88,7 +152,7 @@ function UserItem({
           <span className="flex-1" />
           <MessageActions item={item} blocks={item.blocks} body={body} />
           {/* Same trailing run as the assistant's: model, cost, context. */}
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-2 max-md:flex-wrap max-md:gap-x-1.5">
             {models.length > 0 && (
               <span
                 className="font-mono font-normal text-[var(--text-dim)] normal-case"
@@ -142,6 +206,7 @@ function ToolGroup({
   onOpenAgent,
   costs,
   targetTool,
+  mixedModels = false,
 }: {
   tools: PendingTool[];
   expandAll: boolean;
@@ -149,29 +214,54 @@ function ToolGroup({
   costs: CostContext;
   /** A deep link's tool call: the run holding it has to be open to show it. */
   targetTool?: string | null;
+  /**
+   * The turn answered under more than one `model · effort` pair. Only then does
+   * a first call name its own — the turn's header already says the pair when
+   * there is one, and a tool call cannot differ from its message (the
+   * `tool_use` line carries the message's model and effort verbatim), so
+   * repeating it on every run was saying nothing.
+   */
+  mixedModels?: boolean;
 }) {
   const holdsTarget = !!targetTool && tools.some((t) => t.block.toolUseId === targetTool);
-  const [open, setOpen] = useState(expandAll || holdsTarget);
+  // The find bar's destination, read from the context rather than threaded: a
+  // run has no identity of its own, so it has to recognise the call inside it.
+  // A block cannot open a run it is not mounted in, which is why this exists at
+  // all — without it a hit in a folded run scrolled to the message and stopped.
+  const reveal = useRevealTarget();
+  const holdsReveal = tools.some((t) => !!t.block.toolUseId && `tool:${t.block.toolUseId}` === reveal.key);
+  const [open, setOpen] = useState(expandAll || holdsTarget || holdsReveal);
   useEffect(() => setOpen(expandAll), [expandAll]);
   // AFTER the one above, and that order is the whole of it: effects run in
-  // declaration order, and a mount runs both — so this one has the last word and
-  // a run holding the link's target opens whatever the Tools toggle says.
+  // declaration order, and a mount runs both — so these have the last word and
+  // a run holding the target opens whatever the Tools toggle says.
   useEffect(() => {
     if (holdsTarget) setOpen(true);
   }, [holdsTarget]);
+  useEffect(() => {
+    if (holdsReveal) setOpen(true);
+  }, [holdsReveal, reveal.nonce]);
 
   const blocks = tools.map((t) => t.block);
   const names = [...new Set(blocks.map((b) => b.toolName))];
   const errors = blocks.filter((b) => b.result?.isError).length;
+  // A fan-out of agents is the one thing in a run worth seeing without opening
+  // it: three of them come out of a single message in `980751cb`, and the tool
+  // name alone ("Agent, Agent, Agent" collapsed to one word) said nothing.
+  const agents = blocks.filter((b) => b.agentId).length;
   const owners = tools.filter((t) => t.costOwner).map((t) => t.item);
   const entries = costEntries(owners, costs.prices);
   const lastUuid = entries.length > 0 ? entries[entries.length - 1].uuid : null;
+  // Six of the 55 re-caches in this corpus land on a tool-only message, which
+  // prints no header of its own — without this they would only ever show up in
+  // the turn total, with nothing saying which part of the run paid for them.
   const runPill = (
     <CostPill
       entries={entries}
       prices={costs.prices}
       cumulative={lastUuid ? costs.cumulative.get(lastUuid) : undefined}
       sessionTotal={costs.sessionTotal}
+      recache={summariseRecache(pointsOf(owners, costs), costs.prices)}
     />
   );
 
@@ -182,7 +272,10 @@ function ToolGroup({
     let previousOwner: string | null = null;
     return (
       <div className="my-1.5 border-l border-[var(--border)] pl-2">
-        <div className="mb-1 flex items-center gap-2">
+        {/* `data-chrome` on the header row, never on the container: a run inside
+            an assistant bubble sits in its `[data-bubble-body]`, and these words
+            are ours — but the tool boxes below must stay markable. */}
+        <div data-chrome className="mb-1 flex items-center gap-2">
           <FoldHeader open onToggle={() => setOpen(false)} className="text-xs text-[var(--text-dim)] hover:text-[var(--text)]">
             ▾ {blocks.length} tool call{blocks.length !== 1 ? 's' : ''} — collapse
           </FoldHeader>
@@ -200,12 +293,24 @@ function ToolGroup({
               targeted={!!targetTool && t.block.toolUseId === targetTool}
               costBadge={
                 entry ? (
-                  <CostPill
-                    entries={[entry]}
-                    prices={costs.prices}
-                    cumulative={costs.cumulative.get(entry.uuid)}
-                    sessionTotal={costs.sessionTotal}
-                  />
+                  <>
+                    {/* Named only when the turn is mixed — see `mixedModels`.
+                        ToolBlock wraps the whole badge in `data-chrome`: not
+                        the message's words. */}
+                    {mixedModels && t.item.model && (
+                      <span className="shrink-0 font-mono text-[10px] text-[var(--text-dim)]">
+                        {shortModel(t.item.model)}
+                        {t.item.effort && ` · ${t.item.effort}`}
+                      </span>
+                    )}
+                    <CostPill
+                      entries={[entry]}
+                      prices={costs.prices}
+                      cumulative={costs.cumulative.get(entry.uuid)}
+                      sessionTotal={costs.sessionTotal}
+                    />
+                    <ContextPill point={costs.context.get(t.item.uuid)} />
+                  </>
                 ) : null
               }
             />
@@ -215,7 +320,12 @@ function ToolGroup({
     );
   }
   return (
-    <div className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]">
+    // Collapsed, the whole line is chrome: a summary of ours, not the messages'
+    // own words — those are counted folded and marked when the run opens.
+    <div
+      data-chrome
+      className="my-1.5 flex items-center gap-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+    >
       <FoldHeader
         open={false}
         onToggle={() => setOpen(true)}
@@ -228,6 +338,11 @@ function ToolGroup({
         </span>
         <span className="min-w-0 truncate font-mono opacity-70">{names.join(', ')}</span>
       </FoldHeader>
+      {agents > 0 && (
+        <span className="shrink-0 font-semibold text-sky-400" title="Subagents sent out from this run">
+          ⑂ {agents} subagent{agents !== 1 ? 's' : ''}
+        </span>
+      )}
       {errors > 0 && <span className="shrink-0 text-red-400">{errors} failed</span>}
       {runPill}
     </div>
@@ -237,7 +352,8 @@ function ToolGroup({
 function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: CostContext; actions?: ReactNode }) {
   const entry = costEntry(item, costs.prices);
   return (
-    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+    // Wraps on a phone, for the reason spelled out on the prompt's header.
+    <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase max-md:flex-wrap max-md:gap-x-1.5 max-md:gap-y-0.5">
       <span className="text-emerald-400/80">assistant</span>
       {item.timestamp && (
         <span className="font-normal normal-case" title={formatDateTimeFull(item.timestamp)}>
@@ -247,7 +363,7 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
       <span className="flex-1" />
       {actions}
       {/* Same trailing run as the prompt's: model, cost, context. */}
-      <span className="flex items-center gap-2">
+      <span className="flex items-center gap-2 max-md:flex-wrap max-md:gap-x-1.5">
         {item.model && (
           <span className="font-mono font-normal normal-case">
             {shortModel(item.model)}
@@ -263,6 +379,7 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
             prices={costs.prices}
             cumulative={costs.cumulative.get(entry.uuid)}
             sessionTotal={costs.sessionTotal}
+            recache={summariseRecache(pointsOf([item], costs), costs.prices)}
           />
         )}
         <ContextPill point={costs.context.get(item.uuid)} />
@@ -329,21 +446,71 @@ function SystemItem({ item }: { item: MessageItem }) {
       </div>
     );
   }
+  if (first?.kind === 'interrupt') {
+    return (
+      <div id={item.uuid}>
+        <Anchors item={item} />
+        <InterruptMarker block={first} />
+      </div>
+    );
+  }
+  if (first?.kind === 'plan-mode') {
+    return (
+      <div id={item.uuid}>
+        <Anchors item={item} />
+        <PlanModeMarker block={first} />
+      </div>
+    );
+  }
   // Normally rendered by TurnView, which has the turn badge to hand it; this is
   // the path for anywhere else a notice can turn up.
   if (first?.kind === 'notice') {
-    return <InjectedNotice item={item} origin={first.origin} text={first.text} />;
+    return <InjectedNotice item={item} notice={first} />;
   }
   const text = first?.kind === 'text' ? first.text : '';
+  const cap = systemChars(item.systemSubtype);
   return (
     <div id={item.uuid} className="px-2 py-0.5 text-xs text-[var(--text-dim)]/70">
       <Anchors item={item} />
-      <span className="mr-2 rounded bg-zinc-500/15 px-1 py-px text-[10px] font-semibold uppercase">
-        {item.systemSubtype ?? 'system'}
+      {/* The chip is a name, not an identifier — `systemLines.ts` holds the
+          three that have one, and anything else keeps its raw subtype. */}
+      <span
+        className="mr-2 rounded bg-zinc-500/15 px-1 py-px text-[10px] font-semibold uppercase"
+        title={systemTitle(item.systemSubtype)}
+      >
+        {systemLabel(item.systemSubtype)}
       </span>
-      <span className="whitespace-pre-wrap">{text.length > 400 ? `${text.slice(0, 400)}…` : text}</span>
+      {/* The searchable half — the subtype chip beside it is not. The cut is
+          hard: there is no fold to open, so the find bar and the index stop
+          counting exactly here too, or they would offer matches nothing can
+          show. A recap is exempt (`systemChars`) and drawn whole: the cap is
+          there to keep 2 KB of `<command-name>` markup out of the thread, and
+          it was cutting the one line here written to be read. */}
+      <span data-bubble-body className="whitespace-pre-wrap">
+        {text.length > cap ? `${text.slice(0, cap)}…` : text}
+      </span>
     </div>
   );
+}
+
+/**
+ * What the strip enumerates, in the order it reads. A list rather than four
+ * conditional blocks: every one of these is hidden by the same fold, and the
+ * separator between them is the part that gets written wrong when each carries
+ * its own `&&` chain of everything before it.
+ *
+ * The assistant's own output leads and wears its own colours; everything that
+ * merely landed in the thread follows in the neutral one, told apart by its
+ * word rather than by a hue invented for it.
+ */
+function countWords(c: FoldCounts): { n: number; word: string; className: string }[] {
+  return [
+    { n: c.responses, word: 'response', className: 'text-emerald-300/80' },
+    { n: c.tools, word: 'tool call', className: 'text-sky-300/80' },
+    { n: c.planMode, word: 'plan mode marker', className: 'text-zinc-300/70' },
+    { n: c.notices, word: 'notice', className: 'text-zinc-300/70' },
+    { n: c.recaps, word: 'recap', className: 'text-zinc-300/70' },
+  ].filter((x) => x.n > 0);
 }
 
 /**
@@ -357,30 +524,48 @@ function SystemItem({ item }: { item: MessageItem }) {
  */
 function FoldStrip({
   open,
-  responses,
-  tools,
+  counts: folded,
+  span,
   at,
   onToggle,
 }: {
   open: boolean;
-  responses: number;
-  tools: number;
+  counts: FoldCounts;
+  /**
+   * How long the turn ran, prompt to last thing landed (`turnSpan`). Null for
+   * the turn in flight — its live clock is the working row's `total`, counted
+   * from the same boundary, and two figures with different ends would disagree
+   * on screen — and for a turn with nothing to measure.
+   */
+  span: TurnSpan | null;
   /** Only for a turn no prompt opened, which would otherwise be anonymous. */
   at: string | null;
   onToggle?: () => void;
 }) {
+  const words = countWords(folded);
   const counts = (
     <>
       {at && <span className="shrink-0">{formatDateTime(at)}</span>}
-      {responses > 0 && (
-        <span className="shrink-0 font-semibold text-emerald-300/80">
-          {responses} response{responses === 1 ? '' : 's'}
-        </span>
-      )}
-      {responses > 0 && tools > 0 && <span className="opacity-50">·</span>}
-      {tools > 0 && (
-        <span className="shrink-0 font-semibold text-sky-300/80">
-          {tools} tool call{tools === 1 ? '' : 's'}
+      {words.map((w, i) => (
+        <Fragment key={w.word}>
+          {i > 0 && <span className="opacity-50">·</span>}
+          <span className={`shrink-0 font-semibold ${w.className}`}>
+            {w.n} {w.word}
+            {w.n === 1 ? '' : 's'}
+          </span>
+        </Fragment>
+      ))}
+      {/* The counts wear their own colours; the duration is a figure and wears
+          the figures' white, like the working row's clocks. A duration, never a
+          datetime: a DATE reappearing on the strip is AI_TESTING's failure
+          signal for notice-opened turns, and this must not look like one. */}
+      {words.length > 0 && span && <span className="opacity-50">·</span>}
+      {span && (
+        <span
+          className="shrink-0 font-medium text-[var(--text)]/90 tabular-nums"
+          title={`From ${formatDateTime(span.start)} to ${formatDateTime(span.end)}`}
+        >
+          {formatDuration(span.end - span.start)}
         </span>
       )}
     </>
@@ -395,7 +580,13 @@ function FoldStrip({
         onToggle={toggle}
         // `w-fit`, which a <button> gave for free: a block-level flex div would
         // stretch the click target across the whole column.
-        className="group/fold -mt-0.5 flex w-fit items-center gap-2 text-xs text-[var(--text-dim)]"
+        // `flex-wrap` because `w-fit` alone is `max-content` wherever the row
+        // fits and a row that CANNOT fit is simply drawn too wide: this strip
+        // was the whole of the conversation's 524 px min-content, and it is what
+        // put a horizontal scrollbar in the scroller whenever the column beside
+        // it was dragged wide. Wrapping costs nothing at every width where the
+        // strip already fitted.
+        className="group/fold -mt-0.5 flex w-fit flex-wrap items-center gap-2 text-xs text-[var(--text-dim)]"
       >
         <span className="text-emerald-400/70">▾</span>
         {counts}
@@ -407,7 +598,9 @@ function FoldStrip({
     <FoldHeader
       open={false}
       onToggle={toggle}
-      className="group/fold my-1.5 ml-6 flex w-fit items-center gap-2 rounded-full border border-dashed border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
+      // `flex-wrap` for the reason the open one carries: the pill becomes two
+      // lines in a narrow column instead of running off the edge of it.
+      className="group/fold my-1.5 ml-6 flex w-fit flex-wrap items-center gap-2 rounded-full border border-dashed border-[var(--border)] bg-[var(--bg-raised)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
     >
       <span>▸</span>
       {counts}
@@ -456,11 +649,8 @@ function noticeNode(
   item: MessageItem,
   notice: Extract<ContentBlock, { kind: 'notice' }>,
   badge: ReactNode | undefined,
-  onClick?: () => void,
 ): ReactNode {
-  return (
-    <InjectedNotice key={item.uuid} item={item} origin={notice.origin} text={notice.text} badge={badge} onClick={onClick} />
-  );
+  return <InjectedNotice key={item.uuid} item={item} notice={notice} badge={badge} />;
 }
 
 /**
@@ -478,6 +668,29 @@ function userNode(item: MessageItem, models: TurnModel[], badge: ReactNode | und
   return <UserItem key={item.uuid} item={item} models={models} badge={badge} />;
 }
 
+/**
+ * The card a call is lifted out of the run and drawn as, or null for the calls
+ * that are ordinary tool traffic.
+ *
+ * Four tools earn one, and each is a turn of the conversation in miniature
+ * rather than plumbing: a question put to the user, a plan submitted for
+ * approval, files handed over, and what a code review found. Every parser is
+ * guarded by its own tool name, so the order here is presentation and never
+ * correctness — and one place to add the fifth beats a ternary chain in the two
+ * loops below.
+ */
+function toolCard(block: ToolContentBlock, key: string): ReactNode | null {
+  const asked = parseAskUserQuestion(block);
+  if (asked) return <AnsweredQuestionCard key={`asked-${key}`} parsed={asked} />;
+  const plan = parsePlan(block);
+  if (plan) return <PlanCard key={`plan-${key}`} parsed={plan} />;
+  const sent = parseSentFiles(block);
+  if (sent) return <SentFilesCard key={`sent-${key}`} parsed={sent} />;
+  const found = parseFindings(block);
+  if (found) return <FindingsCard key={`found-${key}`} parsed={found} />;
+  return null;
+}
+
 export function TurnView({
   turn,
   showThinking,
@@ -490,6 +703,7 @@ export function TurnView({
   onToggleExpanded,
   targetTool,
   footer,
+  inFlight = false,
 }: {
   turn: TurnType;
   showThinking: boolean;
@@ -512,6 +726,14 @@ export function TurnView({
    * that folds, counts or prices a message can see it.
    */
   footer?: ReactNode;
+  /**
+   * This turn is the one being answered (or waited on) right now, so its fold
+   * strip holds back the duration: the working row below is already counting
+   * the same span live, and a second figure that stops at the last write would
+   * quietly disagree with it. NOT inferred from `footer`, which is also passed
+   * when the turn is over and only its subagents are still out.
+   */
+  inFlight?: boolean;
 }) {
   // Tool runs are grouped across items, not just within one assistant
   // message: a turn is usually assistant(tool) → assistant(tool) → … and the
@@ -540,6 +762,7 @@ export function TurnView({
           onOpenAgent={onOpenAgent}
           costs={costs}
           targetTool={targetTool}
+          mixedModels={models.length > 1}
         />
       </div>,
     );
@@ -558,6 +781,10 @@ export function TurnView({
             sessionTotal={costs.sessionTotal}
             label="turn"
             variant="badge"
+            // The badge sits on the prompt that paid for it, and 53 of the 59
+            // re-caches here land on a turn's first request — so this is the one
+            // place the marker had to be.
+            recache={summariseRecache(turnContext?.recaches ?? [], costs.prices)}
           />
         )}
         {turnContext && <ContextPill turn={turnContext} variant="badge" />}
@@ -569,7 +796,7 @@ export function TurnView({
   let badgePlaced = false;
 
   const folded = foldedCounts(turn, showThinking);
-  const anyFolded = folded.responses > 0 || folded.tools > 0;
+  const anyFolded = anythingToFold(folded);
   const models = turnModels(turn);
   let promptShown = false;
   // A rewind that cut in the MIDDLE of a turn: part of it is still the
@@ -591,12 +818,13 @@ export function TurnView({
       </span>
     </div>
   ) : null;
+  const span = inFlight ? null : turnSpan(turn);
   const foldStrip = (open: boolean) => (
     <FoldStrip
       key="fold"
       open={open}
-      responses={folded.responses}
-      tools={folded.tools}
+      counts={folded}
+      span={span}
       // A turn nobody prompted would otherwise be an anonymous line.
       at={promptShown ? null : (turn.items[0]?.timestamp ?? null)}
       onToggle={onToggleExpanded}
@@ -609,19 +837,60 @@ export function TurnView({
     for (const item of turn.items) {
       if (item.role === 'user' && (isPromptItem(item) || item.isCompactSummary)) {
         // The summary panel takes no badge, so it must not consume one either.
-        nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge));
+        const node = userNode(item, models, badgePlaced ? undefined : turnBadge);
+        // Folded, the turn still shows what the user wrote — hiding a queued
+        // prompt here would repeat in miniature the bug that hid it outright.
+        // On the rail, though: it did not open this turn, and at the prompt's
+        // own margin it would read as a second one.
+        nodes.push(
+          item.queued ? (
+            <div key={item.uuid} className={RAIL}>
+              {node}
+            </div>
+          ) : (
+            node
+          ),
+        );
         badgePlaced ||= !item.isCompactSummary;
         promptShown ||= !item.isCompactSummary;
         continue;
       }
       const notice = noticeOf(item);
       if (notice) {
-        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge, onToggleExpanded));
+        // A notice that landed MID-turn is part of the thread, so it folds away
+        // with the thread — folding the answers and leaving the news standing
+        // was the one thing left on screen, which reads as the turn having been
+        // about the notice. The strip counts it, so nothing goes in silence.
+        // The other kind IS the turn's opener and stays, like a prompt.
+        if (notice.queued) {
+          markFold();
+          continue;
+        }
+        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;
         continue;
       }
       if (item.role === 'system') {
+        // A recap is Claude Code's own prose about what the turn did, written
+        // at its end — the assistant's side of the turn as much as an answer
+        // is, so it folds with the answers and the strip counts it. It used to
+        // be the one thing left standing on a folded turn, which read as the
+        // turn having been about it. Every other system line stays: a `Command`
+        // is the user's own action and a panel is what happened to the
+        // conversation (`foldedCounts`) — plan mode excepted, below.
+        if (item.systemSubtype === RECAP_SUBTYPE) {
+          markFold();
+          continue;
+        }
+        // A plan-mode marker is the one panel that goes with the thread too:
+        // entering plan mode is a moment of THIS turn, not a fact about the
+        // conversation. Folded, its entry and its exit were left standing above
+        // and below the strip with the eight hours between them hidden.
+        if (item.blocks[0]?.kind === 'plan-mode') {
+          markFold();
+          continue;
+        }
         nodes.push(<SystemItem key={item.uuid} item={item} />);
         continue;
       }
@@ -643,6 +912,11 @@ export function TurnView({
   for (const item of turn.items) {
     if (item.role === 'user') {
       flushTools();
+      // A prompt typed while Claude was working did not open this turn — it
+      // arrived in the middle of one. `markFold` puts it on the rail with the
+      // answers, so the thread it interrupted still reads as one thread, and it
+      // cuts the tool run it landed in exactly as a question to the user does.
+      if (item.queued) markFold();
       nodes.push(userNode(item, models, badgePlaced ? undefined : turnBadge));
       badgePlaced ||= !item.isCompactSummary;
       promptShown ||= !item.isCompactSummary;
@@ -652,11 +926,22 @@ export function TurnView({
       flushTools();
       const notice = noticeOf(item);
       if (notice) {
-        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge, anyFolded ? onToggleExpanded : undefined));
+        // A task that finished while Claude was working did not open this turn —
+        // it landed in the middle of one. `markFold` puts it on the rail with
+        // the answers, exactly as a prompt typed mid-turn is, so the thread it
+        // interrupted still reads as one thread.
+        if (notice.queued) markFold();
+        nodes.push(noticeNode(item, notice, badgePlaced ? undefined : turnBadge));
         badgePlaced = true;
         promptShown = true;
         continue;
       }
+      // The entry is written with the prompt's own timestamp, so it lands
+      // BEFORE the first answer — and `foldAt` is a position, so left unmarked
+      // it stayed at the prompt's own margin, reading as a sibling of the
+      // question rather than as the first thing it produced. Marking here puts
+      // the rail's head at the marker, which is where the fold now starts.
+      if (item.blocks[0]?.kind === 'plan-mode') markFold();
       nodes.push(<SystemItem key={item.uuid} item={item} />);
       continue;
     }
@@ -665,18 +950,18 @@ export function TurnView({
     // An assistant message that is only tool calls contributes to the run
     // without printing its own header — so the run carries its cost.
     if (visible.length > 0 && visible.every((b) => b.kind === 'tool')) {
-      // A question to the user CLOSES the run it belongs to and is drawn after
+      // A call that earns a card CLOSES the run it belongs to and is drawn after
       // it, at conversation level. `costOwner` drops to false once that has
       // happened: the message pays in the first run, and a second run holding
       // more of its calls must not bill it again.
       let owns = true;
       for (const block of visible as ToolContentBlock[]) {
         pendingTools.push({ block, item, costOwner: owns });
-        const asked = parseAskUserQuestion(block);
-        if (!asked) continue;
+        const card = toolCard(block, block.toolUseId || item.uuid);
+        if (!card) continue;
         flushTools();
         owns = false;
-        nodes.push(<AnsweredQuestionCard key={`asked-${block.toolUseId || item.uuid}`} parsed={asked} />);
+        nodes.push(card);
       }
       continue;
     }
@@ -687,10 +972,10 @@ export function TurnView({
     for (const [i, b] of visible.entries()) {
       if (b.kind === 'tool') {
         pendingTools.push({ block: b, item, costOwner: false });
-        // Same rule as above, inside a message that also has prose: the run
-        // ends at the question and the card follows it.
-        const asked = parseAskUserQuestion(b);
-        if (asked) {
+        // Same rule as above, inside a message that also has prose: the run ends
+        // at the call that earns a card, and the card follows it.
+        const card = toolCard(b, String(i));
+        if (card) {
           rendered.push(
             <ToolGroup
               key={`tools-before-ask-${i}`}
@@ -699,10 +984,11 @@ export function TurnView({
               onOpenAgent={onOpenAgent}
               costs={costs}
               targetTool={targetTool}
+              mixedModels={models.length > 1}
             />,
           );
           pendingTools = [];
-          rendered.push(<AnsweredQuestionCard key={`asked-${i}`} parsed={asked} />);
+          rendered.push(card);
         }
         continue;
       }
@@ -714,15 +1000,33 @@ export function TurnView({
             expandAll={expandTools}
             onOpenAgent={onOpenAgent}
             costs={costs}
+            // The third of the three runs, and the only one that was missing
+            // this. It is the calls a message makes BETWEEN two pieces of prose,
+            // which no message in this corpus does today (0 of 6,295 calls over
+            // the 20 largest sessions — Claude writes, then calls, and the
+            // trailing calls leave through flushTools). So the omission opened
+            // no link that anyone has clicked; it was a third case written to
+            // differ from its two siblings, waiting for the first transcript
+            // that goes text → tool → text.
+            targetTool={targetTool}
+            mixedModels={models.length > 1}
           />,
         );
         pendingTools = [];
       }
       if (b.kind === 'thinking') {
-        rendered.push(<ThinkingBlock key={i} text={b.text} />);
+        rendered.push(<ThinkingBlock key={i} text={b.text} owner={item.uuid} />);
+        prose.push(b);
+      } else if (b.kind === 'narration') {
+        // Not behind the thinking switch and not folded: the user read this in
+        // the terminal as the work went past. It joins `prose` like any other
+        // thing the assistant said, so Copy and the export carry it too.
+        rendered.push(<NarrationBlock key={i} text={b.text} />);
         prose.push(b);
       } else if (b.kind === 'text') {
-        rendered.push(<Markdown key={i} text={b.text} />);
+        // The one place the code-block bar is turned on. It reaches the
+        // subagent drawer too, which draws this same list over its transcript.
+        rendered.push(<Markdown key={i} text={b.text} codeBar />);
         prose.push(b);
       }
     }

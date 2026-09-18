@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { btn, dangerBtn, inputClass } from '../../lib/ui.ts';
+import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
 
 /**
  * The confirmation for anything that cannot be undone.
@@ -84,10 +84,10 @@ export function ConfirmDialog({
         )}
 
         <div className="mt-4 flex justify-end gap-1.5">
-          <button ref={cancelRef} type="button" onClick={onCancel} className={btn} disabled={busy}>
+          <button ref={cancelRef} type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>
-          <button type="button" onClick={onConfirm} className={dangerBtn} disabled={!ready || busy}>
+          <button type="button" onClick={onConfirm} className={dangerClass} disabled={!ready || busy}>
             {busy ? 'Working…' : confirmLabel}
           </button>
         </div>

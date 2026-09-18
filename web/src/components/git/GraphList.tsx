@@ -4,7 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useMemo, useRef } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { ROW_H, graphWidth, layoutGraph } from '../../lib/gitGraph.ts';
-import { btn } from '../../lib/ui.ts';
+import { actionClass } from '../controlClass.ts';
 import { GraphRow } from './GraphRow.tsx';
 
 /**
@@ -89,7 +89,7 @@ export function GraphList({
         <div className="flex justify-center py-2">
           <button
             type="button"
-            className={btn}
+            className={actionClass}
             disabled={query.isFetchingNextPage}
             onClick={() => void query.fetchNextPage()}
           >

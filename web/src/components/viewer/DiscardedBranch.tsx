@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { costEntries, formatUsd, sumCost } from '../../lib/cost.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { type SegmentTurn, summarizeTurns } from '../../lib/segments.ts';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 
 /**
  * What a `/rewind` cut away, folded into one line.

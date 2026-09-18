@@ -47,14 +47,13 @@ export function LineagePanel({ sessionId }: { sessionId: string }) {
       }));
   }, [query.data]);
 
-  if (query.isLoading) return <div className="border-b border-[var(--border)] p-3 text-xs text-[var(--text-dim)]">Loading lineage…</div>;
+  if (query.isLoading) return <div className="p-3 text-xs text-[var(--text-dim)]">Loading lineage…</div>;
   if (query.isError || !query.data) return null;
 
   return (
-    <div className="border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
-      <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        Resume lineage — {query.data.nodes.length} sessions
-      </div>
+    <div className="px-4 py-3">
+      {/* The name and the count are the inspector's title bar now. */}
+      <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">{query.data.nodes.length} sessions in the chain</div>
       <div className="space-y-1">
         {levels.map((level) => (
           <div key={level.depth} className="flex items-start gap-2">

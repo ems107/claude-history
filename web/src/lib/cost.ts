@@ -3,6 +3,7 @@ import type {
   MessageUsage,
   ModelPrices,
   PriceTable,
+  RecacheCause,
   SessionSummary,
   Turn,
   UsageTotals,
@@ -10,20 +11,46 @@ import type {
 import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
 
 /**
- * What a whole session would have cost through the API, summed per model
- * because each one bills at its own rates. `null` when it has not been
- * enriched yet or when no model in it has a price — an unknown cost must
- * never render as "$0.000".
+ * What a session cost, in the two halves it is really made of. `null` where
+ * nothing can be priced — not enriched yet, or no model with a price — because
+ * an unknown cost must never render as "$0.000".
+ */
+export interface SessionCostParts {
+  /** The requests in this transcript: what the per-message pills add up to. */
+  own: number | null;
+  /** The agents it sent out, in their own conversations. Null when it sent none. */
+  subagents: number | null;
+  /** What the session cost, which is the two together — the figure to lead with. */
+  total: number | null;
+}
+
+const add = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : a + b);
+
+export function sessionCostParts(session: SessionSummary, prices: PriceTable): SessionCostParts {
+  const e = session.enrichment;
+  if (!e) return { own: null, subagents: null, total: null };
+  let own: number | null = null;
+  for (const [model, usage] of Object.entries(e.usageByModel)) {
+    own = add(own, computeCost(usage, resolvePrices(model, prices)));
+  }
+  // Priced with `computeMessageCost`, not `computeCost`: these aggregates keep
+  // the TTL split because an agent's writes are mostly 5-minute ones, and the
+  // 1-hour rate would overcharge them by 60% of the write.
+  let subagents: number | null = null;
+  for (const [model, usage] of Object.entries(e.subagentUsageByModel ?? {})) {
+    subagents = add(subagents, computeMessageCost(usage, resolvePrices(model, prices)));
+  }
+  return { own, subagents, total: add(own, subagents) };
+}
+
+/**
+ * What the session cost, agents included. This is the number the list, the sort
+ * and the stats use: a session that delegates its work to eleven agents spent
+ * that money as surely as one that did the work itself, and reading only the
+ * parent's own requests understated it by 8x in the worst case here.
  */
 export function sessionCost(session: SessionSummary, prices: PriceTable): number | null {
-  const byModel = session.enrichment?.usageByModel;
-  if (!byModel) return null;
-  let total: number | null = null;
-  for (const [model, usage] of Object.entries(byModel)) {
-    const cost = computeCost(usage, resolvePrices(model, prices));
-    if (cost !== null) total = (total ?? 0) + cost;
-  }
-  return total;
+  return sessionCostParts(session, prices).total;
 }
 
 /**
@@ -64,6 +91,97 @@ export function computeMessageCost(usage: MessageUsage, prices: ModelPrices | un
       usage.cacheCreate5m * cacheWrite5mRate(prices)) /
     1_000_000
   );
+}
+
+// ---- re-cached context ----
+
+/**
+ * What re-writing already-cached context cost, in the two forms that have to be
+ * shown together.
+ *
+ * `billed` alone suggests the tokens would otherwise have been free; `extra`
+ * alone hides how big the event was. The money fields are null when the model
+ * has no price — an unknown cost never renders as $0.
+ */
+export interface RecacheCost {
+  tokens: number;
+  /** What those tokens cost as a cache write. */
+  billed: number | null;
+  /** What they would have cost had the cache held. */
+  ifRead: number | null;
+  /** `billed - ifRead`: the part the re-write alone is responsible for. */
+  extra: number | null;
+}
+
+/**
+ * The rate a message's cache writes actually billed at, blending the TTLs it
+ * used. A subagent writes 5-minute caches (1.25x input) and a session 1-hour
+ * ones (2x), so a fixed rate would overcharge one of them by 60% of the write.
+ * Tokens with no TTL recorded fall back to 1h, the way `computeMessageCost` does.
+ */
+function blendedWriteRate(usage: MessageUsage, prices: ModelPrices): number {
+  if (usage.cacheCreate <= 0) return prices.cacheWrite;
+  const unattributed = Math.max(0, usage.cacheCreate - usage.cacheCreate1h - usage.cacheCreate5m);
+  const total =
+    (usage.cacheCreate1h + unattributed) * prices.cacheWrite + usage.cacheCreate5m * cacheWrite5mRate(prices);
+  return total / usage.cacheCreate;
+}
+
+export function recacheCost(usage: MessageUsage, recached: number, prices: ModelPrices | undefined): RecacheCost {
+  if (!prices) return { tokens: recached, billed: null, ifRead: null, extra: null };
+  const billed = (recached * blendedWriteRate(usage, prices)) / 1_000_000;
+  const ifRead = (recached * prices.cacheRead) / 1_000_000;
+  return { tokens: recached, billed, ifRead, extra: billed - ifRead };
+}
+
+/** One re-cached request, structurally — so this file and `context.ts` need not know each other. */
+export interface RecachedRequest {
+  model: string | null;
+  usage: MessageUsage;
+  recached: number;
+  recacheCause: RecacheCause | null;
+  gapMs: number | null;
+}
+
+/** What a pill shows about a re-cache: the money, and the reason for it. */
+export interface RecacheSummary {
+  cost: RecacheCost;
+  /**
+   * The cause of the LARGEST event in the group. A run of tool calls can lose
+   * its cache twice for different reasons, and naming the small one would
+   * explain the wrong thing.
+   */
+  cause: RecacheCause | null;
+  gapMs: number | null;
+}
+
+/** Null when nothing in `requests` was re-cached, which is the usual case. */
+export function summariseRecache(requests: RecachedRequest[], prices: PriceTable): RecacheSummary | null {
+  const cost = sumRecacheCost(requests, prices);
+  if (!cost) return null;
+  const worst = requests.reduce<RecachedRequest | null>(
+    (best, r) => (r.recached > 0 && (!best || r.recached > best.recached) ? r : best),
+    null,
+  );
+  return { cost, cause: worst?.recacheCause ?? null, gapMs: worst?.gapMs ?? null };
+}
+
+/** The re-cache across several requests, each priced at its own model's rates. */
+export function sumRecacheCost(requests: RecachedRequest[], prices: PriceTable): RecacheCost | null {
+  let tokens = 0;
+  let billed: number | null = null;
+  let ifRead: number | null = null;
+  for (const r of requests) {
+    if (r.recached <= 0) continue;
+    tokens += r.recached;
+    const one = recacheCost(r.usage, r.recached, resolvePrices(r.model, prices));
+    if (one.billed !== null && one.ifRead !== null) {
+      billed = (billed ?? 0) + one.billed;
+      ifRead = (ifRead ?? 0) + one.ifRead;
+    }
+  }
+  if (tokens === 0) return null;
+  return { tokens, billed, ifRead, extra: billed === null || ifRead === null ? null : billed - ifRead };
 }
 
 export function formatUsd(n: number | null): string {

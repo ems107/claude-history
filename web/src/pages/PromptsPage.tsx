@@ -3,31 +3,16 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api/client.ts';
+import { CopyTextButton } from '../components/list/CopyTextButton.tsx';
+import { MobileToolbar } from '../components/list/MobileToolbar.tsx';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { formatDateTime, relativeTime } from '../lib/format.ts';
+import { useIsMobile } from '../lib/mobile.ts';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-      className="shrink-0 cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)]"
-      title="Copy prompt to clipboard"
-    >
-      {copied ? 'Copied ✓' : 'Copy'}
-    </button>
-  );
-}
-
 export function PromptsPage() {
+  const mobile = useIsMobile();
   const prompts = useQuery({ queryKey: ['prompts'], queryFn: api.prompts });
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [q, setQ] = useState('');
@@ -59,27 +44,48 @@ export function PromptsPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search every prompt you ever typed…"
-          className="max-w-md min-w-48 flex-1 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 py-1 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
+      {/* One line and a title on a phone, the desktop's own row above 48rem.
+          A branch rather than one markup restyled: the phone's version puts the
+          count in the placeholder and the filter behind a sheet, which is not
+          this row narrower. */}
+      {mobile ? (
+        <MobileToolbar
+          title="Prompts"
+          q={q}
+          onQ={setQ}
+          placeholder={`Search ${rows.length} prompts…`}
+          filters={[
+            {
+              label: 'Project',
+              value: projectFilter,
+              onChange: setProjectFilter,
+              options: [['', 'All projects'], ...projectOptions],
+            },
+          ]}
         />
-        <select
-          value={projectFilter}
-          onChange={(e) => setProjectFilter(e.target.value)}
-          className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)]"
-        >
-          <option value="">All projects</option>
-          {projectOptions.map(([key, name]) => (
-            <option key={key} value={key}>
-              {name}
-            </option>
-          ))}
-        </select>
-        <span className="ml-auto text-[var(--text-dim)]">{rows.length} prompts</span>
-      </div>
+      ) : (
+        <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search every prompt you ever typed…"
+            className="max-w-md min-w-48 flex-1 rounded border border-[var(--border)] bg-[var(--bg-raised)] px-2.5 py-1 text-sm placeholder:text-[var(--text-dim)] focus:border-[var(--accent-dim)] focus:outline-none"
+          />
+          <select
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            className="cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-1 text-xs text-[var(--text-dim)]"
+          >
+            <option value="">All projects</option>
+            {projectOptions.map(([key, name]) => (
+              <option key={key} value={key}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <span className="ml-auto text-[var(--text-dim)]">{rows.length} prompts</span>
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {rows.map((p, i) => (
           <div key={`${p.sessionId}-${p.timestamp}-${i}`} className="border-b border-[var(--border)] px-4 py-2">
@@ -93,7 +99,7 @@ export function PromptsPage() {
                 {formatDateTime(p.timestamp)} · {relativeTime(p.timestamp)}
               </span>
               <span className="ml-auto inline-flex items-center gap-1.5">
-                <CopyButton text={p.display} />
+                <CopyTextButton text={p.display} title="Copy prompt to clipboard" />
                 {p.sessionExists ? (
                   <Link
                     to={`/session/${p.sessionId}`}

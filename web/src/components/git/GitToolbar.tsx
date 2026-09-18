@@ -9,8 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
-import { btn } from '../../lib/ui.ts';
-import { toggleClass } from '../viewer/SessionHeader.tsx';
+import { actionClass, toggleClass } from '../controlClass.ts';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
 import { SplitButton, type SplitOption } from './SplitButton.tsx';
@@ -263,7 +262,7 @@ export function GitToolbar({
           type="button"
           disabled={!repoId || opening}
           onClick={() => open('terminal')}
-          className={btn}
+          className={actionClass}
           title="Open a terminal in this repository"
         >
           ❯
@@ -272,7 +271,7 @@ export function GitToolbar({
           type="button"
           disabled={!repoId || opening}
           onClick={() => open('vscode')}
-          className={btn}
+          className={actionClass}
           title="Open this repository in VS Code"
         >
           {'{ }'}
@@ -281,7 +280,7 @@ export function GitToolbar({
           type="button"
           disabled={!repoId || opening}
           onClick={() => open('explorer')}
-          className={btn}
+          className={actionClass}
           title="Open this folder in Explorer"
         >
           📁
@@ -326,7 +325,7 @@ export function GitToolbar({
               <>
                 <button
                   type="button"
-                  className={btn}
+                  className={actionClass}
                   title="git pull --rebase"
                   onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'rebase' }))}
                 >
@@ -334,7 +333,7 @@ export function GitToolbar({
                 </button>
                 <button
                   type="button"
-                  className={btn}
+                  className={actionClass}
                   title="git pull --no-rebase"
                   onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'merge' }))}
                 >
@@ -343,11 +342,11 @@ export function GitToolbar({
               </>
             )}
             {needsCredentials && repoId && (
-              <button type="button" className={btn} onClick={() => open('terminal')}>
+              <button type="button" className={actionClass} onClick={() => open('terminal')}>
                 ❯ Open a terminal here
               </button>
             )}
-            <button type="button" className={btn} onClick={action.clear}>
+            <button type="button" className={actionClass} onClick={action.clear}>
               Dismiss
             </button>
           </span>

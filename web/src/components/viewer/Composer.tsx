@@ -1,8 +1,19 @@
-import { CHAT_MESSAGE_MAX, CLAUDE_MODELS, type ChatModelInfo } from '@claude-history/shared';
+import {
+  CHAT_MESSAGE_MAX,
+  CLAUDE_MODELS,
+  type ChatModelInfo,
+  type ChatPermissionMode,
+  type ChatPlanDecision,
+} from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import type { SessionDetailResponse } from '@claude-history/shared';
 import { api } from '../../api/client.ts';
 import { shortModel } from '../../lib/format.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
+import { cacheClockOf, CloseSessionDialog, closingNeedsAsking } from './CloseSessionDialog.tsx';
+import { BlockedBar } from './BlockedBar.tsx';
+import { PILL_CORNER_PX } from './FollowBottom.tsx';
 import { QuestionPanel } from './QuestionPanel.tsx';
 
 /** Grow with the text, but never eat the conversation above. */
@@ -40,7 +51,7 @@ function modelLabel(m: ChatModelInfo): string {
  * looks nothing like the rest of the app — the caret is drawn alongside instead.
  */
 const chip =
-  'cursor-pointer appearance-none rounded-md bg-transparent py-0.5 pr-4 pl-1.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent';
+  'cursor-pointer appearance-none rounded-md bg-transparent py-0.5 pr-4 pl-1.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent max-md:min-h-9 max-md:rounded-lg max-md:border max-md:border-[var(--border)] max-md:pr-6 max-md:pl-2.5 max-md:text-xs';
 
 /**
  * The process is alive between turns — that is what makes the second prompt
@@ -87,7 +98,8 @@ function Picker({
 }: {
   value: string;
   options: { value: string; label: string }[];
-  disabled: boolean;
+  /** Optional: the mode picker is never disabled, since it needs no running CLI. */
+  disabled?: boolean;
   title: string;
   onChange: (v: string) => void;
 }) {
@@ -106,7 +118,7 @@ function Picker({
           </option>
         ))}
       </select>
-      <span aria-hidden className="pointer-events-none absolute right-1 text-[7px] text-[var(--text-dim)]">
+      <span aria-hidden className="pointer-events-none absolute right-1 text-[7px] text-[var(--text-dim)] max-md:right-2 max-md:text-[9px]">
         ▼
       </span>
     </span>
@@ -123,22 +135,48 @@ function Picker({
  * see: a `--print` run writes no `status` into ~/.claude/sessions, so the
  * working indicator is driven from here (see SessionViewPage).
  *
- * It is sized and aligned as a USER bubble, because that is what it becomes:
- * same `maxWidth` as the conversation, same `px-4` gutter, and none of the
- * rail's indent — that belongs to the replies. A full-width footer read as
- * chrome bolted to the window instead of as the next thing in the thread.
+ * It is sized and aligned as a USER bubble, because that is what it becomes: it
+ * is drawn INSIDE the conversation's own column (`SessionViewPage` sticks it to
+ * the foot of the scroller), so the width and the gutter are the bubbles' own,
+ * and it takes none of the rail's indent — that belongs to the replies. A
+ * full-width footer read as chrome bolted to the window instead of as the next
+ * thing in the thread.
  */
 export function Composer({
   sessionId,
-  maxWidth,
+  columnWidth,
   onSent,
   lastModel,
   lastEffort,
+  lastMode,
 }: {
   sessionId: string;
-  maxWidth?: string;
-  /** The prompt was accepted by the server; show it before the transcript has it. */
-  onSent?: (text: string) => void;
+  /**
+   * The width of the conversation's column, as a CSS length. Used for one piece
+   * of arithmetic: the follow-the-end pill floats in the scroller's bottom-right
+   * corner, which is the corner Send sits in, and the pill is on top — it would
+   * take the click. `--conv-box/2 - column/2` is the margin between this box
+   * and the
+   * window's edge, so where that margin is smaller than the pill needs, the
+   * action row gives up the difference and Send steps aside. Where it is not
+   * (any width with room around it), the row keeps its own padding and nothing
+   * moves. Both cases are one `max()`, which also means resizing the window
+   * needs no measuring and no re-render.
+   *
+   * Omitted where there is no pill to dodge — the new-session page, which has no
+   * conversation to follow — and then the row simply keeps its own padding.
+   */
+  columnWidth?: string;
+  /**
+   * The prompt was accepted by the server; show it before the transcript has it.
+   *
+   * What it went out ON comes with it, because the composer is the only thing
+   * that knows: the model, effort and mode are resolved here from a running CLI,
+   * the transcript and the fallbacks, and a caller that wanted to remember the
+   * choice would otherwise have to redo that resolution and get it slightly
+   * wrong. Ignored by the viewer, which has a transcript to read it back from.
+   */
+  onSent?: (text: string, sent: { model: string; effort: string | null; permissionMode: ChatPermissionMode }) => void;
   /**
    * How this session was last answered, from the transcript. The starting point
    * for the pickers: there is no configured default, because one would quietly
@@ -146,8 +184,13 @@ export function Composer({
    */
   lastModel?: string | null;
   lastEffort?: string | null;
+  /** The permission mode the session was last in — `plan` is the one worth restoring. */
+  lastMode?: ChatPermissionMode | null;
 }) {
   const queryClient = useQueryClient();
+  // A phone, where Enter is a newline and Send is the only way out. See the
+  // textarea's own `onKeyDown`.
+  const mobile = useIsMobile();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [answering, setAnswering] = useState(false);
@@ -196,6 +239,9 @@ export function Composer({
   // five levels was both wrong on screen and wrong on the wire.
   const efforts = current?.efforts ?? [];
   const commands = status?.availableCommands ?? [];
+  // Same rule as the model: what is running wins, then what the session was
+  // last in, then the ordinary way of sending.
+  const mode: ChatPermissionMode = status?.permissionMode ?? lastMode ?? 'auto';
 
   useEffect(() => {
     const el = box.current;
@@ -209,20 +255,17 @@ export function Composer({
     if (!prompt || sending || blocked) return;
     setSending(true);
     setError(null);
+    // With a model list, the effort is one this model actually takes, or none at
+    // all. Without one, the effort the session was last answered at is the only
+    // evidence available — and it is good evidence: that model took it.
+    const sentEffort = models.length > 0 ? (efforts.length > 0 ? (effort ?? efforts[0]) : null) : effort;
     api
-      // With a model list, the effort is one this model actually takes, or none
-      // at all. Without one, the effort the session was last answered at is the
-      // only evidence available — and it is good evidence: that model took it.
-      .chatSend(sessionId, {
-        text: prompt,
-        model,
-        effort: models.length > 0 ? (efforts.length > 0 ? (effort ?? efforts[0]) : null) : effort,
-      })
+      .chatSend(sessionId, { text: prompt, model, effort: sentEffort, permissionMode: mode })
       .then(() => {
         setText('');
         // Only once the server has taken it: an echo of a prompt that was
         // refused would be a message the conversation never had.
-        onSent?.(prompt);
+        onSent?.(prompt, { model, effort: sentEffort, permissionMode: mode });
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
@@ -235,7 +278,7 @@ export function Composer({
     setOpening(true);
     setError(null);
     api
-      .chatStart(sessionId, { model: wantedModel, effort })
+      .chatStart(sessionId, { model: wantedModel, effort, permissionMode: mode })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         setOpening(false);
@@ -243,10 +286,14 @@ export function Composer({
       });
   };
 
-  const answer = (answers: Record<string, string | string[]> | null) => {
+  const answer = (
+    answers: Record<string, string | string[]> | null,
+    plan?: { decision: ChatPlanDecision; note?: string },
+    annotations?: Record<string, { notes?: string }>,
+  ) => {
     setAnswering(true);
     api
-      .chatAnswer(sessionId, answers)
+      .chatAnswer(sessionId, answers, plan, annotations)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => {
         setAnswering(false);
@@ -254,16 +301,29 @@ export function Composer({
       });
   };
 
-  const stop = () => {
+  /**
+   * Closing can end the CLI mid-answer, and the next prompt then comes from one
+   * that has just started — which is the thing that risks the cached prefix
+   * ([CloseSessionDialog]). Two conditions, both about not asking a question
+   * with no content: there has to be a process to close, and there has to be
+   * something to lose by closing it (`closingNeedsAsking`).
+   */
+  const [confirmClose, setConfirmClose] = useState(false);
+  const closeNow = () => {
+    setConfirmClose(false);
     api
       .chatStop(sessionId)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => void queryClient.invalidateQueries({ queryKey: ['chat', sessionId] }));
   };
+  const stop = () => {
+    if (status?.running && closingNeedsAsking(queryClient, sessionId, working)) setConfirmClose(true);
+    else closeNow();
+  };
 
-  const change = (patch: { model?: string; effort?: string | null }) => {
-    // Both are startup flags, so the server restarts the process to honour a
-    // new one. Nothing to do here but remember the choice for the next send.
+  const change = (patch: { model?: string; effort?: string | null; permissionMode?: ChatPermissionMode }) => {
+    // Model and mode are switched live on the next send, effort restarts the
+    // process. Either way there is nothing to do here but remember the choice.
     queryClient.setQueryData(['chat', sessionId], (old: typeof status) => (old ? { ...old, ...patch } : old));
   };
 
@@ -274,29 +334,45 @@ export function Composer({
     ? commands.filter((c) => c.startsWith(typedCommand[1])).slice(0, 8)
     : [];
 
-  // A message the user cannot act on is worse than no message: say why the box
-  // is dead, right next to it.
-  const notice = blocked ?? error ?? status?.lastError ?? null;
+  // What went WRONG, which is not the same as what is not allowed: a failed
+  // prompt or a CLI that would not start is red and keeps the box, while a
+  // `blocked` session replaces the box altogether ([BlockedBar]) — the box would
+  // be dead, and a dead box plus a sentence is two rows saying one thing.
+  const notice = error ?? status?.lastError ?? null;
+  // Read from the cache rather than fetched: the page already holds this query,
+  // and a dialog is no reason to go and ask for a whole transcript again.
+  const cacheClock = confirmClose
+    ? cacheClockOf(queryClient.getQueryData<SessionDetailResponse>(['session', sessionId]))
+    : null;
   const canSend = !!text.trim() && !sending && !blocked;
 
   return (
     // The page's own background, so the conversation scrolls under this rather
-    // than through it.
-    <div className="relative shrink-0 bg-[var(--bg)] px-4 pt-1 pb-3">
+    // than through it — which it now literally does: this is stuck to the bottom
+    // of the scroller the turns are in.
+    <div className="relative shrink-0 bg-[var(--bg)] pt-1 pb-3">
+      {confirmClose && (
+        <CloseSessionDialog
+          cache={cacheClock}
+          busy={working}
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={closeNow}
+        />
+      )}
       {/* Above the box, below the conversation: where the next message goes.
           Not a modal — a question is no reason to stop the app being usable. */}
       {status?.question && (
         <QuestionPanel
           question={status.question}
-          maxWidth={maxWidth}
           busy={answering}
-          onAnswer={(answers) => answer(answers)}
+          onAnswer={(answers, annotations) => answer(answers, undefined, annotations)}
           onDecline={() => answer(null)}
+          onPlanDecision={(decision, note) => answer({}, { decision, note })}
         />
       )}
       {/* Slash commands this CLI really has, offered as you type `/`. */}
       {suggestions.length > 0 && (
-        <div className="mx-auto mb-1.5" style={{ maxWidth }}>
+        <div className="mb-1.5">
           <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg">
             {suggestions.map((name) => (
               <button
@@ -309,7 +385,7 @@ export function Composer({
                   setText(`/${name} `);
                   box.current?.focus();
                 }}
-                className="block w-full px-3 py-1 text-left font-mono text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+                className="block w-full px-3 py-1 text-left font-mono text-xs text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:py-2.5 max-md:text-sm"
               >
                 /{name}
               </button>
@@ -324,124 +400,148 @@ export function Composer({
         aria-hidden
         className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-b from-transparent to-[var(--bg)]"
       />
-      <div className="mx-auto" style={{ maxWidth }}>
-        {notice && (
-          <div
-            className={`mb-1.5 rounded-lg px-3 py-1.5 text-xs ${
-              blocked
-                ? 'border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-dim)]'
-                : 'border border-red-500/40 bg-red-500/10 text-red-300'
-            }`}
-          >
-            {notice}
-          </div>
-        )}
-        <div
-          className={`rounded-2xl border bg-[var(--bg-raised)] shadow-lg transition-colors ${
-            blocked
-              ? 'border-[var(--border)] opacity-60'
-              : 'border-[var(--border)] focus-within:border-[var(--accent-dim)]'
-          }`}
-        >
-          <textarea
-            ref={box}
-            value={text}
-            rows={1}
-            maxLength={CHAT_MESSAGE_MAX}
-            disabled={!!blocked}
-            placeholder={blocked ? 'Sending is unavailable' : 'Message Claude…'}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter sends, Shift+Enter is a newline. The page's own Escape
-              // handler already ignores TEXTAREA, so nothing else to guard.
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)]"
-          />
-          <div className="flex items-center gap-1 px-2 pt-0.5 pb-2">
-            {/* No running CLI, no model list — so instead of a stale guess,
-                the offer to go and get the real one. Sending works without it:
-                the prompt goes out on whatever answered this session last. */}
-            {models.length === 0 ? (
-              <button
-                type="button"
-                onClick={open}
-                disabled={opening || !!blocked}
-                title={`Loads this session so you can pick a model and effort. Without it, a prompt goes out on ${shortModel(wantedModel) ?? wantedModel}${effort ? ` at ${effort}` : ''} — how this session was last answered.`}
-                className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40 disabled:hover:bg-transparent"
+      <div>
+        {blocked ? (
+          <BlockedBar reason={blocked} columnWidth={columnWidth} />
+        ) : (
+          <>
+            {notice && (
+              <div className="mb-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
+                {notice}
+              </div>
+            )}
+            <div className="rounded-2xl border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg transition-colors focus-within:border-[var(--accent-dim)]">
+              <textarea
+                ref={box}
+                value={text}
+                rows={1}
+                maxLength={CHAT_MESSAGE_MAX}
+                placeholder="Message Claude…"
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter sends, Shift+Enter is a newline. The page's own Escape
+                  // handler already ignores TEXTAREA, so nothing else to guard.
+                  //
+                  // **Not on a phone**, where it is the other way round and has
+                  // to be: a soft keyboard has no Shift+Enter, so with Enter
+                  // sending there was no way to type a second line at all —
+                  // every paragraph break sent the message instead. Enter is a
+                  // newline there and Send is the button, which is why that
+                  // button grows to a real target below.
+                  if (e.key === 'Enter' && !e.shiftKey && !mobile) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                className="block w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-[var(--text)] outline-none placeholder:text-[var(--text-dim)] max-md:px-3 max-md:text-base"
+              />
+              <div
+                className="flex items-center gap-1 px-2 pt-0.5 pb-2 max-md:flex-wrap max-md:gap-1.5 max-md:px-2.5"
+                style={
+                  columnWidth
+                    ? { paddingRight: `max(0.5rem, calc(${PILL_CORNER_PX}px - var(--conv-box, 100vw) / 2 + ${columnWidth} / 2))` }
+                    : undefined
+                }
               >
-                {opening ? 'opening…' : 'choose model…'}
-              </button>
-            ) : (
-              <>
-                <Picker
-                  value={model}
-                  options={models.map((m) => ({ value: m.value, label: modelLabel(m) }))}
-                  disabled={working || !!blocked}
-                  title={current?.description || 'Model for the next prompt'}
-                  onChange={(v) => {
-                    // The new model may not take the effort the old one was on.
-                    const next = models.find((m) => m.value === v);
-                    const keep = next && effort && next.efforts.includes(effort) ? effort : (next?.efforts[0] ?? null);
-                    change({ model: v, effort: keep });
-                  }}
-                />
-                {/* Hidden entirely for a model with no effort levels, rather
-                    than shown greyed: there is no setting to make. */}
-                {efforts.length > 0 && (
-                  <Picker
-                    value={effort ?? efforts[0]}
-                    options={efforts.map((e: string) => ({ value: e, label: e }))}
-                    disabled={working || !!blocked}
-                    title="Effort for the next prompt"
-                    onChange={(v) => change({ effort: v })}
-                  />
+                {/* No running CLI, no model list — so instead of a stale guess,
+                    the offer to go and get the real one. Sending works without it:
+                    the prompt goes out on whatever answered this session last. */}
+                {models.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={open}
+                    disabled={opening}
+                    title={`Loads this session so you can pick a model and effort. Without it, a prompt goes out on ${shortModel(wantedModel) ?? wantedModel}${effort ? ` at ${effort}` : ''} — how this session was last answered.`}
+                    className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    {opening ? 'opening…' : 'choose model…'}
+                  </button>
+                ) : (
+                  <>
+                    <Picker
+                      value={model}
+                      options={models.map((m) => ({ value: m.value, label: modelLabel(m) }))}
+                      disabled={working}
+                      title={current?.description || 'Model for the next prompt'}
+                      onChange={(v) => {
+                        // The new model may not take the effort the old one was on.
+                        const next = models.find((m) => m.value === v);
+                        const keep = next && effort && next.efforts.includes(effort) ? effort : (next?.efforts[0] ?? null);
+                        change({ model: v, effort: keep });
+                      }}
+                    />
+                    {/* Hidden entirely for a model with no effort levels, rather
+                        than shown greyed: there is no setting to make. */}
+                    {efforts.length > 0 && (
+                      <Picker
+                        value={effort ?? efforts[0]}
+                        options={efforts.map((e: string) => ({ value: e, label: e }))}
+                        disabled={working}
+                        title="Effort for the next prompt"
+                        onChange={(v) => change({ effort: v })}
+                      />
+                    )}
+                  </>
                 )}
-              </>
-            )}
-            {status?.state === 'starting' && (
-              <span className="px-1 text-[11px] text-[var(--text-dim)]">starting…</span>
-            )}
-            {(status?.queued ?? 0) > 0 && (
-              <span className="px-1 text-[11px] text-[var(--text-dim)]">{status?.queued} queued</span>
-            )}
-            {!working && status?.running && (
-              <IdleProcess closesAt={status.idleClosesAt} onClose={stop} />
-            )}
-            <span className="ml-auto" />
-            {working ? (
-              <button
-                type="button"
-                onClick={stop}
-                title="Stop this turn"
-                aria-label="Stop this turn"
-                className="flex size-7 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
-              >
-                <span aria-hidden className="size-2.5 rounded-[2px] bg-current" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={send}
-                disabled={!canSend}
-                title="Send (Enter)"
-                aria-label="Send"
-                className={`flex size-7 items-center justify-center rounded-full transition-colors ${
-                  canSend
-                    ? 'bg-[var(--accent)] text-[#1b1512] hover:brightness-110'
-                    : 'bg-[var(--bg-hover)] text-[var(--text-dim)]'
-                }`}
-              >
-                <svg aria-hidden viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M8 13V3.5M8 3.5 4 7.5M8 3.5l4 4" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
+                {/* Always offered, model list or not: unlike the model and the
+                    effort, the mode needs nothing from a running CLI to be picked,
+                    and plan mode is most useful on the FIRST prompt of a piece of
+                    work — which is exactly when no process exists yet. */}
+                <Picker
+                  value={mode}
+                  options={[
+                    { value: 'auto', label: 'auto' },
+                    { value: 'plan', label: 'plan' },
+                  ]}
+                  title={
+                    mode === 'plan'
+                      ? 'Plan mode: Claude explores and designs, but changes nothing until you approve a plan.'
+                      : 'Claude works as usual, approving the ordinary tools by itself.'
+                  }
+                  onChange={(v) => change({ permissionMode: v as ChatPermissionMode })}
+                />
+                {status?.state === 'starting' && (
+                  <span className="px-1 text-[11px] text-[var(--text-dim)]">starting…</span>
+                )}
+                {(status?.queued ?? 0) > 0 && (
+                  <span className="px-1 text-[11px] text-[var(--text-dim)]">{status?.queued} queued</span>
+                )}
+                {!working && status?.running && (
+                  <IdleProcess closesAt={status.idleClosesAt} onClose={stop} />
+                )}
+                <span className="ml-auto" />
+                {working ? (
+                  <button
+                    type="button"
+                    onClick={stop}
+                    title="Stop this turn"
+                    aria-label="Stop this turn"
+                    className="flex size-7 items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:size-11"
+                  >
+                    <span aria-hidden className="size-2.5 rounded-[2px] bg-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={send}
+                    disabled={!canSend}
+                    title="Send (Enter)"
+                    aria-label="Send"
+                    className={`flex size-7 items-center justify-center rounded-full transition-colors max-md:size-11 ${
+                      canSend
+                        ? 'bg-[var(--accent)] text-[var(--accent-ink)] hover:brightness-110'
+                        : 'bg-[var(--bg-hover)] text-[var(--text-dim)]'
+                    }`}
+                  >
+                    <svg aria-hidden viewBox="0 0 16 16" className="size-4 max-md:size-6" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M8 13V3.5M8 3.5 4 7.5M8 3.5l4 4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

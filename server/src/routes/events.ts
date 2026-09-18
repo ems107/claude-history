@@ -30,9 +30,14 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
     };
     const onUpdated = (id: string) => send({ type: 'session-updated', id });
-    const onChanged = (payload: { ids: string[]; assistantIds: string[] }) =>
-      send({ type: 'sessions-changed', ids: payload.ids, assistantIds: payload.assistantIds ?? [] });
-    const onLive = () => send({ type: 'live-changed' });
+    const onChanged = (payload: { ids: string[]; assistantIds: string[]; agents: { sessionId: string; agentId: string }[] }) =>
+      send({
+        type: 'sessions-changed',
+        ids: payload.ids,
+        assistantIds: payload.assistantIds ?? [],
+        agents: payload.agents ?? [],
+      });
+    const onLive = (ids: string[]) => send({ type: 'live-changed', ids });
     const onProgress = (p: { enriched: number; total: number }) => send({ type: 'index-progress', ...p });
     const onUpdateStatus = () => send({ type: 'update-status' });
     const onChat = (id: string) => send({ type: 'chat-changed', id });
@@ -45,6 +50,14 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
         send({ type: 'git-commands', seq: ctx.git.commandSeq });
       }, GIT_THROTTLE_MS);
     };
+    const onTerminal = (id: string) => send({ type: 'terminal-changed', id });
+    const onStars = () => send({ type: 'stars-changed' });
+    // The settings themselves are NOT carried: every event here announces, and
+    // the browser asks. `/api/settings` is a local read and answers in ~3 ms.
+    const onSettings = () => send({ type: 'settings-changed' });
+    const onPrices = () => send({ type: 'prices-changed' });
+    const onNotifications = () => send({ type: 'notifications-changed' });
+    const onReadMarks = () => send({ type: 'read-marks-changed' });
     let logsTimer: NodeJS.Timeout | null = null;
     const onLogAppended = () => {
       if (logsTimer) return;
@@ -58,8 +71,14 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.index.events.on('sessions-changed', onChanged);
     ctx.index.events.on('live-changed', onLive);
     ctx.index.events.on('index-progress', onProgress);
+    ctx.index.events.on('stars-changed', onStars);
+    ctx.index.events.on('settings-changed', onSettings);
+    ctx.index.events.on('prices-changed', onPrices);
     ctx.updates.events.on('update-status', onUpdateStatus);
     ctx.chat.events.on('chat-changed', onChat);
+    ctx.terminals.events.on('terminal-changed', onTerminal);
+    ctx.notifications.events.on('notifications-changed', onNotifications);
+    ctx.readMarks.events.on('read-marks-changed', onReadMarks);
     ctx.git.events.on('command', onGitCommand);
     ctx.git.events.on('repo-changed', onGitRepo);
     logEvents.on('appended', onLogAppended);
@@ -77,8 +96,14 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.index.events.off('sessions-changed', onChanged);
       ctx.index.events.off('live-changed', onLive);
       ctx.index.events.off('index-progress', onProgress);
+      ctx.index.events.off('stars-changed', onStars);
+      ctx.index.events.off('settings-changed', onSettings);
+      ctx.index.events.off('prices-changed', onPrices);
       ctx.updates.events.off('update-status', onUpdateStatus);
       ctx.chat.events.off('chat-changed', onChat);
+      ctx.terminals.events.off('terminal-changed', onTerminal);
+      ctx.notifications.events.off('notifications-changed', onNotifications);
+      ctx.readMarks.events.off('read-marks-changed', onReadMarks);
     });
   });
 }

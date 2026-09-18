@@ -1,26 +1,41 @@
 import fastifyStatic from '@fastify/static';
+import fastifyWebsocket from '@fastify/websocket';
+import { LOCAL_ONLY_ACTIONS } from '@claude-history/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppContext } from './context.ts';
 import { createLogger } from './core/logger.ts';
 import { isSameOrigin } from './util/sameOrigin.ts';
+import { localOnlyAction } from './util/localOnlyRoutes.ts';
+import { isLocalRequest } from './util/remote.ts';
+import { registerActiveSessionRoutes } from './routes/activeSessions.ts';
+import { isAuthenticated, registerAuthRoutes } from './routes/auth.ts';
 import { registerAutoReloadRoutes } from './routes/autoReload.ts';
+import { registerBrandRoutes } from './routes/brand.ts';
 import { registerChatRoutes } from './routes/chat.ts';
 import { registerEventRoutes } from './routes/events.ts';
+import { registerFileRoutes } from './routes/files.ts';
+import { registerFirewallRoutes } from './routes/firewall.ts';
 import { registerGitRoutes } from './routes/git.ts';
 import { registerLogRoutes } from './routes/logs.ts';
 import { registerLiveRoutes } from './routes/live.ts';
 import { registerMetaRoutes } from './routes/meta.ts';
+import { registerNotificationRoutes } from './routes/notifications.ts';
+import { registerPlanRoutes } from './routes/plans.ts';
 import { registerPriceRoutes } from './routes/prices.ts';
 import { registerProjectRoutes } from './routes/projects.ts';
 import { registerPromptRoutes } from './routes/prompts.ts';
+import { registerReadMarkRoutes } from './routes/readMarks.ts';
 import { registerResumeRoutes } from './routes/resume.ts';
 import { registerRetentionRoutes } from './routes/retention.ts';
 import { registerSearchRoutes } from './routes/search.ts';
 import { registerSettingsRoutes } from './routes/settings.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
+import { registerStarRoutes } from './routes/stars.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
+import { registerTerminalRoutes } from './routes/terminal.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
 import { registerUpdateRoutes } from './routes/updates.ts';
+import { registerUserdataRoutes } from './routes/userdata.ts';
 
 /**
  * Fastify logs through pino, which writes straight to file descriptor 1 and
@@ -64,10 +79,69 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const { config } = ctx;
   const app = Fastify({ logger: { level: 'warn', stream: fastifyLogStream() } });
 
+  // The embedded terminal is the only thing here that needs a socket both ways:
+  // everything else announces over the one SSE stream and asks over HTTP. It is
+  // registered before the hooks so an upgrade goes through them like any other
+  // GET — the session check above all, which is what keeps a terminal off the
+  // network until somebody has signed in.
+  await app.register(fastifyWebsocket);
+
+  /**
+   * Authentication, and it comes first because everything after it assumes the
+   * caller is allowed to be here at all.
+   *
+   * A release listens on every interface (see `config.ts`), so this is what
+   * separates "the user, at the machine" from "anything else on the network".
+   * Local requests pass untouched — no cookie, no password, exactly as before
+   * this feature existed. Everything else needs the switch on and a valid
+   * session, and gets NOTHING until it has one: not the session list, not the
+   * version, not the paths in `/api/settings`.
+   *
+   * What is served before signing in is the static bundle and `/api/auth/*`,
+   * and only so the three screens (login, "remote access is off", the app) can
+   * be drawn by the same SPA. The bundle holds no user data.
+   */
+  app.addHook('onRequest', async (request, reply) => {
+    if (isAuthenticated(ctx, request)) return;
+    const isApi = request.url.startsWith('/api/');
+    if (isApi && request.url.split('?')[0].startsWith('/api/auth/')) return;
+    if (!isApi) {
+      // A navigation or an asset: let it through so the SPA loads and can say
+      // which of the two states this is. Answering 401 here would leave a bare
+      // browser error page and no way to learn how to turn remote access on.
+      return;
+    }
+    const enabled = ctx.index.getSettings().remoteAccessEnabled;
+    createLogger('auth').warn(`refused ${request.method} ${request.url} from ${request.socket.remoteAddress ?? 'unknown'}`);
+    return reply.code(enabled ? 401 : 403).send({
+      error: enabled
+        ? 'Sign in to use claude-history from another machine.'
+        : 'Remote access is turned off on this server.',
+    });
+  });
+
+  /**
+   * Things that can only happen where the server is — opening Explorer, a
+   * terminal, VS Code; stopping the server; uninstalling.
+   *
+   * The UI greys these out over the network, but that is only the explanation:
+   * this is the guarantee. Without it a remote click would answer `{ ok: true }`
+   * and open a window on a desktop nobody is sitting at, and silent success is
+   * the worst answer available.
+   */
+  app.addHook('onRequest', async (request, reply) => {
+    if (isLocalRequest(request)) return;
+    const action = localOnlyAction(request);
+    if (!action) return;
+    createLogger('http').warn(`refused a remote ${request.method} ${request.url} (${action})`);
+    return reply.code(409).send({ error: LOCAL_ONLY_ACTIONS[action], localOnly: action });
+  });
+
   // Anything that changes state or runs something must come from our own pages.
-  // Binding to 127.0.0.1 keeps other machines out but says nothing about the
-  // browser on this one, and these endpoints open terminals, stop the server
-  // and run Claude — the side effect is the whole attack, no reply needed.
+  // Being reachable only from this machine (or, now, only after signing in)
+  // says nothing about the browser already on it, and these endpoints open
+  // terminals, stop the server and run Claude — the side effect is the whole
+  // attack, no reply needed.
   // Reads are left alone: there is nothing to trigger and no reply to steal.
   app.addHook('onRequest', async (request, reply) => {
     if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return;
@@ -80,19 +154,29 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   app.get('/api/health', async () => ({ ok: true }));
+  registerAuthRoutes(app, ctx);
+  registerActiveSessionRoutes(app, ctx);
   registerMetaRoutes(app, ctx);
+  registerNotificationRoutes(app, ctx);
+  registerReadMarkRoutes(app, ctx);
   registerProjectRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
   registerSearchRoutes(app, ctx);
   registerSubagentRoutes(app, ctx);
   registerToolResultRoutes(app, ctx);
+  registerFileRoutes(app, ctx);
   registerLiveRoutes(app, ctx);
   registerPromptRoutes(app, ctx);
+  registerPlanRoutes(app, ctx);
+  registerStarRoutes(app, ctx);
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
   registerChatRoutes(app, ctx);
+  registerTerminalRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
+  registerFirewallRoutes(app, ctx);
+  registerUserdataRoutes(app, ctx);
   registerRetentionRoutes(app, ctx);
   registerAutoReloadRoutes(app, ctx);
   registerLogRoutes(app, ctx);
@@ -100,6 +184,9 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerEventRoutes(app, ctx);
 
   if (config.staticDir) {
+    // Before the static plugin's wildcard, and inside this branch because it is
+    // that folder's own `favicon.svg` it tints.
+    registerBrandRoutes(app, ctx);
     await app.register(fastifyStatic, {
       root: config.staticDir,
       // The plugin's own cache-control would overwrite ours.
@@ -107,11 +194,20 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
       // Asset filenames are content-hashed, so they can be cached hard; the
       // entry document must NOT be, or a cached index.html keeps asking for
       // the previous build's bundles (404s and a blank page after an update).
+      //
+      // **And neither may anything a setting can change**, which cost a real
+      // failure: `favicon.svg` and `manifest.webmanifest` were served from here
+      // with `immutable` for the whole life of the app, so every browser that
+      // has ever opened it holds a copy it will not revalidate until a year
+      // later — and putting a dynamic route at the same URL (`routes/brand.ts`)
+      // answers a question those browsers no longer ask. The routes shadow
+      // these two names whenever there is a static dir at all, so this line
+      // only bites when one of them could not be read; it is here so nobody
+      // recreates the poisoning by removing a route.
       setHeaders(res, filePath) {
-        res.setHeader(
-          'cache-control',
-          filePath.endsWith('index.html') ? 'no-store' : 'public, max-age=31536000, immutable',
-        );
+        const name = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
+        const volatile = name === 'index.html' || name === 'favicon.svg' || name === 'manifest.webmanifest';
+        res.setHeader('cache-control', volatile ? 'no-store' : 'public, max-age=31536000, immutable');
       },
     });
     // SPA fallback: any non-API GET serves index.html

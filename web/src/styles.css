@@ -1,6 +1,35 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/**
+ * The glyphs the embedded terminal needs and a device may not have.
+ *
+ * Claude Code decorates its own mode line with U+23F5, and no font on the
+ * Android device this app is checked against has U+23F4-U+23F7 — so a phone
+ * drew two empty boxes there. This is 5 KB of Noto Sans Symbols 2, kept to the
+ * two blocks where the hole is, and it goes at the END of the terminal's font
+ * stack: CSS fallback is per CHARACTER, so Cascadia Mono goes on drawing every
+ * glyph it has and this is reached only for the ones it does not.
+ *
+ * `unicode-range` is what keeps it from being consulted about anything else,
+ * and it is **one block and no more**. A range is a takeover: inside it this
+ * font wins over anything the system has, so a second block was drawing the
+ * turn bullet the CLI prints (U+25CF) in a shape nobody asked to change. One
+ * block, the one the hole is in.
+ *
+ * The range is wider than the 37 glyphs actually in the file, which is correct:
+ * a font selected by range but missing the glyph simply passes the character
+ * on down the stack.
+ *
+ * Provenance, the ranges and how to regenerate it: web/src/fonts/README.md.
+ */
+@font-face {
+  font-family: 'ch-terminal-symbols';
+  src: url('./fonts/terminal-symbols.woff2') format('woff2');
+  font-display: block;
+  unicode-range: U+2300-23FF;
+}
+
 /* Dark-first design. The app targets a dark UI by default. */
 :root {
   --bg: #0f1115;
@@ -11,6 +40,29 @@
   --text-dim: #8b96a5;
   --accent: #d97757; /* claude-ish terracotta */
   --accent-dim: #a05a44;
+
+  /* The ink worn ON the accent, by the handful of controls that fill with it
+     and put text inside: the composer's Send, `/new`'s Start, the count badge
+     on the phone's filter bar, the word the find bar is standing on. It used to
+     be a near-black written out at each of them, which only ever worked
+     because the accent was always terracotta —
+     now that the accent is a setting, `lib/appIdentity.ts` replaces this with
+     whichever of `logoInk`'s two the chosen colour can be read against. */
+  --accent-ink: #1b1512;
+
+  /* The mark's own name for the accent: the glyph beside the wordmark, the word
+     `claude` in the title, and the tile a browser tab shows. It is the accent,
+     which is what makes the default here and the default in `AppSettings` one
+     fact rather than two — and what keeps `lib/appIdentity.ts` able to say
+     "back to normal" by REMOVING a property rather than by writing the
+     terracotta back in.
+
+     Kept as a name of its own even though the two now move together: the mark
+     is the one thing whose colour is CHOSEN, and it has a fade of its own that
+     nothing else wears (`Brandmark.tsx`'s three strokes). Setting `--accent`
+     alone is what moves both. */
+  --logo: var(--accent);
+  --logo-dim: var(--accent-dim);
 
   /* Chat bubbles. Terracotta for the user and emerald for the assistant, the
      two colours those roles already wear everywhere else in the app.
@@ -33,6 +85,42 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* A fenced block in an answer wears a bar — the language it is written in, and
+   the button that copies it (`Markdown.tsx`) — and the two are one box. So the
+   wrapper takes over both things that made the <pre> a box of its own: the
+   margin that spaced it, and the rounding that shaped it, which it now clips
+   for the bar and the block at once. The bar itself then needs no corners and
+   no number to keep in step with.
+
+   Written here rather than as utilities because what has to be beaten is the
+   typography plugin's own `pre` rule. That rule is wrapped in `:where()`, so it
+   weighs no more than `.prose` (0,1,0) and `.code-block > pre` (0,1,1) outranks
+   it; a bare `m-0` on the element would tie and be decided by source order.
+
+   Both figures are prose-sm's, restated at the wrapper's own font size: the
+   <pre> had 1.66667em of the 13px `prose-pre:text-[13px]` gives it (21.7px),
+   and the wrapper's em is the 14px of prose-sm itself. */
+.code-block {
+  margin-block: 1.548em;
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.code-block > pre {
+  margin: 0;
+  border-radius: 0;
+}
+
+/* The plugin's own first/last rule, restated for the wrapper that now stands
+   where the <pre> stood. */
+.prose > .code-block:first-child {
+  margin-top: 0;
+}
+
+.prose > .code-block:last-child {
+  margin-bottom: 0;
 }
 
 /* Landing on an anchor (#claude-retention from the session list): say WHICH
@@ -108,39 +196,18 @@ body {
   animation: match-flash-tail 2.5s ease-out;
 }
 
-/* The three dots of the "Claude is working" bubble: a wave, the way every chat
-   draws someone typing. It rides on `transform` as well as opacity, which is
-   safe HERE and nowhere else nearby — a transformed element becomes the
-   containing block for its position:fixed descendants, and these dots are
-   leaves with nothing inside, unlike the bubbles carrying the cost and context
-   popovers. It replaced an opacity-only fade that was measurably running and
-   still read as "three static dots": 6 px going from 0.25 to 1 is simply not
-   movement. The stagger is a delay per dot, so one keyframe serves all three. */
-@keyframes working-dot {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0) scale(0.85);
-  }
-  30% {
-    opacity: 1;
-    transform: translateY(-5px) scale(1.15);
-  }
-  60% {
-    opacity: 0.4;
-    transform: translateY(0) scale(0.9);
-  }
-}
-
-.working-dot {
-  animation: working-dot 1.2s ease-in-out infinite;
-}
-
-/* A light travelling across the label. Pure background-position — no transform,
-   no filter — so it cannot affect layout or containing blocks at all. Gated on
+/* A light travelling across the working row's sentence — the one it draws, which
+   is the subagent count, since the ordinary turn now says everything it has to
+   say with the spinner alone. Pure background-position — no transform, no filter
+   — so it cannot affect layout or containing blocks at all. Gated on
    background-clip support because the text is painted by the gradient through
    it: without the gate, a browser that lacks it would render `transparent` text
-   and the label would vanish. */
+   and the sentence would vanish.
+
+   (Where three dots used to wave beside it there is now the app's own spinner,
+   drawn from utilities like every other ring in the UI: `animate-spin` on a
+   bordered circle, no keyframes of our own. The dots read as a chat's "someone
+   is typing", which is the one thing that row is not.) */
 @supports ((-webkit-background-clip: text) or (background-clip: text)) {
   .working-label {
     background: linear-gradient(
@@ -159,6 +226,36 @@ body {
   }
 }
 
+/* The time a toast has left, as a bar that fills. `scaleX` rather than
+   `width` so the ten seconds are a compositor transform instead of a relayout
+   per frame — and a transform still reports through `getBoundingClientRect`,
+   which is what keeps it measurable from a check.
+
+   **Nothing here pauses it, and there used to be a `:hover` rule that did.**
+   Ten seconds is ten seconds of somebody looking — the pointer resting on a card
+   is one way of not spending them and every tab of the app being off screen is
+   the other — and both are now `pause()` calls in `NotificationToasts.tsx`,
+   which says why. A script that plays an animation takes `animation-play-state`
+   out of the running for good, so the two could not have been split anyway.
+   `forwards` holds the bar full at the end, for the moment between the animation
+   finishing and the card going.
+
+   The duration is `TOAST_MS` in `NotificationToasts.tsx`, and the two have to
+   agree — that constant is the one that decides. */
+.toast-fill {
+  transform: scaleX(0);
+  animation: toast-fill 10s linear forwards;
+}
+
+@keyframes toast-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 @keyframes working-shimmer {
   0% {
     background-position: 160% 0;
@@ -168,32 +265,21 @@ body {
   }
 }
 
-/* Reduced motion REDUCES it, it does not switch it off: the whole job of this
-   bubble is to say that something is still happening, and a frozen indicator
-   says the opposite — which is exactly how the first version read even to a
-   user whose system never asked for it. What goes is the travel: no rise, no
-   scale, no light crossing the text, just a slow breath of opacity, which
-   carries no vestibular risk. */
-@media (prefers-reduced-motion: reduce) {
-  .working-dot {
-    animation: working-dot-soft 2s ease-in-out infinite;
-  }
-  .working-label {
-    background: none;
-    -webkit-text-fill-color: currentColor;
-    animation: none;
-  }
-}
-
-@keyframes working-dot-soft {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 0.9;
-  }
-}
+/* None of this answers `prefers-reduced-motion`, and that is the decision, not
+   an oversight: here the movement IS the information. A ring that does not turn
+   says "this has finished" — the exact opposite of what it exists to say — so
+   honouring the preference would cost the state its only channel, and the user
+   who set it would be the one left unable to tell a live turn from a dead one.
+   The preference guards against decoration and against vestibular risk from
+   large travel; a shimmer and a 12 px ring are neither. It WAS answered once,
+   with the travel stripped and a breath of opacity left in its place, and on a
+   machine that really asks for it that read as "stopped" — the same failure, to
+   the very person it was meant to serve. So the app now holds no rule on the
+   matter at all: nothing anywhere reads that media query, and every spinner in
+   the UI turns the same way — the update button, the Remote access rings, the
+   follow pill and now the working row itself, which is the other half of why
+   this is right: the one animation that did answer it was simply the odd one
+   out. */
 
 /* The words themselves, marked through the CSS Custom Highlight API — the
    ranges are handed to the browser, so nothing in React's DOM is rewritten.
@@ -204,14 +290,185 @@ body {
   color: #fff;
 }
 
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+/* The find bar's two. Dimmer than the deep link's, because they stay on the
+   page for as long as the bar is open rather than fading after 8 s, and there
+   can be hundreds of them at once; the one the reader is standing on is the
+   solid colour, so "which of these am I on" is answered without reading the
+   counter. Registered under names of their own so a deep link arriving cannot
+   replace the set and then delete it. */
+::highlight(find-match) {
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
 }
-::-webkit-scrollbar-thumb {
-  background: #2a323e;
-  border-radius: 5px;
+
+::highlight(find-current) {
+  background-color: var(--accent);
+  color: var(--accent-ink);
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+/* A passage of a plan somebody has commented on. Amber, like every note in this
+   app, and not the accent: it sits in the panel where the accent already means
+   "the thing being decided". Registered under its own name so the find bar's
+   pass cannot replace the set and then delete it. */
+::highlight(plan-comment) {
+  background-color: color-mix(in srgb, #f59e0b 30%, transparent);
+  color: var(--text);
+}
+
+/* The message or tool call the reader has selected — by clicking it, or by
+   following a link that landed on it. It is not the find bar's: the bar reads
+   it, and the ring is there whether anything is searching or not.
+
+   An OUTLINE and not a box-shadow, which is the whole of a fix worth explaining.
+   Both rings used to be box-shadows, so the flash's animation overrode this
+   declaration for its 2.5 s — and its last keyframe fades to transparent. The
+   ring therefore faded away to nothing, and then SNAPPED back the moment the
+   class came off: a link landed, the focus dissolved, and a quarter of a second
+   later the box abruptly looked selected. Two properties instead of one and the
+   overlap does the work: the flash's ring is painted over this one and, as it
+   fades, reveals it. What the reader sees is a bright ring settling into the
+   steady one, and nothing at all happening when the animation ends — the ring
+   was there the whole time. Same place, same colour family, no value repeated
+   between the two rules.
+
+   Not a transform, a filter or an opacity animation, here or in the flash: any
+   of them would make the box the containing block for the cost and context
+   popovers inside it, which are position: fixed. */
+[data-selected] {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+/* And the tail with it. It is a separate element with its own border and its
+   own OPAQUE fill, so it does not merely keep the old colour — it paints over
+   the ring, punching a dark notch in the very line the ring is. */
+[data-selected] > [data-bubble-tail] {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+/* A styled scrollbar is a CLASSIC scrollbar: naming `::-webkit-scrollbar` at all
+   opts the whole app out of the overlay bars a touch device draws, and takes a
+   10 px gutter out of every scroller for good. On a 360 px screen that is 3 % of
+   the width, in each of the three or four scrollers that nest inside one
+   another. So the look is the desktop's, and a phone keeps the bars its own
+   platform gives it — which take no room and fade when nothing is moving. */
+@media (width >= 48rem) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2a323e;
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   The phone.
+
+   One threshold for the whole app — `48rem`, which is Tailwind v4's own `md`,
+   written in the same units the `max-md:` variant compiles to so the two cannot
+   drift. `web/src/lib/mobile.ts` holds the same string for the components that
+   have to swap rather than restyle, and explains why it is a width rather than
+   a pointer type.
+
+   Nothing below reaches a desktop: every rule is inside the query, and
+   everything the markup adds for a phone is a `max-md:` variant.
+   --------------------------------------------------------------------------- */
+
+html {
+  /* Chrome on Android inflates the text of any block it decides is a column,
+     which in this app means a bubble at one size and a code block at another,
+     neither of them chosen. The viewport meta already tells it the real width,
+     so the guess is unwanted everywhere. */
+  -webkit-text-size-adjust: 100%;
+}
+
+:root {
+  /* How much of the window the on-screen keyboard is covering. Written by
+     `useKeyboardInset`, and declared here so the `calc()`s that read it are
+     valid on the very first paint — and so it is 0 on every desktop, where
+     nothing ever writes it. */
+  --kb-inset: 0px;
+  /* The gesture bar at the foot of the screen, and 0 wherever there is none.
+     A separate quantity from the keyboard: a phone can be showing both. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/**
+ * Truncate from the START, so what survives is the END of the string.
+ *
+ * For a path, which is the only thing this is on: the last two segments say
+ * which project, the first six say which temp folder, and an ellipsis at the
+ * usual end throws away the half worth reading. "direction: rtl" moves the
+ * ellipsis to the left edge; "unicode-bidi: plaintext" takes the paragraph
+ * direction from the text itself, so a Latin path is still drawn left to right
+ * with its separators where they belong; "text-align: left" undoes the
+ * alignment the direction would otherwise bring with it. Pair it with
+ * Tailwind's own "truncate", which supplies the overflow and the ellipsis.
+ */
+.truncate-start {
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
+}
+
+@media (width < 48rem) {
+  body {
+    /* Pull-to-refresh is a page reload, and this page holds an unsent prompt,
+       a scroll position and an open terminal. Nothing in the app scrolls the
+       document itself, so the only way to reach the gesture is by overscrolling
+       a conversation that has hit its top — which is to say, by accident. */
+    overscroll-behavior: none;
+  }
+
+  /* Something happened where the finger went down. The app draws its own hover
+     and active states, but none of them fire before the tap is resolved, and a
+     360 px screen full of small controls needs the acknowledgement more than a
+     desktop does. */
+  button,
+  a,
+  [role='button'],
+  summary,
+  label {
+    -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  /* The one thing that makes a conversation scroll sideways at 360px: a string
+     with nowhere to break in it. A path in a code span, a URL, a 60-character
+     identifier — at 900px they fit and nobody notices, at 360 they push the
+     whole scroller out. `anywhere` rather than `break-word` because these are
+     not words: breaking `PCCOM.Distrib.ModuloVentas.Application` mid-token is
+     exactly what a reader wants when the alternative is not seeing the end of
+     it at all. Only in prose, so nothing else in the app is touched. */
+  .prose :is(code, a) {
+    overflow-wrap: anywhere;
+  }
+
+  /* Text laid out verbatim — a prompt, a plan note, a finding, an injected
+     notice — keeps every line break its writer made and every unbreakable run
+     they typed. At 900px a 60-character path fits; at 292px it pushes the
+     bubble past the window and the whole conversation scrolls sideways.
+
+     Matched on the utility rather than on a component because CSS has no
+     selector for "is laid out pre-wrap", and a dozen places are: one rule beats
+     a dozen edits, and the thirteenth component added later is covered without
+     anybody remembering. The `~=` is an exact token match, so a variant like
+     `md:whitespace-pre-wrap` is not caught by accident, and <pre> is excluded
+     because those scroll on purpose. */
+  [class~='whitespace-pre-wrap']:not(pre) {
+    overflow-wrap: anywhere;
+  }
+
+  /* A table cannot be made narrow, so it is made scrollable. `display: block`
+     is what gives it a scroll container of its own; the alternative is the
+     table setting the width of the page. */
+  .prose table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 }

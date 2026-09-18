@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
-import { FoldHeader } from '../viewer/FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 
 /** Time only — the panel is a running log, not a diary. */
 function clockTime(iso: string): string {

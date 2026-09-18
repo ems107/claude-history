@@ -58,7 +58,9 @@ export function DailyChart({
 
   return (
     <div ref={wrapRef} className="relative">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img">
+      {/* `touch-pan-y` and not `touch-none`: scrubbing sideways is ours, but a chart
+          that ate the page's vertical scroll would be a wall to get past on a phone. */}
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full touch-pan-y" role="img">
         {ticks.map((t, i) => (
           <g key={i}>
             <line x1={M.l} x2={W - M.r} y1={yOf(t)} y2={yOf(t)} stroke="var(--border)" strokeWidth={1} />
@@ -75,7 +77,22 @@ export function DailyChart({
             .map((s) => ({ s, v: getValue(day, s.key) }))
             .filter(({ v }) => v > 0);
           return (
-            <g key={day} onMouseMove={(e) => showTip(e, day, i)} onMouseLeave={() => setTip(null)}>
+            // Pointer events, so the column reads a finger as well as a mouse.
+            // Touch is a SCRUB: the tip appears where the finger goes down,
+            // follows it across the chart and goes when it lifts. The implicit
+            // capture a touch takes would otherwise pin every move to the column
+            // it started on, which is why it is released on the way in.
+            <g
+              key={day}
+              onPointerDown={(e) => {
+                if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+                showTip(e, day, i);
+              }}
+              onPointerMove={(e) => showTip(e, day, i)}
+              onPointerUp={(e) => e.pointerType !== 'mouse' && setTip(null)}
+              onPointerCancel={() => setTip(null)}
+              onPointerLeave={(e) => e.pointerType === 'mouse' && setTip(null)}
+            >
               {/* invisible hit target covering the full column */}
               <rect x={M.l + i * step} y={M.t} width={step} height={plotH} fill="transparent" />
               {segs.map(({ s, v }, j) => {

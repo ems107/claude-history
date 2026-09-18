@@ -1,7 +1,7 @@
 import type { GitStatus } from '@claude-history/shared';
 import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
-import { btn } from '../../lib/ui.ts';
+import { actionClass } from '../controlClass.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { useGitAction } from './useGitAction.ts';
 
@@ -62,7 +62,7 @@ export function RepoStateBanner({ repoId, status }: { repoId: string | null; sta
             onClick={() => go('continue')}
             disabled={action.busy || !!status.blocked.continue}
             title={status.blocked.continue ?? 'Carry on from here'}
-            className={btn}
+            className={actionClass}
           >
             Continue
           </button>
@@ -73,19 +73,19 @@ export function RepoStateBanner({ repoId, status }: { repoId: string | null; sta
             onClick={() => go('skip')}
             disabled={action.busy || !!status.blocked.skip}
             title={status.blocked.skip ?? 'Drop this commit and carry on'}
-            className={btn}
+            className={actionClass}
           >
             Skip this commit
           </button>
         )}
-        <button type="button" onClick={() => setAborting(true)} disabled={action.busy} className={btn}>
+        <button type="button" onClick={() => setAborting(true)} disabled={action.busy} className={actionClass}>
           Abort…
         </button>
         <span className="ml-auto flex items-center gap-1.5">
-          <button type="button" onClick={() => open('terminal')} className={btn} title="Open a terminal here">
+          <button type="button" onClick={() => open('terminal')} className={actionClass} title="Open a terminal here">
             ❯ Terminal
           </button>
-          <button type="button" onClick={() => open('vscode')} className={btn} title="Open this repository in VS Code">
+          <button type="button" onClick={() => open('vscode')} className={actionClass} title="Open this repository in VS Code">
             {'{ }'} VS Code
           </button>
         </span>

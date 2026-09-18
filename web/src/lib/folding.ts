@@ -1,4 +1,4 @@
-import type { Turn } from '@claude-history/shared';
+import { RECAP_SUBTYPE, type Turn } from '@claude-history/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /**
@@ -15,19 +15,83 @@ export function turnKey(turn: Turn, index: number): string {
 export interface FoldCounts {
   responses: number;
   tools: number;
+  /**
+   * The notices that fold away with the answers: a task that finished while the
+   * turn was in flight (`notice.queued`), which joined the thread rather than
+   * opening a turn. The other kind IS the turn's opener and stays, like a
+   * prompt.
+   */
+  notices: number;
+  /**
+   * Recaps (`away_summary`), the prose Claude Code writes at the END of a turn
+   * about what the turn did. That is the assistant's side of it as much as an
+   * answer is, so it folds with the answers — 259 of them across this corpus,
+   * and every one used to be the thing left standing on a folded turn.
+   */
+  recaps: number;
+  /**
+   * Entering and leaving plan mode. The odd one out among the `system` panels,
+   * and the reason is what the event IS: a compaction or a `/context` run is a
+   * fact about the CONVERSATION, while entering plan mode is a moment of the
+   * turn itself — the entry carries the prompt's own timestamp, and the exit is
+   * the plan being approved. Folded, the two were left hanging above and below
+   * the strip with everything between them gone, which reads as the turn having
+   * been about them — the same bug the recap rule fixed once already.
+   */
+  planMode: number;
 }
 
-/** What a turn would fold away: the assistant's side of it. */
+/**
+ * What a turn would fold away: the assistant's side of it, plus what landed in
+ * the thread while it ran.
+ *
+ * **The other `system` lines stay, and the line is who they belong to.** A
+ * `Command` (`local_command`, 70 here) is the USER's own action and folds no
+ * more than the prompt does; an `informational` (7) is Claude Code explaining
+ * itself; and every `system` item drawn as a PANEL — a compaction, a `/context`
+ * run, the stop marker — says what happened to the CONVERSATION, which is
+ * exactly what a folded turn still has to show. The plan-mode marker is the one
+ * panel that does not, and `planMode` says why.
+ */
 export function foldedCounts(turn: Turn, showThinking: boolean): FoldCounts {
   let responses = 0;
   let tools = 0;
+  let notices = 0;
+  let recaps = 0;
+  let planMode = 0;
   for (const item of turn.items) {
-    if (item.role !== 'assistant') continue;
+    if (item.role !== 'assistant') {
+      const first = item.blocks[0];
+      if (first?.kind === 'notice' && first.queued) notices += 1;
+      else if (item.role === 'system' && first?.kind === 'text' && item.systemSubtype === RECAP_SUBTYPE) recaps += 1;
+      // All four events under one rule — an entry, a re-entry, an exit, and the
+      // copy a compaction carried through. Telling them apart here would be a
+      // second rule to keep true for a marker nobody reads differently.
+      else if (first?.kind === 'plan-mode') planMode += 1;
+      continue;
+    }
     const visible = item.blocks.filter((b) => b.kind !== 'thinking' || showThinking);
-    if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking')) responses += 1;
+    // `narration` needs no switch to be visible and counts like the answer it
+    // reads as: a message holding only that is a response the strip must admit
+    // to hiding, or the count says the turn produced nothing where the terminal
+    // printed a sentence.
+    if (visible.some((b) => b.kind === 'text' || b.kind === 'thinking' || b.kind === 'narration')) responses += 1;
     tools += visible.filter((b) => b.kind === 'tool').length;
   }
-  return { responses, tools };
+  return { responses, tools, notices, recaps, planMode };
+}
+
+/**
+ * Whether a turn has anything at all to fold — the strip exists only for these.
+ *
+ * **`planMode` is deliberately absent: a plan-mode marker joins a thread, it
+ * never makes one.** The `reference` flavour lands beside a `compact_boundary`,
+ * in a turn that is a compaction and nothing else (2 of the 7 in `f3384d17`) —
+ * counting it here would grow a fold strip on a turn with no answers to hide,
+ * and put the only line saying the plan survived the compaction behind it.
+ */
+export function anythingToFold(c: FoldCounts): boolean {
+  return c.responses > 0 || c.tools > 0 || c.notices > 0 || c.recaps > 0;
 }
 
 export interface FoldState {
@@ -54,7 +118,7 @@ export function useFoldState(turns: Turn[], showThinking: boolean, resetKey?: st
     const keys: string[] = [];
     turns.forEach((turn, i) => {
       const counts = foldedCounts(turn, showThinking);
-      if (counts.responses > 0 || counts.tools > 0) keys.push(turnKey(turn, i));
+      if (anythingToFold(counts)) keys.push(turnKey(turn, i));
     });
     return keys;
   }, [turns, showThinking]);
@@ -84,13 +148,20 @@ export function useFoldState(turns: Turn[], showThinking: boolean, resetKey?: st
   const hideAll = useCallback(() => setClosed(new Set(foldable)), [foldable]);
   const showAll = useCallback(() => setClosed(new Set()), []);
 
-  return {
-    isOpen: (key: string) => !closed.has(key),
-    toggle,
-    open,
-    hideAll,
-    showAll,
-    canHide: foldable.some((k) => !closed.has(k)),
-    canShow: foldable.some((k) => closed.has(k)),
-  };
+  // Memoised, and that is load-bearing rather than tidy: this object is a prop
+  // of `TurnList`, which is memoised in turn, and a fresh identity here would
+  // re-render every bubble and every tool block whenever anything else on the
+  // page changed — a click, a panel opening, a star being set.
+  return useMemo(
+    () => ({
+      isOpen: (key: string) => !closed.has(key),
+      toggle,
+      open,
+      hideAll,
+      showAll,
+      canHide: foldable.some((k) => !closed.has(k)),
+      canShow: foldable.some((k) => closed.has(k)),
+    }),
+    [closed, foldable, toggle, open, hideAll, showAll],
+  );
 }

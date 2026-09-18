@@ -1,0 +1,103 @@
+# Search
+
+**Load this when:** you touch `server/src/core/search.ts`, `searchText.ts`, `deepSearch.ts`, `shared/src/fold.ts`, `shared/src/match.ts`, `shared/src/searchText.ts`, the search box, the results list or the paged match list. The find bar inside a session is a reader of the same fold and lives in [AI_VIEWER.md](AI_VIEWER.md#finding-a-word-in-the-conversation).
+
+## Invariants
+
+- **Tool calls and tool output are NEVER indexed** — with exactly two exceptions, a plan and a call's stated intent.
+- **`system` lines are not indexed either** — with exactly one exception, a recap — and none of them is read by the deep scan.
+- **Nothing may be indexed past where the viewer will DRAW it** — `systemChars`, one function, three readers.
+- **The deep scan re-matches the indexed text too**, so it is a superset of the plain search by construction.
+- **One predicate decides what is searchable** (`skipBlock`), shared by the index, the deep scan and both paged match lists.
+- **A find bar counts occurrences; a match page counts places.**
+- **A row leads with WHEN, and the column is drawn even when it is empty.**
+- **There is exactly one `normalize('NFD')` in the repo** (`shared/src/fold.ts`) and it must stay that way.
+- **Every occurrence belongs to exactly one window** (`matchWindows`), or the counts stop adding up.
+- **A partial answer must never read as a complete one** (`stoppedEarly`).
+- **The advanced panel's tuning lives in the URL only** — no settings, no persistence.
+
+## Two corpora, and the split is the whole design
+
+Measured on this machine: the indexed text (titles, typed prompts, assistant prose) is **0.8% of the bytes** in `~/.claude/projects`, while `tool_result` output alone is **34% — forty-two times more text**, with 129 MB of it inside a single session. So:
+
+**Tool calls and output are never indexed.** Doing it wholesale would take the cache from 6.5 MB to ~250 MB, hold the folded copy in memory for the process's life and force a re-enrich of 470 MB. They are read on demand instead (`deepSearch`), streamed chunk by chunk and never accumulated: the whole corpus costs ~4 s and no memory that outlives the request. `POST /api/search/deep` only ever runs from the button — never on a keystroke, never on a refocus (that query sets `staleTime: Infinity` and switches both refetch triggers off).
+
+**The plan of an `ExitPlanMode` call IS indexed**, under a role of its own (`PLAN_ROLE`, `fillPlanText`). The rule above is about SIZE — plans are 17 documents and a quarter of a megabyte against the 34% of the corpus that justifies it — and they are the highest-value prose a session holds. A restriction to titles, prompts or responses leaves them out with no rule of its own, since `in=user` names the roles it wants and a plan is not something the user wrote.
+
+- **That makes de-duplication the deep scan's problem, and there were TWO copies.** The call's input is the obvious one (`toolCallText` emits the bare tool name for `ExitPlanMode`). The other is the approval's own tool_result, which echoes the whole plan back after a fixed preamble — with the SAME `toolUseId` anchor as the indexed row, so a deep search showed one plan twice and sent both links to the same place. The echo is cut at `## Approved Plan:` and the preamble kept, because it names the file the plan was saved to. (Checked: `b343d4ac` went 7 → 6 deep matches, both page sets still closing.)
+
+**What the model said it was DOING is indexed too** (`INTENT_ROLE`, `toolIntent`), and it is the cheapest prose in the corpus: the `description` Claude Code makes the model write for every Bash and PowerShell call — **4,907 calls here, 100% of both tools, 40% of all 12,612 calls** — plus the `activeForm` of a task. One short line each, against the 34% of the bytes that tool OUTPUT is, so the size rule is untouched. It is skipped when `summarizeInput` already returns it (`Task`/`Agent` are named by their description), which is what keeps the indexed text equal to the text the collapsed header draws. Same treatment as a plan otherwise: anchored on the CALL, and out of `in=user`.
+
+- **De-duplication, once more, and this time it was the input itself.** `description` and `activeForm` are stripped from the JSON `toolCallText` stringifies, or the sentence would come back twice under the same `toolUseId` — once as the indexed row and once inside the call. **Only when the transcript was indexed at all**: inside a subagent's own file nothing was, so there the input keeps them and is the only copy there is. (Checked: `Commit the firewall UX fix` → one `intent` place in `bfbdf4c2`, deep and plain, 1/1 paging; a description living only in `19ebb1d5`'s agents still comes back, as an `agent` row.)
+
+**Narration is indexed as assistant prose**, under `assistant` and not a role of its own: it is drawn in the assistant's bubble, hidden by nothing, and a role that `in=` can switch off would take it off the page again ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#narration-is-not-thinking)). It is prose the user read in the terminal that no corpus held — 185 blocks, 8 sessions, 43 KB — and the only test for it is the block's signature, so the enricher asks `thinkingKind` exactly as the parser does. Thinking itself stays out, with the rest of what the viewer does not draw.
+
+- **An agent narrates too** — 23 blocks in the subagent transcripts here — and those are the deep scan's, not the index's, like everything else inside one. The scan yields them as `agent` rows beside the agent's `text`, on the same `thinkingKind` test: the drawer draws them, so the only search that can reach that transcript has to find them.
+
+**A recap is indexed, and it is the only `system` line that is** (`RECAP_ROLE`; `away_summary`, see [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#system-lines-by-subtype)). A different rule from the two above — this one is not tool traffic, it is the line that says what the whole session was FOR, written for whoever comes back to it: **148 of them here, 38 KB**. It anchors on the line's own uuid, which `locate` already holds and `SystemItem` puts on its `id`, and it stays out of `in=user`.
+
+- **The rule is "never index past where the viewer will DRAW it", and the way to obey it was to draw more.** `SystemItem` cuts a `system` line at `SYSTEM_CHARS` and offers no fold for the rest, so indexing the tail would count a match nothing could show. Cutting the recap to fit satisfied the rule and answered the wrong question: the cap exists to keep 2 KB of `<command-name>` markup out of the thread (`local_command`: p50 130, max 2,456, 8 lines over 400), and it was truncating the one system line written to be read — one recap of 148, 65 characters, mid-sentence. **So a recap is drawn WHOLE and therefore indexed whole**, and `systemChars(subtype)` is the single function all three readers ask: `SystemItem` before slicing, `systemUnit` before folding, the enricher before indexing. It returns `Infinity` for a recap so none of them needs a branch of its own.
+- **`SYSTEM_CHARS` still governs everything else**, which is why the number is in `shared/src/searchText.ts` and not assumed anywhere. (Checked on `aa686022`'s 465-character recap: the phrase beyond character 400 went 0 hits → 1, role `recap`, plain and deep, 1/1 paging, snippet showing the whole closing sentence; the opening phrase still 1; `in=user` still 0.)
+- **The deep scan reads no `system` line at all** (it walks `message.content`, and a system line has none), so there is no second copy to strip this time — and it stays a superset only because it re-matches the index.
+
+**The deep scan re-matches the indexed text**, rather than merging two result sets: only that way can "all words anywhere in the session" pair a word from a prompt with one that exists solely in a tool result. It is a superset of the plain search by construction, snippet budget included (6 a session against 3, so pressing the button never shows less than not pressing it).
+
+It also reads what nothing else can: the outputs offloaded to `tool-results/` (path validated against `projectsDir` first — it comes out of a transcript, not from us) and **every subagent transcript**, 54 MB that no search could otherwise reach. Subagent snippets carry `uuid: null` on purpose: the viewer knows only the parent transcript, so an anchor there would resolve nowhere.
+
+It is **cancellable and bounded, and says so**. The abort signal comes from the RESPONSE closing unfinished (`reply.raw`), not from the request — the body arrived long before and its close event says nothing about who is listening. `BUDGET_MS` and `MAX_HITS` set `stoppedEarly`, which the results header shows.
+
+**There is a third reader of the same fold, and it holds neither corpus: the viewer's find bar.** It scans the copy of one conversation the browser already has — prose, tool input as it is rendered, and the first `MAX_RESULT_CHARS` of each result — so it reaches thinking and tool output, which the index never carries, and knows nothing of session or agent ids, which mean nothing inside a session. A subset of `deep=1` by construction, and it says what it cannot reach rather than implying it found everything. Behaviour is in [AI_VIEWER.md](AI_VIEWER.md#finding-a-word-in-the-conversation); what matters here is that the matcher is the same one, so its idea of a match cannot drift from the server's.
+
+**`matchWindows` deliberately stayed server-side** when `buildSnippet` moved to `shared`. Its whole contract is grouping occurrences into PLACES so a paged list's figures add up — and **a find bar counts occurrences while a match page counts places**. Borrowing it would mean reporting "3 of 38 places" where the reader expects "3 of 46 matches", which is the distinction the paragraph above spends itself on.
+
+## A hit's count has to be reachable
+
+The snippets a hit shows are a teaser (three, six when deep), and `+N more matches` was a line of text about matches nobody could get to. `GET /api/search/session/:id/matches` pages over PLACES — one snippet row each — and **`deep=1` must match how the hit was obtained**: a deep hit counts matches the index never saw, so the indexed corpus would answer with fewer places than the number that was clicked on.
+
+Each page re-walks the session rather than keeping a cursor (the folded text is already in memory: 1 ms a page); a deep page re-streams that one transcript, which is why the UI asks for 100 places a click there against 25.
+
+- **The arithmetic must close**, and `matchWindows` is what closes it: every occurrence is assigned to exactly one window, so the pages' `pageMatches` add up to `matchCount` to the unit (46/46 across 38 places; deep, 503/503 across 502 in `f3384d17`). Without that the footer would count "31 of 46" and never reach 46, and the button would go on offering more of what was already shown. It is also why window enumeration is its own function and not the search's three-anchor round-robin, which deliberately stops counting places after three.
+- **Opening replaces the teaser instead of continuing after it.** Those snippets are picked one per term so that every word gets a slot — the right teaser and the wrong beginning for an ordered list. The list runs in the order the corpus is read (prose, then tool calls and output, then subagents, for a deep one).
+- The button counts **rows**, the footer counts **matches**: a row can carry several occurrences, so a button promising matches would overpromise, while the footer has to speak in the same unit as the `+N` that was clicked.
+
+## A row says when it was written
+
+A match row is a line lifted out of a conversation, and **a hundred of them all reading TOOL are the same row a hundred times**. The clock is what puts one back: short on the row (`dd/MM HH:mm`), full plus relative on the hover, and FIRST — the rows come out in reading order, so it is the column that lines up down the list and gives it its shape.
+
+- **It rides on the BLOCK.** `buildSnippet` is the only place a snippet is made in the whole repo, so one field serves all three corpora and the three lists — the results, a hit's paged matches, the find bar — cannot disagree about a row's hour. It began as a prop on `SnippetRow` that only the find bar passed, because the server's rows had no clock to give; that prop is gone.
+- **A plan is dated by the call that ASKED for it** (`askedAt`), even when its text exists only on the approval line that came later: the row is anchored on the call, and dating it by the answer would date the plan by its reader.
+- **What a session makes up about itself has no clock, on purpose** — its id, its agents' ids, its title, the previews of one not yet enriched. An id is not something written at an hour. Those rows keep the column and leave it blank: a row that pulled the role and the text left would cost the list the very alignment the clock is there to give it.
+- **A subagent's rows are the ones that need it most.** They carry `uuid: null` and link nowhere in particular, so the hour is the only thing that places them at all.
+- Adding it moved the cached blocks, so `CACHE_VERSION` went to 17. Measured here: 11,899 blocks across 225 sessions, ~0.4 MB on a 4.2 MB text cache.
+
+## Session and agent ids are indexed blocks
+
+**A session's own id is one of them** (role `id`, text the bare uuid), so pasting the eight characters the app writes on a fork chip, in a log line or in a URL lands on the session they name — the one thing about a session that is on screen everywhere and used to be searchable nowhere.
+
+**Its agents' ids are indexed the same way** (`enrichment.subagentIds`, one `id` block each, carrying `agentId` so the row can link to `?agents=1&agent=<id>`). Same reason, one step worse: an agent id is what a notification calls the agent and what the drawer puts in the URL, and it appeared on no page at all.
+
+- **Only a query that could BE an id ever looks at it**: hex, dashes allowed, four characters and up (`matchesSessionIds`). A uuid is 32 hex characters, so an ordinary word made of a-f and digits — `cafe`, `cada`, `added` — would otherwise drag in whatever session happens to carry those letters inside its id.
+- **It is a block like any other, and that is what keeps the counts honest.** The search, the deep scan and both paged match lists share one predicate (`skipBlock`), so a hit can never count an id that its own `+N more matches` page cannot find — and the deep scan stays a superset for id queries too (checked: the id row appears exactly once in a 245-match deep page set, 200 + 45 = 245).
+- A restriction to titles, prompts or responses **leaves it out**: an id is not text anybody wrote, and `in=user` asking for it would answer a different question.
+- The results header counts **the hits the sidebar filters are holding back** rather than dropping them in silence. Empty sessions are hidden by default and a stub is exactly the kind of session looked up by id, so without that line the lookup reads as "0 matches" while the session sits one checkbox away.
+
+## Folding (`shared/src/fold.ts`)
+
+Imported by both sides — there is exactly one `normalize('NFD')` in the repo and it must stay that way. The fold is case-, diacritic- AND whitespace-insensitive, and each of those was bought with a bug:
+
+- **Whitespace runs collapse to one space**, needle and haystack alike. Snippets are rendered through `oneLine()`, so without it the text shown and the text searched differ — a phrase pasted from a wrapped log could not be found while the snippet displayed it intact.
+- **A code point that IS a diacritic emits nothing**, so text already in NFD (a paste from macOS) folds like its composed form. Nonspacing marks only: a spacing mark is a letter component, not an accent.
+- That makes an **empty needle** reachable (a query of nothing but accents), and `indexOf('')` matches at every position without advancing — answered before the scan, never inside it.
+- The fold walks **UTF-16 units with a latin-1 lookup table**, 100 MB/s against 13 for `normalize()` per character. The same function fills the table and handles everything above it, so the paths cannot disagree. `map` keeps one entry per emitted unit — that of the run's or the character's first index — and snippet offsets depend on it, so nothing may emit without pushing.
+- **A phrase is the one-term case**, which is why a single scan serves both modes and quotes need no second code path. In phrase mode quotes are therefore literal characters, which is why the panel only offers them for loose searches.
+- Blocks are **deduplicated by uuid+text** on load: some transcripts re-append a line they already wrote, verbatim (57 of 246 messages in one session), which doubled every count. Identical text under a different uuid is a real repetition and stays.
+
+`shared/src/match.ts` is that argument applied to finding a term: the server scans with `occurrences` / `parseTerms`, the viewer marks the words a search landed on with the same ones, and the find bar scans its own corpus with them too — so the whole-word rule cannot exist twice. `shared/src/searchText.ts` is the same argument applied to cutting the snippet around one: the server's results list and the find bar's both go through `buildSnippet`, or they would disagree about where a snippet starts the day one of them learned something.
+
+## Tuning
+
+The advanced panel's tuning lives in the **URL only** — no settings, no persistence. `saveListParams` (sessionStorage) carries it there and back from a session, and opening the app fresh starts plain. Whatever is off its default **counts on the collapsed button**: a panel nobody can see must never change results in silence.
+
+## Verify
+
+[AI_TESTING.md](AI_TESTING.md) — checks 3 and 9 (search, deep search, paging, ids, marking, the clock on a row), and 26 for the find bar's own corpus and its agreement with this one.

@@ -1,7 +1,8 @@
 import type { FileChange } from '@claude-history/shared';
 import { useState } from 'react';
 import { formatDateTime } from '../../lib/format.ts';
-import { FoldHeader } from './FoldHeader.tsx';
+import { FileRefChip } from './FileRefLink.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 
 function EditBlock({ edit }: { edit: FileChange['edits'][number] }) {
   return (
@@ -29,12 +30,10 @@ export function FileChangesPanel({ fileChanges }: { fileChanges: FileChange[] })
   const [open, setOpen] = useState<Set<string>>(new Set());
 
   return (
-    <div className="border-b border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3">
-      <div className="mb-2 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        Files touched in this transcript — {fileChanges.length}
-        <span className="ml-2 font-normal normal-case opacity-70">
-          (from Edit/Write tool calls; subagent edits live in their own transcripts)
-        </span>
+    <div className="px-4 py-3">
+      {/* The name and the count are the inspector's title bar now. */}
+      <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">
+        from Edit/Write tool calls; subagent edits live in their own transcripts
       </div>
       {fileChanges.map((fc) => {
         const isOpen = open.has(fc.path);
@@ -42,27 +41,33 @@ export function FileChangesPanel({ fileChanges }: { fileChanges: FileChange[] })
         const last = fc.edits[fc.edits.length - 1]?.timestamp;
         return (
           <div key={fc.path} className="mb-1">
-            <FoldHeader
-              open={isOpen}
-              onToggle={() =>
-                setOpen((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(fc.path)) next.delete(fc.path);
-                  else next.add(fc.path);
-                  return next;
-                })
-              }
-              className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
-            >
-              <span className="text-[var(--text-dim)]">{isOpen ? '▾' : '▸'}</span>
-              <span className="min-w-0 flex-1 truncate font-mono" title={fc.path}>
-                {fc.path}
-              </span>
-              <span className="shrink-0 text-[var(--text-dim)]">
-                {fc.edits.length} edit{fc.edits.length !== 1 ? 's' : ''}
-                {first && ` · ${formatDateTime(first)}${last && last !== first ? ` → ${formatDateTime(last)}` : ''}`}
-              </span>
-            </FoldHeader>
+            <div className="flex items-center gap-1 text-xs">
+              <FoldHeader
+                open={isOpen}
+                onToggle={() =>
+                  setOpen((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(fc.path)) next.delete(fc.path);
+                    else next.add(fc.path);
+                    return next;
+                  })
+                }
+                className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 rounded px-1 py-0.5 text-left text-xs hover:bg-[var(--bg-hover)]"
+              >
+                <span className="text-[var(--text-dim)]">{isOpen ? '▾' : '▸'}</span>
+                <span className="min-w-0 flex-1 truncate font-mono" title={fc.path}>
+                  {fc.path}
+                </span>
+                <span className="shrink-0 text-[var(--text-dim)]">
+                  {fc.edits.length} edit{fc.edits.length !== 1 ? 's' : ''}
+                  {first && ` · ${formatDateTime(first)}${last && last !== first ? ` → ${formatDateTime(last)}` : ''}`}
+                </span>
+              </FoldHeader>
+              {/* Beside the header, never inside it: nothing interactive may be
+                  nested in a FoldHeader. `fc.path` is always the absolute
+                  `file_path` of an Edit/Write, so there is nothing to gate on. */}
+              <FileRefChip path={fc.path} />
+            </div>
             {isOpen && (
               <div className="mt-1 ml-5">
                 {fc.edits.map((edit, i) => (

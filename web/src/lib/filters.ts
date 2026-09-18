@@ -35,6 +35,27 @@ export const DEFAULT_FILTERS: FilterState = {
   group: 'none',
 };
 
+/**
+ * How many facets are currently narrowing the list — nothing to do with sort,
+ * direction or grouping, which change the order and never the contents.
+ *
+ * It exists for the phone, where the sidebar is a sheet rather than a column:
+ * with the filters out of sight, a list showing 3 of 400 sessions and no
+ * explanation is the kind of thing somebody restarts the app over. The button
+ * that opens the sheet wears this number.
+ */
+export function activeFilterCount(f: FilterState): number {
+  return (
+    (f.projects.length > 0 ? 1 : 0) +
+    (f.from !== null || f.to !== null ? 1 : 0) +
+    (f.createdFrom !== null || f.createdTo !== null ? 1 : 0) +
+    (f.entrypoints.length > 0 ? 1 : 0) +
+    (f.models.length > 0 ? 1 : 0) +
+    f.badges.length +
+    (f.showEmpty ? 1 : 0)
+  );
+}
+
 function csv(value: string | null): string[] {
   return value ? value.split(',').filter(Boolean) : [];
 }

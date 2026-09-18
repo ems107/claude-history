@@ -3,9 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { actionClass } from '../components/controlClass.ts';
+import { copyPlain } from '../lib/clipboard.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
 import { hasSelection } from '../lib/selection.ts';
-import { btn } from '../lib/ui.ts';
 
 /** Diagnostics, so the whole thing lives under Settings rather than the nav. */
 
@@ -16,7 +17,6 @@ const LEVEL_STYLE: Record<LogLevel, string> = {
   error: 'text-red-400',
   fatal: 'text-red-400 font-semibold',
 };
-
 
 /** Time only: the day is already the thing you picked on the left. */
 function clockTime(t: string): string {
@@ -64,7 +64,7 @@ function Chip({
 function useCopy(): [boolean, (text: string) => void] {
   const [copied, setCopied] = useState(false);
   const copy = (text: string) => {
-    void navigator.clipboard.writeText(text).then(() => {
+    void copyPlain(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1_200);
     });
@@ -242,8 +242,12 @@ export function LogsPage() {
   const records = frozen ?? day.data?.records ?? [];
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--border)] p-3">
+    // Stacked on a phone rather than side by side: a 224px column of filters
+    // beside a log line leaves 136px for the line. The filters take the top,
+    // capped at two fifths of the window and scrolling inside that, so the
+    // stream they filter is always the larger half.
+    <div className="flex h-full min-h-0 max-md:flex-col">
+      <aside className="flex w-56 shrink-0 flex-col gap-4 overflow-y-auto border-r border-[var(--border)] p-3 max-md:max-h-[40dvh] max-md:w-full max-md:border-r-0 max-md:border-b">
         <div>
           <Link to="/settings" className="text-xs text-[var(--text-dim)] hover:text-[var(--text)]">
             ← Settings
@@ -341,7 +345,7 @@ export function LogsPage() {
               <p className="font-mono break-all opacity-60">{logs.data?.logsDir}</p>
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={busy}
                 onClick={() => {
                   if (!confirm('Delete every log file, including today?')) return;
@@ -367,14 +371,14 @@ export function LogsPage() {
           <UpdateLogView />
         ) : (
           <>
-            <div className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-2">
+            <div className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 max-md:flex-wrap max-md:gap-2">
               <input
                 type="text"
                 value={draftQuery}
                 onChange={(e) => setDraftQuery(e.target.value)}
                 placeholder="Search messages…"
                 spellCheck={false}
-                className="w-64 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs focus:border-[var(--text-dim)] focus:outline-none"
+                className="w-64 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs focus:border-[var(--text-dim)] focus:outline-none max-md:min-h-10 max-md:w-full max-md:text-sm"
               />
               <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-dim)]">
                 <input
@@ -401,7 +405,7 @@ export function LogsPage() {
                   paste elsewhere when asking someone what went wrong. */}
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 disabled={records.length === 0}
                 title="Copy every record shown, one JSON object per line"
                 onClick={() => copyAll(records.map((r) => JSON.stringify(r)).join('\n'))}

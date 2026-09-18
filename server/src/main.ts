@@ -1,13 +1,17 @@
 import { buildApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { AutoReloadService } from './core/autoReload.ts';
+import { decideBind, logBind } from './core/bind.ts';
 import { SessionIndex } from './core/index.ts';
+import { NotificationsService } from './core/notifications.ts';
+import { ReadMarksService } from './core/readMarks.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
 import { GitService } from './core/gitService.ts';
 import { GitUndoStore } from './core/gitUndo.ts';
 import { SearchService } from './core/search.ts';
 import { SessionChatService } from './core/sessionChat.ts';
+import { SessionTerminalService } from './core/sessionTerminal.ts';
 import { startUpdateLogImport } from './core/updateLogImport.ts';
 import { UpdateService } from './core/updates.ts';
 import { UsageService } from './core/usage.ts';
@@ -31,8 +35,18 @@ async function main(): Promise<void> {
     applyLogSettings(settings),
   );
   createLogger('index').info(
-    `${index.size} sessions across ${index.projects().length} projects in ${Date.now() - t0} ms`,
+    // `projectCount`, not `projects().length`: this line says what was SCANNED,
+    // and `projects()` answers what can be browsed — a hidden project would make
+    // the two halves of the sentence count different corpora.
+    `${index.size} sessions across ${index.projectCount} projects in ${Date.now() - t0} ms`,
   );
+
+  // Before anything is served: whether this process may listen on the network at
+  // all. It reads the switch (loaded a moment ago) and, only if that is on, asks
+  // the Windows Firewall — so a machine with remote access off pays nothing for
+  // it. See core/bind.ts for why the permission has to exist BEFORE the socket.
+  const bind = await decideBind(config, index.getSettings(), index.getAuth() !== null);
+  logBind(bind);
 
   const search = new SearchService(index);
   const deepSearch = new DeepSearchService(config, index, search);
@@ -43,19 +57,45 @@ async function main(): Promise<void> {
   startUpdateLogImport(updates.install?.root ?? null, config.cacheDir);
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
-  const chat = new SessionChatService(index, () => index.getSettings());
+  const chat = new SessionChatService(config, index, () => index.getSettings());
+  const terminals = new SessionTerminalService(config, index, chat, () => index.getSettings());
+  // After both halves it watches, and started below once the index has been
+  // built — it seeds itself from what is already running.
+  const notifications = new NotificationsService(config, index, chat);
+  // Nothing to start: it has no source of its own to watch, only readers.
+  const readMarks = new ReadMarksService(index);
   const git = new GitService(index, new GitUndoStore(config.gitUndoDir));
-  const app = await buildApp({ config, index, search, deepSearch, updates, usage, autoReload, chat, git });
+  const app = await buildApp({
+    config,
+    bind,
+    index,
+    search,
+    deepSearch,
+    updates,
+    usage,
+    autoReload,
+    chat,
+    terminals,
+    notifications,
+    readMarks,
+    git,
+  });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
   chat.start();
+  notifications.start();
   // Installs the command recorder. It deliberately discovers nothing here:
   // the repository list is not needed until the tab is opened, and startup
   // time is the one delay a user actually feels.
   git.start();
-  // The `claude` processes it owns outlive this one unless something kills
+  // Loading the native pseudo-terminal module. Awaited so the very first status
+  // read already knows whether the feature works; a failure is recorded inside
+  // and reported through `blockedReason`, never thrown.
+  await terminals.start();
+  // The `claude` processes they own outlive this one unless something kills
   // them; the logger runs this on every exit path there is.
   onShutdown(() => chat.shutdown());
+  onShutdown(() => terminals.shutdown());
   onShutdown(() => git.shutdown());
 
   const watcher = new Watcher(config, index);
@@ -79,8 +119,15 @@ async function main(): Promise<void> {
   }
 
   try {
-    await app.listen({ host: config.host, port: config.port });
-    log.info(`listening on http://${config.host}:${config.port} (data root: ${config.dataRoot})`);
+    await app.listen({ host: bind.host, port: config.port });
+    // `http://0.0.0.0:7433` is not an address anyone can open, so the URL is
+    // always the local one and the bind is reported beside it — the two are
+    // different facts now, and which interfaces are open is the one worth
+    // finding in a log. The WHY of that bind was logged by logBind() above.
+    const scope = bind.network ? `bound to ${bind.host}` : 'this machine only';
+    log.info(
+      `listening on http://127.0.0.1:${config.port} (${scope}, data root: ${config.dataRoot})`,
+    );
   } catch (err) {
     log.error('could not listen — exiting', err);
     process.exit(1);

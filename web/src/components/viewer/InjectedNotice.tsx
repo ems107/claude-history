@@ -1,7 +1,13 @@
-import type { MessageItem } from '@claude-history/shared';
+import type { ContentBlock, MessageItem } from '@claude-history/shared';
 import type { ReactNode } from 'react';
+import { formatTokens } from '../../lib/cost.ts';
 import { formatDateTime, formatDateTimeFull, relativeTime } from '../../lib/format.ts';
-import { hasSelection } from '../../lib/selection.ts';
+import { FoldHeader } from '../FoldHeader.tsx';
+import { Markdown } from './Markdown.tsx';
+import { useFoldable } from './RevealContext.ts';
+import { useSubagents } from './SubagentContext.ts';
+
+type Notice = Extract<ContentBlock, { kind: 'notice' }>;
 
 /**
  * Something Claude Code put in the conversation on its own — a background
@@ -14,56 +20,164 @@ import { hasSelection } from '../../lib/selection.ts';
  * own timestamp — left as a bare muted line, the turn's cost pill floated above
  * it with nothing to belong to, and the date turned up again on the fold strip
  * below.
+ *
+ * **Unless it was queued** (`notice.queued`), which means the task finished
+ * while Claude was still working: that one joins the turn already open and is
+ * drawn on the answers' rail, with a chip for the clock that reads backwards.
+ * The badge expression is the same either way and needs no case of its own — by
+ * the time a mid-turn notice is reached, the prompt that opened the turn has
+ * already taken it.
+ *
+ * When the task was an Agent, the block also holds the whole report it handed
+ * back. That report exists nowhere else in this transcript, so it is shown
+ * here, folded — and the row leads with the agent instead of with the word
+ * "task notification", which says nothing about which of five agents this is.
+ *
+ * **The row of buttons under it is not an agent's, though**, and reading it as
+ * one is what used to hide `↑ the call` from every background command: the whole
+ * row was drawn only when there was a report or an agent to draw it for. A
+ * notification names the call it answers whoever produced it — 171 of the 175 on
+ * this machine do, and 56 of those are a `Bash` or `PowerShell` command, not an
+ * agent at all.
  */
 export function InjectedNotice({
   item,
-  origin,
-  text,
+  notice,
   badge,
-  onClick,
 }: {
   item: MessageItem;
-  /** `origin.kind` verbatim, e.g. "task-notification" — the transcript's own word for it. */
-  origin: string;
-  text: string;
+  notice: Notice;
   badge?: ReactNode;
-  /** Prompts-only mode: clicking it expands the turn, like a prompt bubble. */
-  onClick?: () => void;
 }) {
+  const subagents = useSubagents();
+  // The report is the only copy of what an agent handed back — 22.5 KB at the
+  // median, and reachable by no server-side search — so a jump has to be able to
+  // open it. Same key as the notice itself: `?msg=` is what points here.
+  const [showReport, setShowReport] = useFoldable(`msg:${item.uuid}`);
+  // A `<task-id>` is an agent's only if the session has that transcript: a
+  // background command notifies through the same channel with an id of its own.
+  const agent = notice.taskId ? (subagents?.byId.get(notice.taskId) ?? null) : null;
+  // The call this is the answer to, when this parse drew it at all — and no
+  // privilege of an agent's: a background command names its `Bash` call in the
+  // very same tag, and 56 of the notices on this machine are one. Which of the
+  // three joins found it is `callOf`'s business, not this panel's.
+  const call = subagents?.callOf(item.uuid) ?? null;
+  const failed = notice.status === 'failed';
+
   return (
     <div
       id={item.uuid}
-      title={onClick ? 'Click to show or hide what followed it' : undefined}
-      // Same contract as `Bubble`: never fold on a click that ended a selection,
-      // and feedback through a ring — a filter would re-anchor the badge's
-      // fixed hover card to this box.
-      onClick={
-        onClick &&
-        (() => {
-          if (hasSelection()) return;
-          onClick();
-        })
-      }
-      className={`my-2 rounded border border-zinc-500/25 bg-zinc-500/5 px-3 py-2 text-xs ${
-        onClick ? 'cursor-pointer hover:ring-1 hover:ring-[var(--text-dim)]/40' : ''
+      // No `onClick`, the same contract as `Bubble` and for the same reason it
+      // was written: this used to fold the turn in prompts-only mode, so an
+      // accidental click hid what you were reading. It outlived the bubble's
+      // version by an oversight, and a click on a message now means something
+      // else entirely — it selects it.
+      className={`my-2 rounded border px-3 py-2 text-xs ${
+        failed ? 'border-red-500/30 bg-red-500/5' : 'border-zinc-500/25 bg-zinc-500/5'
       }`}
     >
       {item.aliasUuids.map((u) => (
         <span key={u} id={u} />
       ))}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="rounded bg-zinc-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-zinc-300 uppercase">
-          {origin.replace(/-/g, ' ')}
-        </span>
+        {agent ? (
+          <span
+            className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-sky-400 uppercase"
+            title={`Subagent — ${agent.description}`}
+          >
+            ⑂ {agent.agentType}
+          </span>
+        ) : (
+          <span className="rounded bg-zinc-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-zinc-300 uppercase">
+            {notice.origin.replace(/-/g, ' ')}
+          </span>
+        )}
+        {notice.status && (
+          <span className={`text-[10px] font-semibold tracking-wider uppercase ${failed ? 'text-red-400' : 'text-emerald-400/80'}`}>
+            {notice.status}
+          </span>
+        )}
         {item.timestamp && (
           <span className="text-[var(--text-dim)]" title={formatDateTimeFull(item.timestamp)}>
             {formatDateTime(item.timestamp)} · {relativeTime(item.timestamp)}
           </span>
         )}
+        {/* The task finished while Claude was still working, so the news waited
+            in the queue until the turn's current stretch of work ended — which
+            is why the clock above reads EARLIER than the answer this sits under.
+            Without the chip that looks like a parsing error, the same reason a
+            queued prompt wears one. */}
+        {notice.queued && (
+          <span
+            className="rounded border border-[var(--border)] px-1 py-px text-[10px] text-[var(--text-dim)]"
+            title="The task finished while Claude was working, so this waited in the queue and was delivered when the current stretch of work ended. The time shown is when the task finished."
+          >
+            queued
+          </span>
+        )}
         <span className="flex-1" />
         {badge}
       </div>
-      <div className="mt-1 whitespace-pre-wrap text-[var(--text)]">{text}</div>
+      {/* The searchable half, and only that: `data-bubble-body` is where marks
+          are allowed, so the origin chip, the status and the clock above stay
+          out of them — the same split a bubble makes. One element and not two,
+          because a box is the unit the find bar counts in. */}
+      <div data-bubble-body>
+        <div className="mt-1 whitespace-pre-wrap text-[var(--text)]">{notice.text}</div>
+        {/* This whole region used to stop the click event, because the box it
+            sits in folded the turn: reading a report collapsed the conversation
+            around it. The box takes no click at all now, so there is nothing
+            left to stop. */}
+        {(notice.result || agent || call) && (
+          <div className="mt-1.5">
+            {/* Chrome, though it sits inside the searchable body — the report it
+                opens is the message here, these are the handles. Unmarked, a
+                search for `call` lit up the `↑ the call` button and one for
+                `transcript` the `⑂` one, words nobody wrote, counted among the
+                box's own hits. The report BELOW stays out of it: it is the only
+                copy of what the agent handed back, and the find bar indexes it
+                (`noticeUnit` folds `text` and `result`, and nothing else). */}
+            <div data-chrome className="flex flex-wrap items-center gap-2">
+              {notice.result && (
+                <FoldHeader
+                  open={showReport}
+                  onToggle={() => setShowReport((v) => !v)}
+                  className="rounded px-1 py-0.5 text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)]"
+                >
+                  {showReport ? '▾' : '▸'} report · {formatTokens(notice.result.length)} chars
+                </FoldHeader>
+              )}
+              {agent && subagents && (
+                <button
+                  type="button"
+                  onClick={() => subagents.openAgent(agent.agentId)}
+                  className="cursor-pointer rounded bg-sky-500/15 px-1.5 py-0.5 font-semibold text-sky-400 hover:bg-sky-500/25"
+                  title="Open the subagent's own transcript"
+                >
+                  ⑂ transcript
+                </button>
+              )}
+              {call && subagents && (
+                <button
+                  type="button"
+                  // Not a click on this panel: it is the panel being left.
+                  data-jump
+                  onClick={() => subagents.goToCall(call)}
+                  className="cursor-pointer rounded border border-[var(--border)] px-1.5 py-0.5 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
+                  title="Go to the call that started it"
+                >
+                  ↑ the call
+                </button>
+              )}
+            </div>
+            {showReport && notice.result && (
+              <div className="mt-1.5 rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2">
+                <Markdown text={notice.result} />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

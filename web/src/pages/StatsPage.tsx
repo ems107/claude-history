@@ -7,7 +7,7 @@ import { api } from '../api/client.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { DailyChart, type ChartSeries } from '../components/stats/DailyChart.tsx';
 import { PricingEditor } from '../components/stats/PricingEditor.tsx';
-import { computeCost, formatTokens, formatUsd } from '../lib/cost.ts';
+import { computeCost, computeMessageCost, formatTokens, formatUsd } from '../lib/cost.ts';
 import { formatDateTime, shortModel } from '../lib/format.ts';
 
 type Metric = 'cost' | 'output' | 'prompts' | 'sessions';
@@ -88,7 +88,11 @@ export function StatsPage() {
       return p;
     };
     const perModel = new Map<string, { output: number; cost: number }>();
-    let totals = { sessions: 0, prompts: 0, output: 0, cost: 0 };
+    let totals = { sessions: 0, prompts: 0, output: 0, cost: 0, ownCost: 0 };
+    // Context that was cached, expired and had to be written again. Priced here
+    // rather than stored: the enrichment keeps tokens only, so an edit to the
+    // price table moves this figure like it moves every other.
+    let recache = { tokens: 0, events: 0, billed: 0, ifRead: 0 };
 
     for (const s of sessions) {
       const createdDay = (s.createdAt ?? '').slice(0, 10);
@@ -110,6 +114,12 @@ export function StatsPage() {
           const cost = computeCost(u, resolvePrices(model, prices)) ?? 0;
           totals.output += u.output;
           totals.cost += cost;
+          // Kept apart for one figure only: the share of spend that went on
+          // re-cached context. Re-caches are measured in session transcripts and
+          // nowhere else, so counting the agents' spend in that denominator
+          // would make the percentage fall as more work is delegated, saying
+          // something about caching that never happened.
+          totals.ownCost += cost;
           p.output += u.output;
           p.cost += cost;
           c.output += u.output;
@@ -118,6 +128,35 @@ export function StatsPage() {
           m.output += u.output;
           m.cost += cost;
           perModel.set(model, m);
+        }
+        // The agents those sessions sent out, on the day THEY ran. Their tokens
+        // are not in `byModel` — separate conversations, separate transcripts —
+        // so without this the dashboard is short by whatever was delegated, and
+        // the sessions that delegate most are the ones it understates most.
+        for (const [model, u] of Object.entries(du.subagentByModel ?? {})) {
+          const cost = computeMessageCost(u, resolvePrices(model, prices)) ?? 0;
+          totals.output += u.output;
+          totals.cost += cost;
+          p.output += u.output;
+          p.cost += cost;
+          c.output += u.output;
+          c.cost += cost;
+          const m = perModel.get(model) ?? { output: 0, cost: 0 };
+          m.output += u.output;
+          m.cost += cost;
+          perModel.set(model, m);
+        }
+        recache.events += du.recacheEvents;
+        for (const [model, tokens] of Object.entries(du.recachedByModel)) {
+          const rates = resolvePrices(model, prices);
+          recache.tokens += tokens;
+          // No rates for this model: count the tokens, price nothing. The
+          // enrichment does not keep the 1h/5m split, and every session
+          // transcript in this corpus writes 1h caches.
+          if (rates) {
+            recache.billed += (tokens * rates.cacheWrite) / 1_000_000;
+            recache.ifRead += (tokens * rates.cacheRead) / 1_000_000;
+          }
         }
       }
     }
@@ -128,7 +167,7 @@ export function StatsPage() {
         ? daysBetween(cutoff && cutoff > chartDays[0] ? cutoff : chartDays[0], chartDays[chartDays.length - 1])
         : [];
 
-    return { chart, days, perProject, perModel, totals };
+    return { chart, days, perProject, perModel, totals, recache };
   }, [sessionsQ.data, pricesQ.data, range]);
 
   const series: ChartSeries[] = useMemo(() => {
@@ -175,9 +214,33 @@ export function StatsPage() {
           <Card
             label="≈ Cost"
             value={formatUsd(agg.totals.cost)}
-            hint="API-equivalent value at the configured prices — not actual subscription spend"
+            hint="API-equivalent value at the configured prices, subagents included — not actual subscription spend"
           />
         </div>
+
+        {/* A full-width strip rather than a fifth card: the grid above is
+            `md:grid-cols-4` and a fifth would leave one orphan on its own row.
+            Hidden when nothing was re-cached, which is most short periods. */}
+        {agg.recache.tokens > 0 && (
+          <div className="rounded border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <div className="text-[11px] tracking-wider text-amber-400/80 uppercase">↺ Re-cached context</div>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+              <span className="text-2xl font-semibold text-amber-300">{formatUsd(agg.recache.billed)}</span>
+              <span className="text-xs text-[var(--text-dim)]">
+                {agg.totals.ownCost > 0 && (
+                  <>{((agg.recache.billed / agg.totals.ownCost) * 100).toFixed(1)}% of session spend · </>
+                )}
+                {formatTokens(agg.recache.tokens)} tokens over {agg.recache.events} request
+                {agg.recache.events !== 1 ? 's' : ''} · {formatUsd(agg.recache.billed - agg.recache.ifRead)} more than
+                reading them from cache would have cost
+              </span>
+            </div>
+            <div className="mt-1 text-[10px] text-[var(--text-dim)]">
+              Context that was already cached when a request went out and had to be written again — usually because the
+              1-hour cache expired while the session sat idle. Counted inside the cost above, not on top of it.
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="mb-1 flex items-center gap-2">
@@ -238,7 +301,14 @@ export function StatsPage() {
 
           <div>
             <h2 className="mb-2 text-sm font-semibold">Projects</h2>
-            <table className="w-full text-xs">
+            {/* Five columns, four of them numbers: at 360px the table would
+                either set the width of the page or squeeze a project name to
+                three characters. It scrolls inside its own box instead, which
+                is the one place in the app where sideways is the right answer —
+                a table is a shape, and narrowing it destroys the comparison it
+                exists to make. */}
+            <div className="max-md:-mx-1 max-md:overflow-x-auto max-md:px-1">
+            <table className="w-full text-xs max-md:min-w-[30rem]">
               <thead>
                 <tr className="text-left text-[10px] tracking-wider text-[var(--text-dim)] uppercase">
                   <th className="py-1">Project</th>
@@ -270,6 +340,7 @@ export function StatsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
 

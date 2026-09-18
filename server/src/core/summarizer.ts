@@ -5,7 +5,7 @@ import { normalizeProjectKey } from './projects.ts';
 import type { ScannedSession } from './scanner.ts';
 
 // Cheap per-session metadata from head-25 + tail-40 lines only.
-// Format rules: see CLAUDE.md "Claude Code data format rules".
+// Format rules: see docs/AI_TRANSCRIPTS.md.
 
 const HEAD_N = 25;
 const TAIL_N = 40;
@@ -41,10 +41,181 @@ export function injectedOrigin(o: RawLine): string | null {
   return kind === null || kind === 'human' ? null : kind;
 }
 
+/**
+ * The text of a `queued_command` payload, whichever shape it arrives in.
+ *
+ * `prompt` is a plain string in 63 of the 65 such lines in this corpus, and was
+ * in all 39 of them when this envelope was first read — which is why only that
+ * shape was handled. **Paste an image into a prompt while Claude is working and
+ * it stops being a string**: the payload becomes the content-block array the API
+ * takes, `[{type:'text'},{type:'image'}]`, `str()` answers null for it, and the
+ * whole message was dropped — absent from its session, absent from the index,
+ * uncounted — while `history.jsonl` kept it and the Prompts page listed it. The
+ * same silent asymmetry as the bug above, one shape later.
+ *
+ * Text only: the image is not text and is not here. The parser reads it from the
+ * same array so the bubble shows what was pasted, and the `[Image #N]` marker
+ * Claude Code writes into the text block comes along for free. Null for a payload
+ * carrying no text at all — an image on its own is still a message, so the parser
+ * tests the two separately rather than letting this decide.
+ */
+export function queuedText(prompt: unknown): string | null {
+  if (typeof prompt === 'string') return prompt;
+  if (!Array.isArray(prompt)) return null;
+  const text = prompt
+    .map((b) => (isRec(b) && b.type === 'text' ? str(b.text) : null))
+    .filter((t): t is string => t !== null)
+    .join('\n')
+    .trim();
+  return text ? text : null;
+}
+
+/**
+ * The prompt a human typed while Claude was working, or null for every other
+ * `attachment` line. Queued while the turn was in flight (`queue-operation`,
+ * `enqueue` then `remove`) and appended when it ended, in the SAME envelope a
+ * `<task-notification>` uses: `attachment.type === 'queued_command'`.
+ *
+ * **This is the only copy of that prompt.** It is written nowhere else in the
+ * transcript — no `user` line repeats it (checked on all 10 in this corpus) — so
+ * reading only `user` lines lost it outright: "No te dejes nada" in `15a86025`
+ * was in `history.jsonl`, so the Prompts page showed it, while the session it
+ * belongs to did not. The line is a real node of the tree, too: the answer to it
+ * hangs off its uuid.
+ *
+ * The payload comes from `queuedByHuman`, which owns the test that says a human
+ * typed it; everything read off one of these lines has to go through it.
+ */
+export function queuedPrompt(o: RawLine): string | null {
+  return queuedText(queuedByHuman(o));
+}
+
+/**
+ * The raw payload of a queued line a HUMAN typed — string or content-block array,
+ * `queuedText` and the parser each take what they need from it — and null for
+ * everything else that comes down this envelope.
+ *
+ * **The test is affirmative and must stay that way.** A notification carries no
+ * `origin` at all (`{type, prompt, commandMode, timestamp}`, 55 of 55 here), so
+ * `injectedOrigin`'s rule — no `origin` means the human typed it, true of the
+ * older `user` lines — is exactly inverted here and would turn every
+ * notification into a prompt. Only `origin.kind === 'human'` says a human typed
+ * it (10 of 10 here, all `commandMode: "prompt"`); anything else is not ours to
+ * guess.
+ */
+export function queuedByHuman(o: RawLine): unknown {
+  const attachment = isRec(o.attachment) ? o.attachment : null;
+  if (!attachment || attachment.type !== 'queued_command') return null;
+  const kind = isRec(attachment.origin) ? str(attachment.origin.kind) : null;
+  return kind === 'human' ? attachment.prompt : null;
+}
+
+/**
+ * How far into the decoded signature the label may start. The prefix is a fixed
+ * handful of protobuf fields, so a scan that runs past it starts reading the
+ * opaque payload and could find anything.
+ */
+const SIGNATURE_PREFIX_BYTES = 24;
+/** Enough base64 to cover that, and a whole number of 4-character groups. */
+const SIGNATURE_HEAD = 44;
+/** What a label may be: the two seen are 8 and 9 characters. */
+const LABEL_MIN = 3;
+const LABEL_MAX = 24;
+
+/**
+ * What a `thinking` block SAYS it is — `thinking`, `narration`, or null for a
+ * block whose signature carries no label at all.
+ *
+ * Both arrive as `type: 'thinking'` and they are not the same thing. Raw
+ * thinking is never stored (every labelled `thinking` block here holds an empty
+ * string, and the viewer has said so for a year); `narration` is the running
+ * commentary Claude Code PRINTS between the tool calls, addressed to the user,
+ * in the user's own language, and stored in full. Treating it as thinking hid
+ * it behind a switch that is off by default — which is how a prompt typed
+ * mid-turn came to sit in this app with no answer under it while the terminal
+ * showed one four lines below the question.
+ *
+ * The label is the opening of the block's `signature`: a short protobuf prefix
+ * carrying one length-delimited string (`0x42 <len> <ascii>`) before the opaque
+ * payload starts. Read exactly — a byte scan for `0x42`, a plausible length,
+ * lowercase ASCII — and only within that prefix, which is what the constants
+ * above are for. Over 21,197 blocks it answers exactly three things and never a
+ * fourth: `thinking` (1,456), `narration` (185) and nothing at all (19,556).
+ *
+ * **Null is `thinking`, not narration**, and that is the safe way round. An
+ * unlabelled block is NOT an old one: the label belongs to the model rather
+ * than to the CLI — of the blocks written by CLIs ≥ 2.1.258 here, every labelled
+ * one is `claude-fable-5-1`'s, while `claude-opus-5`, `claude-sonnet-5` and
+ * `claude-haiku-4-5` label nothing and narrate nothing. So a missing label means
+ * "this model does not label", never "this is narration", and if the prefix ever
+ * changes, narration goes back to being hidden rather than every stored thought
+ * becoming prose the user never saw. See
+ * docs/AI_TRANSCRIPTS.md#narration-is-not-thinking.
+ */
+export function thinkingLabel(signature: unknown): string | null {
+  if (typeof signature !== 'string' || signature.length < 8) return null;
+  let head: Buffer;
+  try {
+    head = Buffer.from(signature.slice(0, SIGNATURE_HEAD), 'base64');
+  } catch {
+    return null;
+  }
+  const end = Math.min(head.length - 2, SIGNATURE_PREFIX_BYTES);
+  for (let i = 0; i < end; i++) {
+    if (head[i] !== 0x42) continue;
+    const len = head[i + 1];
+    if (len < LABEL_MIN || len > LABEL_MAX || i + 2 + len > head.length) continue;
+    const label = head.subarray(i + 2, i + 2 + len).toString('latin1');
+    if (/^[a-z][a-z_]*$/.test(label)) return label;
+  }
+  return null;
+}
+
+/** Which block a `thinking` line really holds: the commentary, or the thought. */
+export function thinkingKind(block: RawLine): 'narration' | 'thinking' {
+  return thinkingLabel(block.signature) === 'narration' ? 'narration' : 'thinking';
+}
+
 /** The line a `<task-notification>` is worth showing: its own summary of itself. */
-export function notificationText(content: string): string {
+function notificationText(content: string): string {
   const summary = /<summary>([\s\S]*?)<\/summary>/.exec(content);
   return (summary?.[1] ?? content).trim();
+}
+
+/** Everything a `<task-notification>` carries besides its summary line. */
+export interface ParsedNotification {
+  text: string;
+  taskId: string | null;
+  toolUseId: string | null;
+  status: string | null;
+  result: string | null;
+}
+
+function tagged(content: string, tag: string): string | null {
+  const m = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(content);
+  const value = m?.[1].trim();
+  return value ? value : null;
+}
+
+/**
+ * The whole of a `<task-notification>`, not just the line it summarises itself
+ * with. `<result>` is the report an Agent handed back and the parent transcript
+ * records it NOWHERE else — the tool result of the call is boilerplate — so
+ * keeping only the summary threw away 53 deliverables in this corpus, 1,076 KB
+ * of them.
+ *
+ * `<task-id>` is the `agentId` when the task was an Agent; a background command
+ * notifies through the same channel with an id that matches no transcript, so
+ * the caller decides what is an agent by looking the id up, not by trusting it.
+ */
+export function parseNotification(content: string): ParsedNotification {
+  return {
+    text: notificationText(content),
+    taskId: tagged(content, 'task-id'),
+    toolUseId: tagged(content, 'tool-use-id'),
+    status: tagged(content, 'status'),
+    result: tagged(content, 'result'),
+  };
 }
 
 /**
@@ -160,14 +331,22 @@ function extractFromLines(headParsed: RawLine[], tailParsed: RawLine[]): Extract
       if (count !== null) x.messageCount = count;
     }
 
-    if (
-      type === 'user' &&
+    // A prompt typed while Claude was working comes down the attachment path and
+    // is a prompt like any other here: it decides `isEmpty` and can be the
+    // title's last fallback. Neither changes on this machine's corpus — the
+    // earliest of the four sits at line 51, well past the head window — but the
+    // rule is the same rule, and it should not depend on the envelope.
+    const typed =
+      (type === 'attachment' ? queuedPrompt(o) : null) ??
+      (type === 'user' &&
       o.isMeta !== true &&
       isRec(o.message) &&
       typeof o.message.content === 'string' &&
       injectedOrigin(o) === null
-    ) {
-      const prompt = extractPrompt(o.message.content);
+        ? o.message.content
+        : null);
+    if (typed !== null) {
+      const prompt = extractPrompt(typed);
       if (prompt) {
         if (prompt.isSlashCommand) {
           if (isHead && !x.firstSlashCommand) x.firstSlashCommand = prompt.text;

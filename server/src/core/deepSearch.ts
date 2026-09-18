@@ -19,13 +19,16 @@ import type { SearchService } from './search.ts';
 import {
   buildSnippet,
   hasTerm,
+  matchesSessionIds,
   matchWindows,
   occurrences,
   parseTerms,
   type SearchOptions,
+  skipBlock,
   SNIPPET_AFTER,
   SNIPPET_BEFORE,
 } from './searchText.ts';
+import { thinkingKind } from './summarizer.ts';
 
 const log = createLogger('deep-search');
 
@@ -66,11 +69,35 @@ function toolResultText(content: unknown): string {
   return content === undefined || content === null ? '' : JSON.stringify(content);
 }
 
-function toolCallText(block: Record<string, unknown>): string {
+/** Where an `ExitPlanMode` approval stops explaining itself and repeats the plan. */
+const APPROVED_PLAN_MARKER = '## Approved Plan:';
+
+/**
+ * @param indexed Whether this call's own transcript went through the enricher —
+ *   true in a session, FALSE in a subagent's, which nothing indexes. It decides
+ *   whether the intent below is already a row of its own.
+ */
+function toolCallText(block: Record<string, unknown>, indexed: boolean): string {
   const name = str(block.name) ?? 'tool';
-  // The input as written: a command, a path, a pattern. Searching it answers
-  // "which session ran that" as well as any prose would.
-  return `${name} ${JSON.stringify(block.input ?? {})}`;
+  // A plan is INDEXED (see `fillPlanText`), and this scan re-matches the indexed
+  // text as well as reading the tool traffic — so carrying the input here would
+  // report the same plan twice for one call, as two places instead of one. The
+  // name is kept, because "which session called ExitPlanMode" is still a
+  // question this scan should answer.
+  if (name === 'ExitPlanMode') return name;
+  const input = block.input ?? {};
+  // The same trap, and the same answer, for the OTHER indexed piece of tool
+  // traffic (`toolIntent`): the description of a Bash call is an indexed row
+  // carrying this very `toolUseId`, so stringifying it here too would show one
+  // sentence twice and send both copies to the same place. Only inside a
+  // subagent is this the only copy there is, and there it stays.
+  if (indexed && isRec(input) && (input.description !== undefined || input.activeForm !== undefined)) {
+    const { description: _d, activeForm: _a, ...rest } = input;
+    return `${name} ${JSON.stringify(rest)}`;
+  }
+  // Everything else, as written: a command, a path, a pattern. Searching it
+  // answers "which session ran that" as well as any prose would.
+  return `${name} ${JSON.stringify(input)}`;
 }
 
 /**
@@ -155,6 +182,7 @@ export class DeepSearchService {
     scan: DeepScanInfo,
   ): Promise<SearchHit | null> {
     const { roles, wholeWord, scope } = match;
+    const ids = matchesSessionIds(terms);
     const perTerm = terms.map(() => 0);
     const snippets: SearchSnippet[] = [];
     const shown = terms.map(() => false);
@@ -220,7 +248,7 @@ export class DeepSearchService {
     const indexed = await this.search.unitsOf(id);
     if (indexed) {
       for (let i = 0; i < indexed.blocks.length; i++) {
-        if (roles && !roles.has(indexed.blocks[i].role)) continue;
+        if (skipBlock(indexed.blocks[i].role, roles, ids)) continue;
         consume(indexed.blocks[i], indexed.folded[i]);
       }
     }
@@ -256,6 +284,7 @@ export class DeepSearchService {
     const mode = request.options.mode ?? 'phrase';
     const scope = request.options.scope ?? 'message';
     const terms = parseTerms(request.query, mode);
+    const ids = matchesSessionIds(terms);
     const echo: SearchQueryEcho = { terms, mode, scope, wholeWord };
     const scan: DeepScanInfo = { sessionsRead: 0, bytesRead: 0, stoppedEarly: false };
     const snippets: SearchSnippet[] = [];
@@ -283,7 +312,7 @@ export class DeepSearchService {
       const indexed = await this.search.unitsOf(request.id);
       if (indexed) {
         for (let i = 0; i < indexed.blocks.length; i++) {
-          if (roles && !roles.has(indexed.blocks[i].role)) continue;
+          if (skipBlock(indexed.blocks[i].role, roles, ids)) continue;
           consume(indexed.blocks[i], indexed.folded[i]);
         }
       }
@@ -332,6 +361,8 @@ export class DeepSearchService {
     // replay (see `replayFilter`) spends the snippet budget twice on one
     // command and counts its matches again.
     const isReplay = replayFilter();
+    /** `ExitPlanMode` calls seen so far — their results echo an indexed plan. */
+    const planCalls = new Set<string>();
     const overBudget = (): boolean => {
       if (signal?.aborted) return true;
       if (++lines % LINES_PER_CLOCK_CHECK !== 0) return false;
@@ -348,6 +379,7 @@ export class DeepSearchService {
         if (!o) continue;
         if (isReplay(o)) continue;
         const uuid = str(o.uuid);
+        const when = str(o.timestamp);
         const message = isRec(o.message) ? o.message : null;
         // The tool this line's output belongs to, so an offloaded chunk (which
         // arrives from `toolUseResult`, outside the content array) can be
@@ -357,11 +389,20 @@ export class DeepSearchService {
           for (const block of message.content) {
             if (!isRec(block)) continue;
             if (block.type === 'tool_use') {
-              yield { uuid, role: 'call', text: toolCallText(block), toolUseId: str(block.id) };
+              const callId = str(block.id);
+              if (callId && str(block.name) === 'ExitPlanMode') planCalls.add(callId);
+              yield { uuid, role: 'call', text: toolCallText(block, true), toolUseId: callId, when };
             } else if (block.type === 'tool_result') {
-              resultOf ??= str(block.tool_use_id);
-              const text = toolResultText(block.content);
-              if (text.trim()) yield { uuid, role: 'tool', text, toolUseId: str(block.tool_use_id) };
+              const callId = str(block.tool_use_id);
+              resultOf ??= callId;
+              // An approval echoes the whole plan back after a fixed preamble,
+              // and the plan is indexed — so the echo is cut off here. Both rows
+              // carry the same anchor, so keeping it would show one plan twice
+              // and send both copies to the same place. The preamble stays: it
+              // names the file the plan was saved to.
+              const raw = toolResultText(block.content);
+              const text = callId && planCalls.has(callId) ? raw.split(APPROVED_PLAN_MARKER)[0] : raw;
+              if (text.trim()) yield { uuid, role: 'tool', text, toolUseId: callId, when };
             }
           }
         }
@@ -369,7 +410,7 @@ export class DeepSearchService {
         const persisted = result ? str(result.persistedOutputPath) : null;
         if (persisted) {
           const text = await this.readPersisted(persisted, scan);
-          if (text) yield { uuid, role: 'tool', text, toolUseId: resultOf };
+          if (text) yield { uuid, role: 'tool', text, toolUseId: resultOf, when };
         }
       }
     } catch (err) {
@@ -394,23 +435,36 @@ export class DeepSearchService {
           if (!o) continue;
           const message = isRec(o.message) ? o.message : null;
           if (!message) continue;
+          const when = str(o.timestamp);
           // A subagent line's uuid means nothing to the viewer, which knows only
           // the parent transcript -- so the snippet links to the session with no
           // anchor rather than to an anchor that resolves nowhere. Its tool ids
           // are in the same position: they exist only inside this transcript, and
-          // the parent's parse holds no block carrying one.
+          // the parent's parse holds no block carrying one. Its CLOCK is not:
+          // these are the rows with nothing to click, so the hour is all that
+          // puts them anywhere at all.
           if (typeof message.content === 'string') {
-            if (message.content.trim()) yield { uuid: null, role: 'agent', text: message.content };
+            if (message.content.trim()) yield { uuid: null, role: 'agent', text: message.content, when };
           } else if (Array.isArray(message.content)) {
             for (const block of message.content) {
               if (!isRec(block)) continue;
               if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-                yield { uuid: null, role: 'agent', text: block.text };
+                yield { uuid: null, role: 'agent', text: block.text, when };
+              } else if (
+                block.type === 'thinking' &&
+                typeof block.thinking === 'string' &&
+                block.thinking.trim() &&
+                thinkingKind(block) === 'narration'
+              ) {
+                // An agent narrates too (23 blocks here), and the drawer draws
+                // it — so the scan that exists to reach what the index cannot
+                // has to carry it. Thinking itself stays out, as everywhere.
+                yield { uuid: null, role: 'agent', text: block.thinking, when };
               } else if (block.type === 'tool_use') {
-                yield { uuid: null, role: 'agent', text: toolCallText(block) };
+                yield { uuid: null, role: 'agent', text: toolCallText(block, false), when };
               } else if (block.type === 'tool_result') {
                 const text = toolResultText(block.content);
-                if (text.trim()) yield { uuid: null, role: 'agent', text };
+                if (text.trim()) yield { uuid: null, role: 'agent', text, when };
               }
             }
           }

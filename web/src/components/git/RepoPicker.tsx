@@ -2,7 +2,7 @@ import type { GitOverview, GitRepo } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { gitApi } from '../../api/git.ts';
-import { btn, inputClass } from '../../lib/ui.ts';
+import { actionClass, inputClass } from '../controlClass.ts';
 
 /**
  * Which repository the tab is looking at, and the quickest way to add one.
@@ -76,7 +76,7 @@ export function RepoPicker({
         onClick={() => setOpen(!open)}
         disabled={busy}
         title={current?.path ?? 'Choose a repository'}
-        className={`${btn} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`}
+        className={`${actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`}
       >
         <span className="text-[var(--text-dim)]">▾</span>
         <span className="truncate font-medium">{current?.name ?? 'Choose a repository…'}</span>
@@ -181,7 +181,7 @@ export function RepoPicker({
                 </label>
                 {error && <p className="text-[11px] text-red-400">{error}</p>}
                 <div className="flex gap-1.5">
-                  <button type="button" onClick={add} disabled={working || !draft.trim()} className={btn}>
+                  <button type="button" onClick={add} disabled={working || !draft.trim()} className={actionClass}>
                     {working ? 'Adding…' : 'Add'}
                   </button>
                   <button
@@ -190,7 +190,7 @@ export function RepoPicker({
                       setAdding(false);
                       setError(null);
                     }}
-                    className={btn}
+                    className={actionClass}
                   >
                     Cancel
                   </button>
@@ -198,7 +198,7 @@ export function RepoPicker({
               </div>
             ) : (
               <div className="flex items-center gap-1.5">
-                <button type="button" onClick={() => setAdding(true)} className={btn}>
+                <button type="button" onClick={() => setAdding(true)} className={actionClass}>
                   + Add a folder…
                 </button>
                 <button
@@ -212,7 +212,7 @@ export function RepoPicker({
                       .catch(() => undefined)
                       .finally(() => setWorking(false));
                   }}
-                  className={btn}
+                  className={actionClass}
                   title="Walk the scan roots again"
                 >
                   {working ? 'Scanning…' : 'Rescan'}

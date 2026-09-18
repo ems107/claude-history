@@ -1,18 +1,12 @@
 import type { PriceTable } from '@claude-history/shared';
 import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
-import { type CostEntry, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
-import { shortModel } from '../../lib/format.ts';
+import { recacheCauseText } from '../../lib/context.ts';
+import { type CostEntry, type RecacheSummary, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
+import { formatMs, shortModel } from '../../lib/format.ts';
 import { CardFoot, CardHead, CardLine, HoverCard } from './HoverCard.tsx';
 
 function tokens(n: number): string {
   return n.toLocaleString();
-}
-
-function answerTime(ms: number): string {
-  if (ms < 1000) return `${ms} ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
-  const min = Math.floor(ms / 60_000);
-  return `${min} min ${Math.round((ms % 60_000) / 1000)} s`;
 }
 
 /**
@@ -32,6 +26,7 @@ export function CostPill({
   sessionTotal,
   label,
   variant = 'inline',
+  recache,
 }: {
   entries: CostEntry[];
   prices: PriceTable;
@@ -41,6 +36,13 @@ export function CostPill({
   /** Prefix shown on the pill, e.g. "turn". */
   label?: string;
   variant?: 'inline' | 'badge';
+  /**
+   * Context these messages had to write again because the cache no longer held
+   * it. Present only when it happened — 55 times in this whole corpus — and it
+   * turns the pill amber, because a price that reads as ordinary is exactly how
+   * a $16 prompt went unnoticed.
+   */
+  recache?: RecacheSummary | null;
 }) {
   if (entries.length === 0) return null;
 
@@ -80,8 +82,10 @@ export function CostPill({
   return (
     <HoverCard
       variant={variant}
+      tone={recache ? 'warn' : 'default'}
       pill={
         <>
+          {recache && <span className="mr-1">↺</span>}
           {label && <span className="mr-1 opacity-70">{label}</span>}
           {total === null ? '—' : `≈${formatUsd(total)}`}
         </>
@@ -123,9 +127,25 @@ export function CostPill({
         })}
       </span>
 
+      {recache && (
+        <span className="mt-1.5 block border-t border-amber-500/30 pt-1">
+          <span className="mb-0.5 block text-amber-300/90">
+            ↺ of the cache write, {tokens(recache.cost.tokens)} tok were already cached
+          </span>
+          <CardLine label="written again" value={formatUsd(recache.cost.billed)} tone="warn" />
+          <CardLine label="if it had been read" value={formatUsd(recache.cost.ifRead)} />
+          <CardLine label="extra" value={formatUsd(recache.cost.extra)} tone="warn" />
+          {recacheCauseText(recache.cause, recache.gapMs) && (
+            <span className="mt-1 block text-[10px] text-amber-400/90">
+              {recacheCauseText(recache.cause, recache.gapMs)}
+            </span>
+          )}
+        </span>
+      )}
+
       <span className="mt-1.5 block border-t border-[var(--border)] pt-1">
         {context !== null && <CardLine label="context at this point" value={`${tokens(context)} tok`} />}
-        {single?.elapsedMs ? <CardLine label="answer time" value={answerTime(single.elapsedMs)} /> : null}
+        {single?.elapsedMs ? <CardLine label="answer time" value={formatMs(single.elapsedMs)} /> : null}
         {cumulative !== null && cumulative !== undefined && (
           <CardLine
             label="cumulative"
@@ -153,7 +173,10 @@ export function CostPill({
           No price configured for {models.map((m) => shortModel(m) ?? m).join(', ')} — add it in Stats.
         </span>
       )}
-      <CardFoot>API-equivalent value at the prices configured in Stats — not actual subscription spend.</CardFoot>
+      <CardFoot>
+        API-equivalent value at the prices configured in Stats — not actual subscription spend.
+        {recache && ' On a subscription these are not dollars, but the re-written tokens burn 5-hour window all the same.'}
+      </CardFoot>
     </HoverCard>
   );
 }

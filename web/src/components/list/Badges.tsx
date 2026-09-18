@@ -1,7 +1,14 @@
 import type { LiveInfo, SessionSummary } from '@claude-history/shared';
+import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING, unreadOf } from '@claude-history/shared';
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
+import { useActiveSessions } from '../../api/useActiveSessions.ts';
+import { useNotifications } from '../../api/useNotifications.ts';
+import { useReadMarks } from '../../api/useReadMarks.ts';
+import { formatClock, formatDateTime } from '../../lib/format.ts';
+import { BellIcon, MessageIcon } from '../icons.tsx';
 
-function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
+export function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
   return (
     <span
       title={title}
@@ -15,10 +22,26 @@ function Badge({ label, className, title }: { label: string; className: string; 
 export function SessionBadges({
   session,
   omitPr = false,
+  omitPinned = false,
+  omitNews = false,
   live,
 }: {
   session: SessionSummary;
   omitPr?: boolean;
+  /**
+   * The session page draws the pin as the ★ beside the title, so repeating it
+   * here would be the same fact twice in one header. The list has no other
+   * place for it and omits nothing.
+   */
+  omitPinned?: boolean;
+  /**
+   * The two marks about what you have NOT seen — the count of what has arrived
+   * and the bell. Omitted on the page that is showing the session: down there
+   * what has landed is what the follow pill counts, and the bell row is
+   * withdrawn the moment the window holds the focus, so drawing either here
+   * would be a flash and nothing more.
+   */
+  omitNews?: boolean;
   /**
    * Live state from a fresher source than the summary, when the caller has one.
    * The session page does: its summary comes from `['session', id]`, which is
@@ -31,37 +54,171 @@ export function SessionBadges({
   const badges: ReactNode[] = [];
   const liveInfo = live === undefined ? session.live : live;
 
-  if (session.pinned) {
+  // "In this state since": what the idle and waiting clocks count from — the
+  // flip, which is exactly what those two states mean. NOT the last activity:
+  // a resumed session is idle for seconds over a transcript last written days
+  // ago, and a menu pulled up writes `waiting` without a byte of transcript.
+  const stateSince = liveInfo ? (liveInfo.statusUpdatedAt ?? liveInfo.updatedAt) : null;
+  // The working clock is the turn's own: `busySince` holds across the
+  // waiting↔busy flips a dialog causes, where the flip restarts on every
+  // answered permission.
+  const workingSince = liveInfo ? (liveInfo.busySince ?? stateSince) : null;
+
+  // The clocks have to move on their own: nothing refetches a list whose
+  // sessions are merely getting older. Mounted only when there is one to move.
+  const [, tick] = useState(0);
+  const hasClock = liveInfo != null && (liveInfo.startedAt != null || stateSince != null);
+  useEffect(() => {
+    if (!hasClock) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1_000);
+    return () => clearInterval(timer);
+  }, [hasClock]);
+
+  // How much of this session has been read, and what it has been told stopped.
+  // Both are one query key across every visible row, so a hundred rows cost one
+  // request between them and no copy of the reasoning — and both are answered
+  // by the SERVER, which is what makes the two marks on a row behave alike when
+  // the page is reloaded.
+  const readMarks = useReadMarks();
+  const notifications = useNotifications();
+
+  if (session.pinned && !omitPinned) {
     badges.push(
       <Badge key="pinned" label="★" title="Pinned (local)" className="bg-amber-500/15 text-amber-400" />,
     );
   }
 
+  // Whether THIS APP is the thing holding the session open — the composer or
+  // the embedded terminal — and which, for the tooltip. One shared query across
+  // every visible row (same key, one request), kept fresh by `chat-changed` /
+  // `terminal-changed`. While it has not answered yet, a session reads as
+  // outside: most live sessions are, and the flash lasts one render.
+  const active = useActiveSessions();
+  const ours = active.data?.sessions.find((a) => a.sessionId === session.id);
+
   if (liveInfo) {
-    // Claude Code writes no status for a `--print` run, so a session being
-    // answered from the app reads "unknown" here — which told the user
-    // nothing. Only the two states that mean something get named.
-    const busy = liveInfo.status === 'busy';
-    const idle = liveInfo.status === 'idle';
+    // Two badges for two facts. LIVE says "there is a process", in every state
+    // alike, and carries how long that process has been there; the state badge
+    // says what the process is doing NOW, and only when the CLI actually said
+    // — a `--print` run writes no status, so "unknown" draws no state at all.
+    // The pill itself says WHOSE process: tinted plain "live" when this app
+    // holds the session, the hollow outline "live outside" when something
+    // else does — the outline is the house it is not in.
+    const since = liveInfo.startedAt !== null ? ` — since ${formatDateTime(liveInfo.startedAt)}` : '';
     badges.push(
       <span
         key="live"
-        title={busy ? 'Answering right now' : idle ? 'Open and idle' : 'A Claude Code process has this session open'}
-        className="inline-flex items-center gap-1 rounded bg-green-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-green-400 uppercase"
+        title={
+          ours
+            ? `Open in this app — ${ours.what}${since}`
+            : `A Claude Code process has this session open outside this app${since}`
+        }
+        className={`inline-flex items-center gap-1 rounded px-1.5 py-px text-[10px] font-semibold tracking-wide text-green-400 uppercase ${
+          ours ? 'bg-green-500/15' : 'ring-1 ring-green-400/45 ring-inset'
+        }`}
       >
-        <span className={`size-1.5 rounded-full bg-green-400 ${busy ? 'animate-pulse' : ''}`} />
-        {busy ? 'busy' : 'live'}
+        <span className="size-1.5 rounded-full bg-green-400" />
+        {ours ? 'live' : 'live outside'}
+        {/* Lowercase units inside an uppercase pill, tabular digits so the
+            ticking seconds don't wobble the badge. */}
+        {liveInfo.startedAt !== null && (
+          <span className="tabular-nums normal-case">{formatClock(Date.now() - liveInfo.startedAt)}</span>
+        )}
+      </span>,
+    );
+    if (liveInfo.status === LIVE_BUSY) {
+      badges.push(
+        <span
+          key="state"
+          title={`Answering right now${
+            workingSince !== null ? `\nThis turn began ${formatDateTime(workingSince)}` : ''
+          }`}
+          className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-[var(--accent)] uppercase"
+        >
+          <span className="size-2 animate-spin rounded-full border-[1.5px] border-[var(--accent)]/35 border-t-[var(--accent)]" />
+          working
+          {workingSince !== null && (
+            <span className="tabular-nums normal-case">{formatClock(Date.now() - workingSince)}</span>
+          )}
+        </span>,
+      );
+    } else if (liveInfo.status === LIVE_WAITING) {
+      // A dialog is on screen: a permission, a question, a plan to approve. It
+      // is NOT green — green means "there is a process", and this one is stuck
+      // until somebody answers it. Amber for the same reason `BlockedBar` is
+      // amber, and the pulse lives here: movement means "it wants you".
+      badges.push(
+        <span
+          key="state"
+          title={`Waiting for you${liveInfo.waitingFor ? ` — ${liveInfo.waitingFor}` : ''}${
+            stateSince !== null ? `\nSince ${formatDateTime(stateSince)}` : ''
+          }`}
+          className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-amber-400 uppercase"
+        >
+          <span className="size-1.5 animate-pulse rounded-full bg-amber-400" />
+          waiting
+          {stateSince !== null && (
+            <span className="tabular-nums normal-case">{formatClock(Date.now() - stateSince)}</span>
+          )}
+        </span>,
+      );
+    } else if (LIVE_STOPPED.includes(liveInfo.status)) {
+      badges.push(
+        <span
+          key="state"
+          title={`Open and idle${stateSince !== null ? `\nSince ${formatDateTime(stateSince)}` : ''}`}
+          className="inline-flex items-center gap-1 rounded bg-zinc-500/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-zinc-400 uppercase"
+        >
+          {/* A hollow dot: a process at rest, not absent. */}
+          <span className="size-1.5 rounded-full border-[1.5px] border-zinc-400" />
+          idle
+          {stateSince !== null && (
+            <span className="tabular-nums normal-case">{formatClock(Date.now() - stateSince)}</span>
+          )}
+        </span>,
+      );
+    }
+  }
+
+  // Then, in the same breath, the two marks about what happened while nobody
+  // was looking. They stand beside the state badges on purpose: those say what
+  // a session is DOING, these say what it is HOLDING FOR YOU, and which rows
+  // are which is the one question a person has in front of this list.
+  //
+  // Both are amber, this app's single colour for "there is something here you
+  // have not seen" — `CountBadge`, the update button, the follow pill's badge.
+  // What is NOT reused is `CountBadge` itself: it rides the top-right corner of
+  // a control in absolute position, and a 64 px virtualised row has neither a
+  // spare corner nor a positioned host to hang one on.
+  const unread = omitNews ? 0 : unreadOf(session, readMarks.data?.marks[session.id]);
+  if (unread > 0) {
+    badges.push(
+      <span
+        key="unread"
+        title={`${unread} new message${unread === 1 ? '' : 's'} since you last read this session`}
+        className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold tabular-nums text-amber-400"
+      >
+        <MessageIcon className="h-3 w-3" />
+        {unread}
       </span>,
     );
   }
-  if (session.subagentCount > 0) {
+  const stop = omitNews ? undefined : notifications.data?.stopped.find((s) => s.sessionId === session.id);
+  if (stop) {
     badges.push(
-      <Badge
-        key="agents"
-        label={`⑂ ${session.subagentCount}`}
-        title={`${session.subagentCount} subagent transcript(s)`}
-        className="bg-sky-500/15 text-sky-400"
-      />,
+      <span
+        key="notice"
+        // The CLI's own words, exactly as the bell's own rows carry them
+        // (`NotificationRow`): nothing is translated here either.
+        title={`${
+          stop.kind === 'needs-you'
+            ? `Needs you${stop.waitingFor ? ` — ${stop.waitingFor}` : ''}`
+            : 'Finished answering'
+        }\nStopped ${formatDateTime(stop.at)}\nStill in the bell — opening this session clears it`}
+        className="inline-flex items-center rounded bg-amber-500/15 px-1.5 py-px text-amber-400"
+      >
+        <BellIcon className="h-3 w-3" />
+      </span>,
     );
   }
   if (!omitPr && session.enrichment && session.enrichment.prLinks.length > 0) {

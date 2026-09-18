@@ -1,7 +1,7 @@
 import type { GitDiffLineKind, GitFileDiff, GitHunk } from '@claude-history/shared';
 import { useMemo, useState } from 'react';
 import { pairedRuns, wordDiff, type WordSpan } from '../../lib/gitWordDiff.ts';
-import { FoldHeader } from '../viewer/FoldHeader.tsx';
+import { FoldHeader } from '../FoldHeader.tsx';
 
 /**
  * A unified diff, rendered by hand.

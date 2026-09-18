@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { btn } from '../../lib/ui.ts';
+import { actionClass } from '../controlClass.ts';
 
 export interface SplitOption {
   key: string;
@@ -77,7 +77,7 @@ export function SplitButton({
           main.run();
         }}
         title={main.blocked ?? `${title ? `${title}\n` : ''}${main.command}`}
-        className={`${btn} rounded-r-none border-r-0`}
+        className={`${actionClass} rounded-r-none border-r-0`}
       >
         {busy ? '…' : label}
         {changed && main.short && <span className="ml-1 text-[var(--text-dim)]">({main.short})</span>}
@@ -87,7 +87,7 @@ export function SplitButton({
         disabled={busy}
         onClick={() => setOpen((v) => !v)}
         title="The other ways to do this"
-        className={`${btn} rounded-l-none px-1`}
+        className={`${actionClass} rounded-l-none px-1`}
         aria-label="More options"
       >
         ▾

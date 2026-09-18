@@ -14,8 +14,8 @@ import { useState, type ReactNode } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { relativeTime } from '../../lib/format.ts';
-import { btn, inputClass } from '../../lib/ui.ts';
-import { FoldHeader } from '../viewer/FoldHeader.tsx';
+import { actionClass, inputClass } from '../controlClass.ts';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { MenuButton, type SplitOption } from './SplitButton.tsx';
 import { useGitAction } from './useGitAction.ts';
@@ -249,7 +249,7 @@ export function RefSidebar({
                   setNewName('');
                   if (repoId) run(() => gitApi.branchCreate(repoId, { name, checkout: true }));
                 }}
-                className={btn}
+                className={actionClass}
               >
                 Create
               </button>
@@ -259,7 +259,7 @@ export function RefSidebar({
                   setCreating(false);
                   setNewName('');
                 }}
-                className={btn}
+                className={actionClass}
               >
                 Cancel
               </button>
@@ -424,7 +424,7 @@ export function RefSidebar({
               <button
                 type="button"
                 disabled={!tagName.trim() || action.busy}
-                className={btn}
+                className={actionClass}
                 onClick={() => {
                   const name = tagName.trim();
                   const message = tagMessage.trim();
@@ -438,7 +438,7 @@ export function RefSidebar({
               </button>
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 onClick={() => {
                   setTagging(false);
                   setTagName('');
@@ -564,7 +564,7 @@ export function RefSidebar({
               <button
                 type="button"
                 disabled={!worktreePath.trim() || action.busy}
-                className={btn}
+                className={actionClass}
                 onClick={() => {
                   const target = worktreePath.trim();
                   setAddingWorktree(false);
@@ -576,7 +576,7 @@ export function RefSidebar({
               </button>
               <button
                 type="button"
-                className={btn}
+                className={actionClass}
                 onClick={() => {
                   setAddingWorktree(false);
                   setWorktreePath('');

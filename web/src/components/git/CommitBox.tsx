@@ -1,8 +1,7 @@
 import { GIT_MESSAGE_MAX, type GitStatus } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
 import { gitApi } from '../../api/git.ts';
-import { btn } from '../../lib/ui.ts';
-import { toggleClass } from '../viewer/SessionHeader.tsx';
+import { actionClass, toggleClass } from '../controlClass.ts';
 import { useGitAction } from './useGitAction.ts';
 
 const MAX_TEXTAREA_PX = 220;
@@ -108,7 +107,7 @@ export function CommitBox({
           onClick={commit}
           disabled={!canCommit}
           title={blocked ?? 'Commit what is staged'}
-          className={`${btn} ml-auto ${canCommit ? 'border-[var(--accent-dim)] text-[var(--accent)]' : ''}`}
+          className={`${actionClass} ml-auto ${canCommit ? 'border-[var(--accent-dim)] text-[var(--accent)]' : ''}`}
         >
           {action.busy ? 'Committing…' : amend ? 'Amend the last commit' : 'Commit'}
         </button>

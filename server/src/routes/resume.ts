@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import type { ResumeResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
+import { pidAlive } from '../core/live.ts';
 import { UUID_RE } from '../core/scanner.ts';
+import { appHolderOf, pidOwnedByApp } from '../core/writerGuard.ts';
 import { launchResume, openInExplorer, openInVsCode } from '../util/launcher.ts';
 
 export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -19,6 +21,35 @@ export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): voi
       const cwd = summary.projectPath;
       if (!fs.existsSync(cwd)) {
         return reply.code(409).send({ error: `Project directory no longer exists: ${cwd}` });
+      }
+      // Two writers on one transcript is what produces the duplicated uuids and
+      // replayed segments the parser has to undo, and the composer already
+      // refuses a prompt for exactly this reason (`sendBlockedReason`).
+      // Launching a second terminal is the same corruption through the other
+      // door — and the likelier one, with a window open per monitor.
+      //
+      // Our own processes first: they register a pid file like any other CLI,
+      // so the check below would find one and blame a terminal that does not
+      // exist. `appHolderOf` names which of them it is — the composer or an
+      // embedded terminal — because "stop it in the composer" is no help to
+      // somebody looking at a terminal.
+      const holder = appHolderOf(id);
+      if (holder) {
+        return reply.code(409).send({
+          error: `This session is already open in ${holder}. Close it there first, or copy the command if you mean to.`,
+        });
+      }
+      // `pidAlive` is re-checked rather than trusted from the list: that list is
+      // only rebuilt when something writes to ~/.claude/sessions, and a CLI
+      // killed outright writes nothing on the way out, so its file would block
+      // the session forever.
+      const open = ctx.index.liveSessions.find(
+        (l) => l.sessionId === id && !pidOwnedByApp(l.pid) && pidAlive(l.pid),
+      );
+      if (open) {
+        return reply.code(409).send({
+          error: `This session is already open in a terminal (pid ${String(open.pid)}). Close that window first, or copy the command if you mean to.`,
+        });
       }
       try {
         const result = await launchResume(cwd, id);
@@ -40,9 +71,12 @@ export function registerResumeRoutes(app: FastifyInstance, ctx: AppContext): voi
       if (target !== 'explorer' && target !== 'vscode') {
         return reply.code(400).send({ error: 'target must be explorer or vscode' });
       }
-      const summary = ctx.index.get(id);
-      if (!summary) return reply.code(404).send({ error: 'Session not found' });
-      const cwd = summary.projectPath;
+      // The index first, then a reserved id: a session being started from the
+      // app has a folder before it has a transcript, and that folder is exactly
+      // what someone on the new-session page wants to open. Still never from the
+      // request — the reservation is where it was decided.
+      const cwd = ctx.index.get(id)?.projectPath ?? ctx.chat.cwdOf(id);
+      if (!cwd) return reply.code(404).send({ error: 'Session not found' });
       if (!fs.existsSync(cwd)) {
         return reply.code(409).send({ error: `Project directory no longer exists: ${cwd}` });
       }

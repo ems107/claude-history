@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { gitApi } from '../../api/git.ts';
 import { relativeTime } from '../../lib/format.ts';
-import { btn, inputClass } from '../../lib/ui.ts';
+import { actionClass, inputClass } from '../controlClass.ts';
 
 /**
  * Where the GIT tab looks for repositories.
@@ -104,7 +104,7 @@ export function GitSettings() {
             type="button"
             disabled={busy || !rootDraft.trim()}
             onClick={() => run(gitApi.addPath(rootDraft, true))}
-            className={btn}
+            className={actionClass}
           >
             Add
           </button>
@@ -134,7 +134,7 @@ export function GitSettings() {
             type="button"
             disabled={busy || !draft.trim()}
             onClick={() => run(gitApi.addPath(draft, false))}
-            className={btn}
+            className={actionClass}
           >
             Add
           </button>
@@ -144,7 +144,7 @@ export function GitSettings() {
       {error && <p className="text-[11px] text-red-400">{error}</p>}
 
       <div className="flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => run(gitApi.refreshRepos())} className={btn}>
+        <button type="button" disabled={busy} onClick={() => run(gitApi.refreshRepos())} className={actionClass}>
           {busy ? 'Scanning…' : 'Rescan now'}
         </button>
         <span className="text-[11px] text-[var(--text-dim)]">

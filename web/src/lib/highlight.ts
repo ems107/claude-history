@@ -1,4 +1,4 @@
-import { foldWithMap, occurrences, type SearchQueryEcho } from '@claude-history/shared';
+import { foldText, foldWithMap, occurrences, type SearchQueryEcho } from '@claude-history/shared';
 
 /**
  * What a search-result link asks the viewer to mark. The terms travel already
@@ -18,8 +18,40 @@ const WHOLE_WORD_PARAM = 'hlw';
 export const TOOL_PARAM = 'tool';
 /** The registered name of the CSS highlight; `::highlight()` in styles.css must match. */
 const HIGHLIGHT_NAME = 'search-match';
+/**
+ * The find bar's own two, kept separate from the one above on purpose: a deep
+ * link arriving while the bar is open would otherwise replace the bar's whole
+ * set with its own handful and then delete it 8 seconds later.
+ */
+export const FIND_NAME = 'find-match';
+export const FIND_CURRENT_NAME = 'find-current';
 /** A term can match hundreds of times in one long answer; marks past this add nothing. */
 const MAX_MARKS = 400;
+/** The same idea over a whole conversation rather than one box. */
+const MAX_FIND_MARKS = 4000;
+/** And per box, so one 20,000-character tool result cannot eat the whole budget. */
+const MAX_BOX_MARKS = 1000;
+/** No cap at all: what "the 137th occurrence in this box" needs. */
+const NO_CAP = Number.MAX_SAFE_INTEGER;
+/** The two elements marks are allowed inside — see `markMatches` on why. */
+const BOX_SELECTOR = '[data-bubble-body], [data-tool-id]';
+/**
+ * What is drawn inside a marking box and is not the message's own text — the
+ * bar over a code block, the size line under an attachment. Read here and by
+ * the formatted copy (`renderedCopy` in `lib/clipboard.ts`), which is the same
+ * statement made twice for the same reason: it is on screen inside a message,
+ * and it is not part of it.
+ */
+export const CHROME_ATTR = 'data-chrome';
+
+/**
+ * A control inside the conversation whose click is a JUMP — `↑ the call` on a
+ * notice panel, `↓ the answer` on the call it came from. See `isJumpControl`
+ * for what turns on it. Only the ones that write the conversation's own anchor
+ * wear it; a button that opens a panel is an ordinary click on the box it sits
+ * in, and moving the ring there is right.
+ */
+export const JUMP_ATTR = 'data-jump';
 
 /** The querystring a link into a session carries so the hit can be marked there. */
 export function highlightSearchParams(query: SearchQueryEcho): URLSearchParams {
@@ -27,6 +59,31 @@ export function highlightSearchParams(query: SearchQueryEcho): URLSearchParams {
   for (const term of query.terms) params.append(TERM_PARAM, term);
   if (query.wholeWord) params.set(WHOLE_WORD_PARAM, '1');
   return params;
+}
+
+/**
+ * The same two parameters, written onto a link that is not a search result.
+ *
+ * A jump from a panel wants what it points at MARKED, not just scrolled to: the
+ * mentions panel says "this file, named in that message", and landing on a
+ * 2,000-character answer with nothing underlined leaves the reader to find the
+ * sentence themselves — which is the job the search link already solved.
+ *
+ * The folding happens here because the invariant is stated here: the terms
+ * travel already folded, so what gets marked is what `matchSpans` will look for.
+ * A caller handing over raw text cannot be expected to know that.
+ *
+ * Always rewrites, so passing nothing CLEARS: terms belong to the jump that asked
+ * for them, and a previous search's words surviving into an unrelated anchor
+ * would mark whatever they happened to hit there.
+ */
+export function setHighlightTerms(params: URLSearchParams, terms: string[]): void {
+  params.delete(TERM_PARAM);
+  params.delete(WHOLE_WORD_PARAM);
+  for (const term of terms) {
+    const folded = foldText(term);
+    if (folded.length > 0) params.append(TERM_PARAM, folded);
+  }
 }
 
 /** Null when the link carries no terms — an ordinary deep link, nothing to mark. */
@@ -102,6 +159,18 @@ export function matchSpans(texts: string[], hl: MatchHighlight, max = MAX_MARKS)
 }
 
 /**
+ * How much of a scroller's bottom is hidden by something stuck to it. The
+ * conversation's own scroller reaches the foot of the window with the composer
+ * stuck inside it, so its last stretch is *in* the box and *behind* the box:
+ * "already in view" has to stop above that, or a match in the last message is
+ * revealed by leaving it exactly where nothing can be read.
+ */
+function stuckToBottom(scroller: Element): number {
+  const stuck = scroller.querySelector<HTMLElement>('[data-sticky-bottom]');
+  return stuck ? stuck.getBoundingClientRect().height : 0;
+}
+
+/**
  * Brings a marked range into view — and does nothing when it already is.
  *
  * Scrolling the page to the box that holds a match is not the same as showing
@@ -121,13 +190,144 @@ export function revealRange(range: Range): void {
   for (const scroller of scrollers) {
     const rect = range.getBoundingClientRect();
     const box = scroller.getBoundingClientRect();
-    if (rect.top >= box.top && rect.bottom <= box.bottom) continue;
-    scroller.scrollTop += rect.top - box.top - box.height / 2 + rect.height / 2;
+    const bottom = box.bottom - stuckToBottom(scroller);
+    if (rect.top >= box.top && rect.bottom <= bottom) continue;
+    // Centred on what can be SEEN, which is the box minus whatever covers it.
+    scroller.scrollTop += rect.top - box.top - (bottom - box.top) / 2 + rect.height / 2;
   }
   const rect = range.getBoundingClientRect();
   if (rect.top < 0 || rect.bottom > window.innerHeight) {
     range.startContainer.parentElement?.scrollIntoView({ block: 'center' });
   }
+}
+
+/** Whether this browser can mark at all. Without it the flash still says where the hit is. */
+function canHighlight(): boolean {
+  return typeof CSS !== 'undefined' && 'highlights' in CSS;
+}
+
+/**
+ * Which unit of the find bar's corpus an element belongs to — the same key
+ * `unitKey` builds from the data, so a box on screen and a box in the corpus can
+ * be told apart from either side.
+ *
+ * A tool block says so itself. Everything else is inside a panel carrying the
+ * message's uuid as its `id`: a bubble, a notice, a carried-over summary, a
+ * system line. The walk stops before the app's own root, so a click on the page
+ * behind the conversation is nothing rather than everything.
+ */
+export function boxKeyOf(el: Element | null): string | null {
+  for (let node = el; node; node = node.parentElement) {
+    const toolId = node.getAttribute('data-tool-id');
+    if (toolId) return `tool:${toolId}`;
+    // The app's own root is the one id above the conversation, and stopping
+    // there is what makes a click on the empty page mean "nothing".
+    if (node.id && node.id !== 'root') return `msg:${node.id}`;
+  }
+  return null;
+}
+
+/**
+ * The inverse of `boxKeyOf`: which anchor a key names. The two prefixes are
+ * known here and nowhere else, so the ring that reads a key back and the jump
+ * that travels to it cannot drift about what one looks like.
+ */
+export function anchorOfKey(key: string | null): { uuid: string | null; toolUseId: string | null } {
+  if (key?.startsWith('tool:')) return { uuid: null, toolUseId: key.slice(5) };
+  return { uuid: key?.startsWith('msg:') ? key.slice(4) : null, toolUseId: null };
+}
+
+/**
+ * Which message or call a click landed in.
+ *
+ * The walk is the whole of it, and it is deliberately wider than a marking box:
+ * clicking a bubble's header, a notice's padding or a tool block's fold row is
+ * still clicking that thing, and having the selection fall off because you
+ * missed the prose by three pixels would be its own bug. Anything with no
+ * message id above it — the scroller, the page behind the conversation — is
+ * nothing, which is what deselects.
+ */
+export function focusKeyAt(node: EventTarget | null): string | null {
+  const start = node instanceof Element ? node : node instanceof Node ? (node.parentElement ?? null) : null;
+  return boxKeyOf(start);
+}
+
+/**
+ * Whether a click asked to GO somewhere rather than to stand somewhere.
+ *
+ * `focusKeyAt` answers "which box was clicked", and for a jump control that is
+ * the wrong question: the box it sits in is the box you are LEAVING. It makes no
+ * selection of its own either — the arrival does, with its own `selectMessage` —
+ * so the rule that retires an anchor when the ring moves has nothing to act on.
+ *
+ * Asked anyway, it undid the jump's own work in the same click, because the
+ * button had already set the anchor by the time the click reached the scroller:
+ * the page still scrolled to the target, but the flash was cut from 2.5 s to
+ * 220 ms and the link was gone from the address bar. Only pressing the SAME
+ * button twice in a row could reach it — alternating `↑` and `↓` never does,
+ * since each press lands on the box that IS the anchor and the rule steps aside
+ * of its own accord.
+ */
+export function isJumpControl(node: EventTarget | null): boolean {
+  const start = node instanceof Element ? node : node instanceof Node ? (node.parentElement ?? null) : null;
+  return !!start?.closest(`[${JUMP_ATTR}]`);
+}
+
+/**
+ * Every non-empty text node under `root` that is part of the MESSAGE, in
+ * document order — everything, that is, except what `CHROME_ATTR` marks.
+ *
+ * The corpus the find bar counts is built from the transcript, which has never
+ * heard of a copy button. So a piece of chrome inside a box costs three things
+ * at once: an ordinal counted in the corpus and indexed into these ranges lands
+ * late by one for every match above it (`TurnList`'s `reveal`), a search for
+ * `copy` lights up every code block, and the per-box counts the `visible` scope
+ * reads say a folded hit is on screen. Rejecting the subtree here is the only
+ * place that has to know it: `boxRanges`, `markMatches` and `markConversation`
+ * all walk through this.
+ */
+function textNodesIn(root: HTMLElement): Text[] {
+  const nodes: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    // REJECT skips the whole subtree, which is the point. SKIP passes over the
+    // element itself and keeps walking its children — what a SHOW_TEXT-only
+    // walker did to every element it met, and what this must keep doing.
+    acceptNode: (node) =>
+      node.nodeType === Node.TEXT_NODE
+        ? NodeFilter.FILTER_ACCEPT
+        : (node as Element).hasAttribute(CHROME_ATTR)
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_SKIP,
+  });
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if ((node as Text).data.length > 0) nodes.push(node as Text);
+  }
+  return nodes;
+}
+
+/** The spans `matchSpans` found, as live DOM ranges. */
+function rangesOf(nodes: Text[], hl: MatchHighlight, max: number): Range[] {
+  return matchSpans(
+    nodes.map((n) => n.data),
+    hl,
+    max,
+  ).map((span) => {
+    const range = document.createRange();
+    range.setStart(nodes[span.start.piece], Math.min(span.start.offset, nodes[span.start.piece].data.length));
+    range.setEnd(nodes[span.end.piece], Math.min(span.end.offset, nodes[span.end.piece].data.length));
+    return range;
+  });
+}
+
+/**
+ * Every occurrence of `hl` inside one element, in document order and with no
+ * cap — which is what picking the Nth match of a box needs. `matchSpans` applies
+ * its own cap inside the per-term loop and BEFORE sorting, so a capped result is
+ * "the first few of each term" and cannot be counted through.
+ */
+export function boxRanges(box: HTMLElement, hl: MatchHighlight): Range[] {
+  if (!canHighlight()) return [];
+  return rangesOf(textNodesIn(box), hl, NO_CAP);
 }
 
 /**
@@ -141,28 +341,79 @@ export function revealRange(range: Range): void {
  */
 export function markMatches(root: HTMLElement, hl: MatchHighlight): { first: Range | null; clear: () => void } {
   const nothing = { first: null, clear: () => {} };
-  if (typeof CSS === 'undefined' || !('highlights' in CSS)) return nothing;
+  if (!canHighlight()) return nothing;
 
-  const nodes: Text[] = [];
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    if ((node as Text).data.length > 0) nodes.push(node as Text);
-  }
-  const spans = matchSpans(
-    nodes.map((n) => n.data),
-    hl,
-  );
-  if (spans.length === 0) return nothing;
+  const ranges = rangesOf(textNodesIn(root), hl, MAX_MARKS);
+  if (ranges.length === 0) return nothing;
 
-  const ranges = spans.map((span) => {
-    const range = document.createRange();
-    range.setStart(nodes[span.start.piece], Math.min(span.start.offset, nodes[span.start.piece].data.length));
-    range.setEnd(nodes[span.end.piece], Math.min(span.end.offset, nodes[span.end.piece].data.length));
-    return range;
-  });
   CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...ranges));
   return {
     first: ranges[0],
     clear: () => CSS.highlights.delete(HIGHLIGHT_NAME),
   };
+}
+
+/**
+ * The find bar's pass: every occurrence in every marking box of a conversation,
+ * grouped by the box it fell in.
+ *
+ * One walk, and each text node is handed to the NEAREST box above it
+ * (`closest`), which buys three things at once. A tool call rendered inside an
+ * assistant bubble is counted as the call and not as the answer around it; a
+ * phrase cannot run out of the prose and into a nested call's JSON; and the
+ * boxes come out in document order, which is the order the bar steps through.
+ * A text node with no box above it — a header, a clock, a cost pill, the bar's
+ * own panel — is not marked at all.
+ *
+ * The grouping is also what the "visible" scope reads: a box whose body is
+ * folded away has no text nodes, so it yields nothing, which is exactly what
+ * "not on screen" means.
+ */
+export function markConversation(
+  root: HTMLElement,
+  hl: MatchHighlight,
+): { boxes: Map<HTMLElement, Range[]>; count: number; clear: () => void } {
+  const boxes = new Map<HTMLElement, Range[]>();
+  const nothing = { boxes, count: 0, clear: () => {} };
+  if (!canHighlight() || hl.terms.length === 0) return nothing;
+
+  const byBox = new Map<HTMLElement, Text[]>();
+  for (const node of textNodesIn(root)) {
+    const box = node.parentElement?.closest<HTMLElement>(BOX_SELECTOR);
+    if (!box) continue;
+    const list = byBox.get(box);
+    if (list) list.push(node);
+    else byBox.set(box, [node]);
+  }
+
+  const all: Range[] = [];
+  let count = 0;
+  for (const [box, nodes] of byBox) {
+    const ranges = rangesOf(nodes, hl, MAX_BOX_MARKS);
+    if (ranges.length === 0) continue;
+    boxes.set(box, ranges);
+    count += ranges.length;
+    if (all.length < MAX_FIND_MARKS) all.push(...ranges.slice(0, MAX_FIND_MARKS - all.length));
+  }
+  if (all.length === 0) return nothing;
+  CSS.highlights.set(FIND_NAME, new Highlight(...all));
+  return { boxes, count, clear: () => CSS.highlights.delete(FIND_NAME) };
+}
+
+/**
+ * The one match the reader is standing on, painted over the rest. Its own
+ * registration rather than a class or a style, for the same reason the others
+ * are ranges: the text belongs to React. `priority` is set explicitly — the
+ * overlap with `find-match` must always resolve the same way, and registration
+ * order is not something to depend on.
+ */
+export function setCurrentMark(range: Range | null): void {
+  if (!canHighlight()) return;
+  if (!range) {
+    CSS.highlights.delete(FIND_CURRENT_NAME);
+    return;
+  }
+  const highlight = new Highlight(range);
+  highlight.priority = 2;
+  CSS.highlights.set(FIND_CURRENT_NAME, highlight);
 }

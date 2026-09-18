@@ -105,6 +105,17 @@ export function SearchOptions({
               <span>{label}</span>
             </label>
           ))}
+          {/*
+            The one thing about this search nobody can guess at: a session's own
+            id is part of the corpus. It hangs off "Everywhere" because that is
+            exactly where it lives — a restriction to one kind of text is a
+            restriction to text, and leaves the ids out.
+          */}
+          <div className="mt-1.5 max-w-64 text-[var(--text-dim)]">
+            Everywhere covers a session&apos;s own id: paste one, or just the
+            first characters the app shows of it (<code>797db462</code>), to land
+            on that session.
+          </div>
         </div>
       </div>
       {tuningChanges(tuning) > 0 && (

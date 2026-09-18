@@ -1,14 +1,24 @@
 import type { PriceTable, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { buildContextIndex } from '../../lib/context.ts';
 import { buildCostIndex } from '../../lib/cost.ts';
 import { type FoldState, turnKey } from '../../lib/folding.ts';
-import { type MatchHighlight, markMatches, revealRange } from '../../lib/highlight.ts';
+import {
+  boxKeyOf,
+  boxRanges,
+  type MatchHighlight,
+  markConversation,
+  markMatches,
+  revealRange,
+  setCurrentMark,
+} from '../../lib/highlight.ts';
 import { buildSegments, groupTurns, type SegmentTurn } from '../../lib/segments.ts';
+import { applySelection, selectMessage } from '../../lib/selectedMessage.ts';
 import { CompactedSegment } from './CompactedSegment.tsx';
 import { DiscardedBranch } from './DiscardedBranch.tsx';
+import { RevealContext, type RevealContextValue } from './RevealContext.ts';
 import { TurnView } from './Turn.tsx';
 
 /** Stable identity, so the cost index is not rebuilt on every render before the prices arrive. */
@@ -31,10 +41,127 @@ const ANCHOR_STEP_MS = 100;
 const ANCHOR_TRIES = 15;
 /** When an offloaded tool output, fetched on arrival, would have landed. */
 const LATE_TEXT_MS = 900;
+/**
+ * How long the find bar's marks wait after the conversation last changed shape.
+ * Unfolding a run is several state updates and a paint; repainting on each of
+ * them would walk the whole conversation three times for one click.
+ */
+const MARK_SETTLE_MS = 120;
 
 const keyOf = (t: SegmentTurn): string => turnKey(t.turn, t.index);
 
-export function TurnList({
+/**
+ * The timers one jump owns, cleared together. They are collected rather than
+ * tracked individually because a jump superseded halfway through has a flash to
+ * take back, marks to drop and a poll to stop, and forgetting any one of them
+ * leaves the previous link painting over the new one.
+ */
+function timerBag() {
+  const timers: ReturnType<typeof setTimeout>[] = [];
+  return {
+    after(ms: number, fn: () => void): void {
+      timers.push(setTimeout(fn, ms));
+    },
+    clear(): void {
+      for (const t of timers) clearTimeout(t);
+      timers.length = 0;
+    },
+  };
+}
+
+/**
+ * The element an anchor names, tool first: a `call` hit also carries the uuid of
+ * the message that made it, and that would point at a whole answer instead of at
+ * the one call among a run of thirty. A tool id this parse does not hold (a fork,
+ * a subagent's own call) still lands on the exchange it belonged to.
+ */
+function findAnchor(toolUseId: string | null | undefined, uuid: string | null | undefined): HTMLElement | null {
+  if (toolUseId) {
+    const tool = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(toolUseId)}"]`);
+    if (tool) return tool;
+    if (!uuid) return null;
+  }
+  return uuid ? document.getElementById(uuid) : null;
+}
+
+/**
+ * The box an anchor lands on. The anchor may be an alias uuid — a zero-sized
+ * <span> inside the bubble — so what gets flashed and marked is the box, not
+ * whatever carries the id.
+ *
+ * A tool block is its own box, and it is tested FIRST because it is not always
+ * OUTSIDE a bubble, as this used to assume. A run that ends at a question or a
+ * plan inside a message that also has prose is rendered into that message's own
+ * bubble (`tools-before-ask`), and there `closest` climbed past the one call to
+ * the whole answer: 25 calls over the 20 largest sessions, and `b343d4ac`'s
+ * `toolu_01CyGpmXFjFcBj8apDVmAXck` flashed 19,383 characters to point at 17,047
+ * of them.
+ */
+export function anchorBox(el: HTMLElement): HTMLElement {
+  return el.matches('[data-tool-id]') ? el : (el.closest<HTMLElement>('[data-bubble]') ?? el);
+}
+
+/**
+ * Where marks may go inside a box. A bubble marks its body only, to keep the
+ * role and the model out of it; a tool block has no such split, and its header —
+ * the tool name and its input summary — is often exactly where the hit is.
+ */
+export function markingBody(box: HTMLElement): HTMLElement {
+  return box.querySelector<HTMLElement>('[data-bubble-body]') ?? box;
+}
+
+/**
+ * Looks for the anchor until it appears, rather than waiting one guess out:
+ * opening the way in is a chain of state updates — segment, branch, turn, tool
+ * run, tool block — and a single 100 ms bet at the end of it is a race on a big
+ * session. Returns nothing; the bag is what stops it.
+ */
+function pollForAnchor(bag: ReturnType<typeof timerBag>, find: () => HTMLElement | null, arrive: (el: HTMLElement) => void): void {
+  let tries = 0;
+  const attempt = (): void => {
+    const el = find();
+    if (el) {
+      arrive(el);
+      return;
+    }
+    if (++tries < ANCHOR_TRIES) bag.after(ANCHOR_STEP_MS, attempt);
+  };
+  bag.after(ANCHOR_STEP_MS, attempt);
+}
+
+/** One step of the find bar: which box, and which occurrence inside it. */
+export interface FindTarget {
+  uuid: string;
+  toolUseId: string | null;
+  /** Nth occurrence within the box, counted in the corpus. */
+  ordinal: number;
+  /** Bumped on every step ASKED for — the find bar's `jumpNonce`. */
+  nonce: number;
+}
+
+/**
+ * Everything the find bar publishes to the list, or null when it is shut. One
+ * object rather than three props, because the three arrive together and the
+ * effects below all gate on the same thing: is the bar open.
+ */
+export interface FindState {
+  /** The words to paint. Null while nothing has been typed. */
+  highlight: MatchHighlight | null;
+  /** Where the reader is standing. Null until the first step. */
+  target: FindTarget | null;
+}
+
+/**
+ * Memoised, because the page above it re-renders for things this list has no
+ * part in: a click selecting a message, a side panel opening, a star being set,
+ * the composer accepting a prompt. Drawing a large conversation is 65-110 ms on
+ * the two biggest sessions here, measured, and doing it for a click that only
+ * moves a ring is the difference between the app feeling instant and feeling
+ * stuck. Every prop is memoised at the other end for the same reason — `fold`
+ * in `useFoldState`, `footer` and `pending` in the page — so this comparison is
+ * worth making.
+ */
+export const TurnList = memo(function TurnList({
   turns,
   showThinking,
   expandTools = false,
@@ -42,9 +169,13 @@ export function TurnList({
   expandSegments = false,
   scrollToUuid,
   scrollToTool,
+  jumpNonce,
   highlight,
+  find = null,
+  onFindMarks,
   onOpenAgent,
   footer,
+  lastTurnInFlight = false,
   pending,
 }: {
   turns: Turn[];
@@ -54,6 +185,12 @@ export function TurnList({
   fold: FoldState;
   /** Unfold every compacted segment at once (the header toggle). */
   expandSegments?: boolean;
+  /**
+   * The message to open the way in to and scroll to: `?msg=`, or — when the URL
+   * carries no anchor at all — the ring this tab was left on before a reload
+   * (`useRestoredSelection`). Both are somebody asking to stand somewhere, and
+   * this is the only road that unfolds its way there.
+   */
   scrollToUuid?: string | null;
   /**
    * A tool call to open and go to (`?tool=`), which is the only anchor a hit in
@@ -61,8 +198,27 @@ export function TurnList({
    * rendered nowhere. It wins over `scrollToUuid` when both are given.
    */
   scrollToTool?: string | null;
+  /**
+   * Changes every time a jump is ASKED for, even to the anchor already in the
+   * URL. The effect below keys on the link and not on the data, which is what
+   * stops a live session being yanked back every few seconds — and also what
+   * made clicking the same row twice do nothing after scrolling away from it.
+   */
+  jumpNonce?: number;
   /** The words a search matched, when the link came from one. */
   highlight?: MatchHighlight | null;
+  /**
+   * The find bar, or null when it is shut. Its step travels the same road a deep
+   * link does — this list is the only thing that knows what is folded — but it
+   * does not wear off: the marks stay for as long as the bar is open.
+   */
+  find?: FindState | null;
+  /**
+   * How many of each box's matches are really on screen, reported after every
+   * marking pass. It is what the bar's "visible" scope counts, and the only
+   * honest answer to it: a folded body has no text nodes.
+   */
+  onFindMarks?: (counts: Map<string, number>) => void;
   onOpenAgent?: (agentId: string) => void;
   /**
    * Hung at the end of the last turn still in the conversation — the working
@@ -71,6 +227,14 @@ export function TurnList({
    * instead of as a sibling of the prompt.
    */
   footer?: ReactNode;
+  /**
+   * The footer's turn is still being answered — or waited on — so its fold
+   * strip must hold back the settled duration. A boolean of the caller's
+   * (`isWorking(liveInfo) || isWaiting(liveInfo)`, or the drawer's `running`)
+   * rather than inferred from `footer`, which is also passed when the turn is
+   * over and only its subagents are still out.
+   */
+  lastTurnInFlight?: boolean;
   /**
    * Prompts sent from the composer that the transcript has not caught up with,
    * appended after the last turn. Passed in rather than rendered beside the
@@ -143,54 +307,51 @@ export function TurnList({
   const highlightRef = useRef(highlight);
   highlightRef.current = highlight;
 
+  /**
+   * Unfolds everything between the top of the list and an anchor: a folded
+   * segment, a rewound-away branch or a folded turn would swallow a link
+   * silently. The state lands well before the scroll does. The tool's own run
+   * and block open on the way down, from `targetTool`; this only has to make the
+   * turn itself visible.
+   *
+   * It is only ever called from an effect that runs on the render where the jump
+   * was asked for, so closing over this render's `locate` and `fold` is right.
+   */
+  const openWayIn = (anchor: string): void => {
+    const at = locate.get(anchor);
+    if (!at) return;
+    setOpenSegments((s) => (s.has(at.segment) ? s : new Set(s).add(at.segment)));
+    if (at.discarded) {
+      const key = at.discarded;
+      setOpenDiscarded((s) => (s.has(key) ? s : new Set(s).add(key)));
+    }
+    fold.open(at.turn);
+  };
+
   useEffect(() => {
-    // A tool call is the more precise anchor and wins: a `call` hit also carries
-    // the uuid of the message that made it, which would flash a whole answer
-    // instead of the one call among a run of thirty.
+    // A tool call is the more precise anchor and wins.
     const anchor = scrollToTool ?? scrollToUuid;
     if (!anchor) return;
-    // A folded segment, a rewound-away branch or a folded turn would swallow the
-    // link silently, so open the way in first — the state lands well before the
-    // scroll below fires. The tool's own run and block open on the way down, from
-    // `targetTool`; this only has to make the turn itself visible.
-    const at = locate.get(anchor);
-    if (at) {
-      setOpenSegments((s) => (s.has(at.segment) ? s : new Set(s).add(at.segment)));
-      if (at.discarded) {
-        const key = at.discarded;
-        setOpenDiscarded((s) => (s.has(key) ? s : new Set(s).add(key)));
-      }
-      fold.open(at.turn);
-    }
+    openWayIn(anchor);
 
-    const timers: ReturnType<typeof setTimeout>[] = [];
+    const bag = timerBag();
     let clearMarks: (() => void) | null = null;
-    const find = (): HTMLElement | null => {
-      if (scrollToTool) {
-        const tool = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(scrollToTool)}"]`);
-        if (tool) return tool;
-        // Only then the message: a tool id this parse does not hold (a fork, a
-        // subagent's own call) still lands on the exchange it belonged to.
-        if (!scrollToUuid) return null;
-      }
-      return scrollToUuid ? document.getElementById(scrollToUuid) : null;
-    };
 
     const arrive = (el: HTMLElement): void => {
-      // The anchor may be an alias uuid — a zero-sized <span> inside the bubble —
-      // so what gets flashed is the box, not whatever carries the id. A tool block
-      // is its own box and sits outside any bubble.
-      const box = el.closest<HTMLElement>('[data-bubble]') ?? el;
+      const box = anchorBox(el);
       box.scrollIntoView({ block: 'center' });
       box.classList.add('match-flash');
-      timers.push(setTimeout(() => box.classList.remove('match-flash'), FLASH_MS));
+      bag.after(FLASH_MS, () => box.classList.remove('match-flash'));
+      // And the link LEAVES it selected. The flash answers "which one" and then
+      // gets out of the way, which is right for an animation and wrong as the
+      // only record: arriving from the search, from Prompts or from Starred, the
+      // message you came for should still be the one the page is pointing at a
+      // minute later — and it is then what Ctrl+F offers to search inside.
+      selectMessage(boxKeyOf(box));
 
       const hl = highlightRef.current;
       if (!hl) return;
-      // A bubble marks its body only, to keep the role and the model out of it;
-      // a tool block has no such split, and its header — the tool name and its
-      // input summary — is often exactly where the hit is.
-      const body = box.querySelector<HTMLElement>('[data-bubble-body]') ?? box;
+      const body = markingBody(box);
       const mark = () => {
         clearMarks?.();
         const marked = markMatches(body, hl);
@@ -198,12 +359,10 @@ export function TurnList({
         return marked;
       };
       const marked = mark();
-      timers.push(
-        setTimeout(() => {
-          clearMarks?.();
-          clearMarks = null;
-        }, MARK_MS),
-      );
+      bag.after(MARK_MS, () => {
+        clearMarks?.();
+        clearMarks = null;
+      });
       // A long answer, or a tool result of a thousand lines, can be taller than
       // the window — or scroll inside its own box — so centring the box is no
       // promise that the match is on screen. `revealRange` moves only what has to
@@ -214,31 +373,25 @@ export function TurnList({
       // so the text searched may not be here yet. Re-marking once, and only when
       // the text really changed, is what covers that without a second guess.
       const settled = body.textContent?.length ?? 0;
-      timers.push(
-        setTimeout(() => {
-          if (!clearMarks || (body.textContent?.length ?? 0) === settled) return;
-          const late = mark();
-          if (late.first) revealRange(late.first);
-        }, LATE_TEXT_MS),
-      );
+      bag.after(LATE_TEXT_MS, () => {
+        if (!clearMarks || (body.textContent?.length ?? 0) === settled) return;
+        const late = mark();
+        if (late.first) revealRange(late.first);
+      });
     };
 
-    // Polled rather than waited out once: opening the way in is a chain of state
-    // updates — segment, branch, turn, tool run, tool block — and a single 100 ms
-    // guess at the end of it is a race on a big session.
-    let tries = 0;
-    const attempt = (): void => {
-      const el = find();
-      if (el) {
-        arrive(el);
-        return;
-      }
-      if (++tries < ANCHOR_TRIES) timers.push(setTimeout(attempt, ANCHOR_STEP_MS));
-    };
-    timers.push(setTimeout(attempt, ANCHOR_STEP_MS));
+    pollForAnchor(bag, () => findAnchor(scrollToTool, scrollToUuid), arrive);
     return () => {
-      for (const t of timers) clearTimeout(t);
+      bag.clear();
       clearMarks?.();
+      // And the flash, by hand, because `bag.clear()` has just cancelled the
+      // timer that would have taken it off. Anything that changes the anchor
+      // mid-flash lands here — pressing a jump again, or a click retiring the
+      // one in the URL — and the class would otherwise stay on that element for
+      // the life of the page: invisible (the animation has already ended) and
+      // permanent, so a later link to the SAME message would add a class that is
+      // already there and not animate at all.
+      for (const el of document.querySelectorAll('.match-flash')) el.classList.remove('match-flash');
     };
     // Deliberately NOT keyed on `turns`/`locate`: the deep-linked jump belongs
     // to the link, not to the data. Re-running it on every refetch yanked a live
@@ -246,7 +399,149 @@ export function TurnList({
     // follow-the-end button for control of the scroll. The turns are already
     // rendered when this mounts, so there is nothing to wait for.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollToUuid, scrollToTool]);
+  }, [scrollToUuid, scrollToTool, jumpNonce]);
+
+  /**
+   * The find bar's step. Same road as the deep link above — open the way in,
+   * poll for the anchor, reveal — with three differences, each of them the
+   * point of the feature rather than an omission.
+   *
+   * No flash: the reader typed the word, so `find-current` already says which
+   * match this is, and a 2.5 s animation on every Enter would be noise fighting
+   * `revealRange` for the scroll.
+   *
+   * The mark does not expire; the ink effect below owns it for as long as the
+   * bar is open.
+   *
+   * And the box is asked for its ranges with no cap, because the ordinal names
+   * one of them by position. It is counted in the corpus and applied to the DOM,
+   * which agree for prose and can drift where the two texts do — a tool block's
+   * chrome, markdown's own syntax — so it is clamped to the last range there is:
+   * the worst case is landing on a neighbouring match in the SAME box, and every
+   * match in that box is painted anyway.
+   */
+  const findRef = useRef<FindState | null>(find);
+  findRef.current = find;
+  const reveal = (state: FindState, target: FindTarget, el: HTMLElement): void => {
+    const box = anchorBox(el);
+    const ranges = state.highlight ? boxRanges(markingBody(box), state.highlight) : [];
+    const range = ranges.length > 0 ? ranges[Math.min(target.ordinal, ranges.length - 1)] : null;
+    setCurrentMark(range);
+    if (range) revealRange(range);
+    else box.scrollIntoView({ block: 'center' });
+  };
+
+  const step = find?.target ?? null;
+  useEffect(() => {
+    const state = findRef.current;
+    if (!state?.target) return;
+    const target = state.target;
+    openWayIn(target.toolUseId ?? target.uuid);
+    const bag = timerBag();
+    pollForAnchor(
+      bag,
+      () => findAnchor(target.toolUseId, target.uuid),
+      (el) => reveal(state, target, el),
+    );
+    return () => bag.clear();
+    // On the step asked for, and on nothing else: keyed on the data, a live
+    // session would drag the reader back to the current match every few seconds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step?.nonce]);
+
+  /**
+   * The ink. Every match in every open box, repainted whenever the conversation
+   * changes shape — a turn unfolding, a run opening, a tool block's own fold, an
+   * offloaded output arriving, a live refetch replacing fifteen hundred blocks.
+   *
+   * A `MutationObserver` can watch for all of that at once precisely BECAUSE the
+   * marks are ranges in the CSS Custom Highlight API: painting them writes
+   * nothing into the DOM, so the pass cannot trigger the observer that ran it.
+   * With <mark> elements this would be an infinite loop.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const findOpen = !!find;
+  const findHl = find?.highlight ?? null;
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !findOpen) return;
+    let clear: (() => void) | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let frame = 0;
+
+    const paint = (): void => {
+      const state = findRef.current;
+      clear?.();
+      clear = null;
+      if (state?.highlight) {
+        const marked = markConversation(root, state.highlight);
+        clear = marked.clear;
+        if (onFindMarks) {
+          const counts = new Map<string, number>();
+          for (const [box, ranges] of marked.boxes) {
+            const key = boxKeyOf(box);
+            if (key) counts.set(key, (counts.get(key) ?? 0) + ranges.length);
+          }
+          onFindMarks(counts);
+        }
+      } else onFindMarks?.(new Map());
+
+      // React may have thrown away the node the current mark pointed into, so it
+      // is resolved again rather than kept. This is also what covers an offloaded
+      // output landing after the jump: its text arriving is a mutation like any
+      // other, and the pass it triggers finds the match that was not there yet.
+      const target = state?.target ?? null;
+      if (!state || !target) {
+        setCurrentMark(null);
+        return;
+      }
+      const el = findAnchor(target.toolUseId, target.uuid);
+      if (el) reveal(state, target, el);
+    };
+
+    const schedule = (): void => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        frame = requestAnimationFrame(paint);
+      }, MARK_SETTLE_MS);
+    };
+
+    paint();
+    const observer = new MutationObserver(schedule);
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      cancelAnimationFrame(frame);
+      clear?.();
+      setCurrentMark(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findOpen, findHl, onFindMarks]);
+
+  /**
+   * The selected message's ring, put back after every render of the list.
+   *
+   * No dependency array, deliberately: React owns these nodes and drops a
+   * hand-written attribute whenever it rebuilds one, and every reason the list
+   * re-renders is a reason the ring may have gone. Two `querySelectorAll`s
+   * against several hundred re-rendered bubbles is not a cost worth a dependency
+   * that could be wrong. The other half — a click while nothing re-renders — is
+   * applied by `selectMessage` itself.
+   */
+  useEffect(applySelection);
+
+  /**
+   * What the folds inside a box read to know a step is coming for them. Built
+   * from the primitives rather than from `find`, which is a new object on every
+   * render and would re-render every consumer with it.
+   */
+  const revealKey = step ? (step.toolUseId ? `tool:${step.toolUseId}` : `msg:${step.uuid}`) : null;
+  const revealNonce = step?.nonce ?? 0;
+  const revealValue = useMemo<RevealContextValue>(
+    () => ({ key: revealKey, nonce: revealNonce }),
+    [revealKey, revealNonce],
+  );
 
   /**
    * The turn the footer belongs to: the last one of the live segment, and only
@@ -272,6 +567,7 @@ export function TurnList({
         <TurnView
           key={key}
           footer={footer && key === footerTurnKey ? footer : undefined}
+          inFlight={lastTurnInFlight && key === footerTurnKey}
           turn={st.turn}
           showThinking={showThinking}
           expandTools={expandTools}
@@ -317,38 +613,42 @@ export function TurnList({
     );
 
   return (
-    <div className="space-y-4">
-      {segments.map((segment) =>
-        segment.isLive ? (
-          <div key={`live-${segment.index}`} className="space-y-4">
-            {renderTurns(segment.turns)}
-          </div>
-        ) : (
-          <CompactedSegment
-            key={segment.index}
-            segment={segment}
-            prices={prices}
-            open={openSegments.has(segment.index)}
-            onToggle={() =>
-              setOpenSegments((s) => {
-                const next = new Set(s);
-                if (!next.delete(segment.index)) next.add(segment.index);
-                return next;
-              })
-            }
-          >
-            {openSegments.has(segment.index) && renderTurns(segment.turns)}
-          </CompactedSegment>
-        ),
-      )}
-      {/* Nowhere to hang it: no turns at all, or a last group that is a rewound
-          branch. Better loose than attached to the wrong exchange. */}
-      {footer && footerTurnKey === null && footer}
-      {/* Prompts the transcript has not caught up with. They render INSIDE this
-          container so they inherit the same `space-y-4` every turn gets: as a
-          sibling outside it, the echo sat 6 px closer to the answer above than
-          the real message would, and visibly dropped into place when it landed. */}
-      {pending}
-    </div>
+    // The provider wraps the list and nothing else: what is folded lives here,
+    // and so does the only thing allowed to unfold it from outside.
+    <RevealContext value={revealValue}>
+      <div ref={rootRef} className="space-y-4">
+        {segments.map((segment) =>
+          segment.isLive ? (
+            <div key={`live-${segment.index}`} className="space-y-4">
+              {renderTurns(segment.turns)}
+            </div>
+          ) : (
+            <CompactedSegment
+              key={segment.index}
+              segment={segment}
+              prices={prices}
+              open={openSegments.has(segment.index)}
+              onToggle={() =>
+                setOpenSegments((s) => {
+                  const next = new Set(s);
+                  if (!next.delete(segment.index)) next.add(segment.index);
+                  return next;
+                })
+              }
+            >
+              {openSegments.has(segment.index) && renderTurns(segment.turns)}
+            </CompactedSegment>
+          ),
+        )}
+        {/* Nowhere to hang it: no turns at all, or a last group that is a rewound
+            branch. Better loose than attached to the wrong exchange. */}
+        {footer && footerTurnKey === null && footer}
+        {/* Prompts the transcript has not caught up with. They render INSIDE this
+            container so they inherit the same `space-y-4` every turn gets: as a
+            sibling outside it, the echo sat 6 px closer to the answer above than
+            the real message would, and visibly dropped into place when it landed. */}
+        {pending}
+      </div>
+    </RevealContext>
   );
-}
+});

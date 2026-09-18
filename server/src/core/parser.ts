@@ -4,9 +4,15 @@ import type {
   ContentBlock,
   FileChange,
   FileEdit,
+  McpEvent,
+  McpPicture,
+  McpServer,
+  McpStatus,
   MessageItem,
   MessageUsage,
+  PlanOutcome,
   PrLink,
+  SentAttachment,
   SessionDetail,
   SessionSummary,
   SubagentMeta,
@@ -16,14 +22,74 @@ import type {
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
 import type { ScannedSession } from './scanner.ts';
-import { extractPrompt, injectedOrigin, notificationText } from './summarizer.ts';
+import {
+  extractPrompt,
+  injectedOrigin,
+  parseNotification,
+  queuedByHuman,
+  queuedText,
+  thinkingKind,
+} from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
+
+/**
+ * `origin.kind` of a task notification, and the label a queued one is given: an
+ * attachment line carries no `origin` of its own, and the two envelopes hold the
+ * very same block (see the attachment branch below).
+ */
+const NOTIFICATION_ORIGIN = 'task-notification';
 
 /** Stands in for the uuid of a line that carried none — never part of the message tree. */
 const GEN_UUID_PREFIX = 'gen-';
 
+/**
+ * The two markers Claude Code writes when the user presses stop, and the whole
+ * test: an array-content `user` line whose one text block is exactly one of
+ * these (see the `interrupt` block in `types.ts`). Matched on the text because
+ * nothing else on the line differs from a message somebody wrote.
+ */
+const INTERRUPT_MARKERS: Record<string, { forToolUse: boolean }> = {
+  '[Request interrupted by user]': { forToolUse: false },
+  '[Request interrupted by user for tool use]': { forToolUse: true },
+};
+
+/** The stop marker a `user` line carries, or null for every other line. */
+function interruptOf(content: unknown): { forToolUse: boolean } | null {
+  if (!Array.isArray(content) || content.length !== 1) return null;
+  const only = content[0];
+  if (!isRec(only) || only.type !== 'text' || typeof only.text !== 'string') return null;
+  return INTERRUPT_MARKERS[only.text.trim()] ?? null;
+}
+
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
+
+/** An `image` content block, from either envelope a pasted image arrives in. */
+function imageBlock(c: Record<string, unknown>): ContentBlock {
+  const source = isRec(c.source) ? c.source : null;
+  return {
+    kind: 'image',
+    mediaType: source ? str(source.media_type) : null,
+    // Only a base64 source carries the bytes; anything else is a reference we
+    // have no way to resolve from a transcript line.
+    data: source && source.type === 'base64' ? str(source.data) : null,
+  };
+}
+
+/** A typed prompt as the block it is drawn as: `❯ /foo` for a slash command, prose otherwise. */
+function textOrCommand(prompt: { text: string; isSlashCommand: boolean }): ContentBlock {
+  return prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text };
+}
+
+/**
+ * The images pasted into a prompt that was typed while Claude was working. They
+ * ride in the same `prompt` array as its text (`queuedText`) and are written
+ * nowhere else, so the bubble is empty of them if they are not read here.
+ */
+function queuedImages(prompt: unknown): ContentBlock[] {
+  if (!Array.isArray(prompt)) return [];
+  return prompt.filter(isRec).filter((c) => c.type === 'image').map(imageBlock);
+}
 
 export async function loadSubagents(sessionDir: string | null): Promise<SubagentMeta[]> {
   if (!sessionDir) return [];
@@ -39,12 +105,23 @@ export async function loadSubagents(sessionDir: string | null): Promise<Subagent
     if (!f.startsWith('agent-') || !f.endsWith('.meta.json')) continue;
     try {
       const raw = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf8')) as RawLine;
+      const agentId = f.slice('agent-'.length, -'.meta.json'.length);
+      // The transcript's own clock, beside the meta that never carries one. A
+      // meta with no transcript is still an agent that ran, so a missing file is
+      // null rather than a reason to drop the row.
+      let lastWriteMs: number | null = null;
+      try {
+        lastWriteMs = (await fsp.stat(path.join(dir, `agent-${agentId}.jsonl`))).mtimeMs;
+      } catch {
+        // no transcript beside this meta
+      }
       metas.push({
-        agentId: f.slice('agent-'.length, -'.meta.json'.length),
+        agentId,
         agentType: str(raw.agentType) ?? 'unknown',
         description: str(raw.description) ?? '',
         toolUseId: str(raw.toolUseId) ?? '',
         spawnDepth: num(raw.spawnDepth) ?? 1,
+        lastWriteMs,
       });
     } catch {
       // unreadable meta — skip this subagent
@@ -60,7 +137,7 @@ export async function loadSubagents(sessionDir: string | null): Promise<Subagent
  * the two in step — the per-message costs shown in the viewer only reconcile
  * with the session total because both dedupe the same way.
  */
-function toMessageUsage(usage: Record<string, unknown>): MessageUsage {
+export function toMessageUsage(usage: Record<string, unknown>): MessageUsage {
   const cacheCreation = isRec(usage.cache_creation) ? usage.cache_creation : null;
   return {
     input: num(usage.input_tokens) ?? 0,
@@ -89,10 +166,155 @@ function toProjectsRelative(absPath: string, projectsDir: string): string | null
   return rel.replaceAll('\\', '/');
 }
 
+/**
+ * The `AskUserQuestion` answers off the carrying line, question -> chosen.
+ *
+ * Only strings survive: the field is read straight from a transcript, and the
+ * card that renders it must never be handed a shape it did not ask for.
+ */
+function toAnswers(raw: unknown): Record<string, string> | null {
+  if (!isRec(raw)) return null;
+  const answers: Record<string, string> = {};
+  for (const [question, answer] of Object.entries(raw)) {
+    if (typeof answer === 'string') answers[question] = answer;
+  }
+  return Object.keys(answers).length > 0 ? answers : null;
+}
+
+/**
+ * The `AskUserQuestion` annotations off the carrying line: per question, the
+ * drawing the user took and the note they wrote beside it.
+ *
+ * Same defensive shape as `toAnswers` — only strings survive — plus one rule of
+ * its own: an entry holding neither is dropped rather than kept as `{}`. Claude
+ * Code writes annotations only where there is something to say (24 of the 33
+ * structured results here), and a viewer asking "is there a note?" must be able
+ * to trust the presence of the key.
+ */
+function toAnnotations(raw: unknown): Record<string, { preview?: string; notes?: string }> | null {
+  if (!isRec(raw)) return null;
+  const out: Record<string, { preview?: string; notes?: string }> = {};
+  for (const [question, value] of Object.entries(raw)) {
+    if (!isRec(value)) continue;
+    const preview = str(value.preview);
+    const notes = str(value.notes);
+    if (!preview && !notes) continue;
+    out[question] = { ...(preview ? { preview } : {}), ...(notes ? { notes } : {}) };
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * The files `SendUserFile` handed over, off the carrying line's `attachments`.
+ *
+ * Same defensive shape as the two above: every field is read from a transcript,
+ * so an entry without a `path` is dropped rather than passed on as a row with
+ * nothing to open. `isImage` defaults to false and the rest to null — a viewer
+ * saying "unknown size" is right, one saying "0 bytes" is not.
+ */
+function toSentAttachments(raw: unknown): SentAttachment[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: SentAttachment[] = [];
+  for (const entry of raw) {
+    if (!isRec(entry)) continue;
+    const filePath = str(entry.path);
+    if (!filePath) continue;
+    out.push({
+      path: filePath,
+      sizeBytes: num(entry.size) ?? null,
+      isImage: entry.isImage === true,
+      mediaType: str(entry.media_type),
+      pathValidated: typeof entry.pathValidated === 'boolean' ? entry.pathValidated : null,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * What the user did with a plan, off the `ExitPlanMode` result line.
+ *
+ * The two answers are two different types, not two shapes of one: approving
+ * writes an object, refusing writes the generic rejection string. So the type
+ * IS the verdict, and reading the prose (which starts "User has approved your
+ * plan…" either way round) is never necessary.
+ */
+function toPlanOutcome(raw: unknown, line: RawLine): PlanOutcome | null {
+  if (isRec(raw)) {
+    return { status: 'approved', text: str(raw.plan), filePath: str(raw.filePath), feedback: null };
+  }
+  if (typeof raw === 'string') {
+    return { status: 'rejected', text: null, filePath: null, feedback: planFeedback(raw, line) };
+  }
+  return null;
+}
+
+/** The generic refusal, which says nothing about why and is not feedback. */
+const GENERIC_REFUSAL = /^(The user declined\.|The user doesn't want to proceed with this tool use)/;
+
+/**
+ * What the user said instead of approving, from whichever of the two places
+ * this refusal used.
+ *
+ * A refusal typed in the terminal writes `userFeedback` beside
+ * `toolDenialKind: "user-rejected"`. One sent from this app does NOT: a
+ * `canUseTool` deny is recorded as `permission-rule` with no such field, and the
+ * message travels inside `toolUseResult` as `"Error: <message>"` — verified end
+ * to end against a real session. Reading only the field lost every note sent
+ * from here, which is precisely the half of the exchange the card exists to
+ * show.
+ */
+export function planFeedback(raw: string, line: RawLine): string | null {
+  const explicit = str(line.userFeedback);
+  if (explicit) return explicit;
+  const text = raw.replace(/^Error:\s*/, '').trim();
+  return text && !GENERIC_REFUSAL.test(text) ? text : null;
+}
+
+type PlanModeEvent = Extract<ContentBlock, { kind: 'plan-mode' }>['event'];
+
+/**
+ * Which plan-mode event an `attachment` line is, or null for the ones that are
+ * not plan mode at all (`queued_command` and the context deltas).
+ *
+ * `plan_mode_exit` is the trap: it is written 60 times in this corpus against 11
+ * entries, because Claude Code also emits one on the first prompt of every CLI
+ * run — sessions that never planned included. Taken at face value the viewer
+ * would announce a departure from a mode nothing ever entered, so an exit
+ * counts only while an entry is open, which is what `open` is for.
+ */
+function planModeEvent(attachment: Record<string, unknown> | null, open: boolean): PlanModeEvent | null {
+  switch (attachment?.type) {
+    case 'plan_mode':
+      return 'enter';
+    case 'plan_mode_reentry':
+      return 'reentry';
+    case 'plan_mode_exit':
+      return open ? 'exit' : null;
+    // The plan re-injected so it survives a compaction — the only one carrying
+    // the markdown itself, and it always lands beside a `compact_boundary`.
+    case 'plan_file_reference':
+      return 'reference';
+    default:
+      return null;
+  }
+}
+
+/** The first `# heading` of a plan: what names it in a collapsed header or a list. */
+export function planTitle(markdown: string): string | null {
+  const m = /^#\s+(.+)$/m.exec(markdown);
+  return m ? m[1].trim() : null;
+}
+
 function buildResult(
   c: Record<string, unknown>,
+  timestamp: string | null,
   projectsDir: string,
   persistedOutputPath: string | null,
+  answers: Record<string, string> | null,
+  annotations: Record<string, { preview?: string; notes?: string }> | null,
+  response: string | null,
+  plan: PlanOutcome | null,
+  attachments: SentAttachment[] | null,
 ): ToolResultInfo {
   let text = extractResultText(c.content);
   const totalChars = text.length;
@@ -111,11 +333,31 @@ function buildResult(
     const m = /output saved to: (.+?[\\/]tool-results[\\/][^\s\\/"]+\.txt)/i.exec(text);
     if (m) offloadedFile = toProjectsRelative(m[1], projectsDir);
   }
-  return { text, truncated, totalChars, isError: c.is_error === true, offloadedFile };
+  return {
+    text,
+    timestamp,
+    truncated,
+    totalChars,
+    isError: c.is_error === true,
+    offloadedFile,
+    answers,
+    annotations,
+    response,
+    plan,
+    attachments,
+  };
 }
 
-/** One-line human summary of a tool invocation for the collapsed header. */
-function summarizeInput(toolName: string, input: unknown): string {
+/**
+ * One-line human summary of a tool invocation for the collapsed header.
+ *
+ * Exported for `core/stopPreview.ts`, which names the call a session is waiting
+ * on permission for. That is the same sentence this draws on the tool block and
+ * the same one the enricher indexes, so it is read from here rather than
+ * derived again — three readers of one rule, which is what stops the bell
+ * calling a stop something the conversation calls something else.
+ */
+export function summarizeInput(toolName: string, input: unknown): string {
   if (!isRec(input)) return '';
   const first = (...keys: string[]): string => {
     for (const k of keys) {
@@ -142,6 +384,52 @@ function summarizeInput(toolName: string, input: unknown): string {
     case 'WebFetch':
     case 'WebSearch':
       return first('url', 'query');
+    // The input is the whole plan — up to 25 KB of markdown — so the default
+    // below would stringify all of it into a one-line collapsed header. Its
+    // first heading is what actually names it. (Newer Claude Code writes the
+    // plan to the plan file and sends no input at all, hence the empty case.)
+    case 'ExitPlanMode': {
+      const plan = first('plan');
+      return plan ? (planTitle(plan) ?? plan.slice(0, 120)) : '';
+    }
+    // Same trap as the plan above: the default would stringify the whole
+    // questions array, and an option's `preview` is a drawing of up to 19 lines
+    // — 58 of them in this corpus, so the collapsed header of a question with
+    // previews was several KB of box-drawing characters on one line. What names
+    // the call is what was asked.
+    case 'AskUserQuestion': {
+      const questions = Array.isArray(input.questions) ? input.questions : [];
+      const asked = questions.map((q) => (isRec(q) ? str(q.question) : null)).filter((q): q is string => !!q);
+      if (asked.length === 0) return '';
+      return asked.length === 1 ? asked[0] : `${asked[0]} (+${String(asked.length - 1)} more)`;
+    }
+    // The paths are absolute and long — three of them run past 400 characters,
+    // all sharing the same scratchpad prefix, so the default would fill the
+    // header with the same directory written three times. The filenames are what
+    // tells one delivery from another; the card below shows the whole paths.
+    case 'SendUserFile': {
+      const files = Array.isArray(input.files) ? input.files : [];
+      const names = files
+        .map((f) => (typeof f === 'string' ? (f.split(/[\\/]/).pop() ?? '') : ''))
+        .filter((n) => n.length > 0);
+      return names.join(', ');
+    }
+    // The fourth of the same trap, and the widest of them: a code review's
+    // whole product is the `findings` array, and the default stringified all of
+    // it — 14,348 characters of minified JSON on one truncated line for the 12
+    // findings of `c483a438`. What names the call is the first finding, which is
+    // also the worst one: the tool's contract ranks them most-severe first.
+    case 'ReportFindings': {
+      const findings = Array.isArray(input.findings) ? input.findings : [];
+      // An empty array is a REAL answer here — "nothing survived verification" —
+      // and saying so is the whole of what that call reported.
+      if (findings.length === 0) return 'no findings';
+      const worst = findings[0];
+      const name = isRec(worst) ? (str(worst.short_summary) ?? str(worst.summary) ?? str(worst.file) ?? '') : '';
+      const rest = findings.length - 1;
+      if (!name) return `${String(findings.length)} findings`;
+      return rest === 0 ? name : `${name} (+${String(rest)} more)`;
+    }
     default: {
       const s = first('description', 'command', 'file_path', 'pattern', 'query', 'url', 'prompt');
       if (s) return s;
@@ -155,12 +443,46 @@ function summarizeInput(toolName: string, input: unknown): string {
   }
 }
 
+/**
+ * What the model said it was DOING when it made this call, as opposed to what
+ * the call literally is.
+ *
+ * Claude Code makes the model write a `description` for every Bash and
+ * PowerShell call — 4,907 of them here, 100% of both tools — and an `activeForm`
+ * for a task ("Implementing filters, cache and search"). It is the only prose in
+ * the whole of a tool call, it is the line the CLI shows next to its spinner
+ * while the call runs, and until this existed the app threw it away: the
+ * collapsed header showed `cd "C:/…" && sed -n '…' | head -45` and nothing said
+ * why.
+ *
+ * Skipped when the summary already IS it: `Task`/`Agent` are named by their
+ * description (`summarizeInput`), and printing it twice on one line says less
+ * than printing it once. That test is why this cannot live in the caller — the
+ * enricher indexes exactly the text the header draws, and the two agreeing is
+ * what keeps a search hit and the row it opens saying the same thing.
+ */
+export function toolIntent(toolName: string, input: unknown): string | null {
+  if (!isRec(input)) return null;
+  const said: string[] = [];
+  for (const key of ['description', 'activeForm']) {
+    const v = str(input[key])?.trim();
+    if (v && !said.includes(v)) said.push(v);
+  }
+  // Only now: `summarizeInput` re-titles a 25 KB plan, and a call with nothing
+  // to say must not pay for that.
+  if (said.length === 0) return null;
+  const summary = summarizeInput(toolName, input);
+  const parts = said.filter((v) => v !== summary);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
 export interface ParsedTranscript {
   turns: Turn[];
   prLinks: PrLink[];
   /** From `forkedFrom`: the session this transcript's opening context was copied from. */
   forkedFrom: string | null;
   fileChanges: FileChange[];
+  mcp: McpPicture;
 }
 
 /**
@@ -321,6 +643,264 @@ function recordFileEdits(
 }
 
 /**
+ * The join key for an MCP server, because Claude Code spells one two ways:
+ * `claude_ai_Canva` inside a tool name, `claude.ai Canva` in the needs-auth
+ * list. Lowercase, and every run of non-alphanumerics to `_`, makes those one
+ * server instead of two. Two real servers differing only in `-` vs `_` would
+ * merge — none exists here, and merging beats splitting a server across two rows.
+ */
+export function mcpKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+/** `mcp__<server>__<tool>` split at the FIRST `__` after the prefix, which is where Claude Code puts it. */
+function mcpToolName(name: string): { server: string; tool: string } | null {
+  if (!name.startsWith('mcp__')) return null;
+  const rest = name.slice('mcp__'.length);
+  const cut = rest.indexOf('__');
+  if (cut <= 0) return null;
+  const tool = rest.slice(cut + 2);
+  return tool ? { server: rest.slice(0, cut), tool } : null;
+}
+
+interface McpState extends Omit<McpServer, 'status' | 'tools'> {
+  /** `null` until the first thing is known about it, which is what makes the first event's `from` null. */
+  status: McpStatus | null;
+  /** Name → its counters. A Map keeps insertion order, so `tools` comes out first-seen-first without sorting. */
+  tools: Map<string, { calls: number; errors: number; withdrawn: string | null }>;
+}
+
+/**
+ * The MCP picture, accumulated from `deferred_tools_delta` attachment lines —
+ * the only record of it there is, and one nothing read until this panel.
+ *
+ * Four rules, each measured against this machine's corpus rather than assumed:
+ *
+ * 1. **There is no list of servers that WORKED.** A server counts as connected
+ *    once a `mcp__<server>__*` tool of its own has been announced, and that is
+ *    the only evidence of it the file holds.
+ * 2. **An absent status list is not an empty one.** `pendingMcpServers`,
+ *    `failedMcpServers` and `needsAuthMcpServers` are often missing outright
+ *    (of 599 deltas, `failedMcpServers` was absent in 374 and empty in 189), and
+ *    CC 2.1.267 writes deltas with all three gone while the failure is still
+ *    real — `5121cb77` fails, says nothing, then fails again. So a list PRESENT
+ *    is the whole truth for that instant and a list ABSENT says nothing at all.
+ * 3. **Leaving a bad state resolves by the tools**: connected if any were ever
+ *    seen, `unknown` if not. All 34 such transitions here are the account
+ *    connector leaving `needs-auth`, and every one has tools.
+ * 4. **`removedNames` is not a disconnection, but it IS a withdrawal.** The two
+ *    levels take it differently, and conflating them was a bug. A SERVER does
+ *    not stop having been connected because its tools were parked, so its
+ *    status never reads this. A TOOL does stop being offered, and the file says
+ *    so outright: `9941d852` reopened with `edit_content` and five more added
+ *    and `update_comment`/`update_issue` removed, and listing all 19 as if they
+ *    were still there was simply wrong. It needs the whole SEQUENCE rather than
+ *    a tally, because removal is usually temporary — 86 tools come back across
+ *    this corpus against 4 that stay gone.
+ *
+ * `wireHiddenNames` is ignored: present on 220 lines, non-empty on none.
+ */
+function createMcpTracker() {
+  const byKey = new Map<string, McpState>();
+  const events: McpEvent[] = [];
+
+  const get = (name: string, when: string | null): McpState => {
+    const key = mcpKey(name);
+    let s = byKey.get(key);
+    if (!s) {
+      s = {
+        key,
+        name,
+        status: null,
+        errorCode: null,
+        error: null,
+        tools: new Map(),
+        callCount: 0,
+        errorCount: 0,
+        since: when,
+      };
+      byKey.set(key, s);
+    }
+    return s;
+  };
+
+  /** Where in the conversation the line being read sits — see `McpEvent.anchor`. */
+  let anchor: string | null = null;
+
+  const move = (s: McpState, to: McpStatus, errorCode: string | null, error: string | null, when: string | null) => {
+    // Only a real change is an event. Without this the three identical
+    // re-announcements a resumed session writes (`f3384d17`, 5th-7th August)
+    // would read as three things happening.
+    if (s.status === to && s.errorCode === errorCode) return;
+    events.push({ when, key: s.key, from: s.status, to, errorCode, error, anchor });
+    s.status = to;
+    s.errorCode = errorCode;
+    s.error = error;
+    s.since = when;
+  };
+
+  /** Offered — for the first time, or again after having been parked. */
+  const addTool = (s: McpState, tool: string) => {
+    const t = s.tools.get(tool);
+    if (!t) s.tools.set(tool, { calls: 0, errors: 0, withdrawn: null });
+    else t.withdrawn = null;
+  };
+
+  /**
+   * No longer offered, as of `when` — and undone by the next `addTool`, which is
+   * the whole of rule 4: removal is usually temporary, so only the LAST word on
+   * a tool counts. Never creates a row: a name removed that was never added is
+   * nothing this session ever had.
+   */
+  const dropTool = (name: string, when: string | null) => {
+    const parsed = mcpToolName(name);
+    if (!parsed) return;
+    const t = byKey.get(mcpKey(parsed.server))?.tools.get(parsed.tool);
+    if (t) t.withdrawn = when;
+  };
+
+  return {
+    /** One `deferred_tools_delta`. */
+    delta(attachment: Record<string, unknown>, when: string | null, at: string | null): void {
+      anchor = at;
+      for (const field of ['addedNames', 'readdedNames'] as const) {
+        const names = attachment[field];
+        if (!Array.isArray(names)) continue;
+        for (const raw of names) {
+          const n = str(raw);
+          const parsed = n ? mcpToolName(n) : null;
+          if (!parsed) continue;
+          const s = get(parsed.server, when);
+          // The slug wins over whatever a status list called it (rule above).
+          s.name = parsed.server;
+          addTool(s, parsed.tool);
+          move(s, 'connected', null, null, when);
+        }
+      }
+
+      // Withdrawn tools. AFTER the two lists above, because one line can both
+      // re-add and remove, and what a tool ends the line as is what it is.
+      // Nothing here touches the server's status — that is the other half of
+      // rule 4, and mixing them was the bug this fixes.
+      if (Array.isArray(attachment.removedNames)) {
+        for (const raw of attachment.removedNames) {
+          const n = str(raw);
+          if (n) dropTool(n, when);
+        }
+      }
+
+      // **The three status lists are read together, and that order is the
+      // whole of it.** They describe ONE instant, so a server that leaves
+      // `pending` in the same line that puts it in `failed` moved once — read
+      // one list at a time it moved twice, through the `unknown` of having left
+      // `pending` with no tools, and the history said `pending → unknown` and
+      // `unknown → failed` about a server that was simply still connecting and
+      // then timed out.
+      const claimed = new Map<string, { name: string; status: McpStatus; errorCode: string | null; error: string | null }>();
+      const listOf = (
+        field: string,
+        status: McpStatus,
+        read: (v: unknown) => { name: string; errorCode: string | null; error: string | null } | null,
+      ): Set<string> | null => {
+        if (!(field in attachment)) return null; // absent says nothing
+        const listed = attachment[field];
+        if (!Array.isArray(listed)) return null;
+        const named = new Set<string>();
+        for (const v of listed) {
+          const e = read(v);
+          if (!e) continue;
+          named.add(mcpKey(e.name));
+          claimed.set(mcpKey(e.name), { ...e, status });
+        }
+        return named; // present: authoritative for this instant
+      };
+
+      const pending = listOf('pendingMcpServers', 'pending', (v) => {
+        const n = str(v);
+        return n ? { name: n, errorCode: null, error: null } : null;
+      });
+      const failed = listOf('failedMcpServers', 'failed', (v) => {
+        if (!isRec(v)) return null;
+        const n = str(v.name);
+        return n ? { name: n, errorCode: str(v.errorCode), error: str(v.error) } : null;
+      });
+      const needsAuth = listOf('needsAuthMcpServers', 'needs-auth', (v) => {
+        const n = str(v);
+        return n ? { name: n, errorCode: null, error: null } : null;
+      });
+
+      // Claims first, so a server that moved between two of these lists is
+      // already in its new state before anything asks who LEFT one.
+      for (const c of claimed.values()) move(get(c.name, when), c.status, c.errorCode, c.error, when);
+
+      for (const [named, status] of [
+        [pending, 'pending'],
+        [failed, 'failed'],
+        [needsAuth, 'needs-auth'],
+      ] as const) {
+        if (!named) continue;
+        for (const s of byKey.values()) {
+          if (s.status === status && !named.has(s.key)) {
+            move(s, s.tools.size > 0 ? 'connected' : 'unknown', null, null, when);
+          }
+        }
+      }
+    },
+
+    /**
+     * A tool call. It also ADOPTS a server no delta ever announced: nothing on
+     * this machine calls an MCP tool without a delta (0 of 479 sessions), but a
+     * call is proof the server was there, and a transcript old enough to predate
+     * these lines deserves the panel rather than an empty one.
+     */
+    call(toolName: string, when: string | null, at: string | null): void {
+      const parsed = mcpToolName(toolName);
+      if (!parsed) return;
+      anchor = at;
+      const s = get(parsed.server, when);
+      s.name = parsed.server;
+      addTool(s, parsed.tool);
+      if (s.status === null) move(s, 'connected', null, null, when);
+      s.tools.get(parsed.tool)!.calls++;
+      s.callCount++;
+    },
+
+    /**
+     * That call came back an error. A SECOND axis, and deliberately not mixed
+     * with the server's status: `sqlserver-dat` answering `Invalid column name`
+     * is a query that was wrong, not a server that was down, and the panel draws
+     * the two in different colours for exactly that reason.
+     *
+     * Counted from the `tool_result` rather than the call, so it arrives later
+     * in the file and through a different branch — which is why it is its own
+     * entry point instead of an argument to `call`.
+     */
+    callFailed(toolName: string): void {
+      const parsed = mcpToolName(toolName);
+      if (!parsed) return;
+      const s = byKey.get(mcpKey(parsed.server));
+      const t = s?.tools.get(parsed.tool);
+      if (!s || !t) return; // a result with no call is not ours to count
+      t.errors++;
+      s.errorCount++;
+    },
+
+    result(): McpPicture {
+      const rank = (s: McpServer) =>
+        s.status === 'failed' ? 0 : s.status === 'needs-auth' ? 1 : s.status === 'pending' ? 2 : s.status === 'unknown' ? 3 : 4;
+      const servers: McpServer[] = [...byKey.values()]
+        .map(({ tools, status, ...rest }) => ({
+          ...rest,
+          status: status ?? 'unknown',
+          tools: [...tools].map(([name, c]) => ({ name, calls: c.calls, errors: c.errors, withdrawn: c.withdrawn })),
+        }))
+        .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+      return { servers, events, failing: servers.filter((s) => s.status === 'failed').length };
+    },
+  };
+}
+
+/**
  * Full parse of a transcript (session or subagent file — same format) into
  * renderable turns. Turn boundary = a real (non-meta) user message; assistant
  * lines sharing message.id (streamed chunks) merge into one item.
@@ -338,10 +918,13 @@ export async function parseTranscript(
   const toolBlocksById = new Map<string, ToolBlock>();
   const assistantItems = new Map<string, MessageItem>();
   const fileEdits = new Map<string, FileEdit[]>();
+  const mcp = createMcpTracker();
   const MUTATING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
   const isReplay = replayFilter();
   let current: Turn | null = null;
   let fallbackId = 0;
+  /** Whether a `plan_mode` entry is still open — see `planModeEvent`. */
+  let planModeOpen = false;
 
   const newTurn = (promptId: string | null): Turn => {
     current = { promptId, items: [] };
@@ -354,6 +937,87 @@ export async function parseTranscript(
   const lastItem = (): MessageItem | null => {
     const turn = turns[turns.length - 1];
     return turn && turn.items.length > 0 ? turn.items[turn.items.length - 1] : null;
+  };
+
+  /** An item with everything a line gives us and nothing a caller must decide. */
+  const blankItem = (o: RawLine, carriedOver: boolean, runId: string | null): MessageItem => ({
+    uuid: makeUuid(o),
+    aliasUuids: [],
+    role: 'system',
+    timestamp: str(o.timestamp),
+    endTimestamp: str(o.timestamp),
+    model: null,
+    isMeta: false,
+    isCompactSummary: false,
+    queued: false,
+    systemSubtype: null,
+    permissionMode: str(o.permissionMode),
+    carriedOver,
+    runId,
+    discardedBranch: null,
+    usage: null,
+    effort: null,
+    blocks: [],
+  });
+
+  /**
+   * Something Claude Code injected into the conversation — today an Agent or a
+   * background command reporting back.
+   *
+   * **The envelope says whether a turn was in flight when it landed, and that is
+   * what decides the boundary.** Measured over the whole corpus, 175 notices,
+   * with no case sitting between the two:
+   *
+   *  - `queued` — the `attachment` / `queued_command` envelope, which exists
+   *    precisely because something was running. It carries no `promptId` at all
+   *    (116 of 116) and hangs off a line from INSIDE the turn, with a stamp
+   *    older than its own parent (p50 −10 s: the clock is when the task
+   *    finished, not when it was handed over). So it JOINS the open turn, the
+   *    same as a prompt typed mid-turn. A turn of its own cut the thread where
+   *    Claude had not stopped — the answers before and after the news were two
+   *    turns of one piece of work, and the turn's cost and context badges were
+   *    split between the halves.
+   *  - otherwise — the `user` path, which is how a notification reaches a
+   *    session that had gone quiet. It carries a fresh `promptId` of its own
+   *    (59 of 59) and follows the line that CLOSED the turn (`end_turn`, p50
+   *    +78 s later, up to 27 minutes). It really does open a turn: it woke the
+   *    session and a real exchange follows.
+   *
+   * The one exception on the `user` side: when the turn it would open was itself
+   * opened by a notice. Agents that finish together are delivered back to back
+   * (three in a row in `980751cb`), and a turn each would leave all but the last
+   * holding nothing but the news. Only notice-after-notice merges, so nothing
+   * can ever swallow a prompt or an answer.
+   */
+  const pushNotice = (
+    o: RawLine,
+    origin: string,
+    content: string,
+    carriedOver: boolean,
+    runId: string | null,
+    queued: boolean,
+  ): void => {
+    const previous = lastItem();
+    const turn = queued || previous?.blocks[0]?.kind === 'notice' ? ensureTurn() : newTurn(str(o.promptId));
+    turn.items.push({
+      uuid: makeUuid(o),
+      aliasUuids: [],
+      role: 'system',
+      timestamp: str(o.timestamp),
+      endTimestamp: str(o.timestamp),
+      model: null,
+      isMeta: false,
+      isCompactSummary: false,
+      queued: false,
+      systemSubtype: origin,
+      permissionMode: str(o.permissionMode),
+      carriedOver,
+      runId,
+      discardedBranch: null,
+      usage: null,
+      effort: null,
+      blocks: [{ kind: 'notice', origin, queued, ...parseNotification(content) }],
+    });
   };
 
   for await (const line of streamLines(filePath)) {
@@ -393,14 +1057,27 @@ export async function parseTranscript(
     const fork = isRec(o.forkedFrom) ? str(o.forkedFrom.sessionId) : null;
     if (fork) forkedFrom ??= fork;
     const carriedOver = fork !== null;
+    // The run that wrote this line, not an ancestor — see `MessageItem.runId`.
+    const runId = str(o.session_id);
 
     if (type === 'user') {
       if (!isRec(o.message)) continue;
       // `/context` is re-injected as an isMeta line: the only record of the
-      // window size and of the per-category split. Every other isMeta line is
-      // still noise.
+      // window size and of the per-category split. So is a notification
+      // delivered INSIDE a subagent transcript, which is how an agent learns
+      // that an agent of its own has finished — 4 of the 37 notifications in
+      // subagent files here are written that way, and not one of the 69 in a
+      // session file is. Dropping every isMeta line took those reports with it,
+      // which is why the nested agents of `15a86025` had a report nowhere.
+      // Everything else isMeta is still noise (69 of 73 carry no `origin` at
+      // all, so this test is exact).
       if (o.isMeta === true) {
         const meta = str(o.message.content);
+        const injected = meta ? injectedOrigin(o) : null;
+        if (meta && injected) {
+          pushNotice(o, injected, meta, carriedOver, runId, false);
+          continue;
+        }
         const snapshot = meta ? parseContextSnapshot(meta) : null;
         if (snapshot) {
           ensureTurn().items.push({
@@ -412,8 +1089,11 @@ export async function parseTranscript(
             model: null,
             isMeta: false,
             isCompactSummary: false,
+            queued: false,
             systemSubtype: 'context',
+            permissionMode: str(o.permissionMode),
             carriedOver,
+            runId,
             discardedBranch: null,
             usage: null,
             effort: null,
@@ -424,6 +1104,27 @@ export async function parseTranscript(
       }
       const content = o.message.content;
 
+      // The user pressing stop. It has to go before the array branch below,
+      // which would read the marker as prose and draw a prompt bubble saying
+      // words nobody typed. It JOINS the open turn rather than starting one:
+      // the line carries that turn's own `promptId` and is the last thing in
+      // it, so a turn of its own left the interrupt claiming a badge and a
+      // count that belong to the prompt above.
+      const interrupt = interruptOf(content);
+      if (interrupt) {
+        // `ensureTurn` would lose the promptId of a stop that arrives with no
+        // turn open at all — the first thing in `803312ad`, whose prompt is in
+        // an earlier run.
+        const turn = current ?? newTurn(str(o.promptId));
+        turn.items.push({
+          ...blankItem(o, carriedOver, runId),
+          role: 'system',
+          systemSubtype: 'interrupted',
+          blocks: [{ kind: 'interrupt', forToolUse: interrupt.forToolUse }],
+        });
+        continue;
+      }
+
       if (typeof content === 'string') {
         // Injected by Claude Code, not typed: a background command reporting
         // back wears the `user` role and carries a plain string, so it drew a
@@ -431,22 +1132,7 @@ export async function parseTranscript(
         // follows it — but as what it is, and `isPromptItem` stops counting it.
         const injected = injectedOrigin(o);
         if (injected) {
-          newTurn(str(o.promptId)).items.push({
-            uuid: makeUuid(o),
-            aliasUuids: [],
-            role: 'system',
-            timestamp: str(o.timestamp),
-            endTimestamp: str(o.timestamp),
-            model: null,
-            isMeta: false,
-            isCompactSummary: false,
-            systemSubtype: injected,
-            carriedOver,
-            discardedBranch: null,
-            usage: null,
-            effort: null,
-            blocks: [{ kind: 'notice', origin: injected, text: notificationText(content) }],
-          });
+          pushNotice(o, injected, content, carriedOver, runId, false);
           continue;
         }
         const prompt = extractPrompt(content);
@@ -477,33 +1163,55 @@ export async function parseTranscript(
           // The compaction summary comes down this very path: a `user` line with
           // string content, indistinguishable from a typed prompt without it.
           isCompactSummary: o.isCompactSummary === true,
+          queued: false,
           systemSubtype: null,
+          permissionMode: str(o.permissionMode),
           carriedOver,
+          runId,
           discardedBranch: null,
           usage: null,
           effort: null,
-          blocks: [prompt.isSlashCommand ? { kind: 'command', text: prompt.text } : { kind: 'text', text: prompt.text }],
+          blocks: [textOrCommand(prompt)],
         });
       } else if (Array.isArray(content)) {
         const persistedOutputPath = isRec(o.toolUseResult) ? str(o.toolUseResult.persistedOutputPath) : null;
+        // Guarded by tool name below: `answers` means what it means only on an
+        // AskUserQuestion result, and a decline writes the line's whole prose
+        // into `toolUseResult` as a character-keyed object (2 lines here).
+        const askedAnswers = isRec(o.toolUseResult) ? toAnswers(o.toolUseResult.answers) : null;
+        const askedAnnotations = isRec(o.toolUseResult) ? toAnnotations(o.toolUseResult.annotations) : null;
+        const askedResponse = isRec(o.toolUseResult) ? str(o.toolUseResult.response) : null;
+        // Guarded by tool name for the same reason: an object `toolUseResult`
+        // means "approved" only on an ExitPlanMode result — everywhere else it
+        // is just the structured output of whatever tool ran.
+        const planOutcome = toPlanOutcome(o.toolUseResult, o);
+        // And the same again: plenty of tools write an `attachments` array, and
+        // only on a SendUserFile result does it mean "these were handed over".
+        const sentAttachments = isRec(o.toolUseResult) ? toSentAttachments(o.toolUseResult.attachments) : null;
         const userBlocks: ContentBlock[] = [];
         for (const c of content) {
           if (!isRec(c)) continue;
           if (c.type === 'tool_result') {
             const toolUseId = str(c.tool_use_id);
             const tool = toolUseId ? toolBlocksById.get(toolUseId) : undefined;
-            if (tool) tool.result = buildResult(c, projectsDir, persistedOutputPath);
+            if (tool) {
+              tool.result = buildResult(
+                c,
+                str(o.timestamp),
+                projectsDir,
+                persistedOutputPath,
+                tool.toolName === 'AskUserQuestion' ? askedAnswers : null,
+                tool.toolName === 'AskUserQuestion' ? askedAnnotations : null,
+                tool.toolName === 'AskUserQuestion' ? askedResponse : null,
+                tool.toolName === 'ExitPlanMode' ? planOutcome : null,
+                tool.toolName === 'SendUserFile' ? sentAttachments : null,
+              );
+              if (tool.result?.isError) mcp.callFailed(tool.toolName);
+            }
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             userBlocks.push({ kind: 'text', text: c.text });
           } else if (c.type === 'image') {
-            const source = isRec(c.source) ? c.source : null;
-            userBlocks.push({
-              kind: 'image',
-              mediaType: source ? str(source.media_type) : null,
-              // Only a base64 source carries the bytes; anything else is a
-              // reference we have no way to resolve from a transcript line.
-              data: source && source.type === 'base64' ? str(source.data) : null,
-            });
+            userBlocks.push(imageBlock(c));
           }
         }
         if (userBlocks.length > 0) {
@@ -516,8 +1224,11 @@ export async function parseTranscript(
             model: null,
             isMeta: false,
             isCompactSummary: false,
+            queued: false,
             systemSubtype: null,
+            permissionMode: str(o.permissionMode),
             carriedOver,
+            runId,
             discardedBranch: null,
             usage: null,
             effort: null,
@@ -525,6 +1236,113 @@ export async function parseTranscript(
           });
         }
       }
+    } else if (type === 'attachment') {
+      // Anything that lands while a turn is in flight is QUEUED, and comes back
+      // in another envelope: an `attachment` line whose `queued_command` prompt
+      // holds it. It arrives in two flavours and BOTH are messages.
+      //
+      // A `<task-notification>` — reading only the `user` lines left THREE of
+      // the five agent reports in `980751cb` rendered nowhere at all, not even
+      // as a summary line.
+      const attachment = isRec(o.attachment) ? o.attachment : null;
+
+      // The MCP servers, which are NOT a message: this line is the only place
+      // their state is written down, and it belongs to the panel rather than to
+      // the conversation. Taken before anything else because it is the one
+      // attachment type that is read for a fact instead of for something to draw.
+      if (attachment?.type === 'deferred_tools_delta') {
+        mcp.delta(attachment, str(o.timestamp), lastItem()?.uuid ?? null);
+        continue;
+      }
+
+      // Plan mode announces itself here, and this is the only record of it that
+      // has a clock: the `permission-mode` sidecar carries no timestamp and no
+      // uuid, so it can only ever be read positionally.
+      const planEvent = planModeEvent(attachment, planModeOpen);
+      if (planEvent) {
+        planModeOpen = planEvent === 'exit' ? false : planEvent !== 'reference';
+        // It joins the turn already open rather than starting one: the entry is
+        // written with the SAME timestamp as the prompt that entered plan mode,
+        // so it belongs to that exchange, and a turn of its own would cut the
+        // conversation where nothing happened.
+        ensureTurn().items.push({
+          ...blankItem(o, carriedOver, runId),
+          role: 'system',
+          systemSubtype: 'plan-mode',
+          blocks: [
+            {
+              kind: 'plan-mode',
+              event: planEvent,
+              planFilePath: str(attachment?.planFilePath),
+              planExists: typeof attachment?.planExists === 'boolean' ? attachment.planExists : null,
+              planContent: str(attachment?.planContent),
+            },
+          ],
+        });
+        continue;
+      }
+
+      // A prompt the user typed while Claude was working. `queuedByHuman` is
+      // what tells the two apart, and the reason it does not reuse
+      // `injectedOrigin` is written there.
+      //
+      // **It is asked FIRST, and that order is the whole guard.** The other
+      // thing this envelope carries is a notification, which used to be
+      // recognised by finding `<task-notification>` in the payload — a test on
+      // the TEXT, so a prompt merely QUOTING the tag became a notice and stopped
+      // being a prompt anywhere: uncounted, unindexed, drawn as somebody else's
+      // news. This repo's own sessions type that tag constantly. Nothing on disk
+      // trips it today (120 notifications and 24 typed prompts, no crossing:
+      // every notification carries `commandMode: "task-notification"` and no
+      // `origin`, every typed one `commandMode: "prompt"` and `origin.kind:
+      // "human"`), which is exactly why it had to be closed before it did.
+      const byHuman = queuedByHuman(o);
+      const queued = !byHuman && attachment?.type === 'queued_command' ? queuedText(attachment.prompt) : null;
+      if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
+        // Queued, so a turn was in flight when the task finished: it joins that
+        // turn rather than cutting it in two. See `pushNotice`.
+        pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId, true);
+        continue;
+      }
+      const typed = queuedText(byHuman);
+      const prompt = typed ? extractPrompt(typed) : null;
+      // The images pasted into it, which is what made the payload an array in
+      // the first place. Read through the same affirmative test as the text, and
+      // tested separately from it so a prompt that is nothing but a pasted image
+      // still gets a bubble.
+      const images = queuedImages(byHuman);
+      if (!prompt && images.length === 0) continue;
+      // It joins the turn already open (`ensureTurn`) instead of starting one,
+      // because that is what Claude Code does with it: the `last-prompt` sidecar
+      // written straight after delivery still names the PREVIOUS prompt, in both
+      // cases here. A turn of its own also cut the conversation in half at a
+      // point nothing had ended — in `b343d4ac` the line lands between a
+      // `tool_result` and three more `tool_use` calls of the same piece of work,
+      // and splitting that run in two invented a boundary the session never had.
+      // The viewer draws it on the rail with the answers, as the interjection it
+      // is. `promptId` is absent from these lines anyway, so nothing is lost.
+      ensureTurn().items.push({
+        uuid: makeUuid(o),
+        aliasUuids: [],
+        role: 'user',
+        // When it was TYPED, which is before the answer above it ended — see
+        // `MessageItem.queued`. 39 s earlier in `15a86025`.
+        timestamp: str(o.timestamp),
+        endTimestamp: str(o.timestamp),
+        model: null,
+        isMeta: false,
+        isCompactSummary: false,
+        queued: true,
+        systemSubtype: null,
+        permissionMode: str(o.permissionMode),
+        carriedOver,
+        runId,
+        discardedBranch: null,
+        usage: null,
+        effort: null,
+        // Text first, then what was pasted, the order the payload itself uses.
+        blocks: [...(prompt ? [textOrCommand(prompt)] : []), ...images],
+      });
     } else if (type === 'assistant') {
       if (!isRec(o.message)) continue;
       const messageId = str(o.message.id) ?? makeUuid(o);
@@ -541,8 +1359,11 @@ export async function parseTranscript(
           model: synthetic ? null : model,
           isMeta: false,
           isCompactSummary: false,
+          queued: false,
           systemSubtype: null,
+          permissionMode: str(o.permissionMode),
           carriedOver,
+          runId,
           discardedBranch: null,
           // A synthetic message was not produced by a model and is excluded from
           // every total; an id-less line has no dedupe key, so counting it could
@@ -568,7 +1389,11 @@ export async function parseTranscript(
           if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             item.blocks.push({ kind: 'text', text: c.text });
           } else if (c.type === 'thinking' && typeof c.thinking === 'string' && c.thinking.trim()) {
-            item.blocks.push({ kind: 'thinking', text: c.thinking });
+            // Two different things come down this one type, and only the block's
+            // own signature tells them apart (`thinkingKind`): the thought, which
+            // the thinking switch hides, and the commentary Claude Code printed
+            // while it worked, which the user has already read in the terminal.
+            item.blocks.push({ kind: thinkingKind(c), text: c.thinking });
           } else if (c.type === 'tool_use') {
             const toolUseId = str(c.id) ?? '';
             const toolName = str(c.name) ?? 'tool';
@@ -576,7 +1401,9 @@ export async function parseTranscript(
               kind: 'tool',
               toolName,
               toolUseId,
+              timestamp: str(o.timestamp),
               inputSummary: summarizeInput(toolName, c.input),
+              intent: toolIntent(toolName, c.input),
               input: c.input ?? null,
               result: null,
               agentId: agentIdByToolUse.get(toolUseId) ?? null,
@@ -586,6 +1413,7 @@ export async function parseTranscript(
             if (MUTATING_TOOLS.has(toolName) && isRec(c.input)) {
               recordFileEdits(fileEdits, toolName, c.input, str(o.timestamp));
             }
+            mcp.call(toolName, str(o.timestamp), item.uuid);
           }
         }
       }
@@ -606,8 +1434,11 @@ export async function parseTranscript(
           model: null,
           isMeta: false,
           isCompactSummary: false,
+          queued: false,
           systemSubtype: subtype,
+          permissionMode: str(o.permissionMode),
           carriedOver,
+          runId,
           discardedBranch: null,
           usage: null,
           effort: null,
@@ -643,8 +1474,11 @@ export async function parseTranscript(
         model: null,
         isMeta: o.isMeta === true,
         isCompactSummary: false,
+        queued: false,
         systemSubtype: subtype,
+        permissionMode: str(o.permissionMode),
         carriedOver,
+        runId,
         discardedBranch: null,
         usage: null,
         effort: null,
@@ -674,7 +1508,7 @@ export async function parseTranscript(
     .map(([path, edits]) => ({ path, edits }))
     .sort((a, b) => b.edits.length - a.edits.length);
 
-  return { turns, prLinks, forkedFrom, fileChanges };
+  return { turns, prLinks, forkedFrom, fileChanges, mcp: mcp.result() };
 }
 
 export async function parseSession(
@@ -684,7 +1518,7 @@ export async function parseSession(
 ): Promise<SessionDetail> {
   const subagents = await loadSubagents(scanned.sessionDir);
   const agentIdByToolUse = new Map(subagents.filter((a) => a.toolUseId).map((a) => [a.toolUseId, a.agentId]));
-  const { turns, prLinks, forkedFrom, fileChanges } = await parseTranscript(
+  const { turns, prLinks, forkedFrom, fileChanges, mcp } = await parseTranscript(
     scanned.filePath,
     agentIdByToolUse,
     projectsDir,
@@ -700,5 +1534,6 @@ export async function parseSession(
     },
     prLinks: prLinks.length > 0 ? prLinks : (summary.enrichment?.prLinks ?? []),
     fileChanges,
+    mcp,
   };
 }

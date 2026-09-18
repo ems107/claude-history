@@ -1,6 +1,6 @@
 import { isProtectedBranch, type GitRemote, type GitStatus } from '@claude-history/shared';
 import { useState } from 'react';
-import { btn, dangerBtn, inputClass } from '../../lib/ui.ts';
+import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
 
 /**
  * Push, with the choices that change what happens made visible.
@@ -139,13 +139,13 @@ export function PushDialog({
         )}
 
         <div className="mt-4 flex justify-end gap-1.5">
-          <button type="button" onClick={onCancel} className={btn} disabled={busy}>
+          <button type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>
           <button
             type="button"
             disabled={!ready || busy}
-            className={force ? dangerBtn : btn}
+            className={force ? dangerClass : actionClass}
             onClick={() => onPush({ remote, setUpstream: needsUpstream, forceWithLease: force, tags, confirm: force })}
           >
             {busy ? 'Pushing…' : force ? 'Force push' : 'Push'}

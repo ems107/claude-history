@@ -1,0 +1,166 @@
+# The phone
+
+**Load this when:** you are changing anything under `web/src/` and want it to survive a 360px screen, or you are about to reach for `max-md:`, `useIsMobile()`, `useHideLocalOnly()` or `useBackDismiss()`.
+
+The app is a desktop tool that also has to be **operable** from a phone over [remote access](AI_REMOTE_ACCESS.md) — reading a conversation, answering a question, approving a plan, typing at a terminal. That is the whole of the requirement: operative before tidy. Where the two disagree, the phone gets the data and the extra line.
+
+## Invariants
+
+- **One threshold, three spellings, and they are the same string.** `48rem` — Tailwind v4's own `md`. The markup says it with `max-md:`, `styles.css` says it with `@media (width < 48rem)`, and `lib/mobile.ts` says it with `MOBILE_QUERY` for the components that have to swap rather than restyle. **In rem, never in the 768px it happens to be**: a rem threshold and a px one drift the moment anybody sets a root font size, and the symptom is a band a few pixels wide where the CSS thinks it is a phone and the components do not.
+- **Above the line, nothing changes.** Every rule added for a phone lives inside a `max-` variant, a `(width < 48rem)` block, or a `useIsMobile()` branch. A change that alters the desktop is a bug in this work, not a trade-off in it — check it at 1440px before committing.
+- **It is a WIDTH, not `pointer: coarse`.** What breaks at 360px is arithmetic — a 72px rail plus a 320px floor does not fit — and that is as true of a narrow window on a desktop. Touch is a separate question, answered per control. The device this is checked on proves the point from the other side: **at the density it is set to, held sideways it is 1012px wide and correctly gets the desktop**, which is where the narrow-desktop faults were found.
+- **Nothing revealed on hover may be the only way to a feature.** Tailwind v4 compiles `hover:` inside `@media (hover: hover)`, so on a phone a `group-hover:` control is not merely hard to find: it never appears. Copying a message, starring one, renaming a session, pinning it, and the cost and context breakdowns were all behind one. Each has a tap of its own now, and any new one must too.
+- **`title=` is not an explanation.** Android has no tooltips. Where a control is disabled and the reason lives in a `title`, either the reason is drawn or the control is not.
+- **A control that can only work on the machine is not drawn at all** (`useHideLocalOnly`, `api/useLocal.ts`). On a desktop the thirteen local-only actions are greyed with their reason beside them, which is how somebody learns which of the two browsers they are in. A phone is never that machine and never will be, so there the reason would be permanent furniture: what survives is whatever still works from here — copying the resume command instead of running it, typing a path instead of browsing for one. **The server is unaffected and still refuses all thirteen (409).** This decides what is drawn, never what is allowed.
+- **Nothing may scroll the document sideways.** A conversation that scrolls sideways is a conversation you cannot read. Wide things scroll inside their own box — a code block, a table — and the check is `document.documentElement.scrollWidth === innerWidth` on every route.
+- **There is ONE square, one gap and one height for a row.** `squareClass` and `controlRow` in `components/controlClass.ts`: a 40px square with the icon centred and `CountBadge` in the corner, in a row with an 8px gap. The bell, the update button, the session's ⋮, the filter funnel, the sort square and a sheet's ✕ are all that square — they were five different boxes once — and the app header, the list's toolbar, the three cross-page toolbars and the session header's action group are all that row, which they were not: the header used 6px and everything else 8, which is invisible until the two are stacked and then it is the only thing you can see. Anything sharing a row with them is 40 tall too: the search boxes (`max-md:min-h-10`) and the usage readout.
+- **A phone's Back button closes what is on top.** See below; it is the one control every Android user reaches for first.
+- **The keyboard shrinks the window, it does not cover it** — `interactive-widget=resizes-content` in the viewport meta. `--kb-inset` exists for browsers that do not honour that, and is correctly `0` where they do.
+
+## The frame
+
+`App` is a full-height flex column: a compact header, the routes, and — on a phone — `MobileTabBar` as a `shrink-0` row at the end of it. In the flow rather than `fixed`, so nothing has to reserve padding and nothing can slide under it. It hides itself while anything is being typed (`useIsTyping`), on a short window (`useIsShort` — a phone on its side is 284px tall at the stock density), and on `/session/:id` and `/new`, which are details pushed over the list with their own way back and their own composer in that row.
+
+**The bar is Sessions · Stats · New · More · Settings**, and `More` is a MENU rather than a page. It was a page once (`/more`), on the argument that a route is Back's native business; four links is not worth a screen you then have to leave, and `useBackDismiss` handles the menu as it handles every other layer. It holds the three places that did not earn a tab: Prompts, Plans, Starred messages.
+
+**The header keeps three readings and nothing else**: who this is on the left — the mark, the name, the version or the `dev` chip — and on the right what Claude has spent, what is waiting, and whether there is a new version. The nav, the gear and the version-check button are all in the bar or behind it.
+
+- The usage widget draws the same two windows **upright, filling from the bottom like a battery** (`VBar`), and says the same four things a desktop does: which window, how long until it resets, the level, the percentage. **Stacked rather than side by side**, which is the whole of what makes the countdown fit — two of them end to end is 150px of a row that has about 100, and one above the other is 75 in the 40px of height the squares beside it already take. It is a **grid of five columns**, not two rows of flex items: the countdown is "3 hr" on one line and "4 d" on the next, so as flex the bar and the number after it started at different places and `ml-auto` opened a gap the width of that difference. Icons get a column so they line up, the words get one of their own so both end flush against the bar. Tapping it opens the same popover a desktop gets.
+- The update button appears **only when there is a version**. A phone is always remote, so a button whose job is to answer "is there anything?" is right on the days there is nothing — and Settings › Updates opens the same window on both sizes, which is where that question is asked from now.
+
+## The browsing pages, on one line
+
+The desktop toolbar is seven controls in a row and needs about 600px. The phone's is `MobileListBar`: the search box and three 40px squares — sliders for the advanced search options, a funnel for the filters, stacked lines with an arrow for grouping and order. A branch rather than one markup restyled, because the phone's bar is not the desktop's narrower: it puts the count in the search placeholder (the box is empty exactly when there is room to read it), and grouping and order become a sheet of labelled choices rather than two unlabelled `<select>`s.
+
+Each square carries its tally as a **circle centred on its own content** (`CountBadge`), not a digit appended to a glyph — the latter sits on the glyph's baseline and reads as dropped.
+
+**Prompts, Plans and Starred get the same bar** (`MobileToolbar`, built from the same pieces in `mobileBar.tsx`): the box, a funnel holding whatever `<select>`s the page had, and a sort square where there is an order to change. Four browsing pages, one control set. Those three also **write their own name above the box**, and they are the only pages that do: the bottom bar lights nothing while you are on them — they are behind its `More` menu — so the title is the only thing that can say where you are. Sessions, Stats and Settings have a lit tab and need no heading.
+
+The rows are **measured at every width** (`virtualizer.measureElement`), and the two `ROW_HEIGHT` constants are estimates for the scrollbar rather than heights. A row's height is decided by how much of it wraps, which is decided by the width: at 360px the tallest is half again the shortest, and at ~1000px the desktop row wraps a line and used to be drawn on top of its neighbour. Above ~1200 nothing wraps and the measurement comes back as exactly the estimate. The row carries its own 64px as a **floor** (`min-h-16`), because the box around it no longer has a height for `h-full` to resolve against.
+
+## Settings is a list before it is a page
+
+`/settings` on a phone draws the seven areas as rows with their blurbs and their changed-counts (`SettingsNav index`), and the area gets the whole window once one is picked, with `‹ All settings` as the way back. The 224px rail has nowhere to be beside a 360px panel, and as a strip across the top it was seven chips scrolling sideways over a panel scrolling the other way, several of them always off the right edge. A path that names an area is unaffected, and so is a hash that implies one: `/settings#backups` is a bookmark and a README link, and landing it on a menu would be landing it nowhere.
+
+**A settings block that is a LIST is the first thing on that page a thumb has
+to aim inside of**, and *Projects* is where that came up. Every other block is
+a switch or a box per row, so `toggleClass` and `actionClass` carried the whole
+question; a list of forty projects with a control on each row carries it per
+control, and the ones written for it came out at 17-23px — the group name box,
+*Delete*, the remove button and the *add to…* select, measured on the device
+metrics rather than guessed. They all carry their own `max-md:min-h-11` now.
+Three facts came with it:
+
+- **The `CheckRow`s were already right**, because the tap target is the
+  `<label>` and that had `max-md:min-h-11` from the day the sheet did. A 20px
+  checkbox inside a 44px label is not a 20px target, and "fixing" the box would
+  have been fixing the wrong thing.
+- **A glyph gets a word on a phone.** The remove button is `×` at the end of a
+  desktop row, which is idiomatic there and unlabelled everywhere — its only
+  explanation was a `title`, and Android has no tooltips. Two spans, one
+  `max-md:hidden` and one `hidden max-md:inline`, so the phone reads *Remove*
+  and the desktop keeps the glyph; the `aria-label` names the project on both,
+  which the glyph never did.
+- **A name that is not unique needs its path DRAWN.** A project is named
+  `basename(cwd)`, and this corpus has six folders called `scratchpad` and two
+  called `probe` — six identical rows whose only distinguishing mark lived in a
+  `title=`. `ambiguousProjectNames` answers which names repeat, so the path is
+  drawn on those rows and nowhere else, and it is `truncate-start`: those six
+  share every character up to the last two segments, so cutting the END cuts
+  the only half that answers the question. Same reason the terminal’s title bar
+  shows the end of its cwd.
+
+**Two known gaps, both older than that area and both app-wide.** `DefaultBadge`
+— the *default …* marker that puts a setting back — is 17px tall on a phone on
+all thirty-six rows that can show it, and `inputClass` gives every text setting
+a 22px box. Neither is reachable by a change inside one area: they are shared
+recipes, and giving them a `max-md:` size reflows every area on the phone and
+wants checking across all seven.
+
+## The session view
+
+The desktop session page is a row: a 72px rail, the conversation, an inspector, a side column. At 360px the rail and the conversation's own floor already do not fit, and opening a panel left the conversation four pixels wide. So on a phone `useSideLayout` returns zeros, **the rail is not drawn**, and **every panel is a sheet over the conversation** — the inspector, a subagent's transcript, the file viewer. Nothing inside them changed: they were all written to read at 320px, which is what that floor was for.
+
+**The header is a name and one button.** Row one is the title and a square ⋮; row two is what the session IS — the project tag, the rename mark, the live badges — ending in `more`, which grows the header UNDERNEATH that row instead of swapping it, so nothing you were looking at moves. The ← went from both sizes: Escape has always been the way out on a desktop, Back is the way out on a phone, and the mark in the app's own header goes to the list from either.
+
+**Everything else is behind the ⋮**, as one sheet with sections: the inspector panels, find, the view menu's own controls drawn flat, then the session's own actions. `SessionMenu` grows the sheet on a phone and stays a popover above 48rem; the page passes what it owns in through `menuSections`, and `ViewMenuBody` exists so the view controls can be drawn without a popover inside a sheet — a second layer for Back to disagree about.
+
+**The header steps aside while you read downwards** (`useHideOnScroll`) and comes back the moment you scroll up. A negative margin rather than a transform or a `fixed` bar, so the conversation gets the pixels instead of sliding under something; the pane above already clips. Three rules earned the hard way:
+
+- **Nothing on screen may move while it does it**, and doing nothing moves everything by the height of the header. The scroll offset is not what changes when the header goes — the box it is measured from is: the scroller's top edge rises by the header's height — 87px with `more` closed, more with it open — so at an unchanged `scrollTop` every line is redrawn that much higher, on top of whatever the reader was scrolling. So the scroller's content box carries a `margin-top` of exactly the header's height for as long as it is folded, transitioned in the same 200ms with the same easing: the two cancel frame by frame, the strip opening above fills with the content already scrolled past, and `scrollTop` is never touched — which is what makes the END of a conversation safe too, since `scrollHeight` and `clientHeight` grow by the same amount and the maximum does not move. **A spacer box inside the scroller does NOT do this**, and that is the part worth keeping: a box growing above the viewport is content growing above the viewport, which is precisely what Chrome's scroll anchoring exists to answer — and it answers by putting those same pixels straight back on `scrollTop`, restoring the jump. A margin (or a padding) on the path from the anchor node to the scroller is a **suppression trigger** instead, so the adjustment is skipped for that layout while anchoring goes on protecting everything else, an image loading above the view included. Measured both ways round, on every frame of the transition.
+- The height is measured through a **callback ref**, because this page renders a loading state first and a ref object filled in silently leaves an observer that never observed anything.
+- The tally **ignores the scroller for 350ms after changing its mind**, and what it was written for no longer happens: folding made the scroller taller, a scroller pinned to the bottom answered that by moving, and the movement was a scroll event — a header oscillating around −8px for as long as the session stayed live. The margin above grows the content by what the box grew by, so the pin has nothing to answer. It stays as the guard.
+
+A fold does not survive a **change of session**, either: the page is not remounted when a notification is tapped from inside another conversation, and the next one opens at `scrollTop` 0, which is the one place the header always shows.
+
+## Back, and the four things it took to earn it
+
+`useBackDismiss(active, onDismiss)` pushes a MARKER onto the entry the page is already standing on — same URL, react-router's own state with one key added — so Back pops it, closes that layer and changes nothing else. Four rules, each learned from a failure on the device:
+
+1. **One stack, not a listener each.** Several layers can be open at once and one press must close ONE of them. With a `popstate` listener per layer, every open layer answered the same press and a single Back closed the lot.
+2. **The push must happen inside the gesture's own dispatch.** Chrome marks a same-document entry skippable otherwise — its defence against back-button traps. The entry is still there (`history.back()` from script finds it) and the system Back steps straight over it, which reads exactly like the sheet ignoring Back and leaving the page. A layout effect runs inside a discrete click's task; a passive `useEffect` does not.
+3. **And the gesture is the CLICK, not the `pointerdown`.** Activation is granted when the finger lifts. A marker pushed from a `pointerdown` listener is pushed before the gesture counts, and is skipped exactly like one pushed from a timer.
+4. **A layer closing and a layer opening can be the same tap**, and that is what taking a marker off has to survive. Tapping a panel in the session sheet closes the sheet and opens the panel: the sheet's cleanup runs first and the panel's marker is pushed after it, on top. So the self-close `history.back()` is **deferred by a task and re-checks that the current entry is still its own** — if it is not, our marker is buried and is left alone. The `popstate` listener lives for the life of the page rather than the life of the stack, so a pop this module caused itself can be **counted and swallowed** (`selfPops`) instead of closing the layer underneath. And a marker no layer owns any more is spent on the spot, because it would otherwise be one press that appears to do nothing.
+
+`navigator.userActivation.isActive` is **not** the signal for (2) — it stays true for seconds afterwards, so a push from a promise callback passes the check and is skipped anyway. `mobile.ts` counts gestures itself, from document-level `click`/`keyup` listeners installed **at module load**. Installed later — from inside the effect — they would be installed during the very gesture they need to count, and the first sheet of every page would sit there waiting for a second touch that never comes.
+
+Layers that open asynchronously get no gesture to ride: the terminal fills the window when its start request returns, seconds after the button was pressed. There the marker waits for the next gesture, which in practice is the first tap into the terminal.
+
+> **Android presses Back once for itself.** With the on-screen keyboard up, the first Back closes the keyboard — every app behaves this way. A check that types and then expects one press to close a sheet is a check that will fail for the wrong reason.
+
+## Touch sizes
+
+The two shared recipes in `components/controlClass.ts` carry their own `max-md:` sizes, so fifteen files get them at once — `toggleClass` by a minimum height (it is already `inline-flex` and centres its own label), `actionClass` by padding (it goes on plain `<button>`s that would not centre a taller box). Everything else is per control. The floor aimed at is **44px for anything that decides something** — Send, Allow, Approve, Answer — and 36-40 for dense toolbar chips, which are the only place it is worth going below.
+
+## The composer and the terminal
+
+- **The keyboard is asked not to suggest, and that is all it is.** A terminal is not prose, so `spellcheck` and `autocomplete` go off beside the `autocorrect`/`autocapitalize` xterm sets itself, and where a keyboard honours that the suggestion strip goes away. Where one does not, see *Samsung Keyboard* below — it is the one thing in this work that is known broken and left that way.
+- **Enter is a newline on a phone and Send is the button.** A soft keyboard has no Shift+Enter, so with Enter sending there was no way to type a second line at all: every paragraph break sent the message. Which is why that button has to be a real target.
+- **The terminal fills the window when it opens**, and `full` is set at the moment the panel opens rather than as an initial state: an intent to fill the window that the panel is not obeying makes the title bar's own ⤢/⤡ lie, and hands a `fixed inset-0` box a hidden xterm host, which is a blank screen. **There are two states and not three**: the way out of full screen is `▾ minimise`, back to the title bar with the CLI still running, and the `×` on that bar is what closes it.
+- **The title bar never wraps.** With `flex-wrap` on, a long cwd does not fit after the `❯` at its full content width, so it is placed on the next line and shrunk THERE — leaving a first row holding one glyph. It truncates on one line instead, which is what the ellipsis was for.
+- **The keys a CLI needs are not on the keyboard.** `TerminalKeys` is Esc, the three modifiers, Tab, Enter, Paste, the arrows, `^C` and four punctuation marks — in that order, which is the order a thumb wants them: the way out, the modifiers, the two keys they are most often pressed with, the paste this page cannot do any other way, then movement, then the punctuation the soft keyboard buries. Everything goes through `term.input()`, so it takes the same path up the socket as a keystroke and nothing there needs to know a socket exists. A key fires **on the way up and only if the finger has not travelled** (`TAP_SLOP_PX`), because the row is wider than the screen and the commonest gesture over it is a drag across; and a glyph key is a fixed square, so ↑ and ← are the same size however differently the font draws them.
+- **Enter is on the row for the SHIFT, not for the Enter** — and it is the one key there that the soft keyboard already has. What a soft keyboard cannot send is a *shifted* Enter, which in Claude Code is a newline rather than the prompt being submitted, so the armed Shift needed something to land on. Which is also why Enter is deliberately the key that runs off the edge first at 360px (measured: `Esc Ctrl Alt Shift Tab` end at 295 and Enter takes 299-363, so it clips by three pixels and Paste is one small scroll away): every other key on the row has no alternative, while this one does — arm Shift on the bar and press the keyboard's own Enter and it is the same path, because both go through `onData`. Before it existed that path was worse than nothing: with Shift armed, the keyboard's Enter sent a bare CR and **submitted the prompt**.
+- **Ctrl, Alt and Shift are sticky, and `applyMods` is the whole of what they mean.** They arm, the next key goes through changed, and they disarm themselves. Shift first, because it changes the key itself — a real back-tab (`ESC [ Z`), an arrow with its modifier parameter (`ESC [ 1;2C`), a newline for an Enter (`ESC [ 13;2u`), a capital for an ordinary character; then Ctrl, the letter's own code with its top three bits cleared; then Alt, an ESC in front of whatever the other two produced. **Shift is not a nicety**: Shift+Tab is how Claude Code cycles its modes and Shift+Enter is how a prompt gets a second line, and a phone keyboard can send neither. **The Enter is the one form with a GATE on it**, and the only reason a pure function is handed an answer from the socket: the sequence may only go out while the program has asked to hear about modifiers, so `applyMods` takes `enhancedKeys` and, with it shut, a shifted CR stays a bare CR and submits — which is exactly what a real keyboard's Shift+Enter does on such a program. Why that encoding and where the answer comes from are in [AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md#looking-like-a-terminal-and-behaving-like-one), not here. What they must NOT be spent on is anything that is not a key — `isKeystroke` drops xterm's focus reports and its mouse reports, or arming Alt and then closing the keyboard put the ESC on the focus-out instead of on the next thing pressed.
+- **A glyph the device has no font for gets a font, not a substitution.** Claude Code puts `⏵⏵` in front of its own mode line, and **no font on the check device has U+23F4-U+23F7** — not the monospace one, not Noto Sans Symbols, not the system fallback — so what a phone drew there was two boxes. The answer is 3 KB of Noto Sans Symbols 2 at the END of the terminal's font stack (`web/src/fonts/`, the only binary in the repo): CSS fallback is per CHARACTER, so Cascadia Mono goes on drawing everything it has and this is reached only for what it cannot. **The `unicode-range` is one block and no more** — a range is a takeover, not a fallback, and the first attempt took a second block with it and redrew the CLI's turn bullet in a shape nobody asked to change.
+  Two things had to be true for it to work, and neither is obvious. **xterm rasterises each glyph once**, into a texture atlas it never revisits, so a webfont still downloading when the CLI paints its first frame loses for the life of the terminal — the font reported `loaded`, a canvas drew the glyph perfectly, and the terminal went on showing boxes. And **nothing else on the page uses that family**, so the download never started on its own. `document.fonts.load` fixes the second and `clearTextureAtlas()` on its resolution fixes the first.
+- **The title bar shows the END of the cwd.** Every session started from the app lives six segments down the same temp folder, so `elidePath` takes the middle out by SEGMENT — `C:\Users\…\scratchpad\fakeproj` — and if that still does not fit, `.truncate-start` (styles.css) puts the ellipsis at the front instead of the back. Which end survives is the point: the first half of that path says nothing.
+- **A drag over the terminal scrolls it, by becoming wheel events.** `term.scrollLines()` is the obvious call and does nothing here: Claude Code runs in the ALTERNATE screen buffer, which has no scrollback, and turns full mouse reporting on — so on a desktop the wheel is not scrolling anything either, it is being SENT to the CLI, which scrolls its own transcript. xterm's scrollable viewport sits UNDER the screen a touch lands on and only a wheel is forwarded across that gap, so the drag is turned into one synthetic wheel per row (`deltaMode: DOM_DELTA_LINE` — pixel mode damps anything under 50px to 30%, and a mouse report is one notch per event however large the delta). Whatever xterm decides to do with it is then decided in one place for both kinds of pointer.
+- **The collapse rules are off on a phone.** "The panel closes when you look away" is read from a press outside it and from the focus leaving, and on a touch screen the keyboard opening or closing does both — the panel would fold to its 32px title bar under the user, mid-command.
+- Paste has a box of its own: `navigator.clipboard` is `[SecureContext]` and does not exist over plain HTTP ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md#http-and-the-two-things-it-breaks)), and long-pressing a canvas offers nothing to paste into.
+
+## Samsung Keyboard, and the one thing that is known broken
+
+**Galaxy S25 Ultra · Samsung Keyboard · predictive text ON.** Typing in the embedded terminal misbehaves in three escalating ways:
+
+1. A word does not appear as you type it. It arrives in one piece when you press space, and until then the CLI's own cursor is missing from where you are typing — as far as the CLI is concerned you have typed nothing.
+2. Put the cursor into the middle of a line already typed and carry on, and characters are deleted and inserted that nobody typed.
+3. Switch predictive text off and every bit of it goes away.
+
+Chrome and Firefox alike, so it is the keyboard and not the engine. No other keyboard tried does it — the check device's Gboard included, which is why none of this can be reproduced or verified from here.
+
+**The mechanism.** An Android keyboard does not send letters one at a time: it holds the word being typed in a *composing region* — provisional, revisable — and commits it at a space. xterm plays along (`CompositionHelper`): while a composition is open it sends NOTHING to the PTY and draws the letters in an overlay of its own, releasing the whole word at the end. Right in a text field, wrong in a terminal. (2) is the same mechanism one step further: the keyboard asks the field what surrounds the cursor, decides which word it is correcting, and issues "delete N back, insert this" — which arrives as backspaces the CLI applies at ITS cursor, somewhere else entirely.
+
+**What was tried, and failed.** All of it verified on the device, never assumed:
+
+| Attempt | Result |
+| --- | --- |
+| `autocorrect` / `autocapitalize` off (xterm's own) | ignored — this is the generic NO_SUGGESTIONS flag, and it is the one Samsung's predictor does not honour |
+| `spellcheck=false`, `autocomplete=off` beside them | ignored, same flag. **Kept anyway**: it costs nothing and other keyboards do honour it |
+| `inputmode="email"` | ignored. The build really was live — the comma key had become `@`, which is how it was checked |
+| `inputmode="url"` | ignored. **Not kept**: both variations cost the comma key, which a prompt written to Claude needs and which is nowhere else on a phone, while `/` is already on the accessory bar |
+
+The useful fact left behind: **the variations are honoured one at a time rather than as a class.** "Not a sentence" is not a single switch, so a third variation would prove nothing about the first two.
+
+**The workaround is the device setting**, and it is not a bad one: in a terminal you type commands and paths, so a corrector has nothing to offer and prediction is worth turning off on its own merits.
+
+**If it is ever worth fixing properly**, two routes, neither cheap and neither verifiable without a phone that has the bug:
+
+- **An input element of our own, `type="password"`.** The Android IME contract *requires* auto-correction, auto-completion and gesture input to be off in a password field — the only guarantee in this area that does not depend on a vendor's goodwill — and the layout stays a normal QWERTY. A `<textarea>` cannot be one, so it means an input over the terminal forwarding to `term.input()`, and with it a second input path to keep working: Enter, backspace, the sticky modifiers, the touch scroll, selection. Chrome may also offer the password manager on it.
+- **Handling the composition ourselves.** On each `compositionupdate`, diff the composing string against what was last sent and push the delta straight at the socket, swallowing xterm's own flush at `compositionend`. It is the only route that works *with* prediction on rather than by switching it off, and it would fix (1) outright; whether it fixes (2) is unknown. Roughly fifty lines of subtle code on the path every keystroke takes, the desktop's included.
+
+The second is the better answer and the first is the surer one. Both are a bad trade against a device setting until somebody is typing into that terminal every day.
+
+
+## Verifying it
+
+The device loop is in [AI_TESTING.md](AI_TESTING.md#the-phone): how to reach the dev instance from a phone, and the checks. The one that catches most regressions is the cheapest — walk every route and assert `document.documentElement.scrollWidth === innerWidth`.

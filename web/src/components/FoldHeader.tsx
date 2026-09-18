@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { hasSelection } from '../../lib/selection.ts';
+import { hasSelection } from '../lib/selection.ts';
 
 /**
  * The header of anything that folds — and whose text can be selected.

@@ -10,8 +10,8 @@ import { useRef, useState, type ReactNode } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../../lib/format.ts';
 import { useDragSize } from '../../lib/useDragSize.ts';
-import { btn } from '../../lib/ui.ts';
-import { FoldHeader } from '../viewer/FoldHeader.tsx';
+import { actionClass } from '../controlClass.ts';
+import { FoldHeader } from '../FoldHeader.tsx';
 import { CommitBox } from './CommitBox.tsx';
 import { ConflictSides } from './ConflictSides.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
@@ -379,7 +379,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
           <button
             type="button"
             disabled={action.busy}
-            className={`${btn} border-amber-500/50 text-amber-200`}
+            className={`${actionClass} border-amber-500/50 text-amber-200`}
             onClick={() => {
               const id = undo.id;
               setUndo(null);
@@ -388,7 +388,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
           >
             Undo
           </button>
-          <button type="button" className={btn} onClick={() => setUndo(null)}>
+          <button type="button" className={actionClass} onClick={() => setUndo(null)}>
             Dismiss
           </button>
         </div>
@@ -500,7 +500,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
                 <button
                   type="button"
                   disabled={action.busy}
-                  className={`${btn} border-[var(--accent-dim)] text-[var(--accent)]`}
+                  className={`${actionClass} border-[var(--accent-dim)] text-[var(--accent)]`}
                   onClick={() => {
                     // One hunk at a time: the server takes lines for a single
                     // hunk, and a patch mixing two would describe a file that
@@ -528,13 +528,13 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
                   <button
                     type="button"
                     disabled={action.busy}
-                    className={`${btn} border-red-500/40 text-red-300`}
+                    className={`${actionClass} border-red-500/40 text-red-300`}
                     onClick={() => setDiscardingLines(true)}
                   >
                     Discard them
                   </button>
                 )}
-                <button type="button" className={btn} onClick={clearPicks}>
+                <button type="button" className={actionClass} onClick={clearPicks}>
                   Clear
                 </button>
                 <span className="text-[var(--text-dim)]">

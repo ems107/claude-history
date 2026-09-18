@@ -34,6 +34,28 @@ export function formatDateTime(when: string | number | null): string {
 export const formatDateTimeFull = formatDateTime;
 
 /**
+ * The same clock with the year and the seconds dropped — for a place where the
+ * stamp is a hint beside something else and every character it takes is a
+ * character of that something else. The full one belongs on the hover.
+ */
+export function formatDateTimeShort(when: string | number | null): string {
+  if (when === null) return '—';
+  const ms = typeof when === 'number' ? when : Date.parse(when);
+  if (Number.isNaN(ms)) return '—';
+  const d = new Date(ms);
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Just the time of day — for a row whose date is already said by the headers around it. */
+export function formatTimeOfDay(when: string | number | null): string {
+  if (when === null) return '—';
+  const ms = typeof when === 'number' ? when : Date.parse(when);
+  if (Number.isNaN(ms)) return '—';
+  const d = new Date(ms);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
  * Time left until `when`, always rounded DOWN: "2 hr 37 min" promises less
  * than is actually left, never more, which is the safe direction for a quota
  * countdown. `compact` keeps only the largest unit ("2 hr", "5 d").
@@ -90,8 +112,16 @@ export function elapsed(when: string | number | null): string | null {
   if (when === null) return null;
   const ms = typeof when === 'number' ? when : Date.parse(when);
   if (Number.isNaN(ms)) return null;
+  return formatDuration(Date.now() - ms);
+}
 
-  const total = Math.floor(Math.max(0, Date.now() - ms) / 1000);
+/**
+ * A span in the same words, between two instants that are both in the past —
+ * how long an agent ran, say. `elapsed` is this one measured against now: the
+ * spelling lives here, once.
+ */
+export function formatDuration(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000);
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor(total / 60) % 60;
   const seconds = total % 60;
@@ -102,6 +132,58 @@ export function elapsed(when: string | number | null): string | null {
   // Seconds are the point of this format; they only become noise past an hour.
   if (hours === 0) parts.push(`${seconds} s`);
   return parts.join(' ');
+}
+
+/**
+ * The same span where fractions of a second are the point — a tool call's wall
+ * time is 60 ms at one median in this corpus. `formatDuration` starts flooring
+ * at the second, which would spell most of a tool run "0 s".
+ */
+export function formatMs(ms: number): string {
+  if (ms < 1000) return `${ms} ms`;
+  // 59,950+ would print "60.0 s" below and "N min 60 s" if the seconds were
+  // rounded after the minutes were cut — so round to whole seconds FIRST and
+  // split what that gives (the bug shipped in answerTime for a while).
+  if (ms < 59_950) return `${(ms / 1000).toFixed(1)} s`;
+  const totalS = Math.round(ms / 1000);
+  return `${Math.floor(totalS / 60)} min ${totalS % 60} s`;
+}
+
+/**
+ * Milliseconds between two transcript timestamps, or null when either is
+ * missing or unreadable. Clamped at zero: a replayed segment keeps its original
+ * clocks, and a span must never read negative for it.
+ */
+export function msBetween(from: string | null, to: string | null): number | null {
+  if (!from || !to) return null;
+  const a = Date.parse(from);
+  const b = Date.parse(to);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.max(0, b - a);
+}
+
+/**
+ * A live counter's spelling of a duration: "2h 34m 15s", "30m 04s", "42s".
+ * Not `formatDuration`, on purpose: this one keeps the seconds visible at any
+ * length (it is re-rendered every second, and a counter that stops moving
+ * reads as stopped) and never rolls hours into days — a session open since
+ * yesterday says "26h 05m 12s". First unit unpadded, the rest two digits, so
+ * the width only changes when a unit appears.
+ */
+export function formatClock(ms: number): string {
+  const total = Math.floor(Math.max(0, ms) / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor(total / 60) % 60;
+  const seconds = total % 60;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(seconds)}s`;
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`;
+  return `${seconds}s`;
+}
+
+/** The span between two transcript timestamps, or null when either is missing. */
+export function durationBetween(from: string | null, to: string | null): string | null {
+  const ms = msBetween(from, to);
+  return ms === null ? null : formatDuration(ms);
 }
 
 export function formatBytes(n: number): string {
@@ -126,4 +208,24 @@ export function entrypointLabel(entrypoint: string | null): string | null {
     default:
       return entrypoint;
   }
+}
+
+/**
+ * The tail of the folder a file is in — the last two segments, marked as cut.
+ *
+ * Here rather than in the component that first needed it, because two now do and
+ * they must cut identically: the delivery card in the conversation and the panel
+ * that indexes every delivery of the session.
+ *
+ * The whole path is neither useful nor showable in a row: these are absolute
+ * scratchpad paths of ~130 characters whose first ~110 are identical on every
+ * one, so a truncated column spends its width on the shared half and runs out
+ * before the part that differs. The end is the part that says anything, and the
+ * whole path belongs on the link's title and in its href.
+ */
+export function folderTail(path: string, name: string): string {
+  const dir = path.slice(0, path.length - name.length).replace(/[\\/]+$/, '');
+  const parts = dir.split(/[\\/]/);
+  const tail = parts.slice(-2).join('\\');
+  return parts.length > 2 ? `…\\${tail}` : dir;
 }

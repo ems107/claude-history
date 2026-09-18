@@ -93,10 +93,17 @@ export function ContextPill({
           />
         )}
       </span>
-      {point.cacheMiss && point.delta !== null && (
+      {/* The cache side of the same event the cost pill prices. It says only what
+          the split shows — the money and the cause belong to the pill next door,
+          and repeating them on two adjacent pills would just be noise. Note the
+          test is `recached`, not `read === 0`: a third of these keep the system
+          prefix cached and re-write everything after it, and reading it off a
+          zero missed all of them. */}
+      {point.recached > 0 && (
         <span className="mt-1 block text-[10px] text-amber-400/90">
-          Nothing was re-read from cache: the whole prompt was written again, at the write rate instead of a tenth of
-          it.
+          {point.read === 0
+            ? 'Nothing was re-read from cache: the whole prompt was written again, at the write rate instead of a tenth of it.'
+            : `Only the first ${tok(point.read)} of the prefix was still cached — the remaining ${tok(point.recached)} had to be written again at the write rate.`}
         </span>
       )}
       {note && <span className="mt-1 block text-[10px] text-amber-400/90">{note}</span>}

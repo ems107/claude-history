@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
-import { btn } from '../../lib/ui.ts';
+import { actionClass } from '../controlClass.ts';
 import { FollowBottomButton, useFollowBottom } from '../viewer/FollowBottom.tsx';
 import { CommandLogRow } from './CommandLogRow.tsx';
 
@@ -99,7 +99,7 @@ export function CommandLogDock({
             </label>
             <button
               type="button"
-              className={btn}
+              className={actionClass}
               title="Copy every command shown, with its folder"
               onClick={() => {
                 void copyPlain(entries.map((e) => pasteableCommand(e.argv, e.cwd)).join('\n'));
@@ -129,7 +129,7 @@ export function CommandLogDock({
               )}
             </div>
           </div>
-          {follow.scrollable && <FollowBottomButton following={follow.following} toggle={follow.toggle} />}
+          <FollowBottomButton following={follow.following} toggle={follow.toggle} unseen={follow.unseen} />
         </div>
       )}
     </div>

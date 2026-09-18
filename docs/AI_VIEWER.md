@@ -1,0 +1,1639 @@
+# The web app and the conversation viewer
+
+**Load this when:** you touch anything under `web/src/` — the session viewer above all (`TurnList`, `Turn`, `Bubble`, `ToolBlock`, `FoldHeader`, the cards and panels), deep links, highlighting, or the file-reference panel.
+
+Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SSE (`EventSource`) for live invalidation. What the data means is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md), [AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTEXT.md) and [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md).
+
+## Invariants
+
+- **No ancestor of a message may carry a `filter`** — it breaks every `position: fixed` popover inside it.
+- **Nothing that folds may be a `<button>`** — use `FoldHeader`, and ask `hasSelection()` before folding.
+- **Nothing interactive may be nested inside a `FoldHeader`** — siblings in the header row instead.
+- **Folding is presentation only.** Cost and context indexes always run over every turn.
+- **What is folded lives in `TurnList`**, keyed on the session id — never in the component that draws it.
+- **A deep link must point at something visible**: unfold the way in, then scroll, then say which one it was.
+- **Marks are `Range`s in the CSS Custom Highlight API**, never `<mark>` nodes in React's markdown.
+- **A message bubble takes no `onClick`.**
+- **A session with no transcript YET is not a session that does not exist** — the page draws it from the reservation ([Running Claude](AI_RUNNING_CLAUDE.md#starting-one-that-does-not-exist-yet)), and only a 404 with no reservation behind it is an error.
+- **A panel that indexes files asks the disk in ONE request**, and joins the answer on the ref it sent.
+- **A collector of paths written in prose may be stricter than what the renderer linkifies, never looser.**
+- **A starred message says so without being hovered, and nothing is drawn on the bubble.**
+- **What appears on hover may not resize what it appears in** — a hover toolbar is pinned to one line (`h-[1lh]`), never measured from its own buttons.
+- **A fold that can be a jump's destination opens and then LETS GO** — never `open={targeted || open}`.
+- **What the find bar counts is what unfolding can put inside a marking box** (`[data-bubble-body]`, `[data-tool-id]`).
+- **What is drawn inside a marking box and is not the message's own words carries `data-chrome`** — the marking walk rejects it and the formatted copy cuts it out.
+- **A find is a gesture, not a location**: the bar never writes to the URL.
+- **A button that acts on the server's own desktop is disabled when the page is remote**, with the reason from `shared/src/localOnly.ts` as its tooltip — `useLocalOnly()`, never a hostname check ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
+- **What settings exist lives in `lib/settingsCatalog.ts` and nowhere else** — the rail, the search, the changed tally and the anchors all read it, and a row's NAME is the catalogue's while its SHAPE is the area file's.
+- **A settings hash resolves to an AREA before it resolves to an element**, or the page renders one area and scrolls for something in another.
+- **A feature's master is a `Switch`, its reason is said once, and what it governs stays readable** — 70 %, never hidden: a collapsed block is one no deep link can reach.
+- **A settings hint is one line**; anything longer goes in the group's `Explain`.
+- **The settings rail marks what was clicked, never what you scrolled past** — nothing by default, and clicking beside a block clears it.
+- **Typing never moves the page** — a step unfolds things that do not fold back.
+- **The selected message lives outside React**, and `TurnList` is memoised so a click costs nothing.
+- **The ring survives F5**: remembered per conversation in `sessionStorage`, never in the URL, and restored by travelling the deep link's road back to it.
+- **`All` is the one scope never chosen for the reader** — and a narrowed one must say what it is holding back.
+- **A notification tone is played by ONE tab, out of a context a gesture unlocked** — `claimAnnouncement` in `lib/tabs.ts`, `primeAudio` in `lib/notificationSound.ts`. There is no system notification anywhere in this app, and the reason is a rule: `Notification` is secure-context only.
+- **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
+- **A row's unread count is measured from a READING**, never from a first sight — and the mark lives in the SERVER (`core/readMarks.ts`), beside the bell, so a reload keeps both.
+- **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
+- **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
+- **No row above the conversation may come and go** — least of all one gated on the enrichment.
+- **A panel opens BESIDE the conversation, never above it and never over it**, and only one rail panel is open at a time.
+- **The rail is furniture**: it is always drawn, and nothing may cover it — which nothing can, now that everything that opens is a column to one side of it.
+- **A pane is a BOX**: nothing inside one may grow the page or be drawn in its neighbour. Every fact in a panel's header truncates; only its controls are `shrink-0`.
+- **One column beside the session, never two** — the file viewer and a subagent's transcript swap places, they do not stack. The rail's panel is not part of that rule.
+- **The find bar belongs to the conversation's column**, not to the page.
+- **Anything that measures the column measures `--conv-box`**, never `100vw`.
+- **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
+- **A `Bubble` is for somebody speaking** — it has a tail, and a tail points at a speaker. Status, telemetry and chrome are drawn as rows.
+- **A row drawn outside a bubble carries its own `relative`** if anything in it is `position: absolute` — `sr-only` included. Escaping the scroller grows the PAGE.
+
+## Three layout rules that keep breaking
+
+**No ancestor of a message may carry a `filter`** — a `hover:brightness`, an opacity animation, anything. `HoverCard` (the cost and context popovers) is `position: fixed`, and a filtered element becomes the containing block for its fixed descendants, so the card anchors to the bubble instead of the viewport. Hover feedback goes through a ring or a border.
+
+**Anything `position: absolute` inside the conversation needs a positioned ancestor inside it.** The same fact read from the other end, and the one that bites hardest, because what escapes is not a popover but the PAGE. The scroller's own wrapper (`relative min-h-0 flex-1`) is positioned and sits OUTSIDE the scroller, so an absolute element with nothing nearer becomes its child: it is then laid out at its flow position **plus the scroll offset**, lands hundreds or thousands of pixels below the window, and the document grows to contain it — a second scrollbar into an empty screen, worse the further down the conversation you are. Measured on the working indicator's `sr-only` sentence (Tailwind's `sr-only` is `position: absolute`, which is easy to forget it is): 4,263 px down an 802 px window, 3,462 px of page scroll that should not exist, gone the moment its row was made `relative`. **`Bubble` is why this had never happened before** — it is positioned for its tail, so everything drawn inside a message has always had a containing block a few pixels away. Anything NOT in a bubble has to bring its own, and the way to check is one CDP scan: every `position: absolute` under `[data-conversation-scroller]` whose `offsetParent` the scroller does not contain (check 18).
+
+**Nothing that folds may be a `<button>`.** No browser lets a button's text be selected, and a fold header is where the viewer writes the figures worth copying: the tool name with its arguments, file paths, the dates and cost of a compacted stretch, token counts. They all go through `FoldHeader` — a div with `role="button"`, `tabIndex`, Enter/Space and `select-text` — and everything that folds on a click (an injected notice, the log rows) first asks `hasSelection()`, or a drag ending inside it collapses what the user was about to copy.
+
+- **A tool header has two voices, and the prose comes first.** `intent` — what the model said it was doing — then `inputSummary`, the command itself, dimmer and monospaced ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#line-types) for where it comes from and how often). Both sit in ONE truncating box so there is a single ellipsis and the sentence gets the room, and they are separated by a MARGIN rather than by a character: `findInSession` folds the same header from the same two fields in the same order, and a `·` drawn in only one of the two corpora is a character the ordinals could disagree about.
+- **A message bubble is not one of them.** A prompt used to fold its own turn in prompts-only mode, and an accidental click there hid the answer being read, so `Bubble` takes no `onClick` at all: a turn folds only from its fold strip.
+- Two consequences: **nothing interactive may be nested inside a `FoldHeader`** (copy buttons, cost pills and the subagent link are siblings in the header row), and a shrink-wrapped header needs `w-fit`, which the `<button>` gave for free.
+- Real buttons stay real: the header's mode toggles are controls with nothing to copy.
+
+## The header, and where the panels went
+
+The header carried **eighteen controls in one row** — twelve toggles, `View`,
+`Export .md` and the four resume buttons — which at 1440 px is about 2,030 px of
+content in the 1,408 available: the title truncated to `Redise…` and the row ran
+off the screen. The count was the symptom. What made it unreadable is that those
+eighteen mixed **four unrelated kinds of thing at one visual weight**: how the
+conversation is drawn, which panel is open, what can be done with the session,
+and find.
+
+Each kind has one home now, and the header is two rows — 65 px measured, against
+95:
+
+| Kind | Where it lives |
+| --- | --- |
+| How the conversation is drawn | `ViewMenu` — thinking, tool calls, compacted stretches, the two folding actions, zoom and width. Lit when **anything** in it is off its default, which is the rule `ViewButton` applied to two values and now covers five. |
+| What can be done with the session | `SessionActions`, all of it behind `⋯`: rename, pin, export, and under **Open on this machine** the project folder, VS Code, resuming in a terminal and copying the command. Nothing here is a mode and nothing here is consulted while reading — each one is decided and then done once. |
+| Which panel is open | The rail down the right-hand edge (`lib/inspector.ts`, `InspectorRail`, `Inspector`). |
+| Find | `FindButton`, which lives beside the bar it opens. |
+
+Row two is the facts — branch, model, entrypoint, both dates in full, the four
+counts and **what the session cost** — ending in `more`, which holds what you
+look UP rather than read: the slug, the `cc` version, the context entries,
+`resumed ×N`, the fork chain, the PR links and the id with its copy button.
+Remembered in `localStorage`, like the reading preferences.
+
+The cost is `sessionCostParts(…).total` with the split on the hover — **the same
+figure from the same function as the list and the sort**, agents included,
+because a session that delegated its work spent that money as surely as one that
+did it itself. It and the counts used to blink out on every message a live
+session wrote, and this header remembered the last enrichment to stand still;
+that is now the summary's own guarantee, made once for every reader
+([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)), and nothing here remembers anything.
+
+**Two duplications went with the rewrite**: the subagent count was the `⑂ N`
+badge AND a button, and five panels wrote their own name at the top of a column
+whose title bar already said it. (The badge itself has since left the header and
+the list both — it is prose on the list's meta line now, beside the compactions.)
+
+**Rename and pin are in `⋯`, not glyphs that appear on hover beside the title.**
+What appears on hover is invisible until the pointer happens to be in the right
+place, and both of them are things you go looking for.
+
+**The line between a state and an action is what decides where each goes.** The
+two STATES stay in the title row, where they can be read without hovering or
+opening anything: the `★` badge for a pin, and a `✎` for a local rename — the
+same glyph, colour and tooltip the list uses, so the two places cannot drift.
+The ACTIONS that set them are in the menu. `originalTitle` itself is under
+`more`, because the string is as long as the title it replaced and a whole row of
+the header is too much to spend on something read once; the `✎` says there is
+one, and its hover says what it is.
+
+**A badge in that row must be CENTRED against the title, and by default it is
+not.** `SessionBadges` is an `inline-flex`, so inside a block wrapper it is
+baseline-aligned in the row's 24 px line box rather than centred in it — measured
+2.5 px low against the title, which at this size is exactly enough to look
+broken. The wrapper is `flex items-center`, which collapses it to the badge's own
+17 px and lets the row do the centring: title, `✎`, `★` and `live` all report the
+same vertical middle.
+
+**Escape closes a menu instead of leaving the page.** `usePopover` listens on the
+`document` in the CAPTURE phase and stops the key there, so the page's own
+listener on the `window` never sees it. Neither of the popovers it replaces did
+this, which was harmless with a pair of checkboxes in them and would not be with
+the session's actions. The full-screen overlays stop the key at the `document`
+too — `QuestionPanel`'s reading view and `ContextOverlay` (the token panel's
+context chart, a body portal) — so closing one never touches the unwind below.
+
+### The rail and the inspector
+
+**Panels are not stacked above the conversation any more.** Every one of them used
+to be inserted between the header and the scroller, so opening one pushed down
+exactly what you were reading, and having two open pushed it down twice.
+Measured on `f3384d17`: opening a panel leaves the scroller's `clientHeight`
+unchanged, which is the assertion [check 27](AI_TESTING.md) makes about a message
+arriving, now true of a panel opening too.
+
+- **72 px, and every item carries its label.** Not the 44 an icon needs: seven
+  unlabelled glyphs down the side of a window is six things to learn and a
+  tooltip to wait for.
+- **An item exists only when its panel has something in it** — the rule the six
+  buttons already followed. `Tokens` is the only one always there. A panel that
+  stops existing cannot stay open (`useInspector` re-checks on every render), or
+  a session whose last agent row went away with a re-parse would leave the
+  inspector holding a title with nothing under it.
+- **A rail button can say that something in it is WRONG**, and `MCP` is the only
+  one that ever does: `PanelItem.alert` is drawn as an amber `⚠ N` in the
+  button's top-right corner, so a server that never connected is legible without
+  opening anything. **On a phone it moves to the HEADER**, beside the project
+  tag, as `⚠ N MCP` — there is no rail there at all, and a mark that lives
+  inside the ⋮ sheet is a warning nobody receives until they go looking. It
+  names what it is about, because unlike a rail button it has no label of its
+  own, and pressing it OPENS the panel rather than toggling it: a warning is not
+  a switch. Its `py-1` is the `more` button's on that same row — a target twice
+  as tall as everything beside it would break the line it lives in. **It is a third case of the rule
+  the bell and the unseen count already follow** ([below](#what-a-list-row-says-you-have-not-seen)):
+  amber, and NOT `CountBadge`. That component hangs off a control's top-right
+  corner by 6 px, and this rail's right edge is the WINDOW's — the page clipped
+  the circle in half and it read as a stray dot rather than as a warning. Placed
+  WITHIN the padding box instead, beside the icon, where 72 px leaves ~28 px
+  either side of a 16 px glyph. **Every row of the rail stays 44 px** whether or
+  not anything went wrong: a column of buttons that changes shape is harder to
+  read than one that does not, so the alert may not take a line of its own.
+  Amber and not red, per `BlockedBar`: the session ran, it just ran without
+  something it expected. `alert` is required rather than optional so a panel
+  that ought to warn cannot quietly forget to; the other seven pass 0.
+- **One at a time, which is what gives Escape one meaning.** The unwind is
+  `file → agent → inspector → find bar → back`, and the inspector is one branch
+  for every panel — see [the three file panels](#the-three-file-panels) for
+  the objection this answers.
+- **What is open is ONE value, and `?agents=1` is a mirror of it** — not half of
+  the answer. The parameter has to stay, because the link can be copied and
+  survives a reload, but it is written when the value changes and adopted when it
+  changes from outside (a deep link, the token panel's own link, the back
+  button). `closeAgents` exists beside
+  `toggleAgents` for the writing half: asking a toggle to close something already
+  closed would open it.
+- **A router navigation and a `setState` do not land in the same commit, and
+  deriving one thing from both is how you get a flicker.** This is worth the
+  paragraph because nothing about the code looked wrong. With the agent list
+  living only in the URL and the open panel derived as
+  `agents.open ? 'agents' : local`, every switch into or out of it changed one
+  half synchronously and the other through the router — which wraps navigation in
+  a transition — so for one commit neither said anything and the inspector
+  vanished and came back. Sampled every frame with `requestAnimationFrame`: **22
+  frames (~360 ms) of nothing going in, 12 coming out**, while the other four
+  panels switched cleanly. Holding the value in one place fixed the hole; reading
+  ONLY that place (rather than preferring the URL) also took ~15 frames of lag
+  off leaving the list, and left the six transitions identical at 13-14 frames.
+- **One width for every panel**, dragged from the seam and remembered
+  (`inspectorWidth` — the session list's `sidebarWidth` pattern, mirrored,
+  because this one grows leftwards). One width is what keeps the panels honest:
+  each has to read at 320 px, which is the work that turned the token table into
+  a stack of cards and made every file row wrap.
+- **The host owns the background, the border and the scroll.** Every panel lost
+  its own `border-b`, its `bg-[var(--bg-raised)]/50` and — the one that mattered
+  — its `max-h-[45vh] overflow-y-auto`, which inside a scrolling column would be
+  a scroller inside a scroller.
+- **`--conv-box` is what the column measures itself against.** The composer and
+  the terminal give up the follow pill's corner wherever the column reaches the
+  edge of the box it is centred in, and that box is no longer the viewport. It is
+  set once, on the row that holds the three columns, and inherited — so the two
+  of them and the width calculation cannot disagree. It falls back to `100vw`,
+  which is what makes the new-session page's thread work unchanged.
+- **`data-inspector` and `data-inspector-rail`** are measurement hooks, like
+  `data-conversation-scroller` and `data-sticky-bottom`.
+
+### The two columns beside the session
+
+The file viewer and a subagent's transcript were the last of the old generation:
+`position: fixed` panels 832 px and 704 px wide, anchored at `right: RAIL_PX` so
+as not to cover the rail, laid over the conversation and — because `inset-y-0`
+starts at the top of the WINDOW — over the app's own header too. They are
+columns now (`lib/sideColumns.ts`, `SideColumn`), and the differences from the
+inspector's are all consequences of one choice.
+
+- **They are siblings of the whole session view, not of the conversation**, and
+  that is the whole of why they run the full height: the session's own header is
+  inside the box to their left, and the app's header, above all of it, is never
+  covered. The rail and the inspector stay inside the session, so a session with
+  nothing open is unchanged to the pixel.
+- **One column, never two.** The file and a subagent's transcript are the same
+  kind of thing in the same place, and two of them leave the conversation a strip
+  between two panels — which is what the reader came for. Both writers clear the
+  other, AND the reading end enforces it (`agentId` is `null` while a file is
+  open), so a URL carrying both — typed, or pasted from before the rule existed —
+  still draws one thing. The file wins there because it is the only one of the
+  two that can be opened from inside the other, so where both are set it is the
+  later intent.
+  What it costs was once the reason not to do it: a path clicked inside a
+  subagent's report closes the report and the place you had in it. The list is
+  still open in the rail, so the way back is one press — but it is a press, and
+  the panel opens at the top. That is the trade, made deliberately, and it is why
+  the old design drew the file panel at `z-30` OVER the drawer's `z-20`.
+  The rail's own panel is not part of this rule: it is where a file is often
+  clicked FROM — the Changed, Sent and Mentioned lists — and closing the list you
+  are walking would be the same bug in a smaller place.
+- **The order is conversation · inspector · rail · subagent · file.** Only one of
+  the last two is ever drawn, so the order is what the reader sees when they swap
+  one for the other: the column stays where it was.
+- **`SideColumn` is not `Inspector`**, and the split is where the header lives.
+  The inspector hosts six interchangeable panels and owns their title bar; these
+  two arrive with a header of their own — a path, a size, four launchers; an
+  agent type, a clock, two jumps — so what is shared is the seam, the width and
+  the box, and nothing else.
+- **One function decides what each is DRAWN at** (`layoutColumns`, pure), and the
+  rule is **one has priority and the other yields** — not both shrinking by the
+  same factor. Proportional was the first version, and it made every drag feel
+  broken: with two things open their remembered widths rarely fit, so both were
+  being scaled, and 100 px of mouse became ~92 px of column while the other seam
+  moved as well. One thing open felt right for exactly the same reason — nothing
+  to scale. **Priority follows the drag**: whichever seam is under the hand wins
+  and the other gives way to its floor (`InspectorState.dragging` exists for that
+  one fact). At rest it is the column's, the thing just opened to be looked at.
+- **Yielding is DRAWN, never remembered.** A panel squeezed by the column beside
+  it keeps the width it was dragged to and gets it back when the column closes. A
+  layout that wrote back would make every squeeze permanent, and every reader
+  would end up at the minimum by attrition.
+- **The seam is anchored, not accumulated** (`trackPointer`). The width comes off
+  the pointer's position against the panel's own right edge, with the grab offset
+  kept so the pixel you took hold of stays under the pointer; nothing accumulates
+  and nothing can drift. That edge cannot move during the drag, which is the
+  other half of why priority follows the hand: the panel being dragged is drawn
+  at exactly what it asks for, so the one yielding is the only thing that moves.
+- **One width for the column, whatever is in it** (`sideColumnWidth`) — the
+  inspector's own rule, and it became the right one here the moment only one
+  column could be open at a time. A key each described a split that cannot
+  exist: two panels side by side, each with its own share. What there actually
+  is is a SPLIT — how much of the window the reader gives to the thing beside
+  the conversation — so walking from a file into a subagent's transcript keeps
+  it, where before it threw the split away and landed on the other one's
+  default. The width belongs to the SLOT, which is also why it is held in the
+  page: the file viewer is keyed on the reference and remounts on every new
+  file.
+- **The four numbers, and why none of them is borrowed.** `SIDE_MIN` is 240 — a
+  column dragged narrow is usually somebody keeping a file in the corner of their
+  eye, which is not the same thing as reading it, and the 360 it started at was a
+  limit nobody had asked for. `INSPECTOR_MIN` stays 320 because its panels
+  are WRITTEN for 320: a file viewer at 240 is still a file viewer, a token
+  ledger at 240 is a broken table. `CONV_MIN` is 320, the same floor — see below.
+  And `WIDTH_MIN` is deliberately none of them: it is the narrowest reading
+  column somebody can choose in `View ▾`, a statement about line length, and
+  using it as the pane's floor (the first version did, on a "one home for the
+  fact" argument) nailed the split down — at 1426 px a column could not pass 870,
+  so "put the file on half the screen" was not reachable. Two facts, two numbers.
+- **`CONV_MIN` is 320, and the number it was before is why.** It was 400, and
+  400 was measured: 384 is where the conversation stops scrolling SIDEWAYS, and
+  that was rounded up. Finding it moved a bug — the content floor was 524 px,
+  all of it the turn's fold strip (`flex w-fit` with no `flex-wrap`, so a row
+  that could not fit was simply drawn too wide), and teaching that strip to wrap
+  took the floor to 364. What holds it at 364 is the message header's trailing
+  run, and that one stays: its `actions` appear on HOVER, so a header that
+  wrapped could grow a line under the pointer, which is the one thing [a hover
+  toolbar may never do](#invariants). The last 20 px are the scroller's own — a
+  gutter reserved on BOTH edges to keep the thread centred, so a 384 px column
+  is a 364 px scroller.
+  **But 400 was the wrong floor to hold the reader to.** A floor is protection
+  against the LAYOUT squeezing the conversation on its own; it is not a veto over
+  what somebody deliberately drags. At 400, a 1426 px window with a panel open
+  left the column 626 px — six from its own default — so the seam had nowhere to
+  go and read as stuck, which is the second time these numbers were reported as
+  too tight. At 320 there is room to drag, and below ~384 the conversation grows
+  a sideways scrollbar of its own, which a window narrowed that far has always
+  given it. That one is a consequence of a gesture and one Escape from undone.
+- **When not even the floors fit, the conversation goes under its own floor.**
+  It is `flex-1 min-w-0`, so it absorbs the impossible case; the alternative is a
+  row wider than the window, and a horizontal scrollbar under the whole app is
+  this layout's one way of failing badly.
+- **The window is read from state, which the inspector never needed.** Its drag
+  could read `window.innerWidth` once and never again, because a window narrowed
+  afterwards simply squeezed the conversation. With two `shrink-0` columns and
+  the rail beside it that stops being true — the conversation reaches zero and
+  the ROW overflows — so `useWindowWidth` re-lays-out on resize.
+- **The session header now moves, and it is the one height that may.** It is
+  inside the box that narrows, so its facts row rewraps: 697 → 677 px of
+  scroller on opening a file at 1440×900, all 20 of them the header's. That is
+  not the shake [Nothing above the conversation may change
+  height](#nothing-above-the-conversation-may-change-height) forbids — it is the
+  reader's own gesture, the same reflow a narrowed window has always caused, and
+  it happens once. Opening a **rail** panel still changes nothing, because the
+  inspector is below the header rather than beside it. And nothing else takes
+  height any more at the widths opening a panel reaches; only a drag taken below
+  ~384 px gives the conversation a horizontal scrollbar of its own, and that
+  takes another 10 px with it.
+- **Ctrl+F came back with them.** The find bar was switched off while either
+  panel was up — searching what you cannot see, and stepping the page under a
+  layer, is worse than no bar — and beside the conversation there is nothing left
+  to hide it. `useFindBar`'s `enabled` had no caller that could pass false and is
+  gone.
+- **A pane is a BOX, on both sides of the seam.** `SideColumn` carries
+  `overflow-hidden` and so does the session's own box, and the second one is
+  there because the session header's controls — a `shrink-0` row that simply
+  runs out of room — were being painted straight across the seam and over the
+  file beside it. Nothing may be drawn in its neighbour, and clipping is the
+  right answer rather than a shame: a session squeezed that far is being squeezed
+  on purpose, and a control temporarily out of reach costs one drag to get back.
+  It eats nothing that matters — `position: fixed` is not clipped by an
+  ancestor's overflow, so the hover cards, the image overlay and the terminal's
+  full screen still escape, and the two header menus open downward inside the
+  box (checked: 240×240, entirely within it).
+- **`data-side-column="file|agent"` and `data-session-header`** join the
+  measurement hooks above.
+
+## The star on a message
+
+`MessageActions` is the toolbar in a bubble's header row, and the star is its
+last item — after the two copy buttons, so a set star sits right against the
+model and the pills, the part of the header that is always drawn; first in the
+row it floated alone in the middle of it whenever the copy buttons were hidden.
+Never on the bubble, though, which takes no `onClick` and
+must not be recoloured: an outline means recolouring `[data-bubble-tail]` too
+(its own element, its own opaque fill, its own keyframes) and `match-flash`
+already animates that border for 2.5 s, so a deep link arriving would fight it.
+
+- **`hidden` sits on each button, not on the row.** The row was hidden as a whole
+  because an invisible button still takes its width and left a permanent gap in
+  the header; a set star has to stay visible while you scroll past it, so it opts
+  out and the copy buttons keep the hover rule. (`opacity-0`, which the session
+  header's pin uses, would bring the gap back.)
+- **The row is `h-[1lh]` tall, and its buttons overflow it.** A hover toolbar that
+  measures itself makes the header taller the instant the pointer arrives — here
+  by one pixel, the star's `text-xs` line box against the header's 10 px one —
+  and one pixel is plenty: the whole thread below shuffles as the mouse sweeps
+  down it, and on a bubble's edge the growth carries the boundary out from under
+  the pointer and back again, which flickers. One line of the header's own text,
+  whatever it is set in, is the height; the padding paints outside it.
+- **No `StarContext` means no star button**, the same contract `SubagentContext`
+  states — and that is what keeps it out of the subagent drawer, which renders
+  the same `TurnList` over a transcript whose uuids this session does not
+  contain. The provider wraps the conversation's list alone.
+- **Starring invalidates `['stars']` and nothing else.** `['session', id]` is a
+  re-parse of the whole transcript; see the reasoning and the storage in
+  [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md).
+- The page itself (`/starred`) is the sibling of Prompts and Plans, and its rows
+  link with `?msg=` — so everything under "Deep links" below is what makes the
+  link land: the segment, the branch and the turn all unfold first.
+
+## The bar on a code block
+
+A fenced block in an answer wears one: the language it is written in on the
+left, `⧉ Copy` on the right. **Fixed, not revealed on hover** — the one thing a
+code block can afford that a bubble's header row cannot, because the bar is its
+own strip and never covers the first line, and because a copy button nobody
+knows to hover for is a copy button nobody has. It is turned on for the
+assistant's own messages alone: `Markdown` takes a `codeBar` prop, `Turn` is the
+only caller that passes it, and the other seven — a plan, a subagent's report, a
+compaction summary, the release notes, the Starred page — render exactly what
+they rendered before. No provider, no button, the contract `StarContext` states.
+
+- **The bar sits OUTSIDE the `<pre>`.** Two things follow from that and neither
+  is cosmetic: the block's `textContent` is the code and nothing else, so what
+  is copied needs no parsing and cannot drift from what is on screen; and the
+  bar does not slide out of view when a long line scrolls the `<pre>`
+  horizontally, which is exactly what an absolutely-positioned button inside one
+  does.
+- **The wrapper is the box now.** It takes the margin and the rounding the
+  `<pre>` had, and clips both children with it, so the bar needs no corners of
+  its own and no number to keep in step with the plugin's. Those rules are in
+  `styles.css` rather than utilities because what has to be beaten is
+  typography's own `pre` rule: it is wrapped in `:where()` and so weighs no more
+  than `.prose`, which `.code-block > pre` outranks and a bare `m-0` would only
+  tie with.
+- **Both labels are always drawn and a class chooses between them.** `TurnList`'s
+  `MutationObserver` watches `childList` and `characterData` and not attributes,
+  so swapping a class costs nothing where swapping the text would repaint every
+  mark in the conversation, twice, on every copy.
+- **`select-none`**, because dragging across a couple of blocks is how a reader
+  takes code by hand, and `typescript ⧉ Copy` has no business in what they get.
+  The click is stopped as `MessageActions`' row stops it, or the scroller's own
+  handler moves the selection ring to whatever the block is inside.
+- The copy goes through `copyPlain`, never `navigator.clipboard` — over plain
+  HTTP that object does not exist ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md#the-clipboard)).
+  The trailing newline the fence closed with is dropped; nobody means to paste it.
+
+### `data-chrome`, and why it had to exist first
+
+The bar lives inside `[data-bubble-body]`, which is a marking box, and **the
+find bar counts in the transcript and paints in the DOM**. Anything of ours in
+there is therefore a match the corpus never saw, and it costs three things at
+once: a search for `copy` lights up every code block; the ordinal counted in the
+corpus and indexed into the DOM's ranges lands one late for every piece of
+chrome above it (`reveal` in `TurnList`); and the per-box counts the `visible`
+scope reads say a folded hit is on screen. On top of that, the message's own
+"Copy with formatting" reads its body back as HTML, so the bar would paste into
+Word.
+
+So `textNodesIn` rejects a `data-chrome` subtree outright — one function, and
+`boxRanges`, `markMatches` and `markConversation` all walk through it — and
+`renderedCopy` (`lib/clipboard.ts`) cuts the same subtrees out of both flavours
+of the formatted copy: hidden for the `innerText` one, which reads what is
+rendered, and deleted from a clone for the HTML. The attachment size line
+(`ZoomableImage`) was the same leak before there was a name for it and now
+carries the attribute too. The clamp in `reveal` still exists for the drift that
+is not ours to fix — a tool block's chrome, markdown's own syntax — and this is
+the rule that stops anyone adding a third.
+
+## The two cross-session pages order themselves
+
+Starred and Plans share `lib/order.ts` and `OrderBar`: one date field, a
+direction, and grouping by session. **A group is ordered by its NEWEST member in
+both directions**, which is what makes descending read as "the sessions I was
+last in". The choice is per page in `localStorage`, like the reading preferences
+in `viewPrefs.ts` — not in the URL, because the nav link carries no parameters
+and would reset it on every click. The session list keeps its own machinery
+(`filters.ts`: five sort fields, day/project grouping, all of it in the URL) and
+shares nothing with this but the look of the controls.
+
+## The project filter is a list of groups and then everything else
+
+`FilterSidebar`'s first section was a flat strip of a checkbox per project by
+name, which on a machine that clones every repository three times leaves the
+three clones wherever the alphabet put them. It is now every group
+alphabetically with its own projects indented under it, then every project in no
+group — and the order lives in `lib/projects.ts` (`projectFilterRows`) rather
+than in the component, because the desktop column and the phone's sheet are the
+same component and the rule is worth reasoning about without a render.
+
+- **A group narrows nothing.** Its checkbox ticks its members and that is all it
+  does; nothing about a group reaches the URL, which carries project keys
+  exactly as it always did. So a copied link keeps meaning what it meant after
+  the group behind it is renamed or deleted, and `parseFilters` /
+  `filtersToParams` are untouched.
+- **Membership is resolved through the project list, never read off the group.**
+  One lookup answers three ordinary situations: a member whose transcripts
+  `~/.claude` has swept, a member hidden in Settings, and a member that is the
+  auto-reload folder. None is drawn and none is removed from the stored group — a
+  project can come back, and the group is the user's to edit.
+- **A group with nothing left in it is not drawn at all.** Its checkbox would be
+  one whose "every member is ticked" is vacuously true — so it would render as
+  CHECKED while nothing was selected — and whose click did nothing. It stays in
+  Settings, which is where it can be deleted. For the same reason the count on a
+  group row is the SURVIVING members' count, not the stored list's length.
+- **`toggle` is a set operation.** Appending was harmless while only one row
+  could produce a key; a group produces several and the rows under it produce
+  the same ones again, so ticking a group and then one of its members put the
+  key in twice — after which unticking that member removed both copies and the
+  parent jumped from "all" to "some" in one click. Adding is a union, removing a
+  difference.
+- **`indeterminate` is not an attribute.** React neither knows nor reconciles it,
+  so it is written to the node on every render through an inline callback ref —
+  new identity each time, which is what makes that happen — with a BLOCK body,
+  because React 19 refuses a callback ref that returns anything but a cleanup.
+- **A dead key in `?projects=` is pruned, once the query has answered.** A key
+  with no project behind it filtered the list to nothing with no checkbox left to
+  untick it, and `saveListParams` put it back on every return from a session.
+  Gated on `isSuccess`, or a deep link wipes its own filter on the render before
+  the projects arrive.
+- **A hidden project is a shorter list with no filter to explain it**, which is
+  the one thing `activeFilterCount` exists to prevent and the one thing it cannot
+  count — hiding is not a filter and this panel cannot undo it. So the section
+  says it in a line that links to `/settings/projects#projects-visible`.
+
+## The settings page is a catalogue and seven areas
+
+`pages/SettingsPage.tsx` is the shell alone — which area is showing, what a save
+does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
+672 px scroll, holding four different kinds of thing at once: preferences, live
+state, actions and read-only information, all wearing the same card.
+
+**What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
+list.** Seven areas → nineteen groups → fifty-two rows, data only, no JSX. Four
+readers depend on it and that is why it is data: the rail, the search box, the
+changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
+the field in `AppSettings`, an `Entry` here, the row in its area file — and
+missing the middle one leaves the setting working but unfindable and uncounted,
+which is the failure mode worth having.
+
+**The catalogue holds the row's NAME; the area file holds its SHAPE.** Where a
+row is "label + control" it reads its label from the catalogue through
+`entryForField`, so `<ToggleField field="notifyEnabled">` carries its own DOM id
+and its own words and there is one copy. Where a row is a sentence with a box in
+the middle ("Ask Anthropic at most once every `[60]` seconds") the sentence is
+the JSX's and the name is the catalogue's — two different facts about one row,
+neither derived from the other. `format` on the entry is the third: how a stored
+value is SPELLED, read by both the `default …` marker and the changed-list, so
+they cannot disagree about what `inherit` is called.
+
+**An id resolves to an area before it resolves to an element.** `/settings#backups`
+is a bookmark and a README link and it names a row in an area the path does not,
+so the hash gets a say in which area renders (`resolveAnchor`) — the path still
+wins when it names one. Getting this wrong renders the default area and then
+hunts for an element that is in a different one, which is silence.
+`remote-access`, `backups` and `claude-retention` keep their exact ids: they are
+in the README and `RetentionFooter` links to one.
+
+**State is not drawn like a preference.** `Readout` is mono and dim, `Explain`
+folds the long explanations to the foot of their group, and a `Field` is a
+control. Ten cards in one column with no way to tell what you could CHANGE from
+what you were being TOLD was half of what made the old page unreadable. The
+exception is deliberate: **remote access keeps all its prose in the flow**,
+because a security statement nobody has opened is not a statement.
+
+**A feature's switch is a `Switch`, and everything it governs stays readable.**
+`GroupCard master=` draws it above a rule, `offNote` says in one line what off
+means, and that line appears ONCE — beside the switch that would change it, never
+repeated over the other groups the same switch governs, which get an `OFF` chip
+on the heading instead (and the group holding the switch gets no chip: it would
+say "off" three times in one card). Inactive rows are **70 %, not 40 %**: the
+words stay readable, because knowing what a switch would turn on is the reason to
+turn it on, while the controls read as dead on their own — the boxes and selects
+through the `disabled:` variants in their shared classes, a checkbox through the
+browser's native disabled rendering, which is why it carries none. Nothing is
+ever hidden: a collapsed block is a block a deep link and the search box cannot
+reach.
+
+**A hint is one line.** Anything longer belongs in the group's `Explain`, one
+click away rather than standing between the reader and the control. Ten
+paragraphs of small grey text under ten switches is a wall people read past.
+
+**The rail marks what was CLICKED, never what you scrolled past.** A block is
+selected the way a message is ([the selected message](#the-selected-message)) —
+click it and it takes the ring, click another and the ring moves, click the
+column beside them and it goes; a deep link leaves the block it landed in marked,
+and it is the same `[data-selected]` outline, which is an outline rather than a
+box-shadow precisely so an arriving flash fades to reveal it. A scroll-spy was
+tried here twice and is the wrong shape for this page: something is always lit,
+it is whatever you happened to scroll past rather than anything you chose, and
+nothing can be un-lit. The state is plain React — three cards, not three hundred
+bubbles, so there is no render to protect and no need for the viewer's module
+store.
+
+**The column is wide, and nothing inside it is capped narrower than the card.**
+The panel is `max-w-5xl` — a 976 px card. Capping the prose to a reading measure
+was tried, and it is the mistake worth recording: at `max-w-prose` a ONE-LINE
+hint wrapped at a third of the card with the rest of the row empty beside it, and
+the fix for "the width is not used" cannot be a rule that stops using it. The
+measure is enforced by the words instead — a hint is a line, two at the very
+most, and anything longer belongs in the group's `Explain`, where a paragraph is
+allowed to fill its box. The same rule settles a grid: **give the slack to the
+last column, never to a middle one**, or the values end up half a screen from the
+paths they describe.
+
+**What cannot be undone is a marked SUBSECTION, not a destination.** *Stop the
+server* and *Uninstall* sit at the foot of *This instance* — the block naming the
+install they act on — under a red rule and a red heading, each saying in a line
+what it costs. They were a `flex-wrap` beside *Open data folder* once, which was
+too little separation, and then an area of their own in the rail, which was too
+much: a whole destination for two buttons, exiled from what they operate on. Both
+are local-only, so over the network they grey together.
+
+**A setting that is a LIST needed three small things nothing else did.** The two
+in *Projects* are the first non-scalar preferences, and every comparison on this
+page was `===`: an array is never `===` its default, so both would have read as
+changed for ever on a fresh install. `sameSettingValue` is that comparison, in
+one place, read by the tally and by `DefaultBadge` — a shallow element-wise walk
+and no deeper, because the only non-scalar ever compared is a list of strings.
+`format` stops being optional too: `valueText` falls through to `String(value)`,
+which for `hiddenProjects` is every hidden path joined by commas in a `shrink-0`
+monospace span. And `noDefault` is what keeps the GROUPS out of the tally and out
+of *Restore all* — wiping every group somebody has written is not "restoring"
+anything, which is the same reason the auto-reload folder and the voice carry it.
+The editor there also breaks one of this page's own habits on purpose: **the
+groups are listed in AUTHORING order, and only the filter sorts them by name**,
+because a list sorted by name re-sorts itself while the name is being typed and
+unmounts the input mid-word. That is the whole of what `ProjectGroup.id` buys.
+
+**A `Field` is a ROW, and a block with a list in it is not one.** `Field` draws
+its content and its badge side by side, so a marker that appears when the
+setting leaves its default takes its width out of the column beside it — which
+for a row with one input is invisible, and for a block holding forty checkboxes
+means ticking one of them narrows all forty. Those two blocks use `Anchored`
+instead (the id and the flash, and nothing else) and put the badge in their own
+heading row, where what moves when it appears is one line of prose. Which makes
+a second thing true: **the badge IS the "put it back" button**, so a block that
+also drew a *Show all* of its own was drawing one action twice, a few pixels
+apart. `Anchored` takes a required id where `Field`'s is optional, so those two
+ids are written out the way `NotificationsArea` already writes one — check 47
+asserts every row id is in the DOM of its own area, which is what keeps them
+in step.
+
+**The logo's colour is a setting, and it is the app's accent.**
+*Themes* is the first area and the one `/settings` opens on, holding one row:
+seven swatches and a box for anything else, drawn as a control of its own
+because a colour is the one value that can be SHOWN — a dropdown reading "Amber"
+and "Teal" is a list of promises — and because the last option is "any colour",
+which a closed list has no shape for. There is no preview: a click saves and the
+page repaints into the answer — the mark in the header, the rail beside it, the
+swatch's own ring. What it moves is `--accent` / `--accent-dim`, from which
+`styles.css` already derived `--logo` / `--logo-dim`, so **one property written
+is the whole change** and the mark keeps a name of its own for the fade only it
+wears. `lib/appIdentity.ts` **expresses the default by REMOVING them**, so
+"nothing chosen" and "the terracotta it ships with" cannot drift apart and a
+default instance draws exactly what it drew before any of this existed.
+
+**The two things that used to keep it off `--accent` were paid off rather than
+argued with.** A handful of controls fill with the accent and put text inside —
+the composer's *Send*, `/new`'s *Start*, the phone's count badge, the word the
+find bar is standing on — and each hardcoded a near-black that only worked over
+terracotta; that is `--accent-ink` now, decided by `logoInk`, the same
+contrast-the-two-candidates rule that keeps the tile's chevrons visible, so a
+navy gets the light ink instead of unreadable text. And xterm is handed a theme
+when it is CONSTRUCTED and never asked again, so an open terminal kept the
+previous cursor: `SessionTerminal.tsx` re-reads it on `ACCENT_EVENT`, which
+`publish` dispatches at the moment it writes the properties. **An event and not
+the settings query**, because a child's effect runs before its parent's — a
+terminal watching the same setting would read the colour that was still there.
+For that same terminal `--accent-dim` is written as a **hex**: a custom property
+is substituted at its use site, so `getPropertyValue` handed the `color-mix()`
+it used to hold straight to xterm's own parser, which has never heard of one
+(`dimLogoColor`, which does the multiplication `color-mix` would have).
+
+The tab's icon follows through the server: `routes/brand.ts` tints
+`web/public/favicon.svg`, which stays the one place the tile is drawn, so a page
+load needs nothing from the client at all. **What the client has to push is the
+colour changing under an OPEN tab, and only a new `<link>` element does that** —
+writing `href` on the one the browser has already read, or `replaceWith`, sends
+no request whatever the DOM then says. **And the tab is not the request**: while
+the `.ico` was also declared, Chrome put the raster in the tab and the tinted
+SVG nowhere, fetched and discarded, immune to `sizes="any"` on the SVG. So the
+SVG is now the ONLY icon `web/index.html` declares, and the swap carries the
+same `sizes` — `favicon.ico` is still on disk, where a browser without SVG
+favicons asks for it and where the Start Menu shortcut points. Both faults
+shipped, one behind the other, and check 56 is written so neither can again:
+assert the request rather than the attribute, then LOOK at the tab. The
+pre-rendered rasters — the `.ico`, the touch icon, Android's launcher icon, the
+shortcut — follow nothing, which the row says in its hint rather than leaving to
+be found out.
+
+**A dynamic route at a URL that was ever `immutable` is a route nobody asks.**
+This is the third fault of the same family and the one that reached a user: for
+the whole life of this app before `routes/brand.ts` existed, the static handler
+served `/favicon.svg` and `/manifest.webmanifest` with `public,
+max-age=31536000, immutable` — so every browser that has ever opened it holds a
+copy of the terracotta tile and the shipped name that it will not revalidate
+until a year later, and a route answering those URLs is answering a question
+that is no longer being asked. It shows up as an install dialog offering the
+name and the icon from months ago, on a server that would have served the right
+ones. So **`lib/appIdentity.ts` points both links at `?v=<token>` always, not
+conditionally** — a URL that has never been cached is the only way past a year
+of `immutable` — the served manifest rewrites its own icon `src` the same way
+whenever the colour is not the default, and the static handler no longer marks
+either name immutable, so the poisoning cannot be recreated by deleting a route.
+The token is the colour and the name, which is exactly what the manifest
+depends on, so it changes when the answer would and never otherwise.
+
+**And the manifest is read ONCE per page load.** Renaming the app and pressing
+Install without a reload offered the previous name — measured through
+`Page.getAppManifest`, which is what the dialog itself reads — because nothing
+about a setting changing makes a browser re-read a manifest. The same element
+swap that re-asks for the icon re-asks for this, which is why both live in one
+function; `"id": "/"` is in the manifest so that a URL which now carries a query
+can never be mistaken for a different app.
+
+**The name is a SUFFIX, and empty is a choice rather than a gap.** `appName`
+names the browser tab and the app if you install it, and it names them *after*
+the name the app ships with: both read `Claude History laptop`. That is what
+makes the setting answerable — it asks which instance this is, not what the app
+is called — and nothing on screen moves for anybody who never touches it. Empty
+is the shipped name alone, which lets `routes/brand.ts` hand back the manifest
+file untouched — the same rule
+`logoColor` follows by REMOVING a property rather than writing the terracotta
+back; the catalogue's `format` is what stops the marker reading `default empty`,
+and it says the whole name rather than the stored half, which on its own reads
+like a name that lost its front. Only `name` and `short_name` are overridden
+there, so the description, the colours and the icons stay facts about the file.
+The one instance that never gets its file back verbatim is a **nameless** dev
+one, which marks its own name exactly as its tab title does: two tabs alike on
+two ports is the known way to confuse them, and two INSTALLED apps alike would
+outlive the confusion — an installed window has no address bar to check the port
+in. **A name that was typed replaces that marker rather than being decorated
+with it**, in both places: it is already the answer the marker exists to give,
+said better, and the shipped name is in front of it either way. Marking it too
+read as `dev · Claude History dev :7434` the first time somebody did the obvious
+thing and typed the distinction themselves.
+
+The settings row carries the shipped half INSIDE the box, in front of the caret
+(`TextField`'s `prefix`, its only user). A hint underneath saying the same words
+was what it looked like first, and it read as a remark about the field rather
+than as the front of the answer — every version of it needed the person to
+imagine the result. This way the box shows the whole name and the caret sits
+where their half starts. On a phone the prefix goes ABOVE the caret rather than
+beside it: a row with a `default …` marker beside it gets 138 px at 360 px — the
+marker's width is what every field in that card is left with — and 78 of them
+spent on the prefix left 46 to type in.
+
+**The app is called `Claude History`, in one spelling, and the name has four
+homes.** `shared`'s `APP_NAME` is what the bundle uses — the tab title, the
+prefix, the changed-list's spelling of a set value; `web/public/manifest.webmanifest`
+holds the `name` and `short_name` the server appends to, which is why the server
+does not import the constant (the file stays the one place an install's name is
+written); and `web/index.html`'s own `<title>` is what a tab wears before any of
+our JavaScript runs. **They must agree, and the way this went wrong is
+instructive**: the tab title was written `claude history` while `index.html` said
+`Claude History`, so every tab opened right and was then renamed DOWN the moment
+the settings query resolved. The lower-case pair in the header is not a fifth
+copy — it is a wordmark, two spans in two colours, and a logo is not a name.
+
+**Installing is a readout, not a button, and that is a limit worth knowing.**
+Chrome dropped the service-worker requirement for installing from its own menu
+in 108 (mobile) and 112 (desktop) but kept it for `beforeinstallprompt`, so a
+page with no service worker cannot raise the prompt itself — and a service
+worker whose only purpose is to unlock a button of ours is a cache and a
+lifecycle added to a local tool, bought for a button. So the row points at the
+one the browser already draws and says which of three things is true HERE, read
+rather than assumed: this window IS the installed app (`(display-mode:
+standalone)`), or it can be installed, or it cannot because `isSecureContext` is
+false — which is exactly what a phone reading this over remote access sees, and
+is the truth rather than a fault, since installing needs `https` or a
+`localhost`/`127.0.0.1` address. The installed icon is the tinted tile, so it
+follows the logo colour; the manifest asks for it with `sizes="192x192
+512x512"` rather than `sizes="any"`, which satisfies nothing in Chromium's
+192/512 rule and breaks WebAPK installs on Android outright.
+
+## What folds
+
+**Three things fold, and all three are presentation only**: a compacted stretch (`CompactedSegment`), a branch a rewind cut away (`DiscardedBranch`, grouped by `groupTurns`) and a turn's own answers. None of them may filter the data — `buildCostIndex` / `buildContextIndex` still run over every turn and are read by original index, which is the only reason the pills reconcile.
+
+**What is folded lives in `TurnList`**, keyed on the session id, never in the component that draws it: a live session replaces the whole `turns` array every few seconds, so per-component state dies with the remount and any effect keyed on `turns` re-folds what the user just opened. For the same reason the "expand all" effects read the segments through a ref and key on the toggle alone. Deep links must unfold their way in — segment and turn — before scrolling, or the link silently does nothing.
+
+**The fold strip carries the turn's settled duration** — `3 responses · 12 tool calls · 2 min 45 s`, folded and unfolded alike, the exact start → end on the hover. **It also counts what is hidden that is neither a response nor a call**: `· 2 plan mode markers · 5 notices · 1 recap`, and the count is what keeps those from being silent omissions. Three things earn a word there. Two are the assistant's side of the turn as much as an answer is — a task that finished mid-turn and joined the thread ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#task-notifications)), and the **recap**, Claude Code's own prose about what the turn did — and each used to be the thing left standing on a folded turn, which read as the turn having been *about* it. **What stays is decided by who it belongs to, not by what it looks like**: a `Command` line is the user's own action and folds no more than the prompt does, and every `system` item drawn as a PANEL — a compaction, a `/context` run, the stop marker — says what happened to the CONVERSATION, which a folded turn still has to show. **The plan-mode marker is the third word and the one panel that does not**, because entering plan mode is a moment of THIS turn rather than a fact about the conversation: the entry carries the prompt's own timestamp and the exit is the plan being approved, so folded they were the entry and the exit left hanging above and below the strip with every one of the eight hours between them gone. That timestamp is also why the entry has to mark the fold where it stands: `foldAt` is a POSITION, so a marker that lands before the first answer and does not mark it stays at the prompt's own margin, reading as a sibling of the question instead of as the first thing it produced. **A marker joins a thread and never makes one**, so it is counted and `anythingToFold` still ignores it — the `reference` flavour lands beside a `compact_boundary` in a turn that is a compaction and nothing else, and a strip there would hide the only line saying the plan survived it. `foldedCounts` holds all of it, `anythingToFold` decides whether there is a strip at all, and a turn whose only foldable thing is a recap is foldable for it alone. The figure is `turnSpan` (`lib/turnActivity.ts`, pure): first kept item to the newest stamp anything in the turn carries, tool results included and the recap excepted, which is **the same boundary the working row's `total` counts from live** — so the strip settles on the number the row was showing when the turn ended. **And the recap is counted and not timed, which is the one thing on the strip that is.** Claude Code writes it minutes after the turn it summarises and files it inside that turn, so its stamp is normally the newest one the turn carries and what it measures is the reader's absence — a turn nobody came back to until morning read as a turn that took all night. It was the newest stamp on one turn in five here, and the whole of the figure's disagreement with the CLI's own `durationMs`. A turn left with no figure at all by it is right rather than wrong: a prompt, no answer and a recap is a turn Claude never answered. It is wall time on purpose: a permission or a question the turn sat on is inside it, exactly as it was inside the live clock. It is deliberately not the CLI's own `turn_duration` line, which stays dropped — that figure excludes the human waits and is missing where a fallback would be needed anyway ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#system-lines-by-subtype), and check 43 for the class-by-class measurements). Two rules keep it honest: **the turn in flight holds it back** (`TurnView inFlight`, fed by `TurnList lastTurnInFlight` beside the footer plumbing — busy or waiting on the page, `running` in the drawer), because a second figure that stops at the last write would quietly disagree with the live clock underneath; and it is **a duration, never a datetime** — a date reappearing on the strip is check 17's failure signal for notice-opened turns, and this must not read as one. A turn with no strip shows no figure — nothing of the assistant's to fold, which is normally a turn Claude never answered (a recap alone still earns one, and it is the exception rather than the reading).
+
+## What cuts a tool run
+
+Four things are lifted out from between the tool calls, because each is a turn of the conversation in miniature and reads as plumbing when folded in among twenty `Read`s. `toolCard` in `Turn.tsx` is the one place that decides which — the two run loops each ask it once, because a fourth `asked ? null : parsePlan(b)` was one more than that shape could carry.
+
+**A question to the user** (`AnsweredQuestionCard`). The call itself stays inside the run, untouched — raw input, result, cost pill, and the `?tool=` anchor a deep link needs (checked: the link still opens exactly that one block). The card is the human reading of it and **never folds**.
+
+**A plan** (`PlanCard`; `parsePlan` in `lib/plans.ts` is pure, so the card, the markdown export and the per-message copy cannot drift about what a plan is). `summarizeInput` used to stringify 25 KB of markdown into a one-line collapsed header. Two differences from the question card: the **body folds**, because a plan is long and the conversation has to stay scannable (its own `# heading` names it meanwhile), and the **refusal never does** — it is one sentence, it is why the plan was turned down, and it is what the next turn acts on.
+
+**Files handed to the user** (`SentFilesCard`; `parseSentFiles` in `lib/sentFiles.ts` is pure, for the reason `parsePlan` is). The bug it fixes is the plainest one in this file: the last message of `fbc2e20c` reads *"you have them in the images above"* and there was nothing above it — a `SendUserFile` inside a collapsed run is a word in a list of tool names. The card names the files and **shows no thumbnail**: the transcript holds no bytes ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)), so one per row would be a fetch per file of every delivery on screen. Each name is a `FileLink` instead, and the picture appears in the panel that was opened to look at it — see *File references* below. Nothing here folds; being seen is the whole point.
+
+**What a code review found** (`FindingsCard`; `parseFindings` in `lib/findings.ts` is pure, for the reason `parsePlan` is). `ReportFindings` exists so that a host UI can draw the list, and it tells the model not to print the findings as text as well — so a viewer with no card for it loses the entire product of a review. `c483a438` is what that looks like from the reader's chair: an answer naming four of twelve and pointing at "el panel de hallazgos de arriba", where there was a collapsed run whose header was **14,348 characters** of minified JSON. **The rows fold and the card does not** — a finding's `failure_scenario` is the case for it and the twelve here run from 589 to 1,255 characters, so the row shows the ranked position, the category, `file:line` and the `short_summary`, and keeps the argument one click away. **A rejected report is drawn too, and folded**: the harness refuses one for a schema slip and the model retries with almost the same list ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)), so hiding the first leaves the error unexplained and opening it makes twelve findings look like twenty-four. The `file` of a finding is repo-relative, which is exactly what `FileRefContext` resolves against the session's launch cwd — and each row is **two `FoldHeader`s with that link between them**, never one with a link inside it, which is the rule that header carries.
+
+**A prompt typed while Claude was working** (`MessageItem.queued`) goes **on the rail, not at the prompt margin**. It did not open the turn it appears in, it interrupted it, so drawn where a prompt goes it cut the thread in two and split one piece of work across two folds. It keeps the user bubble's colour and its tail — it is still visibly the user speaking — and the `queued` chip explains the clock ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#queued-lines-attachment--queued_command) for why Claude Code agrees it is not a new prompt). It still shows when the turn is folded, indented.
+
+**The user pressing stop** (`InterruptMarker`, block kind `interrupt`) is the fifth, and the only one that is not a message at all: Claude Code writes `[Request interrupted by user]` as a `user` line ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#the-stop-marker-request-interrupted-by-user)), so it drew a bubble in the user's own colour quoting words nobody typed — and `isPromptItem` counted it, so every fold header above it said one prompt too many. It is drawn as the event it is: a thin rose line on the rail with the answer it cut short, no timestamp of its own (it lands within a second of that answer), and it stays visible when the turn is folded, like the "rewound away" notice. The cut it makes falls between items, so there is nothing for `costOwner` to undo — and being always the last item of its turn, no run follows it anyway.
+
+> **The trap in all four: `costEntries` dedupes by message uuid WITHIN a run**, so a message whose calls land in two runs would be billed by both. `costOwner` drops to false after the cut, and that is the only reason the pills still reconcile. (For the queued prompt the cut falls between items, so there is nothing to undo.) The way to check it is on the page: collapse the runs — expanded, a run shows its own pill AND the per-message pills inside it, the same money twice — and the pills of a turn must still add up to its badge.
+
+## Narration: the prose that was printed while the work went past
+
+**`narration` is an answer, drawn like one, and behind no switch** (`NarrationBlock`). It reaches the transcript wearing the `thinking` type and is nothing of the sort — Claude Code printed it into the terminal as the work went past, and it is the only copy of itself ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#narration-is-not-thinking)). Read as thinking it was hidden by a switch that is off by default, and a prompt the user typed mid-turn then sat here with no reply under it while the terminal had one four lines below the question. That is the queued prompt's own bug in a second envelope, and it is the same fix: the thing exists, so draw it.
+
+- **It is the queued prompt's other half**, and the pair is why this is drawn at all. A question typed mid-turn is usually answered in narration and not in a `text` block — the final answer comes at the end of the turn, about something else — so the bubble above and the bubble below belong together: `3afb1fae` at 18:49:38 asks *"Cuantas pruebas te quedan por pasar?"* and at 18:50:32 answers *"La implementación ya está completa en el PR…"*, one bubble apart on the same rail.
+- **Ruled off and labelled `while working`, not styled as thinking.** It is the same voice as an answer but it was said DURING the work rather than at the end of it, and a reader who cannot tell them apart takes a mid-run status line for the conclusion. No fold: folding prose the user has already read once, to save four lines, is the hiding this section exists to undo. **The label is `data-chrome`** — it sits inside `[data-bubble-body]` and it is not a word the session said, so the marking walk rejects it and the formatted copy cuts it out ([below](#data-chrome-and-why-it-had-to-exist-first)); without it, copying the message handed over a stray `while working` that exists only on screen.
+- **It counts as a response on the fold strip** (`foldedCounts`), and folds away with the answers. Before this it counted as nothing — the message carrying it holds tool calls too, so with the narration filtered out its every visible block was a call and the viewer drew a bare run with no bubble at all. Turn 56 of `3afb1fae` reads `15 responses` where it used to read 12, and the three it gained are the three sentences the terminal printed.
+- **It travels with the prose everywhere the prose goes**: `prose` for the per-message copy, the markdown export (quoted, and never dropped by *include thinking*), `messageText` for a star, and the find bar under `assistant` rather than `thinking` — it is not hidden by anything, so filing it under a role that can be switched off would take it off the page again. The server indexes it the same way ([AI_SEARCH.md](AI_SEARCH.md)), which is what makes it findable at all: it was in no corpus before.
+- **The thinking switch's own count must not move.** `thinkingCount` is what disables the switch and says how much it hides, and narration is not among what it hides.
+
+## Subagents on screen
+
+`SubagentsPanel` is the index of the call, the report and the transcript (see [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md) for what joins them): the call is a `ToolBlock` with a chip named after the agent type, the report an `InjectedNotice`, the transcript a `SubagentDrawer`.
+
+- Opened by the rail, and by `?agents=1` — which lives in the URL so the panel survives a reload and can be linked to, the one panel state that does; the drawer's `?agent=` is a different parameter for a different thing. The list used to link straight onto it from a `⑂ N` badge and no longer does: that count is prose on the row now, beside the compactions, because it is a fact about what the conversation contains rather than a state of right now, and it was the only clickable thing inside a row that is entirely a link.
+- The panel reads each agent's transcript under the **same query key the drawer uses**, so nothing is fetched twice and opening one afterwards is instant — 350-500 KB and ~20 ms each, measured.
+- **The reports fold inside a notice that itself folds the turn on a click**, so that whole region must stop the event — otherwise reading a report collapses the conversation around it.
+- **The list is a tree** (`asTree`): an agent an agent spawned is drawn under it, indented, in the order it was sent out. A flat list left four rows at the top level explaining their parentage in prose, which the reader then had to reassemble. A row whose parent is somehow not in the list is appended rather than dropped — out of place beats invisible.
+- **A nested agent's two ends are in another agent, so the drawer needs anchors of its own.** For a `spawnDepth ≥ 2` row both jumps open the PARENT's transcript instead of the conversation, at `?agentTool=` / `?agentMsg=` — the drawer's counterparts of `?tool=` / `?msg=`, separate because those belong to the conversation underneath and would resolve to nothing inside an agent. `openAgent` rewrites both together, or one left over from a previous jump points into a transcript that does not contain it.
+
+## Deep links, the flash and the marks
+
+**A deep link has to point at something.** `?msg=` scrolls, and scrolling alone lands you in the middle of a 300-message session with nothing said about which message was meant — so the message flashes (`match-flash`, 2.5 s, the bubble's counterpart of Settings' `anchor-flash`) and, when the link came from a search, the matched words are marked for 8 s. Both wear off: the flash answers "which message" at a glance, finding the word inside a long answer is a slower job, hence the longer life.
+
+- **The anchor is not the box to flash.** An assistant message merges its streamed chunks, so a search snippet's uuid is often an ALIAS — a zero-sized `<span>` — and a ring on `getElementById` was a ring on nothing, which is why the highlight read as missing. Resolve `closest('[data-bubble]')` and flash that; mark inside `[data-bubble-body]` only, or a query for "user" lights up the header.
+- **The marks are `Range`s given to the CSS Custom Highlight API, never `<mark>` elements.** The text is markdown React re-renders every few seconds in a live session, and inserting nodes into it is a fight with React that nothing wins; this way the DOM is untouched and clearing is one `delete`. `::highlight(search-match)` in `styles.css` must keep the name `markMatches` registers, and it inherits nothing — background AND colour both have to be set. A browser without the API still gets the flash.
+- **The terms travel folded, one `hl` per term** (`highlightSearchParams`): a phrase term contains spaces and a joined list could not be split back. Folded is also the point — they are the ones the server matched, so an accented query marks its accented hits.
+- **A hit in tool output is anchored by `?tool=<toolUseId>`, not by a message.** A line uuid cannot identify a call (one assistant message makes several) and the line carrying a `tool_result` is rendered NOWHERE — only its clock survives, as `ToolResultInfo.timestamp` on the call's own block — so `SearchSnippet.toolUseId` is the only anchor those hits have. It outranks `?msg=` when both are there: a `call` hit carries the uuid of the message that made it, which would flash a whole answer instead of the one call among a run of thirty. Subagent text gets neither — its tool ids exist only inside its own transcript.
+- **`↑ the call` on a notice panel is that same anchor, and it is not an agent's affordance.** A task notification names the call it answers whoever produced it ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#task-notifications)), so the button asks whether this parse drew that call — `buildToolCallIndex`, every `data-tool-id` on the page, not the Agent-only set the subagent index used to hand out. Read as an agent's, it hid the jump from all 56 background commands here, and from every notice in the 20 sessions that have one and no subagent at all for the index to be built from. `callOf` holds the three joins **in order** so no caller has to know it: the notice's own `<tool-use-id>`, then the resumed agent's `meta.json`, then the call that announced the `<task-id>` in its result. One notice in this corpus reaches none of them — a `<fork-source>` line, which reports no task at all — and that one correctly offers nothing rather than a button that scrolls nowhere.
+- **The pairing is walked in both directions, off one map**: `↑ the call` on the notice panel, `↓ the answer` on the call it came from (`answerOfCall`, the same `buildToolCallIndex`). Read off one map rather than resolved twice, so the round trip cannot disagree with itself — whatever the `↑` reaches is what offers the `↓` back. The `↓` sits on the FACE of the tool block, beside `⑂ <agentType>`, because arriving from the `↑` opens that block and the way back has to be where you land, not behind a fold. Neither is drawn on faith: **10 calls here launched something whose notification never arrived** — the session ended first, or it is still out there — and a launch with no answer says so in prose instead ("not in this transcript"). The word is *answer* and not *report*, which the ⑂ panel keeps for an agent's `<result>`: a `Bash` command that finished files no report, and the notice is the answer to that call whoever made it.
+- **A tool block is its own box, EXCEPT when the message that made the call also wrote prose.** Then the run is drawn into that message's own bubble (`tools-before-ask`), and `closest('[data-bubble]')` climbed past the one call to the whole answer — 25 calls over the 20 largest sessions, and `b343d4ac`'s `toolu_01CyGpmXFjFcBj8apDVmAXck` flashed 19,383 characters to point at 17,047 of them. `anchorBox` tests `[data-tool-id]` first, which is safe because nothing carrying a message uuid has that attribute. (The third `ToolGroup`, the one for calls made BETWEEN two pieces of prose, was also the only one not passing `targetTool`. No transcript here takes that path — 0 of 6,295 calls, because Claude writes and then calls — so it opened no link anyone clicked; it was a third case written to differ from its two siblings.)
+- **Landing on a tool means opening three things**: the turn (`locate` holds tool ids beside message uuids), its run (`ToolGroup`, whose target effect is declared AFTER the `expandAll` one so it has the last word on mount) and the call itself (`ToolBlock`, `data-tool-id`). Each opens and then lets go — `open={targeted || open}` would make it impossible to fold back with the link still in the URL — and only the run holding the target opens, never the session (checked: 4 tool blocks in the DOM of a 210-call session).
+- **The anchor is polled for, not waited out once.** That chain is five state updates deep (segment, rewound branch, turn, run, block) and a single 100 ms guess at the end of it is a race on a big session.
+- **The effect keys on the link and NOT on the data** — that is what stops a live session being yanked back to the anchor every few seconds — and the price is that asking for the SAME anchor twice does nothing at all, which is exactly what clicking a row of the subagent list again is. Hence `jumpNonce`: bumped on every jump ASKED for, in the deps, and deliberately **not** in the URL, because it is a gesture and not part of the link.
+- **A jump control's click is not a click on the box it sits in** — that box is the one being LEFT — so `selectFromClick` is not asked about it at all (`isJumpControl`, `[data-jump]`). Without that, the two halves of the same gesture fought inside one click: the button set the anchor, the click then reached the scroller, and the rule that retires an anchor when the ring moves retired the one just set. It cost precisely what `jumpNonce` exists to give — pressing the SAME button twice in a row still scrolled to the target, but the flash was cut to 220 ms and `?tool=` left the address bar. Alternating `↑` and `↓` never showed it, because each press lands on the box that IS the anchor and the rule steps aside by itself. Only the controls that write the conversation's own anchor are marked: `⑂ transcript` opens a panel and is an ordinary click on its notice, ring and all.
+- **An offloaded tool output loads itself when it is the target** (`OffloadedResult autoLoad`): the deep scan reads those files, so the words looked for can be in one and nowhere else, and arriving at a "Load full output" button is the wrong answer to "show me the hit". It lands after the first marking pass, so the marks are re-run once — and only if the text really changed.
+- **Showing a match is not the same as scrolling to its box**: a tool result renders inside a `max-h-96 overflow-auto` pre, so a hit 2,000 lines down was "on screen" only in the sense that its container was. `revealRange` walks every scroller between the text and the window, innermost first, and moves nothing when the mark is already visible.
+- `matchSpans` is pure and takes plain strings — the text nodes' data — so the index arithmetic is checkable without a browser. It folds the pieces **concatenated**, not one by one: markdown splits a sentence into a node per emphasis, link and code span, and a phrase crossing one of those is exactly what a search finds and a reader cannot.
+
+## The selected message
+
+Clicking a message — or a tool call — selects it, and it stays selected until
+something else is clicked or a click lands on the empty space beside it. A deep
+link leaves the message it landed on selected too: the flash answers "which
+one" and then gets out of the way, which is right for an animation and wrong as
+the only record, so arriving from the search, from Prompts or from Starred now
+leaves a mark that is still there a minute later.
+
+It is **its own feature**, not the find bar's. The bar reads it; nothing else
+about it depends on the bar being open.
+
+- **`Bubble` still takes no `onClick`.** One handler on the scroller resolves
+  `focusKeyAt`, so the invariant holds to the letter and its reason — a stray
+  click folding the turn you were reading — never applies to something that only
+  draws a ring. On the SCROLLER rather than the width-limited box inside it, so
+  the empty gutters count as clicking away. (One handler versus three hundred is
+  not what makes this fast: React delegates from the root either way. What it
+  buys is the invariant and three hundred closures.)
+- **`InjectedNotice` lost its own click at the same time.** It folded the turn
+  in prompts-only mode — the very behaviour the bubble's invariant was written
+  against — and had simply outlived it, which is why the region holding its
+  report had to stop the event. Nothing to stop now, and a click there selects
+  the notice like anything else.
+- **A click also RETIRES the URL's anchor, when the anchor is no longer it.**
+  `?msg=` has two lives and only one should outlast a click: followed from the
+  search, from Prompts or from Starred it is a link and belongs in the address
+  bar, while written by a jump inside the page — `↑ 2/4 mentions`, the subagents
+  panel's `↓ the report` — it is a gesture that used to stay there for ever. F5
+  then landed back on that message however long ago it had been left, and
+  `useRestoredSelection` stood down because a link was present, so the remembered
+  ring could not win either: there was no way out but editing the address bar.
+  So a click that lands somewhere ELSE — another message, or the empty gutter,
+  which is what deselecting is — deletes `msg`, `tool` and the `hl` words with it.
+  Clicking the anchored box ITSELF changes nothing: it is still the place, and the
+  marks and the Ctrl+F seed still belong to that arrival.
+  - **The remembered ring is an opening move and is spent by the first click**
+    (`restoreSpent` in the page). Retiring the anchor makes `anchorUuid` fall back
+    to whatever the tab was left on, and without this the fallback fires as a
+    fresh jump — a click on the gutter would send the reader to a message from ten
+    minutes ago.
+  - **The flash has to come off in the effect's cleanup**, by hand. `bag.clear()`
+    has just cancelled the timer that would have removed it, so anything changing
+    the anchor mid-flash — this retirement, or a jump pressed twice — left
+    `match-flash` on that element for the life of the page: invisible, because the
+    animation had already ended, and permanent, so a later link to the same
+    message added a class that was already there and did not animate at all. The
+    trace is the way to see it (`MutationObserver` on `class`, one `has: true` and
+    no `has: false` after it).
+- **`focusKeyAt` walks up and stops at the first message id**, which is wider
+  than a marking box on purpose: a bubble's header, a notice's padding and a
+  tool block's fold row are all still that thing, and losing the selection for
+  missing the prose by three pixels would be its own bug. Nothing above the
+  conversation carries a message id, so the empty page means "nothing".
+- **The value lives outside React** (`lib/selectedMessage.ts`): a module
+  variable, a `data-selected` attribute put on the element directly, and a
+  subscription only where somebody really has to redraw — which is the find bar
+  and nothing else. The same shape the search marks have, for the same reason.
+  `TurnList` re-applies the attribute in an effect with **no dependency array**,
+  because React owns those nodes and drops it whenever it rebuilds one.
+- **`TurnList` is memoised, and that is what makes a click free.** Drawing a
+  large conversation is 65-110 ms on the two biggest sessions here, and before
+  the memo every click paid it. Every prop had to be memoised with it — `fold`
+  in `useFoldState`, `footer` and `pending` in the page — or the comparison
+  would never hold. Measured after: **no task over 50 ms at all**. It also stops
+  the conversation redrawing for a panel opening, a star being set or a prompt
+  being accepted.
+- The ring is an **`outline`** and **repaints `[data-bubble-tail]`** with the same
+  colour, for the reason in the flash section below. The property matters: both
+  rings were `box-shadow` at first, so `match-flash` — whose last keyframe fades
+  to transparent — overrode this declaration for its 2.5 s, and the ring
+  therefore **dissolved and then snapped back** the instant the class came off. A
+  link landed, the focus faded to nothing, and a moment later the box abruptly
+  looked selected. Two properties instead of one and the overlap does the work:
+  the flash paints its brighter ring over this one and, fading, reveals it. What
+  is on screen is a bright ring settling into the steady one and nothing at all
+  happening when the animation ends — a flash that hands over to a ring that was
+  there all along.
+
+### F5 lands back on it
+
+The ring is remembered per conversation in `sessionStorage` — `ch:selected:<id>`,
+beside the session list's own two keys in `lib/listState.ts` — adopted as the page
+mounts (`useRestoredSelection`) and then made visible the only way anything in
+this viewer is made visible: `SessionViewPage` resolves the remembered key into
+the same `scrollToUuid` / `scrollToTool` a link would have given, and the jump
+unfolds its way in. A reload therefore comes back to the message that was being
+read, still ringed, rather than to the top of a three-hundred-message session.
+
+- **The message is the address; a scroll offset is not.** A reload rebuilds every
+  fold from its default — the compacted segments fold back, `expandSegments` is
+  not persisted — so the pixel the reader was at points at a different part of the
+  conversation afterwards. Landing on the message is the one thing that survives
+  being refolded, and it is what "the same place" can honestly mean here. It is
+  also why a reader who had selected nothing gets exactly what they got before:
+  there is no address, so the session opens at the top.
+- **Not in the URL, and that is the whole design decision.** The ring moves on
+  every click, so `?msg=` would make every click a deep link — a flash, a scroll,
+  and a fight with the follow in a live session — and would give one parameter two
+  provenances, "the message a link asked for" and "the message somebody is
+  pointing at". `sessionStorage` says the other true thing about it: it belongs to
+  the tab that is reading, which is what F5 is, and a new tab starts with nothing
+  selected.
+- **A link outranks it**, and the restore is skipped entirely while `?msg=` /
+  `?tool=` is in the querystring — that link is a request to stand somewhere and
+  leaves a ring of its own on arrival, which then becomes what is remembered.
+- **The follow stands down for it**, exactly as it does for a link: `autoFollow`
+  reads the resolved anchors, not the parameters, or a live session would drag the
+  page back to its end for as long as the turn lasted. Checked inside a live turn:
+  the pill reads `To the end` with the restored message on screen 3,180 px above
+  the end, while the spinner is still going.
+- **It flashes.** `match-flash` is the reload's answer to the same question it
+  answers for a search hit — which of these did I mean — and then wears off,
+  leaving the ring as the record.
+- **The slot is read once per conversation**, into a ref. Every click writes to
+  it, so a second read on a later render would hand the page a fresh anchor and
+  turn an ordinary click into a jump.
+- Deselecting empties the slot, so clicking the gutter and reloading opens at the
+  top: the reader said "nobody", and that is remembered too.
+
+## Finding a word in the conversation
+
+The browser's own Ctrl+F reads the DOM, and the DOM is whichever half of a
+session happens to be unfolded — every tool run, every compacted stretch, every
+rewound branch and every thinking block renders behind `{open && …}`. So it
+finds an arbitrary fraction and says nothing about the rest, which is the one
+thing this app refuses to do for a deep link. `FindBar` (`useFindBar` beside it,
+the `FollowBottom` pattern) scans the data instead and travels the deep link's
+road to whatever it finds.
+
+**One rule holds the whole thing together: what the bar counts is what unfolding
+can put inside a marking box.** A marking box is `[data-bubble-body]` or
+`[data-tool-id]` — the two `markMatches` knows how to paint, and the two that
+keep marks off headers, clocks and cost pills. `buildFindCorpus` emits exactly
+one unit per box (`lib/findInSession.ts`, pure and checkable without a browser),
+so a hit always has somewhere to land, and anything drawn outside a box (a
+`/context` table, a compaction's arithmetic, a plan-mode marker) is neither
+scanned nor counted. `InjectedNotice`, `CompactSummaryPanel` and `SystemItem`
+grew a `data-bubble-body` to join in — the first of those also fixed the deep
+link marking a notice's origin chip and clock.
+
+- **A tool call is ONE unit, not three.** Header, input and result fold
+  separately but share a `[data-tool-id]`, and a hit's ordinal only lines up
+  with the DOM if they are counted as the one run of text the reader sees. Its
+  input is folded as it is RENDERED — pretty-printed — and not in the compact
+  form the deep scan reads, and its header is folded in the order it is DRAWN:
+  name, `intent`, `inputSummary`. Everything else the box draws is `data-chrome`
+  — the caret, the clock pill (the call's `tool_use`-line timestamp and its wall
+  time to the result line, date on the hover), the `Input`/`Result` labels, the
+  badge cluster — and so are a run's own header rows, which otherwise sit in the
+  bubble's `[data-bubble-body]` when the message also wrote prose.
+- **The order is `turns` order**, which means imitating `TurnView`'s tool
+  accumulator: a message's trailing calls are drawn AFTER its bubble and its
+  leading calls inside it, so a flat walk that ignored that would sort them
+  wrong. Thinking is always in the corpus whatever the toggle says — hiding it
+  can only remove a bubble, never reorder what is left — and the toggle stays a
+  filter over the hits, with the count of what it is holding back on the bar.
+- **A `system` line is cut at 400 characters — except a recap, which is drawn
+  whole.** It has no fold to open, so counting past what is drawn would offer
+  matches nothing can show. `systemChars(subtype)` is the one function that
+  decides, in `shared/src/searchText.ts` and re-exported from
+  `findInSession.ts` where this component and the bar were written to read it:
+  a recap is INDEXED ([AI_SEARCH.md](AI_SEARCH.md)), so what is drawn, what the
+  bar folds and what the server indexes have to be the same call. The cap is
+  there for `local_command`, whose longest line here is 2,456 characters of
+  `<command-name>` markup; it was costing a recap a truncated last sentence.
+  Its chip is a NAME, not the raw subtype (`lib/systemLines.ts`, shared with the
+  markdown export so the two cannot call one line two things) — an `away_summary`
+  reads `RECAP`, which is Claude Code's own word for it, with the tooltip saying
+  why there is not one per turn. Only three subtypes ever get here; the map
+  leaves everything else as the identifier it is, and
+  [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#system-lines-by-subtype) says which and
+  why. The chip is outside `data-bubble-body`, so renaming it moves no count.
+- **Three things are outside the corpus and are said with a number**: outputs
+  offloaded to disk, whatever exceeds `MAX_RESULT_CHARS` of a result, and
+  subagent transcripts. 0.3% of calls here, and *Search ▸ deep* is what reads
+  them.
+- **The corpus is transcript text; the marks are painted on rendered markdown.**
+  They agree for words. A query containing markdown's own syntax is counted and
+  not painted, which is the price of counting what is folded.
+
+**`RevealContext` generalises `targeted`.** `ToolBlock` could open itself from a
+prop; a thinking block and an agent's report could not, so a match inside either
+was countable and unshowable. The destination is published once, in the anchors
+a jump already speaks (`msg:<uuid>`, `tool:<toolUseId>`), and `useFoldable`
+holds the "open, then let go" contract for all of them. **`ToolGroup` reads it
+too**, and must: a block cannot open a run it is not mounted in — without that,
+the first real test scrolled to the message and marked nothing.
+
+**Three highlight names, never one shared.** `search-match` is the deep link's,
+8 s, untouched; `find-match` is every hit while the bar is open; `find-current`
+is the one being stood on, with `priority` set explicitly rather than trusting
+registration order. Sharing a name would let a deep link arriving replace the
+bar's whole set and delete it 8 s later. Caps differ by question: 4,000 for the
+conversation, 1,000 per box, and **none at all** for `boxRanges`, because
+`matchSpans` caps inside its per-term loop and before the sort — a capped result
+is "the first few of each term", fine for painting and useless for "the 137th in
+document order".
+
+**The repaint is a `MutationObserver`, and it is safe here only because the
+marks are ranges.** Painting writes nothing into the DOM, so the pass cannot
+trigger the observer that ran it; with `<mark>` elements this would be an
+infinite loop. It is what catches a turn unfolding, a run opening, a block's own
+fold, an offloaded output arriving and a live refetch replacing fifteen hundred
+blocks, all with one mechanism — and it is where the current mark is resolved
+again, because React may have thrown away the node it pointed into.
+
+- **Typing never moves the page.** A step unfolds segment, branch, turn, run and
+  block, and none of them fold back; jumping per keystroke would leave the
+  conversation shredded open before the word was finished. The counter reads
+  "47 matches" until the first Enter and "12 of 47" after. Chrome jumps as you
+  type because Chrome has nothing to unfold.
+- **No `match-flash` while stepping.** The reader typed the word and
+  `find-current` says which one this is; 2.5 s of animation per Enter would be
+  noise fighting `revealRange` for the scroll.
+- **The first Enter is measured by what is ABOVE.** Most matches are folded and
+  have no element to measure, and treating "no element" as "not yet reached"
+  opened at the ninth of 113 with the page at the very top. An unmeasurable hit
+  inherits the position of the last measurable one before it.
+- **Where the reader stands is stored by identity** (`{key, ordinal}`), not by
+  index: a live session appending a turn must not slide them onto another match.
+- **Data decides, the DOM paints.** `N of M` comes from the pure scan and the
+  ranges from `matchSpans` over rendered text, so the ordinal is clamped to the
+  last range there is. The worst case is landing on a neighbouring match in the
+  SAME box, and every match in that box is painted anyway.
+- **Stepping leaves tool blocks open.** That is what was asked for. Check 9's
+  "4 tool blocks in the DOM of a 210-call session" is about a deep LINK and must
+  not be re-read as a statement about the bar.
+
+**The scope follows the selected message, and only `All` is ever chosen by
+hand.** Selecting a message means "search in this one" (`Current message`);
+clicking away means "search what I can see" (`Visible`, which is also where the
+bar opens); and nothing puts the reader into `All`. A scope that reaches into
+folded text is a decision, not somewhere to find yourself.
+
+- **`All`, once chosen, is held until the bar is closed** — selection or no
+  selection. Asking for the whole conversation and then losing it to a stray
+  click on the margin is the kind of help nobody wants, and closing the bar is
+  the obvious "I am done with this search".
+- **`Ctrl+Shift+F` opens straight on `All`**, whatever is selected. It is the
+  other half of "All is never chosen for you": there has to be a way to ask for
+  it that does not start with clicking away from the message you are reading.
+- **The scope explains itself in a sentence, always** (`SCOPE_BLURB`). Two of
+  the three are chosen for the reader and every button is two words, so the one
+  thing that must never be a guess is where the number in the counter came from.
+- **The cost of that default is real and is paid for out loud.** `Visible` is
+  most of a conversation short, so a word living only in a folded tool result
+  would read as "no matches" — precisely the answer this bar exists to stop
+  anyone getting. So it never says that while a wider scope has more: the
+  counter says **where it looked** (`none in visible`) and a button sits BESIDE
+  the sentence, `N more in the whole conversation →`. One click, made by the
+  reader, which is what "never automatically" means.
+- **What the corpus could not reach carries its own explanation**, because the
+  short version is not self-evident: *on disk, not searched* means output too
+  large for the transcript, written to a file the browser never receives (deep
+  search reads those); *searched only in part* means the result was cut at
+  `MAX_RESULT_CHARS` on the way here, so everything before the cut is counted
+  and nothing after it is.
+- **Kinds are chips with their own counts**, so turning one off is informed
+  rather than a guess, and a kind with nothing in it disables itself.
+- **A row in the list leads with WHEN**, before the role — the same clock the
+  global search's rows now carry, and for the same reasons:
+  [AI_SEARCH.md](AI_SEARCH.md#a-row-says-when-it-was-written). What is this
+  bar's own is where the hour comes from: `FindUnit.timestamp`, which
+  `hitSnippet` puts on the block it builds, so the row is served by the same
+  field the server fills.
+
+**Scope and kinds live in component state, not in the URL.** `hl` means the
+terms the SERVER matched; overloading it with a live client query would give one
+parameter two provenances, and writing per keystroke into `useSearchParams`
+re-renders the page for every character. The bar reads `hl` once, on open, to
+seed itself — which turns "the search sent me here, now walk all of them" into
+one keystroke — and writes nothing back. Whatever is off its default is said on
+the bar itself, not only inside the panel: the same rule `tuningChanges` applies
+to the session list.
+
+### The flash animation
+
+Only `box-shadow` and `border-color` are animated — and `box-shadow` is deliberately NOT what the selection ring uses, which is what stops the fade from erasing it (see *The selected message* above). A `transform` / `filter` / `opacity` flash would make the bubble the containing block for the cost and context popovers inside it — the `filter` rule above, from the other direction. The tint is an INSET shadow, not a background: a bubble paints its own, and animating that ends the flash on the wrong colour.
+
+**Anything that recolours a bubble's outline must recolour its tail** (`[data-bubble-tail]`, its own keyframes). The tail is a separate element with its own border and its own OPAQUE fill, so it does not merely keep the old colour — its fill paints over the ring, punching a dark notch in the very line it exists to continue.
+
+The `100%` keyframe names no `border-color`: an omitted property takes the element's own value as the endpoint, which is how one animation serves a terracotta bubble, an emerald one and an amber panel without knowing any of their colours (checked frame by frame: 217,119,87 → 39,74,65, the assistant border, with the tail in lockstep). Naming a colour there would mean naming the wrong one twice.
+
+## File references
+
+The panel this opens is a **column beside the session**, not a layer over it —
+its geometry, its width and why it is the rightmost of them are in [The two
+columns beside the session](#the-two-columns-beside-the-session). Everything
+below is what it draws once it is there.
+
+**A file path in an answer opens a panel, and `parseFileRef` is the only thing that decides what a path is** (`lib/fileRefs.ts`, pure and checkable without a browser). It reads the shapes this corpus really holds — `:12`, `:12:5`, `#L12-L20`, percent-encoded paths with spaces, `C:\…` and `\\srv\…` — and two orderings in it are load-bearing:
+
+1. **The drive letter is tested before the scheme**, or every absolute path on Windows is discarded as "protocol `c:`".
+2. **The scheme is tested after the line suffix is cut**, or `app.ts:12` dies as "protocol `app.ts:`" — precisely the react-markdown behaviour this exists to undo (`defaultUrlTransform` blanked both, so those links reloaded the page instead of navigating anywhere).
+
+`urlTransform` in `Markdown.tsx` lets a file reference through and runs the default on everything else, which is what keeps `javascript:` blanked.
+
+- **The reference comes from the href, never from the link text**: the model writes ``[:905](frmActualizador.frm:905)``, so the label is its wording and only the destination is a path.
+- **The link is an `<a>` with a real href** (`/session/<id>?file=…`) whose click is prevented — copy-link, middle click and ctrl+click keep working, and a `<button>` would make the prose unselectable. It asks `hasSelection()` first, like every fold header.
+- **Backticked paths are linkified in `strict` mode.** They are 33× more common than markdown links (4,347 against 131), but 2,994 of them are bare names — `package.json`, `settings.json` — half of which are not in the project at all, and a link the reader cannot judge without clicking is worse than plain text. Strict also wants a real filename or a line number at the end, because a separator alone proves nothing: `text/html` is a MIME type and `GET /api/retention` a route, and both were links until it did. The whole `<code>` span is one candidate, never scanned inside: that is what makes a path with spaces work and a shell command fail cleanly.
+- **A range lives in the link TEXT, not in the destination.** Claude writes ``[:1068-1074](.../frmActualizador.frm:1068)`` — seven lines named, one linked — so `rangeFromLabel` takes the end from the label, and only when the label restates the same start. Without it the panel marked one line of a stretch and looked like it had lost the rest.
+- **In a tool header and in "files touched" the path stays inert and a chip sits beside it**, because both live in a `FoldHeader`. The chip is gated on the tool NAME (`Read` / `Write` / `Edit` / `MultiEdit` / `NotebookEdit`, whose `inputSummary` IS the `file_path`), not on the shape of the string.
+- **An image reference draws the picture instead of the word "binary"**, and that is why `KNOWN_EXT` has image extensions at all: until the panel could show one, a link to a PNG led to "Binary file — not shown", which is a worse reply than leaving the path as text. The bytes come from `GET /api/files/image` ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)), because the read the panel already made answers `binary: true` and carries none. Two rules: the choice is made on the **path** (`isImagePath`) and never on the `binary` flag — that flag means "a NUL in the first 8 KB", which a small GIF can miss, and the panel would then draw a picture's bytes as mojibake — and the text body is held back on the same test, or a failed image and its own garbage would be on screen together. **`svg` is a reference but never a picture**, on both sides of the wire. A refusal or a file that went away between the read and the fetch is the `<img>`'s `onError`, which costs no request. `ZoomableImage` is shared with the prompt attachments, at `size="fill"` here and `thumb` in the conversation.
+- A `~/...` reference is expanded against the home directory **server-side**: resolved against the project it becomes `<project>\~\.claude\settings.json`, a "not found" for a file that is right there. The panel sends the **path**, never the formatted reference — `frmActualizador.frm:1068` as a filename finds nothing.
+- The target line is a stripe positioned by arithmetic on one `LINE_H`, so the body must stay `whitespace-pre`: one wrapped line and the gutter, the stripe and the text disagree from there down. **Everything neutralising `.hljs` on the highlighted `<code>` is a style, not a class** — `github-dark.css` loads after Tailwind and wins every tie. Its background covered the stripe; its `padding: 1em` then pushed the text 12 px below its own line number, so the highlight sat two thirds of a line off, and only where highlighting happened at all, which made it look intermittent.
+- **The copy buttons float over the code, and they live OUTSIDE the scroller.** Inside it `absolute` scrolls away with the file, and there is no sticky corner to be had either: the row they would sit in is `min-w-max`, as wide as the longest line. Out there they cost no layout, so appearing on hover cannot resize what they appear in — the hover-toolbar rule above, obeyed by construction — and two offsets are the whole of their placement: clear of the scrollbar they now float over, and above the gutter's sticky `z-10`. They stay lit while the flash lasts, because moving the pointer away right after the click would otherwise take the confirmation with it.
+- **The header truncates everything except its two buttons.** The name and the size were `shrink-0`, which reads fine across 832 px of overlay and put the ✕ 12 px off the screen the moment this became a column somebody can drag to 360 — a horizontal scrollbar under the whole app to reach a button. A column is a box: the facts give way, the controls do not.
+- **What a copy button says is what it copied.** The whole-file one reads `Copy what was read` on a truncated read: the endpoint stops at 2 MB, and a button offering “contents” over half a file contradicts the `truncated — N total` notice three rows above it. The range one is drawn only where the stripe is and slices from the same `target`/`targetEnd`, so the band and the clipboard cannot disagree about which lines the link meant. Neither takes the gutter with it — the numbers are their own column, which is what makes copying the text possible at all — and **one state serves all three buttons**, the path included, so a second copy neither flashes its neighbours nor loses its own confirmation to the timer the first one started.
+
+## The three file panels
+
+The rail carries three of them, and the words are the feature: **`Changed Files`** is what the session EDITED (`detail.fileChanges`, built server-side from `Edit`/`Write`/`NotebookEdit`/`MultiEdit`), **`Sent Files`** is what it HANDED OVER, and **`Mentioned`** is what it only TALKED about. While the first was called plain `Files` the second had no name left to take, and none of the three is another's superset — a delivered screenshot was never edited, an edited source was never delivered, and a file merely named was neither. All three read the CONVERSATION, which is what makes [the scratchpad](#the-scratchpad-is-the-fourth-file-question) a fourth question rather than a fourth answer to this one: it reads the disk.
+
+The third is the weakest of them by nature and says so on every row that needs it, because **a path in prose is written for a person**: `core/git.ts` for the real thing, `<pid>.json` for a naming scheme, `~/.claude` for a folder, `vX.Y.Z` for nothing at all. Measured over five sessions, 14 of 64 such paths pointed at a file that is really there.
+
+**Which is not a reason to hide the others.** A mention that finds nothing is still something the answer said — the path may be partial, or the file may have moved since — so it is a row wearing `not found`, with its name in the dim colour, no size and no date invented for it, and the panel counting them out loud underneath (`1 of them point at nothing`). Hiding them was the first version's mistake and it made the panel quietly disagree with the messages the reader can see. **The one thing dropped is a folder**: this is a list of files, and `~/.claude` was the most-named "path" of one session, fourteen times over.
+
+- **`collectMentionedFiles` may be STRICTER than the renderer, never looser** (`lib/mentionedFiles.ts`). What draws the links is `Markdown.tsx` over react-markdown's AST — an `inlineCode` node strict, an `a` href loose — and that AST is out of reach here (of the parsers involved only `remark-gfm` resolves in this package), so the candidates come from three expressions that deliberately miss a code span split across a newline and cut a fenced block whole. That direction costs a row the reader still has as a link in the message; the other would put a row on screen the conversation never offered. The DECISION is not re-implemented — `parseFileRef` makes it, with the same `strict` flag for the same kind of candidate.
+- **The assistant's own answers, and nothing else.** Two other places name paths and both are out, the second having been in for one version and having had to come out:
+  - **A prompt** renders `whitespace-pre-wrap`, so a path typed into one is not a link anywhere in this app.
+  - **A subagent's report** does go through `Markdown`, so its paths ARE links — and reading them made this panel useless twice over. 23 of 23 rows of one session came from reports, drowning the four the conversation itself had pointed at; and the row could not keep its promise, because a report is folded inside a notice, so the jump landed on the agent's box with the named path nowhere on screen. **A row here must go somewhere the path can be READ**, and only an answer offers that. Checked, and worth keeping checked: the jump must land on a `[data-bubble]` whose own text names the file and holds it as a link.
+- **Being in another panel is a chip, never a filter.** The first version dropped those rows because the information was "already elsewhere", and that took the most obvious mentions of a session with it — a file the answers keep pointing at is usually one the session also edited. `also changed` / `also sent` says it on the row instead.
+- **`×N` counts PLACES, and it is a note.** It counted namings at first, which promised more than the jump could deliver: four occurrences in one paragraph read as four stops, while the marks only ever cover the message jumped to. It counts distinct messages now, with `hits` on the title (`named in 3 messages, 5 times in all`), and it is deliberately NOT a control — the jump beside it is, and it carries the same N.
+- **The jump STEPS**: `↑ 1/4 mentions` goes to the first naming, `↑ 2/4 mentions` to the second, and the fourth press comes back round to the first — the label is a promise about the press, so it names the destination, and it carries the noun because a bare `↑ 1/2` is a fraction of nothing in particular on a row that already holds three other numbers. A file named once reads `↑ 1 mention`. The cursor is local to the row, so closing the panel starts again at the first. Exact by construction: it walks `row.messages`, which is the same list `×N` counts.
+- **Why it is not the find bar's job, having been the find bar's job for one commit.** Handing the path to the bar on `All` looked like the reuse to prefer — it owns stepping, counting and marking already — and the arithmetic sank it. The bar counts every occurrence in the transcript: `AI_VIEWER.md` in `1806cedb` opens on **168 matches, 143 of them inside tool calls** (its `byRole` breakdown reads Prompts 3 · Answers 7 · Tools 143 · Plans 6 · Notices 9), against the **4** messages whose prose names it. Four namings behind 168 stops is not a way in, and no filter closes that gap honestly: the bar counts occurrences and the panel counts messages, so even a perfect "only file references" filter would say 7 rather than 4. Stepping over a list of uuids the collector already holds duplicates nothing — no corpus, no ordinals, no marks logic, just the same `jumpTo` per anchor.
+- **The jump MARKS the path, and through the search's own mechanism.** It sets `?msg=` and `?hl=` together (`setHighlightTerms`, which folds the terms because that invariant is stated where the params are), so the arrival is the one `TurnList` already implements for a search result: the bubble flashes, every occurrence of the path in it is painted by the Custom Highlight API, the first is revealed, and the marks clear after 8 s. Scrolling to a 2,000-character answer and leaving the reader to find the sentence was the gap. Two terms, not one: the ref as written AND its basename, because a markdown link puts the path in the href and the filename in the words — marking only the ref would underline nothing at all. Passing NO terms clears the parameters, so a previous search's words never survive into an unrelated jump.
+- **Deduplicated on the RESOLVED path, which is the only identity a mention has.** One answer naming `server/src/core/parser.ts` and another naming the same file absolutely are one file, and drew two rows until the dedupe moved there — which can only happen after the stat, because resolution is the server's answer. `×N` absorbs the spellings, and the `as written` column keeps the **relative** one only: an absolute ref is 130 characters of what the folder tail already ends with, and printed in the row it pushed every row past the window.
+- **Its count is the one count in this header that is not a fact of the transcript**: it is what survives the disk — which candidates are folders, and which two spellings are one file. So the page asks for the stats **as soon as it has the transcript**, not on the first press. It was lazy at first, on the grounds that a reader who never opens the panel should pay nothing, and the price was the one button in that row that could not say what it held. What eagerness costs is one local POST per session view, and only where the answers named a path at all; nothing waits for it, so a path that is slow to `stat` (an unanswering UNC share) means a late number and never a late page. `null` is the moment before the answer lands.
+- **`Mentioned (0)` is a real state and keeps its button**: it means every path the answers named is a FOLDER, which is the only thing dropped — a candidate pointing at nothing is still a row. That is also the only way to reach the empty panel, so it says exactly that rather than "nothing was named", which would be false there.
+- **The size and the date are the file's own**, and they are simply absent on a row that points at nothing — a `0 B` and a 1970 date is a lie told twice about a file that is not there.
+
+**What the second one lists is collected in the browser, and that is the point.** `collectSessionFiles` (`lib/sessionFiles.ts`, pure) reads three things out of `turns`: `parseSentFiles` for a delivery — the SAME parser the card and the markdown export use, so the three cannot drift about what was sent — `Artifact`'s `file_path` for a publish, and `planFilePath` / `PlanOutcome.filePath` for the plan `.md`. Nothing about it needs the server: the calls, their results and the plan-mode lines are all already in the payload, so there is no new field on `SessionDetail`, no parser change and **no `CACHE_VERSION` bump** (checked: `/api/meta` still reads its hits after this shipped).
+
+- **Deduplicated by `normalisePath`**, which is exported from `lib/fileRefs.ts` precisely so this and the call↔result join of a delivery use one rule. It is not theoretical: plan mode writes the same precomputed path on every line it emits (up to 60 in one session), and one call spells a path `C:/…` where another spells it `C:\…`. The `×N` badge is suppressed on a plan row — counting mentions of a plan file as deliveries would read as `×47`.
+- **The one thing asked of the server is `stat`, in ONE request for the whole panel** (`POST /api/files/stats`, [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)). It is worth asking here and not in the card: what a session hands over lives in its temp scratchpad, which Windows sweeps, so **"it is not there any more" is the ordinary end of a delivery** and a list of dead links that does not admit it is worth less than no list. Per row it would be a fetch per file every time the panel opened, which is the same trade the card refuses when it declines to draw thumbnails.
+- **The answer is joined on the `ref` the server echoed back**, normalised — never on the resolved path, which is the server's answer and not the key any row was built with, and never positionally.
+- **One state column, one meaning: `on disk` / `changed since` / `no longer on disk`.** The raw `modifiedAt` was in that column for one draft and had to come out: beside the row's own timestamp it was a second unlabelled date, and two dates that mean different things read as neither. What is interesting about it is computed instead — `changed since` is earned by a size that differs from what was sent OR, for a row that records no size, by an mtime later than the line that named it, which is the one thing worth knowing about a file holding only the LATEST plan for its slug.
+- **The jump names what it lands on**: `↑ the call` for a delivery or a publish, `↑ the line` for a plan file, which no call handed over. Both go through the page's `jumpTo`, so they clear the other anchor and bump `jumpNonce` — pressing the same row twice must jump twice.
+- **Every panel is one value now** (`useInspector`), which answers the objection that kept these two out of the Escape unwind — putting one in and not the other would have been worse than neither. There is one thing open and one thing to close. `?agents=1` is still the only one in the URL, because the session list links straight onto it.
+- **Their rows wrap.** Each is a flex line of `shrink-0` columns — a name, a type, a size, a state chip, a date, a folder tail, a jump — and six of those do not fit the 320 px the inspector can be dragged to, however small the type: `Sent files` wanted 789 px and scrolled sideways. `flex-wrap` with a row gap leaves them unchanged wherever there is room.
+
+## The scratchpad is the fourth file question
+
+The three above it read the CONVERSATION. This one reads the disk: what the session left in the temp folder Claude Code hands it to work in, which is where the scripts, the pile of `.out` files, the screenshots and the odd 138 MB download actually live. Most of it was never named in a message, so none of the other three panels could ever have shown it — a session that wrote 415 files in there mentions a handful.
+
+- **The folder is DERIVED, and the panel never names it.** `GET /api/sessions/:id/scratchpad` composes the root itself and takes no path from the browser at all; why that is what makes enumerating a directory safe to do at all is [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md#security-and-containment)'s, and where the folder is and how it is named is [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)'s. What it costs the panel is one thing: the root arrives in the answer rather than being built here, which is also what the *Open folder* button hands back.
+- **The cap is never silent.** The walk is capped (`MAX_SCRATCHPAD_ENTRIES`) and it is not hypothetical — the scratchpads in this corpus hold an unpacked `gradle-8.14.5` and eight Chrome profiles, and one of them crosses it. Depth-first through a sorted listing, so what a cap costs is always the deep end of the tree rather than a name at the top of it; the foot of the panel says it stopped, and the folder is one button away. A list that quietly ends is the failure this exists against.
+- **Gone is a state, not a failure**, which is why the panel has nothing to draw for it: Windows sweeps this folder, the session simply loses its item, and no error is reported anywhere a reader would see one. A folder that is THERE and refuses to open looks the same on screen and is not the same fact, so the two are told apart in the answer and in the log rather than on the row.
+- **The item is absent on an empty scratchpad**, which is the rail's ordinary rule and not an exception to it — but it is worth saying why this one does not go the way `Mentioned (0)` went. There, empty means something specific and surprising: every path the answers named turned out to be a folder. Here it means the session never wrote anything, which is true of most sessions, and a seventh permanent button reading `nothing` is a button nobody presses twice.
+- **The count is the walk's, so the walk has to run before the panel is opened.** Eager for the reason the mention stats are eager: the rail decides whether the item exists from the number, so a lazy fetch would leave one item in that strip unable to say what it holds — or absent until pressed, which is worse. Nothing waits for it.
+- **A row BUILDS its ref, it does not parse one.** `parseFileRef` reads a `:12` or a `#L12` off the end of a string, which is right for a path a person wrote in prose and wrong for one that came out of a `readdir`: there every character is really in the name, and a file called `notes#L2.md` has to open rather than resolve to one that is not there.
+- **The tree is flat.** Entries arrive in walk order carrying their own `depth`, so a fold is a linear pass — a directory's contents are exactly the rows after it that are deeper than it — and the indent is capped like the subagent panel's, because every level of it is width taken off the name at 320 px. Everything starts folded: `595fa12d` opens on 74 rows and holds 415.
+- **A directory says how many children it has, counted rather than listed.** So a folded row is honest about what is under it, and a row the cap cut short still says how much was there. An unreadable one says `cannot be read` where its number would be — the row is still true, and the count is the part that is not knowable.
+- **Opening the folder is the panel's one local-only control**, and it greys out under `openFile` rather than `openFolder`: the key has to name the endpoint the button calls (`/api/files/open`), or the tooltip and the 409 become two sentences about one fact.
+
+## The MCP panel answers a question `/mcp` cannot
+
+`/mcp` in a terminal describes the machine NOW. **Nothing else describes the session that ran in August** — which servers it had, which of them it leaned on, and the error text of the one that was down that afternoon. The reading rules are [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)'s; what the panel does with them is here.
+
+- **A snapshot with a time on it, never "now".** A server can die mid-session without the transcript hearing a thing, so every row says when it entered the state it is in rather than claiming it is still in it. This is the same honesty as the scratchpad's `no longer on disk`: the panel's value is that it does not overclaim.
+- **The panel exists whenever the session had a server at all**, the account connector included — the rail's ordinary rule, applied to a fact rather than to a judgement about which servers are interesting. A session with NO data is the case that matters and it gets no item: the CLI writes nothing at all in a stub or an old enough build, and **"nothing is known" is not "there were none"**, which is exactly what a `0` would have claimed.
+- **`failed` is the only thing that lights the rail's badge** — not `pending`, not `needs-auth`. A server that took six seconds or was signed into and then worked did not go wrong, and a warning that fires on those fires on most sessions in a PCCOM repo, which is a warning that means nothing. The history below the rows still records them.
+- **The error text is quoted, never summarised.** `CONNECTION_CLOSED — "Connection closed"` is the whole reason to open this on a session that went wrong — and **under it sits the CLI's own log**, which is the only place that says why: `Server stderr: The build failed. Fix the build errors and run again.` The two are drawn as what they are, a claim and its evidence. Where those logs live and why they can be trusted is [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)'s; what the panel owes them is being **lazy** (its own query, opened with the panel), saying **"no logs" as an ordinary state** rather than a failure, and giving them **day headings** — they span a session's whole life, and eleven days of bare `12:06` say nothing.
+- **A server the log knows and the transcript does not is still drawn**, under a dashed border, **and it says what the LOG says became of it** — in the same chip as every row above. They exist: `f3384d17` carries 109 log lines for `claude-in-chrome`, which never reached a `deferred_tools_delta` of that session and so has no row of its own. Dropping it would be the panel failing its own claim: it says what a session HAD, and a log is evidence the server was there.
+  - **The chip read `logged only` for one draft, and that was the one thing this panel must not do** — describe where a fact came from instead of what the fact is. The log states the outcome outright (`Successfully connected in 7ms`; `Connection failed (CONNECT_TIMEOUT)`), so a neutral word there made the reader ask the very question the panel exists to answer. Provenance belongs in a sentence underneath, not in the slot where a state goes.
+  - **When such a server FAILED, that sentence also says why the ⚠ does not count it.** The mark reads the transcript and this failure is not in the transcript — Claude Code wrote no failure list before 2.1.247 ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)) — so the count and the row disagree, and the row is the one that explains. Reading the logs during the parse would close that gap and was measured rather than assumed: 126 ms for the busiest project, paid by every session opened, to fix a case that cannot arise in anything the CLI writes today. Not worth it, and the ⚠ is deliberately the transcript’s.
+- **The handshake is a fact only the log has.** `handshake 10.3 s` beside a server that connected is the difference between one that works and one you are about to watch time out; nothing in the transcript comes near it.
+- **A tool has three states and none of them is hidden.** Dimmed is offered-and-ignored; plain with its count is used; **struck through is WITHDRAWN**, with the time it stopped being offered. `17 tools · 1 used · 2 withdrawn` is the shape, and each number is a different gap worth seeing: the session paid the budget for everything it was offered, it touched one, and two went away mid-session — which means the SERVER changed while the session was open.
+  - **A withdrawn tool keeps its row rather than disappearing**, because it was offered for part of this session: a call to it earlier in the conversation has to have something to point at, and dropping the row would leave that call unexplained. This is the panel refusing to rewrite history for tidiness.
+  - **The word is "withdrawn", never "gone"** — the transcript cannot tell a server that dropped the tool from the tool budget parking it, and both happen ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)).
+- **Two colours, because there are two axes, and this is the panel that must not confuse them.** The status chip is AMBER and means the server never connected; the call counts are RED and mean it connected fine and the call came back an error — `execute_query 6 failed 46×`, which is six queries that were wrong rather than anything being down. Red is right here by the house rule (`BlockedBar`: red for what actually broke) and the call did break; running them together would lose the distinction that makes either worth drawing. The count is on the tool AND summed on the server, so `47 calls · 7 failed` is legible without opening the fold.
+- **The history is drawn only when more than one thing ever happened.** One moment is the startup, and every row above already carries its stamp; two or more mean something CHANGED — a server that took its time, one that came back on the next resume — which the rows alone cannot tell. Events are grouped by instant, because a startup moves five servers at once and five lines saying the same time is not a timeline.
+- **The GAP is the fact, not the clock.** `+33 s` against `+24 hr 9 min` is the whole difference between a server that took its time and a session picked up the next morning — and the two absolute times differ by two characters. The clock stays; the gap is what is read.
+- **Each moment says where in the conversation it happened.** The line it came off is not drawn (it is not a message), so it cannot be its own anchor — the item ABOVE it is, and being an item it is certainly on screen. Measured: the delta's own `parentUuid` is a `user` message in 541 of 600 cases and never missing, so the item above is almost always that prompt. On a resumed session that button is *"here is where you picked it back up"*, which nothing else in the app can point at.
+- **An event names its server by key and looks the name up**, because a server gets renamed mid-session: the needs-auth list spells it one way and its own tools another, so a name copied into the event would be the OLD one and the history would disagree with the rows above it.
+- **The parser pays for it, not the cache.** It rides the `SessionDetail` the viewer already fetches, so there is no new endpoint, no index field and **no `CACHE_VERSION` bump** — and `replayFilter` is applied before the attachment branch, so a replayed line is dropped without this having to know replays exist.
+
+## The end of the conversation
+
+**Two things can sit in this slot** — the composer, or an embedded terminal, decided by `chatMode` ([Running Claude](AI_RUNNING_CLAUDE.md)). The wrapper is deliberately the same for both: what changes is how you talk to Claude, not where the conversation ends, and a slot that moved between the modes would announce itself as a different screen. So everything below is written about the composer and is true of the terminal word for word — `footerRef`, `data-sticky-bottom`, the click that must not deselect, and the `max()` that keeps the follow pill's corner clear.
+
+Two things the terminal added, both of them properties of this slot that nobody had had to name before:
+
+- **A portal cannot be used from here.** xterm is attached to a host div by `term.open()`, so rendering the panel somewhere else unmounts that div and takes the terminal's whole DOM with it — a full screen with nothing in it, measured. Full screen is therefore a class on the element that is already there.
+- **`position: sticky` creates a stacking context.** A `fixed inset-0 z-50` child of this wrapper is numbered only against its siblings, so the follow pill — a later sibling of the scroller, with no z-index at all — paints over it. Lifting the wrapper is the only fix available, and it is why `SessionTerminal` reports its layout to the page.
+- **Who gives up the pill's corner depends on what is in it.** The composer keeps `Send` out of it with a `max()` over the column width and gives up nothing else, because a composer has corner to spare. A terminal has none: every cell is content, and reserving 120 px there just makes the panel narrower than the conversation above it for no reason a reader can see. So the PILL moves instead of the panel shrinking — but only when it has to. At the ordinary column width the gutter beside the panel is 252 px of nothing and the pill stays exactly where it has always been, bottom right; it climbs above the panel (`liftPx`, the panel's measured height) only once `rightGap` falls under `PILL_CORNER_PX`, which in practice means `Full`. Measured from the panel's own right edge to the scroller's, never inferred from the width setting.
+- **The terminal's drag handle spans the scroller, not the column.** A resize bar the width of the panel reads as part of the panel; one that runs edge to edge reads as the seam it is. The width is measured (`clientWidth` of the element tagged `data-conversation-scroller`) rather than written as `100vw`, because the scroller reserves a scrollbar gutter on both edges and pads itself — a viewport-wide child would hang outside its padding box and earn the page a horizontal scrollbar.
+
+The scroller reaches the **foot of the window** and the composer rides inside it:
+last in the conversation's own column, `mt-auto` so it sits at the bottom of a
+short session and `sticky bottom-0` so it stays there through a long one. Nothing
+stops half way up the window any more — the scrollbar runs the full height, the
+last bubble slides under the box instead of meeting a hard edge, and the follow
+pill has a bottom to sit at. It costs no measuring either: as content, the box IS
+the gap that keeps the last message clear of it, and `min-h-full` on the column is
+what stops a two-line session becoming scrollable.
+
+**The whole conversation stays readable, whatever the box is doing.** Two rules
+hold that up, and both were bugs first:
+
+- **The strip the fade covers is a real gap in the flow** (`pt-6` on the sticky
+  wrapper, transparent, with the composer's own gradient drawn exactly over it).
+  Without it the last bubble ended flush against the box and the fade dissolved
+  its last 20 px — the message was on screen and unreadable, which looked exactly
+  like being cut off.
+- **Growing the box scrolls the conversation clear of it — but only from the
+  END.** Down there the growth is also new scrollable height, so moving
+  `scrollTop` by the same difference hands back precisely what was covered. That
+  is `footerRef`, and it is the half the pinning cannot do — with the follow
+  switched off, nothing else would move. Six lines typed into the box, measured:
+  composer 119 → 255 px, `scrollTop` +136, the last bubble still against the top
+  of the gap, and the pill still reading `To the end`.
+
+  **Anywhere else the box floats over the conversation and the scroll is left
+  alone.** The embedded terminal is what made the difference impossible to miss:
+  the composer grows by a line and the compensation reads as a nudge, a terminal
+  opens 380 px tall and the same line of code reads as the page jumping under
+  somebody who was reading the middle of a session. Nothing about their page has
+  changed, so nothing about their page may move — a strip they are not looking at
+  being covered is the smaller price by far. **The test is the geometry, not the
+  follow flag**: the distance from the end *before* the change, which is the one
+  measured now less what has just appeared, so at the end with the follow off it
+  still compensates. And **shrinking needs no rule at all** — at the end the
+  browser's own clamp has already pulled `scrollTop` to the new maximum, which
+  leaves the last line where it was with more history above it, and in the middle
+  there is nothing to clamp.
+
+Three more things follow from the composer being inside the scroller, each of them
+a bug until it was named:
+
+- **The click that deselects stops at the composer.** The scroller's one
+  `onClick` means "nobody is selected", and typing a prompt is not clicking away
+  from the message you were reading.
+- **`revealRange` must not count the covered strip as visible.** The bottom of
+  the scrollport is *behind* the box, so a match in the last message could be
+  "revealed" by being left exactly where nothing can be read.
+  `[data-sticky-bottom]` is how the function measures what covers it.
+- **The pill's corner is the corner `Send` sits in.** At `Full` width — or at any
+  width in a window not much wider than it — the box reaches into the bottom
+  right, and the pill, floating on top, would take the click. The action row gives
+  up its end where the margin is narrower than the pill needs, as one `max()` over
+  the column's width, so resizing the window needs neither a measurement nor a
+  render.
+
+**A `scroll` event does not say who fired it, and only the reader may arm or
+release the follow.** Three things move that scroll with nobody touching it: the
+browser clamps a `scrollTop` past the end when content shrinks, scroll anchoring
+scrolls under content that grows above the viewport, and the pinning itself
+scrolls on purpose. All three land AT the bottom when the reader was already
+there — which is why switching the follow off used to last exactly one message.
+So an event counts as the reader's only while `scrollHeight` is the one the
+previous event left behind, and the `ResizeObserver` that does the pinning
+re-reads that geometry after every content change, in the frame the content
+changed and before the browser's own scroll event is dispatched.
+
+**What lands while the follow is off is counted on the pill**, as a badge in the
+app's one shape for "there is something here you have not seen" — `UpdateButton`'s,
+amber with a ring in the page's background colour so two digits stay legible over
+a bubble. The pill itself does not change with it: the badge is the news, and
+turning the whole control amber would read as a warning about the button.
+
+It counts **messages** — `turn.items`, the unit the header already counts as
+prompts and responses. Not blocks (a turn's thirty tool calls are one message
+doing thirty things) and not turns (which would sit at 1 through a whole answer
+arriving). A message whose blocks are all tool calls draws a run rather than a
+bubble, so the badge can read one ahead of the bubbles you can point at:
+something did arrive below, which is all it claims. Three rules keep the number
+honest — it is 0 while following, 0 again the moment the follow is armed, and **a
+conversation arriving is not growth**: the count is 0 while the query is in
+flight, for this session and for the one before it, so reading that transition as
+news would open every session claiming its whole history.
+
+**A live or busy session opens at its end, following**, because that is what it
+was opened for: once per session, never over a reader who has already scrolled,
+and never when the URL carries an anchor — `?msg=` / `?tool=` is a request to
+stand somewhere, and the two would fight over the scroll for as long as the turn
+lasted. The pill is offered whether or not there is anything to scroll; with
+nothing to scroll it is the switch that says the next message will be followed.
+**Whichever door it came through**: from the list the page mounts fresh, but a
+notification clicked from inside another conversation reuses the page and the
+scroller with it, so the follow re-arms on the session id, not on the element —
+and a session that does NOT arm opens at the top rather than inheriting the
+previous session's offset or counting its history as unseen.
+
+## Nothing above the conversation may change height
+
+A new message arriving made the whole page tremble, and the follow had nothing to
+do with it. Sampled frame by frame in a live session (`scrollTop`, `scrollHeight`
+and `clientHeight` on every `raf`, `scroll` and `ResizeObserver` tick), the growth
+itself was clean — the content grew, the pin corrected it 1.5-2.9 ms later, inside
+the same frame, and the sticky composer never left the foot of the window. What
+moved was the **scroller's own height**: 762 → 784 → 762 px, twice per message,
+about 105 ms apart.
+
+The 22 px was the header's counts row (`9 prompts · 227 responses · …`), drawn as
+`{e && …}` over `summary.enrichment` — and a session that had just grown used to
+answer without its enrichment while the background parse caught up. So the row
+fell out of the page and came back on every message, shoving the conversation down
+22 px and pulling it back. `SessionHeader` remembered the last figures to stand
+still; **the summary keeps them itself now**, for every reader at once
+([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)), so nothing in this header remembers
+anything and the counts are simply always there — one message stale for a tenth of
+a second instead of absent. A session with no enrichment at all still draws no
+row, because it has none to draw. The `resumed ×N` chip is steady for the same
+reason, and needs to be: it sits in a wrapping row, where a chip coming and going
+can cost a whole line rather than 22 px.
+
+The rule generalises past this one row: **anything above the conversation that
+appears and disappears is a shake**, because the scroller is the flexible one and
+takes the difference. Which is the other half of why the panels moved to the side
+([the rail](#the-rail-and-the-inspector)): every one of them was a row above the
+conversation that appeared and disappeared, 300 px of it rather than 22. What is
+left up there is the header, and the three things in it that can change height do
+so because they were clicked — `more`, the find bar, and the facts row rewrapping
+when a column opens beside the session and narrows the header
+([the two columns](#the-two-columns-beside-the-session)); the last of those is a
+reflow of a box the reader just resized, not a row coming and going.
+And the follow's `ResizeObserver` watches the scroller
+itself as well as the content, so if the end does leave the view that way — a
+window being resized is the honest case — being pinned still means being at the
+end.
+
+## What a list row says you have not seen
+
+Two questions, and the badges beside a row answer only the first: what a session
+is DOING (`live`, `working`, `waiting`, `idle`, each with its clock) and what it
+is HOLDING FOR YOU. A session idle for half an hour may carry twenty messages
+nobody has read, and the row drew that exactly like one opened a minute ago.
+
+- **The unit is the enrichment's `userMessageCount + assistantMessageCount`** —
+  typed prompts plus distinct assistant messages, the nearest a summary gets to
+  what the follow pill counts ([the end of the conversation](#the-end-of-the-conversation)).
+  It is `messageTally` in `shared`, written once and used twice: the server
+  stamps a mark with it and the browser subtracts that from the row's own tally,
+  and a count measured with one ruler and drawn with another is off by whatever
+  the two disagree about.
+  **Not `summary.messageCount`**, which is Claude Code's own `turn_duration`
+  figure and counts context entries — tool results, streamed chunks — and is null
+  for many sessions besides ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)). A null
+  enrichment means "cannot say" and falls back to NOTHING: a server serving its
+  cache while it re-enriches would otherwise read the enrichment arriving as four
+  hundred messages landing at once.
+- **The count is a subtraction, not an accumulator.** `unreadOf` is
+  `max(0, tally − mark)` against a baseline that stands still until the next
+  reading, so nothing has to WATCH the list for the figure to be right: a session
+  that grew by nine while the reader was inside another one says nine the moment
+  the list comes back, with nobody having observed the nine steps. A re-parse
+  that shrinks a session reads 0 rather than a negative.
+- **A session nobody has opened has no mark and therefore no count**, which is
+  what the baseline being a READING buys. Seeding every session the list has ever
+  drawn would light two thousand rows with their own history, and "unread" would
+  come to mean "exists".
+- **The focus decides WHEN it is written, and it is the strict test** —
+  `lib/windowFocus.ts`, the same one that withdraws a bell row, for the same
+  reason in the same words: a page is mounted whether or not anybody is in front
+  of it. `POST /api/sessions/:id/read` goes on every growth rather than once on
+  arrival, so what you are watching land does not pile up behind you; the moment
+  the focus goes, the counting starts. It is sent only when the mark is actually
+  behind, so a turn of thirty tool calls costs one round trip and not a render's
+  worth — and the server takes the tally itself rather than believing a number a
+  browser sent it.
+- **The mark lives in the SERVER, and that is the whole of why F5 keeps the
+  count.** It was a module store in the page first, which was wrong for one plain
+  reason: a reload lost it, while the bell beside it on the same row came
+  straight back — `/api/notifications` is served from that process. Two marks on
+  one row, one surviving a refresh and one not, is not a design. It is also the
+  truer place: having read a session is a fact about the PERSON, so it reads the
+  same in a second window and on a phone, and the only thing that stays per
+  window is the focus test above.
+- **Still not persisted, and for the bell's own reason**
+  ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md), "Where state lives"): a restart
+  empties both. A mark written to disk would claim, after a machine came back
+  tomorrow, to know what somebody had read — while the only thing that ever made
+  the claim true was this process watching it happen. Emptying costs nothing
+  anybody can name: every session reads as "nothing new" until it is opened
+  again.
+- **The bell mark is the bell's own row**, read from the `['notifications']`
+  query the header already keeps mounted — no second copy of what a stop is, and
+  the hover carries the CLI's own words exactly as `NotificationRow` does. It
+  goes when the row goes, whichever way that happens: opening the session,
+  dismissing it from the panel, or the server withdrawing it.
+- **Both are amber and neither is `CountBadge`.** Amber is this app's one colour
+  for something unseen, but that component rides a control's top-right corner in
+  absolute position and a 64 px virtualised row has neither a spare corner nor a
+  positioned host. `omitNews` turns the pair off on the session page, where the
+  follow pill already counts what lands and the bell row is withdrawn on sight.
+
+## The working indicator
+
+**A spinner and its clocks, and no box around them.** The row is telemetry about
+a turn in flight — what it says is "still going, and here is how long" — so what
+it is made of is the app's own ring (`animate-spin` on a 12 px bordered circle,
+in the accent) with the figures held against it, floating under the last thing
+that landed.
+
+**It wore a `Bubble` for a while, and that was the error worth naming.** A bubble
+has a border, a fill and a TAIL, and a tail points at a speaker; nobody is
+speaking here. The row is not an item, nothing folds, counts or prices it, there
+is nothing in it to copy — and being a bubble made it a **marking box**
+(`data-bubble-body`), so a find for `total`, `last` or `working` painted marks
+over words the transcript never held, in a box `boxKeyOf` cannot name and the
+find bar therefore cannot step to. That is exactly the drift `data-chrome` exists
+to stop, one component too late; `InterruptMarker` had already been through the
+same correction from the other direction ([What cuts a tool run](#what-cuts-a-tool-run)).
+Bubbles are left saying the one thing they are for.
+
+**The sentence is drawn only when it is news.** `Claude is working…` is what a
+turning ring beside a running clock already says, and written out it repeated
+itself in the reader's eyeline for every second of every turn — so it lives in
+`WORKING`, rendered `sr-only`, which is what a live region needs to have anything
+to announce (and which keeps `[role="status"]`'s `textContent` exactly what the
+checks in [AI_TESTING.md](AI_TESTING.md) read). The `news` prop is the other
+half: passing a sentence is what makes one visible, and the only caller that does
+is the subagents-outstanding footer, where the COUNT cannot be inferred from a
+spinner. That prop is the whole rule — if you are passing a sentence, it is
+because the spinner cannot say it.
+
+**Which is why the row itself is `relative`, and it is load-bearing.** An
+`sr-only` span is `position: absolute`, and the bubble this row used to be was
+positioned for its tail; a bare row is not, so the sentence escaped the scroller
+and grew the PAGE by thousands of pixels — the third layout rule above, in the
+one place that found it.
+
+**The pill spins while a turn is in flight.** The indicator row says it far
+better, but it says it at the END of the conversation: scroll up, or fold the turn
+away, and the one thing left to know is whether anything more is coming. The pill
+is on screen whatever the scroll is doing, so it carries the answer — the ring the
+update button already spins, in place of the pill's own arrow, in the same 12 px
+box so nothing changes width when a turn starts or ends. It is driven by
+`isWorking(liveInfo)` and NOT by whether the footer is being rendered: the footer
+is held back while a prompt of ours is still an echo, and the turn is in flight all
+the same. It ignores `prefers-reduced-motion`, as every other animation in the app
+already did — here the movement IS the state, and `styles.css` carries the why next
+to the keyframes.
+
+
+**It takes its status from the `['live']` query, NOT from `detail.summary.live`**, though both carry the same field. `['session', id]` is invalidated by `sessions-changed` — the transcript grew — while the busy/idle flip is a write under `~/.claude/sessions` and fires only `live-changed`. Read off the detail, the indicator would hang on "working" after the turn's last line was written, and the alternative (re-parsing a multi-MB transcript on every status flip) is absurd next to a query that reads two small files.
+
+**The bar is the clock, and nothing else may be.** The card closes on the bar's `animationend`, not on a timeout of its own — because hovering pauses the animation and a timeout knows nothing about that, so a card held under the pointer used to disappear anyway with its gauge frozen at 30%. Two clocks for one fact, and the visible one was the liar. `TOAST_MS` and the `10s` in `styles.css` still have to agree, but only so the figure can be read in both places; what ends the card is the animation finishing. There is a backstop far beyond any human pause, for a browser where the animation never runs at all — and it runs only while the card does, so a ceiling on how long a card can hold the corner in front of a person never becomes a second clock on the ten seconds.
+
+**Ten seconds means ten seconds of somebody LOOKING.** Two things stop the bar and they are one switch in `NotificationToasts`: the pointer resting on the card, and no tab of the app being on screen at all. The pointer's half used to be a `:hover` rule in `styles.css` and had to come out, because a script that plays a CSS animation takes `animation-play-state` out of the running for that animation permanently — the two mechanisms cannot share one bar, so both are `pause()` / `play()` now. The screen's half is not a nicety: **a CSS animation is timed off the document's clock, not off the frames it is drawn in**, so a hidden tab paints nothing and spends the ten seconds anyway — the bar is full and the card gone in the frame you come back on, announcing something you never saw. And because a `pause()` in a document that has stopped rendering is only applied on the frame it next draws, the position is written back by hand (`currentTime`) before playing again, which is what makes the resumed bar the one that was stopped.
+
+**And the tab next door counts, which is the whole of `lib/tabs.ts`.** A stop is announced once to a PERSON, not once per tab: with three tabs of the app open and one of them on screen, the other two are hidden and their cards must run out all the same, or the same stop is announced again on each of the next two tab switches. So the switch is the OR of every tab's own `visibilityState`, and the tabs tell each other over a same-origin `BroadcastChannel` — which is also what keeps the dev instance on 7434 and the release on 7433 from ever hearing one another. Only transitions are sent, never a heartbeat: a tab that dies without a word leaves the others believing somebody is still looking, which is exactly what they all did before this existed and not a new failure. `visibilityState` and not `document.hasFocus()`, because a window you can see but have not clicked into is a window whose cards you are reading.
+
+**The tone is drawn, not shipped, and one tab plays it.** Nothing in a browser offers a sound to reach for: the Notifications API's `sound` option was drafted, never implemented and then dropped from the spec, and the only native noise a page can cause is the one Windows puts over a system toast — which cannot be chosen, and which this app never raises. So the six tones are oscillators and envelopes in `lib/notificationSound.ts`, the only place a frequency is written; their ids and labels are in `shared` because the server validates the setting against them and the dropdown draws them, and neither of those has any business knowing a waveform. **Every step carries an envelope**, which is not polish: an oscillator started and stopped at full gain clicks at both ends, louder than the note it was meant to be, and the decay ends at 0.0001 because `exponentialRampToValueAtTime` cannot be given a zero. Then, a card in every tab is a card but a tone in every tab is a flam, so exactly one plays it — every tab publishes a `ring` claim for the stop's key and, 250 ms later, rings only if its own id is the lowest it heard. A deterministic tiebreak and not an elected leader: no shared state, no negotiation, and every tab reading the same set picks the same minimum. **Claims are recorded whether or not the tab has claimed that key yet**, which is the bug worth remembering — dropping a claim for a key not yet seen let two tabs whose refetches were far enough apart each conclude it was alone, and both rang.
+
+**The audio has to be unlocked by a click, and a stop is not a click.** An `AudioContext` is born suspended until the page has been interacted with, so the first tone of the day would be scheduled into a context that never runs and lost in silence — and nothing can be done about that from inside the notification. `primeAudio` arms a one-shot `pointerdown`/`keydown` listener the moment the announcer learns a tone is wanted, and the play buttons in Settings unlock it outright because they are a real gesture (which is half of why they exist; the other half is that a list of names for sounds nobody has heard is not a choice). The same class of rule is why there is **no system notification anywhere in this app**: `Notification` is secure-context only in Chrome, so it would work on `http://127.0.0.1` and not on `http://<lan-ip>:7433`, which is exactly the path [remote access](AI_REMOTE_ACCESS.md) exists to support — the same trap `lib/tabs.ts` records for `crypto.randomUUID()`. `AudioContext` and `speechSynthesis` carry no such gate and work over plain HTTP, which is the whole reason this is a sound rather than a toast. The narrator that follows the tone is `speechSynthesis` with **local voices only** (`localService`): Edge's "Natural" voices are synthesised on Microsoft's servers, so speaking with one would put every stop through a Microsoft server silently, with no switch and nothing saying so — which is what the network rule in [CLAUDE.md](../CLAUDE.md#hard-rules) forbids, whatever the count stands at.
+
+**Four switches decide what is ANNOUNCED, and none of them touches the bell.** `notifyEnabled`, the two per-kind checks and `notifyInFront` (two paragraphs below) gate the card and the tone together, decided in one place — `NotificationToasts`, because the `lastAt` map there is the only thing that knows a stop is news, and a second copy of that reasoning elsewhere is the duplication `NotificationRow` was extracted to prevent. The panel goes on listing both kinds with the count on its badge: off means "do not interrupt me", not "do not write it down". **Seeding happens switched off too**, or turning it back on would announce everything that stopped while it was off as though it had all just happened. And one tone per batch rather than one per card: six stops together are six cards and a single ding, `needs-you` leading a mixed batch, because six dings inside a second carry nothing the cards do not carry already. One consequence to know rather than to fix — **the release on 7433 and a dev instance on 7434 both ring**, since two ports are two origins and a `BroadcastChannel` does not cross them. The settings are per instance, so switching one of them off is a click.
+
+**The stack has no ceiling, and that is the second answer to the question.** The first was `MAX_VISIBLE = 6`, set where a 76 px card and its 8 px gaps still fitted a 600 px window (548 px) — a hard ceiling rather than a budget, because every stop that happens together should be on screen together. Then the cards started carrying two lines of what the session said, the arithmetic stopped working, and raising the figure would have meant picking a new number for a new card height and picking again the next time one changed. What the ceiling really did turns out to be what the window already does: **a card that does not fit is not seen, which is exactly what a dropped card was**, minus anything having to decide it — and because new cards arrive at the TOP, what runs off the bottom is the oldest. So every stop gets its card. Nothing leaks either way: a card ends on its OWN bar rather than on the stack's, and the bell holds every row whatever the screen did with the announcement.
+
+**A row says what the session STOPPED ON, and it is captured rather than looked up.** `StopPreview` (`shared/src/api.ts`, `server/src/core/stopPreview.ts`) is the pending call, the plan, the question, the answer or the composer's `lastError` — cut to `STOP_PREVIEW_MAX` (600) with the real length beside it, `StarredMessage`'s shape. Three lines of it in the panel, two on a card, the rest on the hover, which is the whole reason 600 is kept for three lines of room. Three rules bought it:
+
+- **The row stays instant and the quote follows it.** Reading a file is not something a status flip can wait for, so `raise` is still synchronous and `fillPreview` patches the row a beat later. No second card comes of it — a card is raised by a row APPEARING, and the browser's clock has moved past this stop by then — but a read in flight may be a read about nothing, so the patch demands **reference equality** with the row it was fired at. Without that, a preview landing after a dismissal writes a withdrawn row back into the map, which is not a late field arriving but a row the four withdrawal rules say must not exist.
+- **A replayed segment is what makes a tail dangerous.** A compaction sometimes re-appends the whole segment it closed, original timestamps and all, so the newest thing on disk can be days old ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#replayed-segments)). `replayFilter` cannot help in a WINDOW, where the copy may be the only occurrence there is — so the test is the one Claude Code's own billing makes: **a replay's top-level usage counts are zeroed**, against real assistant lines that carry usage 3,156 times out of 3,156. After a plain `/compact` this correctly finds nothing at all: the compaction is what ended the turn.
+- **The pending call is not the last one.** A dialog goes up with that turn's earlier calls already answered above it, so the walk collects the `tool_result` ids first and takes the newest `tool_use` that has none. Positionally-last named, as the thing waiting for you, a call that came back minutes ago.
+- **What was on screen is what was said, so narration counts and thinking does not.** The walk takes the newest assistant line carrying prose, and a `narration` block is prose ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#narration-is-not-thinking)) — the same rule that gives it a bubble. Left out it broke the rule above it: a turn stopped mid-run, whose last words were narration, fell through to an older turn's `text` and quoted THAT as what the session had just said. The thought beside it stays out, which is the whole distinction: quoting it would be quoting the working out.
+
+**The quote is not inside the link, and that is what a selection costs.** The whole row used to be one `<a>` — it still covers the name and the metadata at full width, and it is still what a keyboard reaches and the only half that opens in a new tab — but a quote you cannot drag across to lift a command out of is one you have to read twice. So the quote is a sibling that navigates on a plain click and stands aside when `hasSelection()` says a drag ended in it (`web/src/lib/selection.ts`, the same test the fold headers, the log rows and `FileRefLink` already ask). **And the panel's control is a BUTTON with its name on it** — `✓ Mark as read`, in the same shape as the panel's own footer button, which is now `✓ Mark all as read` for the reason the two should never have been named by different metaphors. Nothing about the act changed — the row goes, down the same `dismiss` endpoint, exactly as opening the session does — but "dismiss" is what the code calls it while what a person is doing is marking it read. It took two goes: a ghost ✕ was findable only by hovering a row you had already decided to read, and a bare ✓ fixed the discoverability and not the naming, since a tick alone is still something you have to try to learn. The card's cross stays a cross and stays saying `Close`, because closing a card leaves the row alone and that distinction is worth two shapes.
+
+**A row is a CARD, and it had to become one when it grew a quote.** A left rule alone does not make an object: with a title, a tag and three lines of prose the eye had nothing telling it where one stop ended and the next began, and the panel read as a single column of text with stripes down its side. So: a border all the way round, a corner, its own padding — and the left edge is the one that carries the colour, amber for `needs-you`, which is the group heading said again for a row scrolled past its own. The clock moved with it, from the middle of the metadata line to the far end of the title's, because "how long ago" is the one thing you scan DOWN a list and that only works if it is in the same place on every row.
+
+**A card that is still listed is RE-READ, never merely kept.** A card holds its own copy of the row, taken when the stop was news — and the quote arrives on a later answer, because the server raises the row before it has read the transcript. Filtering the old copies through kept exactly the copy from before the quote existed, so every card was drawn without one, for ever: the panel had quotes and the cards never did. Mapping the surviving cards through the newest list is the fix, and it is free — React Query shares structure between answers, so an unchanged row comes back as the same object and the identity comparison still finds nothing to re-render. **Only a screenshot found this**, which is the argument for taking one.
+
+**A stop is announced once, and the bell is the record.** The cards in `NotificationToasts` are raised by a row APPEARING, never by one existing — the first answer to `['notifications']` seeds silently, so a reload does not throw up the whole list. The clock is a `lastAt` per session rather than a set of keys, which keeps it the size of the sessions involved and makes withdraw-then-raise behave. Closing a card leaves the row: the cross says `Close`, and only the panel's says `Dismiss`.
+
+**The session in front of you is not announced, and otherwise its row WAITS for you.** Two decisions with one question behind them — is somebody at this window — and it is emphatically not the question the countdown above asks: `lib/windowFocus.ts` carries the contrast with `lib/tabs.ts` and is the only place either test is written. Opening a session is having seen it, so the viewer withdraws that session's row; but **a page is mounted whether or not anybody is in front of it**, and on that reasoning alone a session view sitting in a background tab, or behind an editor while you worked in it, withdrew the row within milliseconds of its being raised and took the card and the badge with it — the one case where the bell had something to say was the one case it said nothing. The row now goes only while the tab is visible AND the window holds the focus, and the effect re-runs when the focus arrives, which is the instant the session really was seen. The same test suppresses the announcement, decided in `NotificationToasts` beside the switches because that is where a stop is known to be news at all: a stop you are watching happen needs no card and no ding, everything else announces exactly as before. **`notifyInFront` (off by default) is the opt-out of the whole rule**: with it on, the session in front of you announces exactly like any other — and the viewer then defers withdrawing its row until the announcement window has closed, `TOAST_MS` from the stop, because withdrawing it at once is what kills the card and silences the tone (the re-check below); a row older than that window is still withdrawn on sight. `hasFocus()` is the strict half — a background tab and a minimised window both answer false — and `visibilityState` is the belt for the window Chrome takes to `hidden` on its own, so the pair can only ever err towards KEEPING a row, which is the cheap failure. **The tone then looks again before it plays.** Where you are looking is a fact about one tab, so a second tab of the app knows nothing about it and announces the stop as any other: its card is dropped the moment the row is withdrawn, and re-reading the listed keys when the claim comes back a quarter of a second later is what silences the ding along with it.
+
+**They sit under the header on the right, not in the bottom-right corner.** That corner is the busiest geometry in the app — the follow pill is in it, `Send` is under it, a terminal's resize handle crosses it, and all of it is measured — so cards there would need a new set of collision rules for nothing. Under the header they appear where the bell they belong to already is, which is also the only thing on screen that explains where a card went when it goes. `z-[35]` puts them below the popovers on purpose: opening the bell covers them, because you are then looking at the list they were announcing.
+
+**`busy` is the only status that means working, and `waiting` gets the row's own mode instead of nothing.** A session with a dialog on screen has a turn open and nothing moving in it — the CLI is blocked on a person — so `isWorking` still tests `LIVE_BUSY` alone: spinning here for a session waiting on a permission would be the one lie this indicator could tell. What was wrong was that the row went DARK: the one state where the reader is the answer was the one state the foot said nothing about, and only the header badge and the bell knew. So `waitingFor` puts the row in its waiting mode (presence-switched, because the CLI writes null for a dialog it has no name for): the ring rests into the amber pulse of the list badge, in the same 12 px slot so nothing shifts on the flip; the cause is written out by the `news` rule — a resting dot cannot name one — as `Waiting for you — permission prompt`, one wording in `waitingSentence`, plain amber and never the working shimmer, whose sweep says "going"; and the clocks become `total · waiting`, because with a dialog up the activity figures count nothing that can move (`turnClocks` still anchors `total` — a blocked turn is exactly the `unanswered` shape its adoption test covers — and its `input` is ignored, since this flip is the dialog opening, not the reader speaking). The follow pill wears the matching third state: the same pulse in the spinner's box — never `.turn-spinner`, which check 27 asserts means busy and nothing else — with the sentence leading its hover, because for waiting the honest answer to "is anything more coming" is: not until you answer.
+
+**The composer's questions are the same state, and used to lie.** The SDK keeps the turn open while an `AskUserQuestion`, a permission or a plan of ours stands — `working` true, `turnStartedAt` set — so the synthesized `LiveInfo` read `busy` and the foot spun at a person. `SessionViewPage` now reads `chat.data.state === 'asking'` BEFORE the busy synthesis, with the question's own `askedAt` as the flip, and the overlay the two routes share (`markOurs` in `util/chatLive.ts`, fed by `workingSessions()` carrying the pending question) says `waiting` to the list as well. The vocabulary is `askingFor`, moved to `shared` beside `ChatQuestion` because both halves say it — the notifications' `needs-you` rows and this. The four statuses and what each means are in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you).
+
+**Whether anything is working, and since when, are the CALLER's answers.** The row takes a `since` and works the clocks out from it; it knows nothing about a session. A session reads both off `~/.claude/sessions` — `isWorking` and `workingSince`, kept beside each other because they are one reading — and a subagent has no file there at all, sharing its parent's process, so it reads its own transcript instead. The signature used to be a `LiveInfo`, which the new-session page had to forge with six null fields to hand over one timestamp.
+
+**It hangs on the last turn's RAIL, as a `footer`, not after the list.** An answer being written belongs where the answers are: rendered at root level it lined up with the prompt instead of with the replies, reading as a sibling of the question rather than as the response arriving (checked: left 262 px, identical to the assistant bubbles, against the prompt's 236). A turn that has produced nothing yet — the state of every session for the first seconds after a prompt — grows a rail of its own from the same `RAIL` constant. **With the box gone the rail is the only thing left that says which turn this belongs to**, which is why it was kept when the bubble was not.
+
+It is still **NOT an item**: it never enters `turn.items`, so nothing that folds, counts or prices a message can see it. It is passed only while there is something to draw (`isWorking`), or the rail would be a stray green line down the page, and a folded turn shows it anyway — live news must not be hidden by a collapsed turn. `TurnList` picks the turn: the last group of the live segment, and only when that group is `live`, because hanging it off a rewound-away branch would say the abandoned exchange is the one being answered.
+
+Why it says "working" rather than "writing", and why the silence it fills is so long, is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#live-sessions-and-streaming).
+
+### Four clocks, and two of them are about the silence
+
+The turn's own figure — `total`, how long it has run — answers "is this slow?"
+and nothing else. What the reader actually wants to know while a turn hangs is
+whether it is going anywhere, so two more sit beside it: **how long since the
+model last wrote** and **how long since the last tool was called**. Both come
+from the conversation (`lib/turnActivity.ts`, pure) rather than from `/api/live`,
+which knows when the session last went busy and nothing about what has happened
+inside it. A fourth appears only on a turn somebody interrupted: **how long since
+the user last put something in**. All four are labelled, `total` included: bare,
+it was the only figure and could only be the turn.
+
+- **A session goes busy when the user gives it something BACK** — the prompt that
+  opened the turn, an answer to a question, a permission granted. So
+  `statusUpdatedAt` is not "the turn started", it is "you last unblocked it", and
+  reading it as the former restarted `total` from 0 at every interruption — on a
+  turn the transcript never split, because a queued prompt is delivered INTO the
+  turn already open
+  ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#queued-lines-attachment--queued_command))
+  and an `AskUserQuestion` answer is not an item at all, it is the call's own
+  `result` ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md)). So
+  `total` counts from the transcript's own boundary, which already holds both
+  inside the turn.
+- **The flip is only HALF of your last word, and it is the half about waking a
+  session up.** A prompt typed while Claude works wakes nothing: the session was
+  never asleep, `status` stays `busy` right across the delivery, and
+  `statusUpdatedAt` goes on naming the turn's own start — measured on `06b1f9ec`,
+  where a queued prompt had been delivered and answered and the flip had not
+  moved. Its own line is the only record of it, so `last input` takes whichever
+  of the two stamps is the more recent, and the hover names the act because they
+  are not the same one: `You typed this` (and that stamp is when it was TYPED,
+  never when it was handed over — nothing records that) or `You answered`.
+- **`last input` is second in the row because it re-anchors the two after it.**
+  On a turn that waited on a question, `last message` is OLDER than what `total`
+  counts from and reads as a hang until this figure says the turn was waiting on
+  YOU. It is drawn only when the turn was really interrupted (`turnClocks`
+  returns null otherwise, and under 5 s from the turn's start it would be the same
+  number as `total` written twice — which is every ordinary turn, plus the gap the
+  composer opens by stamping `turnStartedAt` on the click, a moment before the
+  prompt's first line reaches the disk).
+- **The transcript is right about the turn and the flip is immediate, so the rule
+  is which to believe when** — one pure function, `turnClocks`, and nowhere else.
+  Between a prompt and its first line reaching disk the last turn on record is
+  still the PREVIOUS one, and anchoring there would read `total 3 hr` for a second
+  at the start of every turn. So the turn is adopted only once it is demonstrably
+  the one in flight, by either of two signs: something in it was written at or
+  after the flip, or its last item is one Claude has yet to answer — a queued
+  prompt (whose line is appended at DELIVERY, so being last IS that window), a
+  call that asks a human (`AskUserQuestion`, `ExitPlanMode`), or a call with no
+  result. **Nothing else in the turn is read until one of the two holds**, the
+  queued stamp included: a clock taken off a turn that may be the previous one is
+  the very thing this guards against. Named rather than "ends on a call" because a turn ends on a call that
+  came back all the time: a `<task-notification>` that lands with the turn already
+  closed opens one of its own, right after the returned call that ended the last
+  one. (The other kind, one that landed mid-turn, joins the turn instead and never
+  cuts anything — [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#task-notifications).) **Measured exposure of the sign that can be
+  wrong**: 2 of 94 ended turns across the 30 most recent sessions of this project
+  would lend their start to whatever opens the next one, for the second the
+  watcher takes to catch up — against a `total` stuck at 0 for the 5-20 s Claude
+  takes to write its first block after every question.
+- **Every clock on the row belongs to the turn in flight.** A figure is shown
+  only for something stamped AFTER what `total` counts from, and an unknown start
+  hides both — otherwise the previous turn's last word wears this turn's clothes,
+  which is exactly what the echoed-prompt state would show (while a prompt of ours
+  is still pending, the last turn in the transcript is the one BEFORE it). The
+  gate is the ANCHOR and not the flip: gated on the flip, `last message` would
+  vanish the moment a question was answered, which is when it says the most.
+- **A tool call is not a message, and only the model's output is one.** Count the
+  message that made the call and the two figures are the same number for as long
+  as a run lasts — two clocks that always agree are one clock and a lie — because
+  a message ENDS with its calls. So `last message` takes the newest assistant
+  item carrying anything that is not a `tool` block, and the prompt, a prompt
+  typed mid-turn (`queued`) and an injected notice are all somebody else talking.
+- **A tool is timed by when it was CALLED, not by when it came back.** A `Bash`
+  four minutes into its run is precisely what these figures exist to reveal, and
+  the result's own clock has nothing to say yet — it is the call that proves the
+  turn got that far.
+- **The two stamps of a merged message are what makes both readings possible.**
+  `endTimestamp` is its last line, which for a message that called anything IS
+  its last call (Claude writes and then calls — the same 0-of-6,295 fact the
+  `tools-before-ask` note above rests on); `timestamp` is its first, which is
+  where the writing was. So the message figure reads the START and the tool
+  figure the END of the very same item. The per-block clock does exist in the
+  transcript and is dropped in the merge ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#live-sessions-and-streaming));
+  this is what survives of it, and it is enough.
+- **The figures lag by a re-parse and are exact anyway.** They move when
+  `sessions-changed` brings the conversation back, so one can appear a second
+  late, but the value is read off the transcript's own timestamps rather than off
+  a clock we started — never drifting, never invented.
+- The absolute clock is on the hover, per figure. The row wraps rather than
+  overflowing — a narrow column or a 150 % zoom breaks the line at a `·`, never
+  inside `1 min 4 s`, which is what the `nowrap` on each figure is for. It used to
+  fit on one line inside a 417 px bubble at a 520 px window; without the bubble it
+  has that box plus its padding, and the app's own layout is the wider problem
+  there either way.
+- **The number is brighter than its caption, and both pass AA.** One figure could
+  be a bare number at `/70` of `--text-dim`; three of them written that way were
+  one flat grey string to be read word by word, at 3.6:1 — under AA for 12 px. The
+  captions carry the full dim and the seconds carry `--text`, so the row is
+  scanned rather than read. **Both readings went UP when the box went**: against
+  the page's own `--bg` they are 6.3:1 and 13.8:1, where on the assistant bubble
+  they were 5.8 and 9.5. Not `font-mono`: the figures are already tabular, and
+  mono spaced `3 min 25 s` out into something wider and clumsier than the sans.
+- **The clocks are held against the spinner, at the left**, one compact group
+  rather than a status line stretched across a box. What that gave up is named
+  here because it was real and measured: anchored to the far right, `total`
+  growing from `59 s` to `1 min 0 s` pushed leftwards and `last tool` — the figure
+  that moves every second, the one being watched — never shifted under the eye.
+  Held left, that jump travels rightwards instead; it lands once a minute, on
+  figures that are already `tabular-nums`, and it is the price of a row that has
+  no empty half in the middle of it.
+- **And it is what deleted the pill's corner from this row.** The follow pill
+  floats over the scroller's bottom-RIGHT, so a right-anchored figure shared that
+  band and had to be moved out of it: at `Full` width with no composer between
+  them the pill covered `last tool` outright (measured: the figure at x 1380-1447
+  under the pill's 1375-1470), which bought a `max()` over `columnWidth`, a
+  `clockColumnWidth` gated on `chatEnabled` to stop that `max()` opening a 120 px
+  gutter where the composer already covered the pill, and two paragraphs
+  explaining both. **A row that starts at the left margin has nothing to dodge**,
+  so the prop, the switch and the arithmetic are gone from the indicator and from
+  `SessionViewPage` with it.
+- **`columnWidth` itself stays, for the foot.** What genuinely stands in the
+  pill's corner still pays for it with the same `max()` and the same
+  `PILL_CORNER_PX` (which lives in `FollowBottom.tsx`, because it is a fact about
+  the pill): the composer's action row, where `Send` really is under there, its
+  `BlockedBar`, and the terminal's start bar. It is optional at each of them for
+  the reason it was optional here — the caller passes it only where a pill exists
+  to be dodged, and the new-session page
+  ([AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md#starting-one-that-does-not-exist-yet))
+  has no conversation to follow and so no pill.
+
+### The same row inside a subagent's drawer
+
+An agent's transcript is a conversation and gets watched like one, so the drawer hangs the same footer off the same `TurnList` ([AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md#a-running-agent)). Three readings change their source and none changes its meaning:
+
+- **`total` counts from the agent's own first line** (`turnActivity().startedAt`), and its hover says `Sent out` rather than `Turn started`. Nothing else could say when it began: there is no `<pid>.json` for an agent, and its first line IS its brief. It is also the one caller whose `since` IS that line, so the gap `turnClocks` measures is zero and `last input` never appears here — an agent is not asked anything by the user.
+- **Whether it is working is the page's answer**, not the drawer's — a report that has not come back, a CLI still alive, and a recent write. **Never the parent being mid-turn**: an agent outlives the turn that launched it, and gating on `busy` took the row away from an agent that was still writing. Where the silence says nothing the row is not drawn at all; the rule, its clock and its blind spot live with the panel.
+- **A turn can end with agents still out there**, and the foot of the conversation says so in the same row — as the one variant that draws a sentence at all: `⑂ N subagents still working…` through `news`, one clock, counting from when the first of them was sent out. It has to be written because it cannot be inferred: the count is the news, and `Claude is working…` there would be false — Claude is idle, and what it sent out is not. Its three other clocks are deliberately absent: what has landed inside those transcripts is in THEIR drawers, and the parent's `activity` describes the turn that just ended — which is also why passing none leaves `total` counting from the flip, exactly as it always did.
+- **The pill's corner is bought with bottom padding** (`pb-14`), and it still is now that the clocks no longer sit in it: the band the pill floats in (16 px off the foot plus its own 30) is emptied for whatever the transcript ends with — a bubble's corner, the working row, a fold strip. The conversation's foot buys the same corner with the `max()` over its column width, which only locates the pill for a column centred in the window; this one is a 44 rem panel pinned to the right edge, so it pads the bottom and not the sides.
+
+## Verify
+
+[AI_TESTING.md](AI_TESTING.md) — checks 2, 9 (marking search hits), 16 (rewinds in the viewer), 18 (working indicator, waiting mode included), 21 (file viewer), 22 (subagent panel), 24 (question cards and drawings), 25 (the star and the Starred page), 26 (the find bar), 27 (the foot of the conversation), 28 (delivered files and the panel's pictures), 43 (the fold strip's duration), 48 (the scratchpad panel).

@@ -1,13 +1,48 @@
-import { query, type PermissionResult } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  type PermissionMode,
+  type PermissionResult,
+  type PermissionUpdate,
+} from '@anthropic-ai/claude-agent-sdk';
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
-import type { AppSettings, ChatModelInfo, ChatQuestion, ChatState, ChatStatus } from '@claude-history/shared';
-import { CHAT_MESSAGE_MAX } from '@claude-history/shared';
+import path from 'node:path';
+import type {
+  AppSettings,
+  ChatCreateRequest,
+  ChatCreateResponse,
+  ChatModelInfo,
+  ChatPermissionMode,
+  ChatPlanDecision,
+  ChatQuestion,
+  ChatQuestionItem,
+  ChatState,
+  ChatStatus,
+} from '@claude-history/shared';
+import {
+  askingFor,
+  activeSessionLimitMessage,
+  CHAT_IDLE_TIMEOUT_MINUTES,
+  CHAT_MESSAGE_MAX,
+  UNBORN_GRACE_MINUTES,
+} from '@claude-history/shared';
+import type { AppConfig } from '../config.ts';
+import type { OurTurn } from '../util/chatLive.ts';
 import { cleanEnv, findClaudeCli, forgetClaudeCli } from '../util/launcher.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
-import { createLogger } from './logger.ts';
+import { createLogger, localIso } from './logger.ts';
+import { resolvePlan } from './planFile.ts';
+import {
+  appHolderOf,
+  atActiveSessionLimit,
+  pidOwnedByApp,
+  registerWriter,
+  type TranscriptWriter,
+  type WriterSession,
+} from './writerGuard.ts';
 
 const log = createLogger('chat');
 
@@ -23,10 +58,15 @@ const TICK_MS = 30_000;
 const TURN_SILENCE_MS = 10 * 60_000;
 
 /**
- * Processes alive at once. Each holds a CLI with its MCP servers loaded, so
- * this is about the machine, not correctness.
+ * How long a reserved id is kept when nothing is ever sent to it.
+ *
+ * A draft costs a map entry and nothing else — no process, no file — so this is
+ * only housekeeping for a tab closed on the picker. Generous on purpose: the
+ * whole point of reserving the id is that the browser is already pointing at it,
+ * and expiring one while somebody is still typing would answer their first
+ * prompt with "this session is not in the index".
  */
-const MAX_CHAT_SESSIONS = 3;
+const DRAFT_TTL_MS = 60 * 60_000;
 
 /** Only for a caller that sends no model — the composer always sends one. */
 const FALLBACK_MODEL = 'sonnet';
@@ -35,6 +75,153 @@ const FALLBACK_MODEL = 'sonnet';
 interface PendingAsk {
   question: ChatQuestion;
   resolve: (result: PermissionResult) => void;
+  /** The permission updates the CLI proposed with this prompt, if any. */
+  suggestions?: PermissionUpdate[];
+}
+
+/** How prompts are sent unless the composer says otherwise. */
+const DEFAULT_PERMISSION_MODE: ChatPermissionMode = 'auto';
+
+/**
+ * What Claude Code puts in `answers` for a question answered with a note and no
+ * option. Its own permission component writes this exact string, and the app has
+ * to write it too: it is what tells the reader afterwards — and this repo's own
+ * viewer — that nothing was chosen, as against an answer that went missing.
+ */
+const NOTES_ONLY = '(notes only)';
+
+/**
+ * The questions off an `AskUserQuestion` input, copied field by field.
+ *
+ * A cast would be cheaper and was what this did: the array went to the browser
+ * unread, so a malformed item reached React and only announced itself when
+ * `options.map` threw, with the turn already held open by the promise nobody
+ * could now resolve. Copying also makes `preview` part of the contract rather
+ * than something that happened to survive.
+ */
+function askedQuestions(raw: unknown): ChatQuestionItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: ChatQuestionItem[] = [];
+  for (const q of raw) {
+    if (typeof q !== 'object' || q === null) continue;
+    const item = q as { question?: unknown; header?: unknown; options?: unknown; multiSelect?: unknown };
+    if (typeof item.question !== 'string' || !Array.isArray(item.options)) continue;
+    out.push({
+      question: item.question,
+      header: typeof item.header === 'string' ? item.header : '',
+      options: item.options
+        .filter(
+          (o): o is { label: string; description?: unknown; preview?: unknown } =>
+            typeof o === 'object' && o !== null && typeof (o as { label?: unknown }).label === 'string',
+        )
+        .map((o) => ({
+          label: o.label,
+          description: typeof o.description === 'string' ? o.description : '',
+          ...(typeof o.preview === 'string' && o.preview.trim() ? { preview: o.preview } : {}),
+        })),
+      multiSelect: item.multiSelect === true,
+    });
+  }
+  return out.length > 0 ? out : null;
+}
+
+/**
+ * The tool's payload, built from what the browser sent and the questions it was
+ * really asked.
+ *
+ * The questions are the authority on which keys exist, which is what keeps an
+ * arbitrary map from being echoed into a tool's input: anything the pending
+ * question did not ask is dropped here rather than trusted at the route.
+ *
+ * Three things it has to reproduce byte for byte, because the transcript is read
+ * back by the same rules for every session whatever wrote it:
+ *  - a multiSelect answer is ONE string joined with `", "`, never an array;
+ *  - free text goes at the end of that string, after the labels, and does NOT
+ *    replace them — several picks plus a typed requirement is a real answer;
+ *  - a note with nothing picked writes the `(notes only)` sentinel.
+ *
+ * The annotation carries the drawing of the option that was taken as well as the
+ * note, and is omitted for a question that has neither — exactly where Claude
+ * Code writes one and where it does not.
+ */
+export function askedAnswers(
+  questions: ChatQuestionItem[],
+  values: Record<string, string | string[]>,
+  notes: Record<string, { notes?: string }> | null,
+): {
+  answers: Record<string, string>;
+  annotations: Record<string, { preview?: string; notes?: string }> | null;
+  noteCount: number;
+} {
+  const answers: Record<string, string> = {};
+  const annotations: Record<string, { preview?: string; notes?: string }> = {};
+  let noteCount = 0;
+  for (const q of questions) {
+    const raw = values[q.question];
+    const parts = (Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [])
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const note = notes?.[q.question]?.notes?.trim() ?? '';
+    if (parts.length > 0) answers[q.question] = parts.join(', ');
+    else if (note) answers[q.question] = NOTES_ONLY;
+    // The drawing of the option taken. Told from the free text by matching the
+    // labels rather than by counting the parts: an answer is often one option
+    // plus a typed rider, and there "the selected option" still names something.
+    // With several picked it names nothing, so nothing is recorded.
+    const labels = parts.filter((p) => q.options.some((o) => o.label === p));
+    const preview = labels.length === 1 ? q.options.find((o) => o.label === labels[0])?.preview : undefined;
+    if (preview || note) {
+      annotations[q.question] = { ...(preview ? { preview } : {}), ...(note ? { notes: note } : {}) };
+    }
+    if (note) noteCount++;
+  }
+  return { answers, annotations: Object.keys(annotations).length > 0 ? annotations : null, noteCount };
+}
+
+/** What each answer to a plan means on the wire. */
+const PLAN_MODE_AFTER: Record<'approve-auto' | 'approve-manual', PermissionMode> = {
+  'approve-auto': 'auto',
+  'approve-manual': 'default',
+};
+
+/**
+ * A folder the user typed, checked hard enough to spawn a CLI in.
+ *
+ * The one place in this app where a path arrives from the request, so each
+ * failure says which of the three things is wrong rather than a single "invalid
+ * path" — this is a box someone is typing into, and it is the only feedback they
+ * get. The quotes come off first: Windows' "Copy as path" wraps the path in
+ * them, and `autoReloadCwd` learned the same lesson.
+ */
+function validateCwd(raw: string | undefined): string {
+  const cwd = (raw ?? '').trim().replace(/^"(.*)"$/, '$1');
+  if (!cwd) throw new Error('Choose a project, or type the folder to start in.');
+  if (!path.isAbsolute(cwd)) throw new Error(`The folder must be an absolute path: ${cwd}`);
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(cwd);
+  } catch {
+    throw new Error(`That folder does not exist: ${cwd}`);
+  }
+  if (!stat.isDirectory()) throw new Error(`That is a file, not a folder: ${cwd}`);
+  return cwd;
+}
+
+/**
+ * A session id reserved before there is anything behind it.
+ *
+ * It exists because the two halves of "start a new conversation" want the id at
+ * different moments: Claude Code would mint it when the CLI starts, while the
+ * browser needs it to mount a composer and to know which transcript to open
+ * afterwards. `Options.sessionId` lets us mint it here instead, and this is
+ * where it waits until the CLI has written the file.
+ *
+ * It carries no "has it started" flag on purpose: whether there is a transcript
+ * to resume is a question for the disk, and `transcriptExists` asks it.
+ */
+interface Draft {
+  cwd: string;
+  createdAt: number;
 }
 
 interface ChatProcess {
@@ -49,7 +236,11 @@ interface ChatProcess {
   model: string;
   /** Null for a model that takes no effort setting. */
   effort: string | null;
+  /** Switched live over the control channel, and by Claude Code when a plan is approved. */
+  permissionMode: ChatPermissionMode;
   queued: string[];
+  /** When this process came up. Only the dialog that lists live sessions reads it. */
+  startedAt: number;
   working: boolean;
   starting: boolean;
   turnStartedAt: number | null;
@@ -118,19 +309,37 @@ function messageChannel() {
  * structured — header, options, descriptions — and is answered from the UI,
  * which is the whole point: the app changes how it looks, not how it behaves.
  */
-export class SessionChatService {
+export class SessionChatService implements TranscriptWriter {
+  readonly what = 'the composer';
+  readonly kind = 'composer' as const;
   readonly events = new EventEmitter();
   private readonly procs = new Map<string, ChatProcess>();
+  /** Ids reserved for sessions that do not exist yet — see `Draft`. */
+  private readonly drafts = new Map<string, Draft>();
+  /**
+   * What the last CLI to run told us it offers.
+   *
+   * Still read from a running session and never written by hand — the rule that
+   * keeps this honest — but kept afterwards, because the answer is a fact about
+   * the INSTALL rather than about one session, and a composer with no process
+   * had no way to ask. That left the model and effort pickers absent exactly
+   * where they matter most: the first prompt of a new conversation, where there
+   * is nothing to continue from and therefore nothing to fall back on either.
+   * The moment any CLI comes up, its own list wins again.
+   */
+  private lastCapabilities: { models: ChatModelInfo[]; commands: string[] } = { models: [], commands: [] };
   /** Last failure per session, kept after the process is gone. */
   private readonly errors = new Map<string, string>();
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
+    private readonly config: AppConfig,
     private readonly index: SessionIndex,
     private readonly settings: () => AppSettings,
   ) {
     // One listener per SSE client, same as the index's emitter.
     this.events.setMaxListeners(100);
+    registerWriter(this);
   }
 
   start(): void {
@@ -146,27 +355,41 @@ export class SessionChatService {
   sendBlockedReason(sessionId: string): string | null {
     const s = this.settings();
     if (!s.chatEnabled) return 'Sending from the app is turned off in Settings.';
-    const summary = this.index.get(sessionId);
-    if (!summary) return 'This session is not in the index.';
+    // The index first and a reserved id second: a session being born has no
+    // summary to read a folder off, and this is the only thing that knows where
+    // it is going to live.
+    const cwd = this.cwdOf(sessionId);
+    if (!cwd) return 'This session is not in the index.';
     if (!findClaudeCli()) return 'The Claude Code CLI could not be found.';
-    if (!fs.existsSync(summary.projectPath)) {
-      return `The project folder no longer exists: ${summary.projectPath}`;
+    if (!fs.existsSync(cwd)) {
+      return `The project folder no longer exists: ${cwd}`;
     }
     // Claude Code appends to the transcript from whatever process holds the
     // session, and two writers is exactly what produces the duplicated uuids
     // and replayed segments the parser has to undo.
     //
-    // Our own process is excluded by pid: it registers itself there too. And
-    // `pidAlive` is re-checked rather than trusted from the list, which is only
-    // rebuilt when something writes to that directory — a CLI killed outright
-    // writes nothing on the way out, so its entry would block us forever.
-    if (
-      this.index.liveSessions.some((l) => l.sessionId === sessionId && !this.ownsPid(l.pid) && pidAlive(l.pid))
-    ) {
-      return 'This session is open in a terminal — two writers would corrupt its transcript.';
+    // The other half of this app first, so a refusal names what is holding it
+    // rather than blaming a terminal that does not exist: an embedded terminal
+    // registers a pid in that same directory, and without this the message
+    // would be about "a terminal" — true, and useless.
+    const holder = appHolderOf(sessionId, this);
+    if (holder) {
+      return `This session is already open in ${holder}. Close it if you want to continue here.`;
     }
-    if (!this.procs.has(sessionId) && this.procs.size >= MAX_CHAT_SESSIONS) {
-      return `Too many sessions are already running (${MAX_CHAT_SESSIONS}).`;
+    // Our own processes are excluded by pid: they register themselves there
+    // too. And `pidAlive` is re-checked rather than trusted from the list,
+    // which is only rebuilt when something writes to that directory — a CLI
+    // killed outright writes nothing on the way out, so its entry would block
+    // us forever.
+    if (
+      this.index.liveSessions.some((l) => l.sessionId === sessionId && !pidOwnedByApp(l.pid) && pidAlive(l.pid))
+    ) {
+      return 'This session is already open in a terminal. Close it if you want to continue here.';
+    }
+    // The cap counts both doors: a terminal running elsewhere in the app fills
+    // one of these slots too, because what it costs is the same machine.
+    if (atActiveSessionLimit(sessionId, s.maxActiveSessions)) {
+      return activeSessionLimitMessage(s.maxActiveSessions);
     }
     return null;
   }
@@ -180,11 +403,16 @@ export class SessionChatService {
     else if (p?.working) state = p.starting ? 'starting' : 'working';
     else if (lastError) state = 'error';
     const idleCloses =
-      p && !p.working ? p.lastActivityAt + Math.max(1, s.chatIdleTimeoutMinutes) * 60_000 : null;
+      p && !p.working ? p.lastActivityAt + CHAT_IDLE_TIMEOUT_MINUTES * 60_000 : null;
     return {
       sessionId,
       state,
       running: p !== undefined,
+      // Decided by the index and not by the draft map: the reservation outlives
+      // the birth by a rescan or two, and "no transcript yet" is the fact the
+      // browser is waiting on.
+      draft: this.drafts.has(sessionId) && this.index.get(sessionId) === undefined,
+      cwd: this.cwdOf(sessionId),
       turnStartedAt: p?.turnStartedAt ? new Date(p.turnStartedAt).toISOString() : null,
       idleClosesAt: idleCloses ? new Date(idleCloses).toISOString() : null,
       queued: p?.queued.length ?? 0,
@@ -192,12 +420,57 @@ export class SessionChatService {
       // point from the transcript, which the server would have to parse to know.
       model: p?.model ?? null,
       effort: p?.effort ?? null,
+      permissionMode: p?.permissionMode ?? null,
       lastError,
       blockedReason: this.sendBlockedReason(sessionId),
       question: p?.ask?.question ?? null,
-      availableModels: p?.models ?? [],
-      availableCommands: p?.commands ?? [],
+      // A running CLI answers for itself; anything else gets what the last one
+      // said. Per list, because they are read in two calls and either can fail
+      // on its own.
+      availableModels: p?.models.length ? p.models : this.lastCapabilities.models,
+      availableCommands: p?.commands.length ? p.commands : this.lastCapabilities.commands,
     };
+  }
+
+  /**
+   * Reserve an id for a conversation that does not exist yet, and say where it
+   * will run. Nothing is spawned and nothing is written: this is a map entry,
+   * and the CLI only starts when the first prompt arrives.
+   *
+   * The folder is the one thing worth reading closely. `projectKey` is looked up
+   * in the index, so nothing about the filesystem is taken from the request — the
+   * rule the rest of this app keeps. A typed `cwd` is the documented exception to
+   * it, and the reason is that the rule has no answer for the case: a folder
+   * Claude Code has never run in appears in no index, so a session could only
+   * ever be started where one had already been started from a terminal. It is
+   * validated rather than trusted, and the same-origin hook still stands in front
+   * of it like every other state-changing request.
+   */
+  create(input: ChatCreateRequest): ChatCreateResponse {
+    const s = this.settings();
+    if (!s.chatEnabled) throw new Error('Sending from the app is turned off in Settings.');
+    if (!findClaudeCli()) throw new Error('The Claude Code CLI could not be found.');
+    // A reservation spawns nothing, but the first prompt would, and refusing
+    // here says so before the browser is pointed at a session it cannot use.
+    if (atActiveSessionLimit('', s.maxActiveSessions)) throw new Error(activeSessionLimitMessage(s.maxActiveSessions));
+    const cwd = input.projectKey ? this.projectPath(input.projectKey) : validateCwd(input.cwd);
+    // Astronomically unlikely, and free to rule out. A collision would resume
+    // somebody else's conversation instead of starting one, which is the one
+    // outcome this whole path exists to avoid.
+    let sessionId = randomUUID();
+    while (this.index.get(sessionId) || this.drafts.has(sessionId)) sessionId = randomUUID();
+    this.drafts.set(sessionId, { cwd, createdAt: Date.now() });
+    log.info(`reserved ${sessionId} for a new session in ${cwd}`);
+    return { sessionId, cwd };
+  }
+
+  /**
+   * This id means something to us even if the index has never heard of it. The
+   * routes ask before answering 404, which is what lets the composer talk to a
+   * session between the click that reserved it and the file that realises it.
+   */
+  knows(sessionId: string): boolean {
+    return this.procs.has(sessionId) || this.drafts.has(sessionId);
   }
 
   /**
@@ -205,7 +478,13 @@ export class SessionChatService {
    * flight, and switches model or effort live — no restart, which is one of the
    * things the control channel buys.
    */
-  async send(sessionId: string, text: string, model?: string, effort?: string | null): Promise<void> {
+  async send(
+    sessionId: string,
+    text: string,
+    model?: string,
+    effort?: string | null,
+    permissionMode?: ChatPermissionMode,
+  ): Promise<void> {
     const blocked = this.sendBlockedReason(sessionId);
     if (blocked) {
       log.warn(`prompt refused for ${sessionId} — ${blocked}`);
@@ -224,8 +503,19 @@ export class SessionChatService {
     // No effort sent means no effort passed: the CLI then uses whatever that
     // model's own default is, which is the only right answer for one that has none.
     const wantEffort = effort ?? null;
+    const wantMode = permissionMode ?? DEFAULT_PERMISSION_MODE;
 
     let p = this.procs.get(sessionId);
+    if (p && p.permissionMode !== wantMode) {
+      // Live, like the model — `setPermissionMode` is a control message, so
+      // switching in and out of plan mode costs nothing. Effort is the odd one
+      // out below precisely because it has no such message.
+      await p.session
+        .setPermissionMode(wantMode)
+        .catch((err: unknown) => log.warn(`setPermissionMode failed`, err));
+      p.permissionMode = wantMode;
+      log.info(`switched ${sessionId} to ${wantMode} mode`);
+    }
     if (p && p.model !== wantModel) {
       // Live, over the control channel. The old code had to kill the process
       // and pay the whole startup again.
@@ -241,7 +531,7 @@ export class SessionChatService {
       this.kill(p, 'effort changed');
       p = undefined;
     }
-    if (!p) p = this.spawnFor(sessionId, wantModel, wantEffort);
+    if (!p) p = this.spawnFor(sessionId, wantModel, wantEffort, wantMode);
 
     if (p.working) {
       p.queued.push(prompt);
@@ -260,14 +550,19 @@ export class SessionChatService {
    * source for them. Rather than show a stale guess, it offers to open the
    * session and asks once it is up.
    */
-  open(sessionId: string, model?: string, effort?: string | null): void {
+  open(sessionId: string, model?: string, effort?: string | null, permissionMode?: ChatPermissionMode): void {
     const blocked = this.sendBlockedReason(sessionId);
     if (blocked) {
       log.warn(`open refused for ${sessionId} — ${blocked}`);
       throw new Error(blocked);
     }
     if (this.procs.has(sessionId)) return;
-    const p = this.spawnFor(sessionId, model ?? this.index.get(sessionId)?.model ?? FALLBACK_MODEL, effort ?? null);
+    const p = this.spawnFor(
+      sessionId,
+      model ?? this.index.get(sessionId)?.model ?? FALLBACK_MODEL,
+      effort ?? null,
+      permissionMode ?? DEFAULT_PERMISSION_MODE,
+    );
     // Asked for here and not left to `system/init`: that arrives at the start
     // of a TURN, and the whole point of opening without a prompt is that there
     // is no turn yet. Without this the picker would wait for a message it is
@@ -281,21 +576,63 @@ export class SessionChatService {
    * label(s) chosen; a null answer denies the tool instead, which is how a
    * permission prompt is refused.
    */
-  answer(sessionId: string, values: Record<string, string | string[]> | null): void {
+  answer(
+    sessionId: string,
+    values: Record<string, string | string[]> | null,
+    decision?: ChatPlanDecision,
+    note?: string,
+    notes?: Record<string, { notes?: string }> | null,
+  ): void {
     const p = this.procs.get(sessionId);
     if (!p?.ask) throw new Error('Nothing is waiting for an answer.');
-    const { question, resolve } = p.ask;
+    const { question, resolve, suggestions } = p.ask;
     p.ask = null;
     p.lastActivityAt = Date.now();
+    if (decision && question.toolName === 'ExitPlanMode') {
+      if (decision === 'keep-planning') {
+        // Denying is how Claude Code sends a plan back for more work, and the
+        // message is the reason: it lands in the transcript as `userFeedback`,
+        // which is exactly what the viewer prints under "the user said".
+        const message = note?.trim() || 'The user wants to keep planning.';
+        log.info(`user sent the plan back in ${sessionId}`);
+        resolve({ behavior: 'deny', message });
+      } else {
+        const mode = PLAN_MODE_AFTER[decision];
+        // The CLI's own suggestions are preferred: it knows what approving this
+        // prompt should change, and a hand-built update can only guess.
+        const updatedPermissions: PermissionUpdate[] = suggestions?.length
+          ? suggestions
+          : [{ type: 'setMode', mode, destination: 'session' }];
+        log.info(`user approved the plan in ${sessionId} (${decision})`);
+        resolve({
+          behavior: 'allow',
+          updatedInput: (question.input ?? {}) as Record<string, unknown>,
+          updatedPermissions,
+        });
+        // Claude Code will report the switch on its next status message, but
+        // the picker should not sit on a stale "plan" until then.
+        if (mode === 'auto') p.permissionMode = 'auto';
+      }
+      this.changed(sessionId);
+      return;
+    }
     if (values === null) {
       log.info(`user declined ${question.toolName} in ${sessionId}`);
       resolve({ behavior: 'deny', message: 'The user declined.' });
     } else if (question.questions) {
       // The tool wants its own questions echoed back beside the answers.
-      log.info(`user answered ${question.questions.length} question(s) in ${sessionId}`);
+      const filled = askedAnswers(question.questions, values, notes ?? null);
+      log.info(
+        `user answered ${String(question.questions.length)} question(s) in ${sessionId}` +
+          (filled.noteCount > 0 ? `, ${String(filled.noteCount)} with a note` : ''),
+      );
       resolve({
         behavior: 'allow',
-        updatedInput: { questions: question.questions, answers: values } as Record<string, unknown>,
+        updatedInput: {
+          questions: question.questions,
+          answers: filled.answers,
+          ...(filled.annotations ? { annotations: filled.annotations } : {}),
+        } as Record<string, unknown>,
       });
     } else {
       log.info(`user allowed ${question.toolName} in ${sessionId}`);
@@ -334,27 +671,117 @@ export class SessionChatService {
     return [...this.procs.values()].some((p) => p.working);
   }
 
-  /** Sessions with a turn in flight — the session list shows these as busy. */
-  workingSessions(): Map<string, number> {
-    const out = new Map<string, number>();
+  /**
+   * `TranscriptWriter`: every session we hold a CLI for, live or idle.
+   *
+   * Idle ones count. A composer process with nothing in flight still owns the
+   * transcript and still has an hour of prompt cache behind it, which is the
+   * whole reason the actions that would kill it ask this.
+   */
+  activeSessions(): WriterSession[] {
+    return [...this.procs.values()].map((p) => ({
+      sessionId: p.sessionId,
+      busy: p.working,
+      startedAt: localIso(new Date(p.startedAt)),
+    }));
+  }
+
+  /**
+   * Sessions with a turn in flight — the session list shows these as busy, or
+   * as waiting while a question of ours is on screen (`p.working` stays true
+   * right through an ask, so without `asking` the badge and the viewer's foot
+   * would spin at a person).
+   */
+  workingSessions(): Map<string, OurTurn> {
+    const out = new Map<string, OurTurn>();
     for (const p of this.procs.values()) {
-      if (p.working) out.set(p.sessionId, p.turnStartedAt ?? Date.now());
+      if (!p.working) continue;
+      const askedAt = p.ask ? Date.parse(p.ask.question.askedAt) : Number.NaN;
+      out.set(p.sessionId, {
+        startedAt: p.turnStartedAt ?? Date.now(),
+        asking: p.ask
+          ? {
+              waitingFor: askingFor(p.ask.question.toolName),
+              since: Number.isNaN(askedAt) ? (p.turnStartedAt ?? Date.now()) : askedAt,
+            }
+          : null,
+      });
     }
     return out;
   }
 
-  private ownsPid(pid: number): boolean {
+  ownsPid(pid: number): boolean {
     for (const p of this.procs.values()) if (p.pid === pid) return true;
     return false;
   }
 
+  /** `TranscriptWriter`: is a `claude` of ours alive in this session right now? */
+  holds(sessionId: string): boolean {
+    return this.procs.has(sessionId);
+  }
+
   // ---- internals ----
 
-  private spawnFor(sessionId: string, model: string, effort: string | null): ChatProcess {
+  /**
+   * Where a session runs. The index is the authority the moment it has one, and
+   * the reservation answers for the gap before that — the same folder either
+   * way, since the reservation is what decided it.
+   */
+  cwdOf(sessionId: string): string | null {
+    return this.index.get(sessionId)?.projectPath ?? this.drafts.get(sessionId)?.cwd ?? null;
+  }
+
+  /**
+   * Is there a transcript for this id on disk yet?
+   *
+   * Asked of the filesystem rather than remembered in a flag, because it is
+   * exactly the question `resume` needs answered and nothing else answers it in
+   * time: the index is a rescan behind, and whether Claude Code writes the file
+   * when the process starts or when the first turn does is an implementation
+   * detail of a program we do not control. One readdir plus one `existsSync` per
+   * project folder, and only ever for an id the index has never seen.
+   */
+  private transcriptExists(sessionId: string): boolean {
+    try {
+      return fs
+        .readdirSync(this.config.projectsDir)
+        .some((dir) => fs.existsSync(path.join(this.config.projectsDir, dir, `${sessionId}.jsonl`)));
+    } catch {
+      return false; // no ~/.claude/projects at all
+    }
+  }
+
+  /**
+   * The real path behind a project key, straight from the index.
+   *
+   * `findProject`, not `projects()`: hiding a project is a statement about
+   * BROWSING it, and a folder you chose not to see in the list is still a folder
+   * you may start a session in. Reading the filtered list here made
+   * `POST /api/chat/new` answer "that project is not in the index" for a project
+   * that plainly is — which the auto-reload folder had been doing all along.
+   */
+  private projectPath(key: string): string {
+    const project = this.index.findProject(key);
+    if (!project) throw new Error('That project is not in the index.');
+    if (!fs.existsSync(project.path)) {
+      throw new Error(`The project folder no longer exists: ${project.path}`);
+    }
+    return project.path;
+  }
+
+  private spawnFor(
+    sessionId: string,
+    model: string,
+    effort: string | null,
+    permissionMode: ChatPermissionMode,
+  ): ChatProcess {
     const cli = findClaudeCli();
-    const summary = this.index.get(sessionId);
-    if (!cli || !summary) throw new Error('The Claude Code CLI could not be found.');
-    const cwd = summary.projectPath;
+    const cwd = this.cwdOf(sessionId);
+    if (!cli || !cwd) throw new Error('The Claude Code CLI could not be found.');
+    // Nothing to resume means this is a session being born, and the id goes to
+    // the CLI instead of coming back from it — which is what puts the transcript
+    // on the uuid the browser is already pointing at.
+    const fresh = this.index.get(sessionId) === undefined && !this.transcriptExists(sessionId);
 
     const channel = messageChannel();
     const p: ChatProcess = {
@@ -365,7 +792,9 @@ export class SessionChatService {
       cwd,
       model,
       effort,
+      permissionMode,
       queued: [],
+      startedAt: Date.now(),
       working: false,
       starting: true,
       turnStartedAt: null,
@@ -380,16 +809,25 @@ export class SessionChatService {
     p.session = query({
       prompt: channel.stream(),
       options: {
-        resume: sessionId,
+        // The two are mutually exclusive in the SDK, and which one applies is
+        // decided by the disk above, never by a flag we keep.
+        ...(fresh ? { sessionId } : { resume: sessionId }),
         cwd,
         model,
         // Omitted entirely for a model that takes none — haiku is one, and
         // handing it an effort is asking for a setting it does not have.
         ...(effort ? { effort: effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
-        // The classifier approves the ordinary work, so canUseTool is only
-        // reached by what it will not take — and by AskUserQuestion, which
-        // always falls through to it whatever the rules say.
-        permissionMode: 'auto',
+        // In `auto` the classifier approves the ordinary work, so canUseTool is
+        // only reached by what it will not take — and by AskUserQuestion, which
+        // always falls through to it whatever the rules say. In `plan` nothing
+        // is executed and ExitPlanMode arrives here instead.
+        permissionMode,
+        // The format the option previews arrive in, and the one the panel
+        // draws: a monospace box, which is also what the CLI asks for itself.
+        // Pinned rather than inherited — the SDK documents this as its default,
+        // and a default is documentation, not a promise. `html` would mean
+        // rendering model-authored markup, which this app will not do.
+        toolConfig: { askUserQuestion: { previewFormat: 'markdown' } },
         // Never the SDK's own vendored copy: that is 293 MB we deliberately do
         // not install, and this is the CLI the user actually runs.
         pathToClaudeCodeExecutable: cli,
@@ -414,7 +852,7 @@ export class SessionChatService {
           log.info(`the claude process for ${sessionId} is pid ${String(p.pid)}`);
           return child as unknown as ReturnType<NonNullable<Parameters<typeof query>[0]['options']>['spawnClaudeCodeProcess'] & object>;
         },
-        canUseTool: (toolName, input) => this.onCanUseTool(sessionId, toolName, input),
+        canUseTool: (toolName, input, opts) => this.onCanUseTool(sessionId, toolName, input, opts.suggestions),
         stderr: (data: string) => {
           const text = data.trim();
           if (text) log.warn(`${sessionId} wrote to stderr: ${text.slice(0, 300)}`);
@@ -424,7 +862,7 @@ export class SessionChatService {
 
     this.procs.set(sessionId, p);
     log.info(
-      `started a session for ${sessionId} (${model}${effort ? `, effort ${effort}` : ', no effort — this model takes none'}) in ${cwd}`,
+      `${fresh ? 'created' : 'started'} a session for ${sessionId} (${model}${effort ? `, effort ${effort}` : ', no effort — this model takes none'}) in ${cwd}`,
       { cli },
     );
     void this.pump(p);
@@ -441,6 +879,30 @@ export class SessionChatService {
       for await (const message of p.session) {
         p.lastActivityAt = Date.now();
         p.starting = false;
+        // The CLI names the session on every message it sends, and for a session
+        // we created that is the one claim worth checking: if `sessionId` were
+        // ever ignored, the transcript would be written somewhere the browser is
+        // not looking and the page would wait for a file that is never coming.
+        // Reported rather than recovered from — there is nothing sane to do with
+        // a conversation that has moved — and it has never fired.
+        if (message.session_id && message.session_id !== p.sessionId) {
+          p.lastError = `Claude Code is writing to ${message.session_id}, not to ${p.sessionId}.`;
+          log.error(`${p.sessionId} was answered under a different session id: ${message.session_id}`);
+        }
+        // Claude Code changes the mode by itself when a plan is approved, and
+        // says so here. Without this the picker would go on showing `plan`
+        // after the session had left it.
+        if (message.type === 'system' && (message.subtype === 'init' || message.subtype === 'status')) {
+          const mode = (message as { permissionMode?: string }).permissionMode;
+          if (mode && mode !== p.permissionMode) {
+            // Only the two the composer offers are shown; anything else Claude
+            // Code switches itself to is reported as the ordinary mode rather
+            // than as a state the picker cannot represent.
+            p.permissionMode = mode === 'plan' ? 'plan' : 'auto';
+            log.debug(`${p.sessionId} is now in ${mode} mode`);
+            this.changed(p.sessionId);
+          }
+        }
         if (message.type === 'system' && message.subtype === 'init') {
           // Emitted at the start of EVERY turn, not once at startup, so it
           // cannot mean "ready". Worth reading once: it names the slash
@@ -506,6 +968,10 @@ export class SessionChatService {
     } catch (err) {
       log.debug(`could not read the command list for ${p.sessionId}`, err);
     }
+    // Kept for the sessions that have no process to ask. Only what actually
+    // arrived: a failed read must not blank a list that was right a minute ago.
+    if (p.models.length > 0) this.lastCapabilities.models = p.models;
+    if (p.commands.length > 0) this.lastCapabilities.commands = p.commands;
     log.info(`${p.sessionId} offers ${p.models.length} models and ${p.commands.length} commands`);
     this.changed(p.sessionId);
   }
@@ -516,25 +982,47 @@ export class SessionChatService {
    * anything the classifier refuses. Either way the promise is held until the
    * browser answers, which is exactly what keeps the turn alive meanwhile.
    */
-  private onCanUseTool(sessionId: string, toolName: string, input: Record<string, unknown>): Promise<PermissionResult> {
+  private async onCanUseTool(
+    sessionId: string,
+    toolName: string,
+    input: Record<string, unknown>,
+    /** What the CLI itself proposes on approval — preferred over anything built here. */
+    suggestions: PermissionUpdate[] | undefined,
+  ): Promise<PermissionResult> {
     const p = this.procs.get(sessionId);
-    if (!p) return Promise.resolve({ behavior: 'deny' as const, message: 'The session is gone.' });
+    if (!p) return { behavior: 'deny' as const, message: 'The session is gone.' };
 
-    const questions = Array.isArray((input as { questions?: unknown }).questions)
-      ? ((input as { questions: ChatQuestion['questions'] }).questions ?? null)
-      : null;
+    const questions = askedQuestions(input.questions);
+    const plan = toolName === 'ExitPlanMode' ? await this.planFor(sessionId, input) : null;
     const question: ChatQuestion = {
       toolName,
       questions,
       input: questions ? undefined : input,
       askedAt: new Date().toISOString(),
+      ...(plan ?? {}),
     };
-    log.info(`${toolName} is waiting on the user in ${sessionId}`, { questions: questions?.length ?? 0 });
+    log.info(`${toolName} is waiting on the user in ${sessionId}`, {
+      questions: questions?.length ?? 0,
+      planChars: plan?.plan?.length ?? 0,
+    });
 
     return new Promise((resolve) => {
-      p.ask = { question, resolve };
+      p.ask = { question, resolve, suggestions };
       this.changed(sessionId);
     });
+  }
+
+  /**
+   * The plan awaiting approval, and where it was saved. The rule about WHERE a
+   * plan lives is `core/planFile.ts` — the bell asks it the same question when
+   * it has to name what a session stopped for, and one of those two answers
+   * going stale would be the whole point of keeping it in one place.
+   */
+  private planFor(
+    sessionId: string,
+    input: Record<string, unknown>,
+  ): Promise<{ plan: string | null; planFilePath: string | null }> {
+    return resolvePlan(this.config.plansDir, this.index.get(sessionId)?.slug, input);
   }
 
   private write(p: ChatProcess, prompt: string): void {
@@ -549,8 +1037,23 @@ export class SessionChatService {
   }
 
   private sweep(): void {
-    const idleMs = Math.max(1, this.settings().chatIdleTimeoutMinutes) * 60_000;
+    const idleMs = CHAT_IDLE_TIMEOUT_MINUTES * 60_000;
     const now = Date.now();
+    // Reservations that have become sessions, and reservations nobody ever used.
+    // The first is the point — once the transcript exists the index is the
+    // authority on where it lives, and holding a second copy of that is how the
+    // two come to disagree.
+    for (const [id, draft] of [...this.drafts]) {
+      if (this.index.get(id)) this.drafts.delete(id);
+      // `appHolderOf` rather than our own `procs`: a TERMINAL on a reserved id is
+      // a writer this service knows nothing about, and dropping the reservation
+      // under it would take away the only thing that can say where that session
+      // lives — its own routes would then 404 on a CLI they are running.
+      else if (!appHolderOf(id) && now - draft.createdAt > DRAFT_TTL_MS) {
+        log.debug(`dropping the unused reservation ${id}`);
+        this.drafts.delete(id);
+      }
+    }
     for (const p of [...this.procs.values()]) {
       // A question on screen is not silence: the turn is waiting for a person,
       // and killing it would throw away the answer they are about to give.
@@ -563,6 +1066,32 @@ export class SessionChatService {
           this.kill(p, 'the turn went silent');
           this.changed(p.sessionId);
         }
+        continue;
+      }
+      /**
+       * A process on a session that never became a conversation, with nobody
+       * saying anything to it ([UNBORN_GRACE_MINUTES]).
+       *
+       * The composer's door to the same hole the terminal has: `/new` opens a
+       * CLI here to read the model list, and until a prompt is sent that id has
+       * no transcript, so it is in no list, no search and no badge — leave the
+       * page and it holds a slot and refuses every guarded action for the whole
+       * hour below. There is no socket to watch on this side, and none is
+       * needed: **closing an idle composer costs nothing at all here**, because
+       * the next prompt spawns a fresh process on its own (`send`) and the
+       * pickers are filled from `lastCapabilities`, which belongs to the install
+       * rather than to this process.
+       *
+       * The hour is untouched for everything else, and it is the same reasoning
+       * in both directions: it is the prompt cache's own clock, and a session
+       * with no transcript has no cache to keep warm.
+       */
+      const unborn = !this.index.get(p.sessionId) && !this.transcriptExists(p.sessionId);
+      if (unborn && quiet > UNBORN_GRACE_MINUTES * 60_000) {
+        // `kill` writes the line, reason and all — saying it here too was the
+        // same sentence twice in the log.
+        this.kill(p, 'it never became a conversation');
+        this.changed(p.sessionId);
         continue;
       }
       if (quiet > idleMs) {

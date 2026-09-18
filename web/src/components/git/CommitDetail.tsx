@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
-import { btn, inputClass } from '../../lib/ui.ts';
-import { toggleClass } from '../viewer/SessionHeader.tsx';
+import { actionClass, inputClass, toggleClass } from '../controlClass.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView } from './DiffView.tsx';
 import { RefChip } from './RefChip.tsx';
@@ -56,19 +55,19 @@ function CommitActions({
     <div className="mt-2 flex flex-wrap items-center gap-1.5">
       <button
         type="button"
-        className={btn}
+        className={actionClass}
         disabled={action.busy || !!status?.blocked.checkout}
         title={status?.blocked.checkout ?? `Check out ${short} (this detaches HEAD)`}
         onClick={() => void action.run(() => gitApi.checkout(repoId, { ref: sha }))}
       >
         Check out
       </button>
-      <button type="button" className={btn} disabled={action.busy} onClick={() => setBranching(true)}>
+      <button type="button" className={actionClass} disabled={action.busy} onClick={() => setBranching(true)}>
         Branch here
       </button>
       <button
         type="button"
-        className={btn}
+        className={actionClass}
         disabled={action.busy || !!status?.blocked.cherryPick}
         title={status?.blocked.cherryPick ?? `Copy ${short} onto ${status?.branch ?? 'HEAD'}`}
         onClick={() => void action.run(() => gitApi.cherryPick(repoId, { shas: [sha], mainline: isMerge ? 1 : undefined }))}
@@ -77,7 +76,7 @@ function CommitActions({
       </button>
       <button
         type="button"
-        className={btn}
+        className={actionClass}
         disabled={action.busy || !!status?.blocked.revert}
         title={status?.blocked.revert ?? `Add a commit undoing ${short}`}
         onClick={() => void action.run(() => gitApi.revert(repoId, { shas: [sha], mainline: isMerge ? 1 : undefined }))}
@@ -86,7 +85,7 @@ function CommitActions({
       </button>
       <button
         type="button"
-        className={btn}
+        className={actionClass}
         disabled={action.busy || !!status?.blocked.rebase}
         title={status?.blocked.rebase ?? `Replay ${status?.branch ?? 'HEAD'} on top of ${short}`}
         onClick={() => setRebasing(true)}
@@ -95,7 +94,7 @@ function CommitActions({
       </button>
       <button
         type="button"
-        className={btn}
+        className={actionClass}
         disabled={action.busy || !!status?.blocked.reset}
         title={status?.blocked.reset ?? `Move ${status?.branch ?? 'HEAD'} to ${short}`}
         onClick={() => setResetting('mixed')}
@@ -140,7 +139,7 @@ function CommitActions({
           />
           <button
             type="button"
-            className={btn}
+            className={actionClass}
             disabled={!name.trim() || action.busy}
             onClick={() => {
               const branch = name.trim();
@@ -153,7 +152,7 @@ function CommitActions({
           </button>
           <button
             type="button"
-            className={btn}
+            className={actionClass}
             onClick={() => {
               setBranching(false);
               setName('');

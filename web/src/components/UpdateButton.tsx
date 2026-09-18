@@ -3,7 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../api/client.ts';
+import { useIsRemote } from '../api/useLocal.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../lib/format.ts';
+import { useBackDismiss } from '../lib/mobile.ts';
+import { useActiveSessionsGuard } from './ActiveSessionsDialog.tsx';
+import { CountBadge } from './CountBadge.tsx';
+import { actionClass, squareClass, squareIcon } from './controlClass.ts';
 import { UpgradeIcon } from './icons.tsx';
 import { Markdown } from './viewer/Markdown.tsx';
 
@@ -59,18 +64,31 @@ function describeProgress(progress: NonNullable<UpdateStatusResponse['progress']
  * background, so `state`, `progress` and `lastApplyError` are the only things
  * that know what is happening. A fixed client-side deadline used to declare
  * failure while a slow download was still perfectly alive.
+ *
+ * Two ways in, one window. The header's is an icon with a badge; Settings ›
+ * Updates has a labelled button, because a page about what gets checked and how
+ * often should be able to open the thing it is about — and on a phone, where the
+ * header's icon only appears when there IS a version waiting, it is the only way
+ * to reach "check now" at all.
  */
-export function UpdateButton() {
+export function UpdateButton({ trigger = 'icon' }: { trigger?: 'icon' | 'action' }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [checking, setChecking] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const remote = useIsRemote();
+  const guard = useActiveSessionsGuard();
   const [target, setTarget] = useState<string | null>(null);
   /** The version being installed, frozen for the duration of the attempt. */
   const [applyingTo, setApplyingTo] = useState<string | null>(null);
   const startedAtRef = useRef(0);
   const handoverAtRef = useRef(0);
   const oldVersionSinceRef = useRef(0);
+
+  // Android's Back closes the window, unless it is in the middle of
+  // installing — the same rule the ✕ and the backdrop already follow, for the
+  // same reason. Above every early return, like every other hook here.
+  useBackDismiss(open && applyingTo === null, () => setOpen(false));
 
   const { data: status } = useQuery({
     queryKey: ['update'],
@@ -153,8 +171,6 @@ export function UpdateButton() {
     return () => clearInterval(timer);
   }, [applying, applyingTo]);
 
-  if (!status) return null;
-
   const checkNow = () => {
     setChecking(true);
     void api
@@ -165,16 +181,43 @@ export function UpdateButton() {
 
   const apply = () => {
     if (!selected) return;
+    // Allowed from another machine — it is the one restart that puts itself
+    // back — but not silently: the page goes dead for a few seconds while the
+    // server it is talking to is replaced, and that reads like a crash unless
+    // it was expected.
+    if (
+      remote &&
+      !confirm(
+        'Installing an update restarts the server. This page will stop responding for a few seconds and then come back. Continue?',
+      )
+    ) {
+      return;
+    }
+    applyNow(selected.version);
+  };
+
+  /**
+   * The apply itself. Split from the question above so the active-sessions
+   * dialog can run it again once they are closed, without asking a remote
+   * browser the same thing twice.
+   */
+  const applyNow = (version: string) => {
     setApplyError(null);
     startedAtRef.current = Date.now();
     handoverAtRef.current = 0;
     oldVersionSinceRef.current = 0;
-    setApplyingTo(selected.version);
-    void api.updateApply(selected.version).catch((e) => {
-      setApplyError(String(e instanceof Error ? e.message : e));
+    setApplyingTo(version);
+    void api.updateApply(version).catch((e: unknown) => {
       setApplyingTo(null);
+      // An update replaces this server, so it is refused while the app is
+      // running Claude — the dialog names the sessions and installs once they
+      // are closed.
+      if (guard.refused(e, () => applyNow(version))) return;
+      setApplyError(String(e instanceof Error ? e.message : e));
     });
   };
+
+  if (!status) return null;
 
   const busyLabel = applying ? (STATE_LABEL[status.state] ?? 'Working…') : null;
   const progress = applying ? status.progress : null;
@@ -184,28 +227,46 @@ export function UpdateButton() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="relative cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]"
-        title={count > 0 ? `${count} new version${count !== 1 ? 's' : ''} available` : 'Check for updates'}
-        aria-label="Updates"
-      >
-        <UpgradeIcon />
-        {count > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-4 rounded-full border-2 border-[var(--bg)] bg-amber-400 px-1 text-[9px] leading-3 font-bold text-black">
-            {count}
-          </span>
-        )}
-      </button>
+      {trigger === 'action' ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={`inline-flex items-center gap-2 ${actionClass}`}
+        >
+          <UpgradeIcon />
+          {count > 0 ? `${count} new version${count !== 1 ? 's' : ''} — open updates…` : 'Check for updates…'}
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={squareClass()}
+          title={count > 0 ? `${count} new version${count !== 1 ? 's' : ''} available` : 'Check for updates'}
+          aria-label="Updates"
+        >
+          <UpgradeIcon className={squareIcon} />
+          <CountBadge count={count} />
+        </button>
+      )}
 
       {open && (
+        // A centred dialog on a desktop and the whole window on a phone. What is
+        // read here is every pending release's notes, stacked, and a 360px
+        // screen has none of the room a modal's margins take: the backdrop that
+        // frames it above 48rem is 32px of the only thing worth reading.
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-20"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 sm:p-8 max-md:p-0"
           onClick={() => !applying && setOpen(false)}
         >
+          {/* A step wider than the plan panel (`QuestionPanel`) and as tall as
+              the window allows, for one reason: what is read here is every
+              pending release's notes, stacked, and at 620px they came out as a
+              narrow column of wrapped bullets. `max-h-full` rather than a vh
+              fraction because the overlay's padding is already the margin — a
+              fraction on top of it pushes the buttons past the bottom edge of
+              a short window. */}
           <div
-            className="flex max-h-[80vh] w-[620px] max-w-[92vw] flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-xl"
+            className="flex max-h-full w-full max-w-6xl flex-col rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-4 shadow-xl max-md:h-full max-md:max-h-none max-md:rounded-none max-md:border-0 max-md:p-3"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center gap-2">
@@ -219,7 +280,8 @@ export function UpdateButton() {
                 type="button"
                 onClick={() => setOpen(false)}
                 disabled={applying}
-                className="ml-auto cursor-pointer rounded px-1.5 text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-40"
+                aria-label="Close"
+                className="ml-auto cursor-pointer rounded px-1.5 text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-40 max-md:min-h-10 max-md:px-3 max-md:text-lg"
               >
                 ✕
               </button>
@@ -333,14 +395,14 @@ export function UpdateButton() {
               </div>
             )}
 
-            <div className="mt-4 flex justify-end gap-1.5">
+            <div className="mt-4 flex justify-end gap-1.5 max-md:mt-3 max-md:flex-col-reverse">
               {count > 0 && (
                 <button
                   type="button"
                   onClick={apply}
                   disabled={!status.installed || applying || !selected?.installable}
                   title={status.installed ? undefined : 'This instance is not a managed install'}
-                  className="cursor-pointer rounded border border-[var(--accent-dim)] px-3 py-1 text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:cursor-default disabled:opacity-40"
+                  className="cursor-pointer rounded border border-[var(--accent-dim)] px-3 py-1 text-xs text-[var(--accent)] hover:bg-[var(--accent)]/10 disabled:cursor-default disabled:opacity-40 max-md:min-h-11 max-md:text-sm"
                 >
                   {applying ? 'Updating…' : `Update to ${selected?.tag ?? ''}`}
                 </button>
@@ -349,7 +411,7 @@ export function UpdateButton() {
                 type="button"
                 onClick={() => setOpen(false)}
                 disabled={applying}
-                className="cursor-pointer rounded border border-[var(--border)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:opacity-40"
+                className="cursor-pointer rounded border border-[var(--border)] px-3 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:opacity-40 max-md:min-h-11 max-md:text-sm"
               >
                 {count > 0 ? 'Cancel' : 'Close'}
               </button>

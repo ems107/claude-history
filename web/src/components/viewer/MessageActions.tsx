@@ -1,7 +1,8 @@
 import type { ContentBlock, MessageItem } from '@claude-history/shared';
-import { type RefObject, useState } from 'react';
-import { copyPlain, copyRich } from '../../lib/clipboard.ts';
+import { type ReactNode, type RefObject, useState } from 'react';
+import { copyPlain, copyRich, renderedCopy } from '../../lib/clipboard.ts';
 import { blocksMarkdown, type ExportOptions } from '../../lib/exportMarkdown.ts';
+import { useStars } from './StarContext.ts';
 
 /**
  * What a copy takes: the bubble's own content. Tool runs live outside it (and
@@ -20,13 +21,14 @@ const COPY_OPTS: ExportOptions = {
 const FLASH_MS = 1500;
 
 /**
- * The two copy buttons on a message, revealed on hover like the rename/pin
- * buttons in the session header.
+ * The star and the two copy buttons on a message, revealed on hover like the
+ * rename/pin buttons in the session header.
  *
  * "Copy" reads the HTML back out of the DOM node that is already on screen,
  * rather than re-rendering the markdown through a second pipeline: what lands
  * in Word is then exactly what the viewer shows, and there is no second
- * renderer to drift from the first.
+ * renderer to drift from the first — minus the chrome drawn inside it, which
+ * is what `renderedCopy` is for.
  */
 export function MessageActions({
   item,
@@ -39,7 +41,51 @@ export function MessageActions({
   /** The bubble's content node, for the formatted copy. */
   body: RefObject<HTMLDivElement | null>;
 }) {
-  return <CopyActions markdown={() => blocksMarkdown(item, blocks, COPY_OPTS)} body={body} />;
+  return (
+    <CopyActions markdown={() => blocksMarkdown(item, blocks, COPY_OPTS)} body={body}>
+      <StarButton item={item} />
+    </CopyActions>
+  );
+}
+
+/**
+ * The star, which is the one button here that stays visible with the pointer
+ * elsewhere: a starred message has to say so while you are scrolling past it.
+ *
+ * Nothing is drawn to the bubble itself. Recolouring its outline means
+ * recolouring `[data-bubble-tail]` too — a separate element with its own opaque
+ * fill and its own keyframes — and `match-flash` already animates that same
+ * border for 2.5 s, so the two would fight over a deep link's arrival.
+ *
+ * Absent context means there is nothing to star against (the subagent drawer,
+ * whose uuids belong to another transcript), and then there is no button.
+ */
+function StarButton({ item }: { item: MessageItem }) {
+  const stars = useStars();
+  if (!stars) return null;
+  const starred = stars.isStarred(item);
+  const busy = stars.busy === item.uuid;
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => stars.toggle(item)}
+      // `hidden` rather than `opacity-0` (which is what the session header's pin
+      // uses): an invisible button still takes its width, and here that left a
+      // permanent gap in the header row.
+      className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-normal tracking-normal normal-case ${
+        busy ? 'cursor-default opacity-60' : 'cursor-pointer'
+      } ${
+        starred
+          ? 'text-amber-400 hover:bg-[var(--bg-hover)] hover:text-amber-300'
+          : 'hidden text-[var(--text-dim)] group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-amber-400 max-md:inline-block'
+      }`}
+      title={starred ? 'Remove from Starred' : 'Star this message (kept locally, with a copy of its text)'}
+      aria-pressed={starred}
+    >
+      {starred ? '★' : '☆'}
+    </button>
+  );
 }
 
 /**
@@ -50,11 +96,14 @@ export function MessageActions({
 export function CopyActions({
   markdown,
   body,
+  children,
 }: {
   /** The source form, for the Markdown button. */
   markdown: () => string;
   /** The rendered node, whose HTML the formatted copy takes. */
   body: RefObject<HTMLDivElement | null>;
+  /** Anything that belongs in the same toolbar — the star, drawn after the buttons. */
+  children?: ReactNode;
 }) {
   const [done, setDone] = useState<'rich' | 'md' | null>(null);
   const flash = (which: 'rich' | 'md') => {
@@ -62,28 +111,41 @@ export function CopyActions({
     setTimeout(() => setDone(null), FLASH_MS);
   };
 
+  // `hidden`, not `opacity-0`: invisible buttons still take their width, and
+  // here that left a permanent gap in the header. It sits on each button rather
+  // than on the row, because the star stays visible once it is set.
+  // `max-md:inline-block` because Tailwind v4 compiles `hover:` inside
+  // `@media (hover: hover)`: on a phone `group-hover/bubble` never fires, so
+  // these were not merely hard to find, they were `display: none` for good —
+  // and they are the only way to copy a message. Drawn always there instead, at
+  // a size a thumb can hit.
   const cls =
-    'shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case hover:bg-[var(--bg-hover)] hover:text-[var(--text)]';
+    'hidden shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[10px] font-normal tracking-normal text-[var(--text-dim)] normal-case group-hover/bubble:inline-block hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:inline-block max-md:px-2 max-md:py-1 max-md:text-xs';
 
   return (
-    // `hidden`, not `opacity-0`: invisible buttons still take their width, and
-    // here that left a permanent gap in the header. They sit right before the
-    // model/cost/context run, after a `flex-1` spacer that absorbs their width,
-    // so appearing shrinks the spacer instead of shoving those pills sideways
-    // exactly when the pointer is heading for them.
+    // The row sits right before the model/cost/context run, after a `flex-1`
+    // spacer that absorbs its width, so a button appearing shrinks the spacer
+    // instead of shoving those pills sideways exactly when the pointer is
+    // heading for them.
     //
-    // `-my-0.5` cancels the buttons' own vertical padding from the row's
-    // height: the assistant's pills are bare text (the `inline` HoverCard
-    // variant), so without it the header grew by 4 px on hover and nudged the
-    // answer down. The buttons still paint their full padding, 2 px over the
-    // row on each side.
+    // `h-[1lh]` is what stops the thread trembling under the pointer. The row
+    // is a hover toolbar inside a line of 10 px text, and its tallest item —
+    // the star, at `text-xs`, whose 16 px line box beats the header's 15 px —
+    // used to grow the header by a pixel the moment the pointer arrived. One
+    // pixel is enough: every bubble below jumped as the mouse swept down them,
+    // and at a bubble's edge the growth moved the boundary out from under the
+    // pointer and back, which flickers. Pinning the row to exactly ONE line of
+    // whatever the header is set in makes its content unable to say anything
+    // about the header's height. The buttons keep painting their full padding,
+    // 2 px over the row on each side, as they did under `-my-0.5`.
     //
     // The click never belongs to whatever is underneath: a folded bubble
     // unfolds its turn.
-    <span
-      className="-my-0.5 hidden items-center gap-0.5 group-hover/bubble:flex"
-      onClick={(e) => e.stopPropagation()}
-    >
+    // `h-[1lh]` is off on a phone: it exists to stop a hover toolbar changing
+    // the header's height, and there the buttons are always drawn, so the
+    // height is settled before anybody touches anything. Held to it, the row
+    // would instead clip a 12px label into one line of 10px text.
+    <span className="flex h-[1lh] items-center gap-0.5 max-md:h-auto" onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
         className={cls}
@@ -91,7 +153,11 @@ export function CopyActions({
         onClick={() => {
           const node = body.current;
           if (!node) return;
-          void copyRich(node.innerHTML, node.innerText).then(() => flash('rich'));
+          // Through `renderedCopy` rather than off the node itself: a code block
+          // draws a bar inside this very node, and its language and its button
+          // have no business in a paste into Word.
+          const { html, text } = renderedCopy(node);
+          void copyRich(html, text).then(() => flash('rich'));
         }}
       >
         {done === 'rich' ? 'Copied ✓' : '⧉ Copy'}
@@ -104,6 +170,11 @@ export function CopyActions({
       >
         {done === 'md' ? 'Copied ✓' : '⧉ Copy as Markdown'}
       </button>
+      {/* Last in the row, so a set star sits right against the model and the
+          pills — the part of the header that is always there. Put first, it
+          floated alone in the middle of the row whenever the copy buttons were
+          hidden. */}
+      {children}
     </span>
   );
 }
