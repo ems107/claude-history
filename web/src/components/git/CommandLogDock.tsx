@@ -58,18 +58,21 @@ export function CommandLogDock({
         />
       )}
 
-      <div className="flex items-center gap-2 px-2 py-1 text-[11px]">
+      <div className="flex items-center gap-2 px-2 py-1 text-[11px] max-md:min-h-11 max-md:gap-1.5">
         <button
           type="button"
           onClick={onToggle}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left hover:text-[var(--text)]"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left hover:text-[var(--text)] max-md:min-h-11 max-md:gap-1.5"
           title={open ? 'Hide the command log' : 'Show every git command this app has run'}
         >
           <span className="shrink-0 text-[var(--text-dim)]">⌘ Command log</span>
           <span className="shrink-0 tabular-nums text-[var(--text-dim)]">{data?.newestSeq ?? 0}</span>
+          {/* Five things in one row is unreadable at 360px, and the last
+              command is the one this strip is for: the rest goes when there is
+              no room for it. */}
           {!open && last && (
             <>
-              <span className="shrink-0 text-[var(--text-dim)]">·</span>
+              <span className="shrink-0 text-[var(--text-dim)] max-md:hidden">·</span>
               <span
                 className={`min-w-0 flex-1 truncate font-mono ${
                   last.exitCode === 0 ? 'text-[var(--text-dim)]' : 'text-red-400'
@@ -77,7 +80,7 @@ export function CommandLogDock({
               >
                 {commandLine(last.argv)}
               </span>
-              <span className="shrink-0 tabular-nums text-[var(--text-dim)]">
+              <span className="shrink-0 tabular-nums text-[var(--text-dim)] max-md:hidden">
                 exit {last.exitCode} · {last.durationMs} ms
               </span>
             </>

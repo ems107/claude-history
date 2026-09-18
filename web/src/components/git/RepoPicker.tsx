@@ -2,6 +2,7 @@ import type { GitOverview, GitRepo } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { gitApi } from '../../api/git.ts';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, inputClass } from '../controlClass.ts';
 
 /**
@@ -10,6 +11,12 @@ import { actionClass, inputClass } from '../controlClass.ts';
  * The dropdown recipe is the app's existing one (ViewButton / ExportButton):
  * a relatively-positioned wrapper, an absolutely-positioned panel, and an
  * outside-click listener on `document` that only exists while it is open.
+ *
+ * 544px of panel anchored to the left edge of a 360px screen hangs 184px off
+ * the right of it, so below 48rem it is pinned to the window instead — the
+ * same clamp the usage widget and the bell already take, with the scrim and
+ * Android's Back to close it, because an outside-click listener on `mousedown`
+ * is not a gesture a thumb makes.
  */
 export function RepoPicker({
   overview,
@@ -31,6 +38,8 @@ export function RepoPicker({
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
+  const mobile = useIsMobile();
+  useBackDismiss(mobile && open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;
@@ -76,15 +85,16 @@ export function RepoPicker({
         onClick={() => setOpen(!open)}
         disabled={busy}
         title={current?.path ?? 'Choose a repository'}
-        className={`${actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`}
+        className={`${actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)] max-md:max-w-[15rem]`}
       >
         <span className="text-[var(--text-dim)]">▾</span>
         <span className="truncate font-medium">{current?.name ?? 'Choose a repository…'}</span>
         {current && <span className="truncate font-mono text-[10px] text-[var(--text-dim)]">{current.path}</span>}
       </button>
 
+      {open && mobile && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
       {open && (
-        <div className="absolute left-0 z-30 mt-1 max-h-[70vh] w-[34rem] overflow-y-auto rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 text-xs shadow-xl">
+        <div className="absolute left-0 z-30 mt-1 max-h-[70vh] w-[34rem] overflow-y-auto rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 text-xs shadow-xl max-md:fixed max-md:inset-x-2 max-md:z-50 max-md:max-h-[80dvh] max-md:w-auto">
           {repos.length === 0 && (
             <p className="px-1 py-2 text-[var(--text-dim)]">
               No repositories yet. Add a folder to scan — one root covering where you keep your clones is usually
@@ -139,7 +149,7 @@ export function RepoPicker({
                 type="button"
                 onClick={() => hide(repo)}
                 title="Hide this repository from the list (nothing is deleted)"
-                className="shrink-0 cursor-pointer px-1 text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)]"
+                className="shrink-0 cursor-pointer px-1 text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)] max-md:min-h-11 max-md:px-2 max-md:opacity-100"
               >
                 ✕
               </button>

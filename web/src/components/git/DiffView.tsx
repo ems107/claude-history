@@ -1,6 +1,7 @@
 import type { GitDiffLineKind, GitFileDiff, GitHunk } from '@claude-history/shared';
 import { useMemo, useState } from 'react';
 import { pairedRuns, wordDiff, type WordSpan } from '../../lib/gitWordDiff.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
 
 /**
@@ -63,6 +64,17 @@ export interface HunkActions {
    */
   picked?: Set<string>;
   onPick?: (hunkIndex: number, lineIndex: number, extend: boolean) => void;
+  /**
+   * Reach from the last picked line to this one, as a MODE rather than as a
+   * held key.
+   *
+   * Shift-click is the desktop's answer and a phone has no shift, so "pick
+   * several in a row" had no answer there at all — which on the one control in
+   * this tab that can destroy uncommitted work is not a corner worth leaving.
+   * It is armed from the bar above the diff, spends itself on the next tap, and
+   * is `undefined` on a desktop, where the modifier is better.
+   */
+  reaching?: boolean;
 }
 
 export const lineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
@@ -115,6 +127,7 @@ function Hunk({
   actions?: HunkActions;
   onExpand?: () => void;
 }) {
+  const mobile = useIsMobile();
   // Which lines pair up as one edit, and therefore what to mark inside them.
   const marks = useMemo(() => {
     const pairs = pairedRuns(hunk.lines.map((l) => l.kind));
@@ -154,7 +167,7 @@ function Hunk({
               disabled={actions.busy}
               onClick={() => actions.onApply(index)}
               title={actions.staged ? 'Take just this hunk out of the index' : 'Put just this hunk in the index'}
-              className="cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-40"
+              className="cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-40 max-md:min-h-11 max-md:px-2 max-md:text-xs"
             >
               {actions.staged ? '− unstage' : '+ stage'}
             </button>
@@ -164,7 +177,7 @@ function Hunk({
                 disabled={actions.busy}
                 onClick={() => actions.onDiscard?.(index)}
                 title="Throw just this hunk away"
-                className="cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-red-300 disabled:opacity-40"
+                className="cursor-pointer px-1 text-[10px] text-[var(--text-dim)] hover:text-red-300 disabled:opacity-40 max-md:min-h-11 max-md:px-2 max-md:text-xs"
               >
                 ↺ discard
               </button>
@@ -182,25 +195,48 @@ function Hunk({
             key={i}
             data-line={changed ? lineKey(index, i) : undefined}
             data-picked={isPicked ? '1' : undefined}
-            onClick={pickable ? (e) => actions?.onPick?.(index, i, e.shiftKey) : undefined}
+            onClick={pickable ? (e) => actions?.onPick?.(index, i, e.shiftKey || !!actions.reaching) : undefined}
             title={pickable ? 'Click to pick this line; shift-click to reach from the last one' : undefined}
             className={`flex font-mono text-[11px] leading-[18px] ${TONE[line.kind]} ${
-              pickable ? 'cursor-pointer' : ''
+              pickable ? 'cursor-pointer max-md:min-h-11 max-md:items-center' : ''
             } ${isPicked ? 'outline outline-1 -outline-offset-1 outline-[var(--accent)]' : ''}`}
           >
             {/* A checkbox column only where there is something to pick, so the
-                gutters stay put and an unchanged line reads as unpickable. */}
+                gutters stay put and an unchanged line reads as unpickable.
+                It is decoration on a desktop — the whole row is the target —
+                and on a phone it is what makes a 44px row read as one. */}
             {actions?.onPick && (
-              <span className="w-4 shrink-0 text-center opacity-70 select-none">
+              <span className="w-4 shrink-0 text-center opacity-70 select-none max-md:w-8 max-md:text-base">
                 {changed ? (isPicked ? '☑' : '☐') : ''}
               </span>
             )}
             {/* The gutters are select-none so copying a hunk does not drag line
-                numbers along with the code. */}
-            <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">{line.oldNo ?? ''}</span>
-            <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">{line.newNo ?? ''}</span>
+                numbers along with the code.
+
+                Two of them cost 96px of a 360px screen before a character of
+                code, so a phone gets ONE — the new number where the line has
+                one, the old where it was taken away, which is the number that
+                identifies that line on the side it exists on. */}
+            {mobile ? (
+              <span className="w-9 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">
+                {line.newNo ?? line.oldNo ?? ''}
+              </span>
+            ) : (
+              <>
+                <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">
+                  {line.oldNo ?? ''}
+                </span>
+                <span className="w-12 shrink-0 pr-2 text-right tabular-nums opacity-50 select-none">
+                  {line.newNo ?? ''}
+                </span>
+              </>
+            )}
             <span className="w-4 shrink-0 text-center opacity-60 select-none">{SIGN[line.kind]}</span>
-            <span className="min-w-0 flex-1 pr-4 whitespace-pre select-text">
+            {/* `select-text` is what makes a drag over the code a text selection
+                rather than a pick — which is right on a desktop and wrong on a
+                phone, where the same gesture is how you scroll a wide diff and
+                a stale selection then swallows the next tap. */}
+            <span className={`min-w-0 flex-1 pr-4 whitespace-pre ${mobile ? 'select-none' : 'select-text'}`}>
               {spans
                 ? spans.map((span, k) =>
                     span.hit ? (

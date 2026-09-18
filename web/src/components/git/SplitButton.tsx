@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass } from '../controlClass.ts';
 
 export interface SplitOption {
@@ -51,6 +52,8 @@ export function SplitButton({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const mobile = useIsMobile();
+  useBackDismiss(mobile && open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;
@@ -87,11 +90,12 @@ export function SplitButton({
         disabled={busy}
         onClick={() => setOpen((v) => !v)}
         title="The other ways to do this"
-        className={`${actionClass} rounded-l-none px-1`}
+        className={`${actionClass} rounded-l-none px-1 max-md:inline-flex max-md:min-h-10 max-md:min-w-10 max-md:items-center max-md:justify-center max-md:px-0`}
         aria-label="More options"
       >
         ▾
       </button>
+      {open && mobile && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
       {open && <OptionMenu options={options} mainKey={main.key} onClose={() => setOpen(false)} />}
     </div>
   );
@@ -103,7 +107,11 @@ export function SplitButton({
  * be a second place for the command line under each entry to go stale.
  *
  * Positioned against the nearest positioned ancestor, so whatever opens it must
- * be `relative`.
+ * be `relative` — except below 48rem, where it is pinned to the window instead.
+ * 320px anchored to the right of a 360px screen is most of the screen already,
+ * and opened from a ref row it was clipped outright by the sidebar's own
+ * `overflow-hidden`: this menu is the ONLY way to a non-default fetch, pull or
+ * merge, so being unreachable there was the whole feature missing.
  */
 export function OptionMenu({
   options,
@@ -116,7 +124,7 @@ export function OptionMenu({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute top-full right-0 z-30 mt-1 w-80 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-1 text-xs shadow-xl">
+    <div className="absolute top-full right-0 z-30 mt-1 w-80 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-1 text-xs shadow-xl max-md:fixed max-md:inset-x-2 max-md:top-auto max-md:bottom-2 max-md:z-50 max-md:max-h-[70dvh] max-md:w-auto max-md:overflow-y-auto">
       {options.map((option) => (
         <button
           key={option.key}
@@ -126,7 +134,7 @@ export function OptionMenu({
             onClose();
             option.run();
           }}
-          className={`block w-full cursor-pointer rounded px-2 py-1.5 text-left hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent ${
+          className={`block w-full cursor-pointer rounded px-2 py-1.5 text-left hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent max-md:min-h-14 max-md:py-2 ${
             option.danger ? 'text-red-300' : ''
           }`}
         >
@@ -170,6 +178,8 @@ export function MenuButton({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
+  const mobile = useIsMobile();
+  useBackDismiss(mobile && open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;
@@ -182,9 +192,19 @@ export function MenuButton({
 
   return (
     <span ref={ref} className="relative inline-flex">
-      <button type="button" disabled={disabled} title={title} className={className} onClick={() => setOpen((v) => !v)}>
+      <button
+        type="button"
+        disabled={disabled}
+        title={title}
+        aria-label={title}
+        className={className}
+        onClick={() => setOpen((v) => !v)}
+      >
         {label}
       </button>
+      {/* The menu is pinned to the window on a phone, so the tap that closes it
+          cannot be an outside click on this wrapper — it needs a scrim. */}
+      {open && mobile && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
       {open && <OptionMenu options={options} mainKey={mainKey} onClose={() => setOpen(false)} />}
     </span>
   );

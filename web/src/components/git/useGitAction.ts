@@ -20,6 +20,16 @@ export function useGitAction(repoId: string | null): {
   error: string | null;
   note: string | null;
   clear: () => void;
+  /**
+   * Say why something cannot run, without running it.
+   *
+   * The refusals this tab draws are mostly the server's, computed before the
+   * click; on a desktop they sit in a `title` on the greyed control. A phone
+   * has no tooltips at all, so there the control stays live and its tap lands
+   * the same sentence here — which is where every other refusal from this
+   * repository is already read.
+   */
+  say: (message: string) => void;
   /** The server's answer, or null if it refused — so a caller can read `undoId` off it. */
   run: (work: () => Promise<GitMutationResponse | void>) => Promise<GitMutationResponse | null>;
 } {
@@ -54,5 +64,5 @@ export function useGitAction(repoId: string | null): {
     [queryClient, repoId],
   );
 
-  return { busy, error, note, clear: () => setError(null), run };
+  return { busy, error, note, clear: () => setError(null), say: setError, run };
 }

@@ -114,32 +114,9 @@ export function SheetHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** A full-screen sheet with a title, an optional extra control, and Done. */
-export function Sheet({
-  title,
-  onClose,
-  extra,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  extra?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-[var(--bg)]">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
-        <h2 className="min-w-0 flex-1 text-sm font-semibold">{title}</h2>
-        {extra}
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-10 shrink-0 rounded border border-[var(--border)] px-3 text-sm text-[var(--text-dim)]"
-        >
-          Done
-        </button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">{children}</div>
-    </div>
-  );
-}
+/**
+ * Re-exported rather than defined: it moved up to `components/Sheet.tsx` when
+ * the Git tab needed the same shape, and the two browsing toolbars here go on
+ * importing it from the module they always did.
+ */
+export { Sheet } from '../Sheet.tsx';

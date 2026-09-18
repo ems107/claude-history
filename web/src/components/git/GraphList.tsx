@@ -3,7 +3,15 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useMemo, useRef } from 'react';
 import { gitApi } from '../../api/git.ts';
-import { ROW_H, graphWidth, layoutGraph } from '../../lib/gitGraph.ts';
+import {
+  MAX_GRAPH_PX,
+  MAX_GRAPH_PX_MOBILE,
+  ROW_H,
+  ROW_H_MOBILE,
+  graphWidth,
+  layoutGraph,
+} from '../../lib/gitGraph.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
 import { actionClass } from '../controlClass.ts';
 import { GraphRow } from './GraphRow.tsx';
 
@@ -30,6 +38,11 @@ export function GraphList({
   onSelect: (sha: string) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
+  // One decision, made here and handed down: the row height the virtualiser
+  // positions by and the height a row draws itself at have to be the same
+  // number, or the lanes stop meeting at the seams.
+  const mobile = useIsMobile();
+  const rowH = mobile ? ROW_H_MOBILE : ROW_H;
 
   const query = useInfiniteQuery({
     queryKey: ['git', 'log', repoId, refFilter],
@@ -40,12 +53,12 @@ export function GraphList({
 
   const commits = useMemo(() => query.data?.pages.flatMap((p) => p.commits) ?? [], [query.data]);
   const layout = useMemo(() => layoutGraph(commits), [commits]);
-  const graphW = graphWidth(layout.maxLane);
+  const graphW = graphWidth(layout.maxLane, mobile ? MAX_GRAPH_PX_MOBILE : MAX_GRAPH_PX);
 
   const virtualizer = useVirtualizer({
     count: commits.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_H,
+    estimateSize: () => rowH,
     overscan: 16,
   });
 
@@ -78,6 +91,8 @@ export function GraphList({
                 commit={commit}
                 layout={row}
                 graphW={graphW}
+                rowH={rowH}
+                stacked={mobile}
                 selected={selected === commit.sha}
                 onSelect={onSelect}
               />

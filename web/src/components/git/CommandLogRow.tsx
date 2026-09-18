@@ -50,14 +50,14 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
               setTimeout(() => setCopied(false), 1_200);
             });
           }}
-          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)]"
+          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)] max-md:min-h-11 max-md:px-2 max-md:text-xs max-md:opacity-100"
         >
           {copied ? 'copied' : 'copy'}
         </button>
       </div>
 
       {open && (
-        <div className="space-y-1 px-2 pb-1.5 pl-[6.5rem] text-[11px] select-text">
+        <div className="space-y-1 px-2 pb-1.5 pl-[6.5rem] text-[11px] select-text max-md:pl-2">
           <p className="text-[var(--text-dim)]">
             in <span className="font-mono break-all">{entry.cwd}</span>
             {!entry.mutation && <span className="ml-2 opacity-70">(a read)</span>}

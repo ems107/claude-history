@@ -84,7 +84,7 @@ export function GitReposPanel() {
           type="button"
           disabled={busy}
           onClick={() => run(gitApi.removePath(entry.path, asRoot))}
-          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-red-300"
+          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-red-300 max-md:min-h-11 max-md:px-2 max-md:text-xs max-md:opacity-100"
           title="Remove from the list. Nothing on disk is touched."
         >
           remove

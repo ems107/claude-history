@@ -1,6 +1,6 @@
 import type { GitCommit } from '@claude-history/shared';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
-import { ROW_H, type GraphRowLayout } from '../../lib/gitGraph.ts';
+import { type GraphRowLayout } from '../../lib/gitGraph.ts';
 import { hasSelection } from '../../lib/selection.ts';
 import { GraphSvg } from './GraphSvg.tsx';
 import { RefChip } from './RefChip.tsx';
@@ -13,40 +13,83 @@ import { RefChip } from './RefChip.tsx';
  * ancestor becomes the containing block for anything `position: fixed` inside
  * it — which is how a popover ends up anchored to a row instead of to the
  * window.
+ *
+ * **`stacked` is the phone, and it is an arithmetic problem rather than a
+ * taste one.** One line spends 220px on the graph, ~60 on the sha, 112 on the
+ * author and 96 on the date before the subject — the only thing anybody scans
+ * a history for — gets a pixel. At 360px that leaves the subject nothing. So
+ * the same four facts go on two lines inside a 44px row: the refs and the
+ * subject above, the sha, the author and the date below, all of them still
+ * there and none of them a tooltip.
  */
 export function GraphRow({
   commit,
   layout,
   graphW,
+  rowH,
+  stacked = false,
   selected,
   onSelect,
 }: {
   commit: GitCommit;
   layout: GraphRowLayout;
   graphW: number;
+  /** Decided by the list, because the virtualiser positions rows by the same number. */
+  rowH: number;
+  stacked?: boolean;
   selected: boolean;
   onSelect: (sha: string) => void;
 }) {
+  const tone = selected
+    ? 'bg-[var(--bg-hover)] outline outline-1 -outline-offset-1 outline-[var(--accent-dim)]'
+    : 'hover:bg-[var(--bg-hover)]/50';
+  const refs = commit.refs.map((ref) => (
+    <RefChip key={`${ref.kind}:${ref.fullRef}`} kind={ref.kind} name={ref.name} isHead={ref.isHead} />
+  ));
+
+  const pick = () => {
+    // Never steal a selection someone just made in order to copy a sha.
+    // On a phone a selection can outlive the tap that made it, and there the
+    // row IS the only way into the commit — so the guard would take the page
+    // away rather than protect anything.
+    if (!stacked && hasSelection()) return;
+    onSelect(commit.sha);
+  };
+
+  if (stacked) {
+    return (
+      <div
+        data-sha={commit.sha}
+        style={{ height: rowH }}
+        onClick={pick}
+        className={`flex cursor-pointer items-center gap-2 pr-2 text-[11px] ${tone}`}
+      >
+        <GraphSvg row={layout} width={graphW} height={rowH} />
+        <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+          <span className="flex min-w-0 items-center gap-1">
+            {refs}
+            <span className="min-w-0 flex-1 truncate text-[var(--text)]">{commit.subject}</span>
+          </span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-[var(--text-dim)]">
+            <span className="shrink-0 font-mono">{commit.shortSha}</span>
+            <span className="min-w-0 truncate">{commit.authorName}</span>
+            <span className="ml-auto shrink-0 tabular-nums">{relativeTime(commit.authoredAt)}</span>
+          </span>
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
       data-sha={commit.sha}
-      style={{ height: ROW_H }}
-      onClick={() => {
-        // Never steal a selection someone just made in order to copy a sha.
-        if (hasSelection()) return;
-        onSelect(commit.sha);
-      }}
-      className={`flex cursor-pointer items-center gap-2 pr-3 text-[11px] select-text ${
-        selected
-          ? 'bg-[var(--bg-hover)] outline outline-1 -outline-offset-1 outline-[var(--accent-dim)]'
-          : 'hover:bg-[var(--bg-hover)]/50'
-      }`}
+      style={{ height: rowH }}
+      onClick={pick}
+      className={`flex cursor-pointer items-center gap-2 pr-3 text-[11px] select-text ${tone}`}
     >
-      <GraphSvg row={layout} width={graphW} />
+      <GraphSvg row={layout} width={graphW} height={rowH} />
       <span className="shrink-0 font-mono text-[var(--text-dim)]">{commit.shortSha}</span>
-      {commit.refs.map((ref) => (
-        <RefChip key={`${ref.kind}:${ref.fullRef}`} kind={ref.kind} name={ref.name} isHead={ref.isHead} />
-      ))}
+      {refs}
       <span className="min-w-0 flex-1 truncate text-[var(--text)]" title={commit.subject}>
         {commit.subject}
       </span>

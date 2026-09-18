@@ -17,11 +17,15 @@ const TONE: Record<GitRefKind, string> = {
 
 export function RefChip({ kind, name, isHead }: { kind: GitRefKind; name: string; isHead?: boolean }) {
   const label = kind === 'tag' ? `# ${name}` : kind === 'head' ? 'HEAD' : `⎇ ${name}`;
+  // `shrink-0` beside `whitespace-nowrap` is what pushes a commit row off a
+  // 360px screen: a branch called `edgar/DES-32683-something` is 200px that
+  // refuses to give any of it back. Below 48rem it truncates like everything
+  // else on that row.
   return (
     <span
       className={`inline-flex shrink-0 items-center rounded border px-1 text-[10px] leading-4 whitespace-nowrap ${TONE[kind]} ${
         isHead ? 'font-semibold' : ''
-      }`}
+      } max-md:min-w-0 max-md:max-w-24 max-md:shrink max-md:truncate`}
       title={kind === 'remote' ? `Remote branch ${name}` : kind === 'tag' ? `Tag ${name}` : name}
     >
       {label}

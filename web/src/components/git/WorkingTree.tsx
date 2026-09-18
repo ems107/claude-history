@@ -9,14 +9,26 @@ import { useQuery } from '@tanstack/react-query';
 import { useRef, useState, type ReactNode } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { formatBytes, formatDateTime, relativeTime } from '../../lib/format.ts';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { useDragSize } from '../../lib/useDragSize.ts';
 import { actionClass } from '../controlClass.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
+import { Sheet } from '../Sheet.tsx';
 import { CommitBox } from './CommitBox.tsx';
 import { ConflictSides } from './ConflictSides.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView, pairedWith } from './DiffView.tsx';
 import { useGitAction } from './useGitAction.ts';
+
+/**
+ * The three verbs on a file row — stage, unstage, discard.
+ *
+ * A glyph in `px-1` is an 11×17 target, and two of these run `git checkout --`
+ * on a file. 44px below 48rem, which is the floor for anything that decides
+ * something.
+ */
+const FILE_ACT =
+  'cursor-pointer px-1 text-[var(--text-dim)] hover:text-[var(--text)] max-md:inline-flex max-md:size-11 max-md:items-center max-md:justify-center max-md:px-0 max-md:text-base';
 
 /** What a discard put in the bin, while the bar offering to undo it is up. */
 interface Undo {
@@ -162,7 +174,7 @@ function Bin({
                 disabled={action.busy}
                 onClick={() => void action.run(() => gitApi.restoreDiscard(repoId, entry.id))}
                 title="Write those files back exactly as they were"
-                className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)] disabled:opacity-40"
+                className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)] disabled:opacity-40 max-md:min-h-11 max-md:px-2 max-md:text-xs max-md:opacity-100"
               >
                 put back
               </button>
@@ -179,6 +191,37 @@ function Bin({
 }
 
 /**
+ * Where the selected file's diff is drawn: the right-hand column, or the whole
+ * screen over the list.
+ *
+ * One component so the contents are written once. A phone that keeps both
+ * columns has 360px to divide between a 220px file list and a diff whose
+ * gutters alone are 128 — so below 48rem the list is the page and the diff
+ * arrives over it, closed by Done or by Back.
+ */
+function DiffPane({
+  mobile,
+  path,
+  onClose,
+  children,
+}: {
+  mobile: boolean;
+  path: string | null;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  if (!mobile) return <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">{children}</div>;
+  if (!path) return null;
+  // The basename: the whole path is what the row you tapped already showed, and
+  // a sheet's title bar has no room to repeat it.
+  return (
+    <Sheet title={path.split(/[\/]/).pop() ?? path} onClose={onClose} closeLabel="Close">
+      <div className="pt-2">{children}</div>
+    </Sheet>
+  );
+}
+
+/**
  * The staging area.
  *
  * A tab rather than a fourth permanent pane: a staging area that is always on
@@ -188,6 +231,7 @@ function Bin({
  * new.
  */
 export function WorkingTree({ repoId, status }: { repoId: string; status: GitStatus }) {
+  const mobile = useIsMobile();
   const files = useDragSize({ key: 'git.filesWidth', axis: 'x', min: 220, max: 640, initial: 340 });
   const [selected, setSelected] = useState<{ path: string; staged: boolean } | null>(null);
   // `what` is a noun phrase — "the changes to app.ts", "3 untracked files" —
@@ -200,6 +244,18 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   // for. The list further down is for the rest of the week.
   const [undo, setUndo] = useState<Undo | null>(null);
   const action = useGitAction(repoId);
+  /**
+   * Letting go of the file, which on a phone is what closes the sheet over the
+   * list — so Android's Back does it too. The picked lines go with it: an index
+   * into one file's diff means nothing in another's.
+   */
+  const closeFile = () => {
+    setSelected(null);
+    setPicked(new Set());
+    lastPick.current = null;
+    setReaching(false);
+  };
+  useBackDismiss(mobile && !!selected, closeFile);
 
   const conflicted = status.entries.filter((e) => e.conflicted);
   const staged = status.entries.filter((e) => !e.conflicted && e.staged);
@@ -214,6 +270,15 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   // changes: an index into one diff means nothing in another.
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const lastPick = useRef<{ hunk: number; line: number } | null>(null);
+  /**
+   * Armed "reach from the last one", which is shift-click without a shift.
+   *
+   * A phone keyboard cannot send a modifier with a tap, so picking a run of
+   * lines — the ordinary case when three consecutive lines are one edit — had
+   * no answer there at all. Armed from the bar, spent by the next tap, and the
+   * desktop never sees it because the modifier is the better control there.
+   */
+  const [reaching, setReaching] = useState(false);
   const selectedEntry = selected ? status.entries.find((e) => e.path === selected.path) : undefined;
   const selectedIsConflicted = selectedEntry?.conflicted === true;
 
@@ -278,6 +343,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   const clearPicks = () => {
     setPicked(new Set());
     lastPick.current = null;
+    setReaching(false);
   };
 
   const row = (entry: GitFileEntry, staged: boolean) => {
@@ -286,7 +352,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
     return (
       <div
         key={`${staged ? 's' : 'w'}:${entry.path}`}
-        className={`group flex items-center gap-1.5 px-2 py-0.5 text-[11px] ${
+        className={`group flex items-center gap-1.5 px-2 py-0.5 text-[11px] max-md:min-h-11 max-md:text-xs ${
           active ? 'bg-[var(--bg-hover)]' : 'hover:bg-[var(--bg-hover)]/50'
         }`}
       >
@@ -311,13 +377,17 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
           )}
           {entry.submodule && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">submodule</span>}
         </button>
-        <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+        {/* Always drawn below 48rem: `group-hover:` is compiled inside
+            `@media (hover: hover)`, so on a phone this cluster did not appear
+            at all — and with it went staging a single file. */}
+        <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100">
           {staged ? (
             <button
               type="button"
               onClick={() => unstage([entry.path])}
               title="Unstage"
-              className="cursor-pointer px-1 text-[var(--text-dim)] hover:text-[var(--text)]"
+              aria-label="Unstage"
+              className={FILE_ACT}
             >
               −
             </button>
@@ -326,7 +396,8 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
               type="button"
               onClick={() => stage([entry.path])}
               title={entry.conflicted ? 'Mark as resolved' : 'Stage'}
-              className="cursor-pointer px-1 text-[var(--text-dim)] hover:text-[var(--text)]"
+              aria-label={entry.conflicted ? 'Mark as resolved' : 'Stage'}
+              className={FILE_ACT}
             >
               +
             </button>
@@ -342,7 +413,8 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
                 )
               }
               title={entry.unstaged === 'untracked' ? 'Delete this untracked file' : 'Discard these changes'}
-              className="cursor-pointer px-1 text-[var(--text-dim)] hover:text-red-300"
+              aria-label={entry.unstaged === 'untracked' ? 'Delete this untracked file' : 'Discard these changes'}
+              className={`${FILE_ACT} hover:text-red-300`}
             >
               ↺
             </button>
@@ -355,12 +427,16 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   /** What the confirm dialog is about to move, computed once for the four places it says it. */
   const losing = discardingLines ? pickedLines() : [];
 
+  const errorBar = action.error ? (
+    <p className="mb-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-[11px] text-red-300">{action.error}</p>
+  ) : null;
+
   const groupBtn = (label: string, onClick: () => void, danger = false) => (
     <button
       type="button"
       onClick={onClick}
       disabled={action.busy}
-      className={`shrink-0 cursor-pointer px-1 text-[10px] ${
+      className={`shrink-0 cursor-pointer px-1 text-[10px] max-md:min-h-11 max-md:px-2 max-md:text-xs ${
         danger ? 'text-[var(--text-dim)] hover:text-red-300' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
       } disabled:opacity-40`}
     >
@@ -394,8 +470,16 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
         </div>
       )}
 
+      {/* Where a refusal is read. On a desktop it belongs at the top of the
+          diff pane, which is where the thing refused was; on a phone that pane
+          is a sheet that may not be open, so it goes above the list instead. */}
+      {mobile && errorBar}
+
       <div className="flex min-h-0 flex-1">
-      <div style={{ width: files.size }} className="flex min-h-0 shrink-0 flex-col border-r border-[var(--border)]">
+      <div
+        style={mobile ? undefined : { width: files.size }}
+        className={`flex min-h-0 flex-col ${mobile ? 'min-w-0 flex-1' : 'shrink-0 border-r border-[var(--border)]'}`}
+      >
         <div className="min-h-0 flex-1 overflow-y-auto">
           {status.entries.length === 0 && (
             <p className="p-3 text-[11px] text-[var(--text-dim)]">Nothing has changed. The tree is clean.</p>
@@ -470,18 +554,19 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
         <CommitBox repoId={repoId} status={status} onDone={() => setSelected(null)} />
       </div>
 
-      <div
-        onMouseDown={files.onMouseDown}
-        className="w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
-        title="Drag to resize"
-      />
+      {!mobile && (
+        <div
+          onMouseDown={files.onMouseDown}
+          className="w-1 shrink-0 cursor-col-resize hover:bg-[var(--accent-dim)]"
+          title="Drag to resize"
+        />
+      )}
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3">
-        {action.error && (
-          <p className="mb-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-[11px] text-red-300">
-            {action.error}
-          </p>
-        )}
+      {/* One pane at a time below 48rem: the list, and the file's diff over it.
+          Two columns whose floors are 220 and 340 do not fit in 360, and the
+          diff is the half that wants every pixel there is. */}
+      <DiffPane mobile={mobile} path={selected?.path ?? null} onClose={closeFile}>
+        {!mobile && errorBar}
         {!selected ? (
           <p className="text-[11px] text-[var(--text-dim)]">Pick a file to see what changed in it.</p>
         ) : selectedIsConflicted ? (
@@ -497,6 +582,18 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
                 <span className="tabular-nums">
                   {picked.size} line{picked.size === 1 ? '' : 's'} picked
                 </span>
+                {/* The phone's shift-click. Drawn only there, because on a
+                    desktop the modifier is a better control than a mode. */}
+                {mobile && (
+                  <button
+                    type="button"
+                    aria-pressed={reaching}
+                    className={`${actionClass} ${reaching ? 'border-[var(--accent)] text-[var(--accent)]' : ''}`}
+                    onClick={() => setReaching((on) => !on)}
+                  >
+                    {reaching ? 'Tap the last line…' : 'Reach from here'}
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={action.busy}
@@ -540,6 +637,9 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
                 <span className="text-[var(--text-dim)]">
                   Staging lines only ever writes what the next commit will contain — never the file itself.
                   {!selected.staged && ' Discarding does write it, and a copy goes to the bin first.'}
+                  {/* The one thing shift-click's tooltip used to say, said out
+                      loud where there are no tooltips. */}
+                  {mobile && ' Reach picks everything between this line and the next one you tap.'}
                 </span>
               </div>
             )}
@@ -552,10 +652,25 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
                 staged: selected.staged,
                 busy: action.busy,
                 picked,
+                reaching,
                 onPick: (hunkIndex, lineIndex, extend) => {
+                  // Armed or not, it is spent by the tap it applies to.
+                  setReaching(false);
+                  /**
+                   * Read HERE, not inside the updater below.
+                   *
+                   * `setPicked`'s function form runs during the next render,
+                   * which is after this handler has finished — and the last
+                   * line of this handler moves the ref to the line just
+                   * clicked. Reading it in there therefore always answered
+                   * "you came from where you already are", so `a` and `b` were
+                   * the same index and a reach picked its own endpoint and
+                   * nothing else. Measured: `{a: 8, b: 8}` for a shift-click
+                   * from line 3 to line 8.
+                   */
+                  const from = lastPick.current;
                   setPicked((prev) => {
                     const next = new Set(prev);
-                    const from = lastPick.current;
                     // Shift extends only within the same hunk, because that is
                     // the only run the server can be handed as one patch.
                     if (extend && from && from.hunk === hunkIndex) {
@@ -585,7 +700,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
             />
           </>
         ) : null}
-      </div>
+      </DiffPane>
       </div>
 
       {discardingHunk && (

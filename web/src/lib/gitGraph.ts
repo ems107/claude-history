@@ -10,8 +10,23 @@ import type { GitCommit } from '@claude-history/shared';
  * pure function of an ordered commit list, checkable without a browser.
  */
 
-/** Row height. Dense on purpose; also the exact figure the virtualiser estimates. */
+/**
+ * Row height. Dense on purpose; also the exact figure the virtualiser estimates.
+ *
+ * **These two travel together or the drawing tears.** The row styles itself to
+ * this height and the virtualiser positions rows by it, so a row that is one of
+ * these tall inside a window laid out to the other overlaps its neighbour — and
+ * the lane segments, which are drawn from y=0 to y=ROW_H inside each row, stop
+ * meeting at the seams. `GraphList` picks one and hands it down; nothing else
+ * may choose.
+ */
 export const ROW_H = 26;
+/**
+ * The same row on a phone: a real touch target, and two lines rather than one —
+ * the subject above, the sha and the date below, because the columns they sat
+ * in were 208px of a 360px screen.
+ */
+export const ROW_H_MOBILE = 44;
 export const LANE_W = 14;
 export const LANE_X0 = 10;
 /**
@@ -19,6 +34,8 @@ export const LANE_X0 = 10;
  * not push the subject off the row — the graph is an aid, not the content.
  */
 export const MAX_GRAPH_PX = 220;
+/** And on a phone, where 220px would be more than half the row. */
+export const MAX_GRAPH_PX_MOBILE = 96;
 
 export const laneX = (lane: number): number => LANE_X0 + lane * LANE_W;
 
@@ -169,6 +186,6 @@ export function layoutGraph(commits: GitCommit[]): GraphLayout {
 }
 
 /** How wide the graph column has to be for a layout, capped. */
-export function graphWidth(maxLane: number): number {
-  return Math.min(MAX_GRAPH_PX, laneX(Math.max(1, maxLane)) + LANE_W / 2);
+export function graphWidth(maxLane: number, cap = MAX_GRAPH_PX): number {
+  return Math.min(cap, laneX(Math.max(1, maxLane)) + LANE_W / 2);
 }

@@ -1,4 +1,4 @@
-import { ROW_H, laneColor, laneX, type GraphRowLayout } from '../../lib/gitGraph.ts';
+import { laneColor, laneX, type GraphRowLayout } from '../../lib/gitGraph.ts';
 
 /**
  * One row's band of the commit graph. Pure drawing — it is handed a resolved
@@ -7,27 +7,31 @@ import { ROW_H, laneColor, laneX, type GraphRowLayout } from '../../lib/gitGraph
  * There is one of these INSIDE each row rather than a single absolutely
  * positioned drawing over the whole list. The alternative has to keep the
  * virtualiser's window index, the scroll offset and every row height in
- * agreement at all times, and breaks the first time a row is not exactly
- * ROW_H tall. This cannot drift, because there is no arithmetic tying the two
- * together: the picture is part of the row.
+ * agreement at all times, and breaks the first time a row is not exactly the
+ * height it assumed. This cannot drift, because there is no arithmetic tying
+ * the two together: the picture is part of the row.
+ *
+ * The height is passed in rather than read from the module for exactly that
+ * reason — a phone's rows are taller, and a drawing that kept its own idea of
+ * how tall a row is would be the arithmetic this shape exists to avoid.
  *
  * Curves put their control points ON the verticals, so two consecutive bands
  * of the same lane meet with a continuous tangent and a branch that runs for
  * five hundred rows reads as one unbroken line.
  */
-export function GraphSvg({ row, width }: { row: GraphRowLayout; width: number }) {
-  const mid = ROW_H / 2;
+export function GraphSvg({ row, width, height }: { row: GraphRowLayout; width: number; height: number }) {
+  const mid = height / 2;
   const path = (x1: number, y1: number, x2: number, y2: number): string =>
     x1 === x2
       ? `M${x1},${y1} L${x2},${y2}`
       : `M${x1},${y1} C${x1},${(y1 + y2) / 2} ${x2},${(y1 + y2) / 2} ${x2},${y2}`;
 
   return (
-    <svg width={width} height={ROW_H} className="shrink-0 overflow-hidden" aria-hidden="true">
+    <svg width={width} height={height} className="shrink-0 overflow-hidden" aria-hidden="true">
       {row.through.map((seg, i) => (
         <path
           key={`t${i}`}
-          d={path(laneX(seg.from), 0, laneX(seg.to), ROW_H)}
+          d={path(laneX(seg.from), 0, laneX(seg.to), height)}
           fill="none"
           stroke={laneColor(seg.color)}
           strokeWidth="1.5"
@@ -45,7 +49,7 @@ export function GraphSvg({ row, width }: { row: GraphRowLayout; width: number })
       {row.outgoing.map((seg, i) => (
         <path
           key={`o${i}`}
-          d={path(laneX(seg.from), mid, laneX(seg.to), ROW_H)}
+          d={path(laneX(seg.from), mid, laneX(seg.to), height)}
           fill="none"
           stroke={laneColor(seg.color)}
           strokeWidth="1.5"

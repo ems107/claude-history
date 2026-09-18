@@ -105,11 +105,12 @@ function Tab({ to, label, icon, accent }: { to: string; label: string; icon: Rea
   );
 }
 
-/** The three places that did not earn a tab of their own. */
+/** The four places that did not earn a tab of their own. */
 const MORE: Array<[string, string, string]> = [
   ['/prompts', 'Prompts', 'Every prompt you have typed, across all sessions'],
   ['/plans', 'Plans', 'Every plan written in a session, newest first'],
   ['/starred', 'Starred messages', 'The messages you kept'],
+  ['/git', 'Git', 'Your repositories: the history, the working tree, and what has been pushed'],
 ];
 
 /**

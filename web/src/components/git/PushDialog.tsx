@@ -1,5 +1,6 @@
 import { isProtectedBranch, type GitRemote, type GitStatus } from '@claude-history/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
 
 /**
@@ -10,6 +11,11 @@ import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
  * your own mistake and overwriting somebody else's work, and a button labelled
  * just "force" hides that. A branch whose name usually means "shared" asks you
  * to type it, which is the same speed bump the delete dialog uses.
+ *
+ * Escape closes it, which it did not until this was written down: it was the
+ * one dialog in the tab that could only be dismissed by clicking the backdrop,
+ * and on a phone — where it is the whole screen and there is no backdrop —
+ * Android's Back is the same key.
  */
 export function PushDialog({
   status,
@@ -27,6 +33,18 @@ export function PushDialog({
   onPush: (body: { remote: string; setUpstream: boolean; forceWithLease: boolean; tags: boolean; confirm: boolean }) => void;
   onCancel: () => void;
 }) {
+  const mobile = useIsMobile();
+  useBackDismiss(mobile && !busy, onCancel);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onCancel]);
   const [remote, setRemote] = useState(remotes.find((r) => r.name === 'origin')?.name ?? remotes[0]?.name ?? 'origin');
   const [force, setForce] = useState(initialForce);
   const [tags, setTags] = useState(false);
@@ -50,15 +68,27 @@ export function PushDialog({
     .join(' ');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-32" onClick={() => !busy && onCancel()}>
+    <div
+      className={
+        mobile
+          ? 'fixed inset-0 z-50 flex flex-col bg-[var(--bg)]'
+          : 'fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-32'
+      }
+      onClick={() => !mobile && !busy && onCancel()}
+    >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-[520px] max-w-[92vw] rounded-lg border bg-[var(--bg-raised)] p-4 shadow-xl ${
-          force ? 'border-red-500/40' : 'border-[var(--border)]'
-        }`}
+        className={
+          mobile
+            ? `flex min-h-0 flex-1 flex-col border-t-2 p-3 ${force ? 'border-red-500/40' : 'border-[var(--border)]'}`
+            : `w-[520px] max-w-[92vw] rounded-lg border bg-[var(--bg-raised)] p-4 shadow-xl ${
+                force ? 'border-red-500/40' : 'border-[var(--border)]'
+              }`
+        }
       >
-        <h2 className="text-sm font-semibold">Push {branch ?? 'HEAD'}</h2>
+        <h2 className="shrink-0 text-sm font-semibold">Push {branch ?? 'HEAD'}</h2>
 
+        <div className={mobile ? 'min-h-0 flex-1 overflow-y-auto' : ''}>
         {!branch ? (
           <p className="mt-2 text-xs text-amber-400">HEAD is detached — check out a branch before pushing.</p>
         ) : (
@@ -138,7 +168,9 @@ export function PushDialog({
           </div>
         )}
 
-        <div className="mt-4 flex justify-end gap-1.5">
+        </div>
+
+        <div className="mt-4 flex shrink-0 justify-end gap-1.5">
           <button type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>

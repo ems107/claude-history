@@ -14,6 +14,7 @@ import { useState, type ReactNode } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { relativeTime } from '../../lib/format.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, inputClass } from '../controlClass.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
@@ -80,13 +81,32 @@ function Section({
 }
 
 /**
- * One hover action on a ref row. It always carries a title, and when it is
- * disabled that title is the server's reason rather than the action's name —
- * a dead control that cannot say why is the bug this whole pattern avoids.
+ * A row's actions.
+ *
+ * Revealed on hover where there is a pointer, and **always drawn below 48rem**.
+ * Tailwind v4 compiles `hover:` inside `@media (hover: hover)`, so on a phone
+ * `group-hover:opacity-100` never fires at all: these were not hard to find
+ * there, they did not exist — and with them went checking out a branch, merging
+ * one, deleting one, publishing a tag and every stash verb this tab has.
  */
-/** Shared with the merge caret beside it, so the two read as one control. */
+const ROW_ACTIONS = 'flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100';
+
+/**
+ * One action on a ref row. It always carries a title, and when it is disabled
+ * that title is the server's reason rather than the action's name — a dead
+ * control that cannot say why is the bug this whole pattern avoids.
+ *
+ * **On a phone there are no tooltips, so a disabled one is not disabled**: it
+ * stays live and its tap puts that same reason where the rest of this
+ * repository's refusals are read, under the sections. The alternative the
+ * phone rules allow — not drawing it at all — would answer "why can I not check
+ * this out" by removing the question, and the sentence is the useful half.
+ *
+ * 44px square below the fold line, from a 11×17 glyph: these run `git checkout`
+ * and `git branch -D`, and a mis-tap between two of them is not a small thing.
+ */
 const ACT_CLASS =
-  'cursor-pointer px-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-30';
+  'cursor-pointer px-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-30 max-md:inline-flex max-md:size-11 max-md:items-center max-md:justify-center max-md:px-0 max-md:text-base';
 
 function Act({
   label,
@@ -95,6 +115,7 @@ function Act({
   disabled,
   reason,
   danger,
+  say,
 }: {
   label: string;
   title: string;
@@ -102,14 +123,21 @@ function Act({
   disabled?: boolean;
   reason?: string;
   danger?: boolean;
+  /** Where a refusal goes on a screen with no tooltips. */
+  say?: (message: string) => void;
 }) {
+  const mobile = useIsMobile();
+  const blocked = !!disabled;
+  // `busy` is not a reason anybody needs told — it is a moment, and it passes.
+  const explainable = blocked && mobile && !!(reason ?? title) && !!say;
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? (reason ?? title) : title}
-      className={`${ACT_CLASS} ${danger ? 'hover:text-red-300' : ''}`}
+      onClick={explainable ? () => say(reason ?? title) : onClick}
+      disabled={blocked && !explainable}
+      title={blocked ? (reason ?? title) : title}
+      aria-label={title}
+      className={`${ACT_CLASS} ${danger ? 'hover:text-red-300' : ''} ${explainable ? 'opacity-30' : ''}`}
     >
       {label}
     </button>
@@ -117,7 +145,7 @@ function Act({
 }
 
 const rowClass =
-  'flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-[11px] hover:bg-[var(--bg-hover)]/60';
+  'flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-[11px] hover:bg-[var(--bg-hover)]/60 max-md:min-h-11 max-md:py-1 max-md:text-xs';
 
 function Empty({ children }: { children: ReactNode }) {
   return <p className="px-2 py-1 text-[11px] text-[var(--text-dim)] italic">{children}</p>;
@@ -312,12 +340,13 @@ export function RefSidebar({
               )}
             </button>
             {!branch.current && repoId && (
-              <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+              <span className={ROW_ACTIONS}>
                 <Act
                   label="→"
                   title={branch.worktreePath ? `Checked out in ${branch.worktreePath}` : `Check out ${branch.name}`}
                   disabled={action.busy || !!branch.worktreePath || !!status?.blocked.checkout}
                   reason={status?.blocked.checkout}
+                  say={action.say}
                   onClick={() => checkout(branch.name)}
                 />
                 <Act
@@ -325,6 +354,7 @@ export function RefSidebar({
                   title={`Merge ${branch.name} into ${status?.branch ?? 'HEAD'}`}
                   disabled={action.busy || !!status?.blocked.merge}
                   reason={status?.blocked.merge}
+                  say={action.say}
                   onClick={() => merge(branch.name)}
                 />
                 <MenuButton
@@ -368,12 +398,13 @@ export function RefSidebar({
                   )}
                 </button>
                 {branch.localMissing && repoId && (
-                  <span className="shrink-0 opacity-0 group-hover:opacity-100">
+                  <span className={ROW_ACTIONS}>
                     <Act
                       label="→"
                       title={`Create a local ${branch.name} tracking ${branch.remote}/${branch.name}`}
                       disabled={action.busy || !!status?.blocked.checkout}
                       reason={status?.blocked.checkout}
+                      say={action.say}
                       onClick={() => checkout(branch.name)}
                     />
                   </span>
@@ -468,7 +499,7 @@ export function RefSidebar({
               {tag.at && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(tag.at)}</span>}
             </button>
             {repoId && (
-              <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+              <span className={ROW_ACTIONS}>
                 <Act
                   label="↑"
                   title={`Publish ${tag.name} to the remote`}
@@ -508,7 +539,7 @@ export function RefSidebar({
             <span className="min-w-0 flex-1 truncate">{stash.message}</span>
             <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(stash.at)}</span>
             {repoId && (
-              <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+              <span className={ROW_ACTIONS}>
                 <Act
                   label="↓"
                   title="Apply it and keep it"
@@ -599,7 +630,7 @@ export function RefSidebar({
             {wt.isMain && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">main</span>}
             {wt.locked && <span className="shrink-0 text-[10px] text-amber-400">locked</span>}
             {repoId && !wt.isMain && (
-              <span className="shrink-0 opacity-0 group-hover:opacity-100">
+              <span className={ROW_ACTIONS}>
                 <Act label="✕" title="Remove this worktree" danger onClick={() => setRemovingWorktree(wt)} />
               </span>
             )}

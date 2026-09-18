@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
 
 /**
@@ -11,6 +12,13 @@ import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
  * The shell is the one the settings page and the update popup already share,
  * plus the two things both of them lack and this one needs: **Escape cancels**,
  * and **the focus lands on Cancel**, so Enter is never the destructive answer.
+ *
+ * Below 48rem it is the whole screen instead, and that is not a preference: the
+ * box had 128px of dead space above it, no `max-h` and no scroll of its own, so
+ * the longest of these — the one listing the lines a discard is about to
+ * destroy — ran off the bottom of the viewport with Cancel and Confirm past the
+ * edge. The pieces are identical either way; only the box changes, and Android's
+ * Back joins Escape as a way out.
  */
 export function ConfirmDialog({
   title,
@@ -35,6 +43,8 @@ export function ConfirmDialog({
 }) {
   const [typed, setTyped] = useState('');
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const mobile = useIsMobile();
+  useBackDismiss(mobile && !busy, onCancel);
 
   useEffect(() => {
     cancelRef.current?.focus();
@@ -52,14 +62,26 @@ export function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-32"
-      onClick={() => !busy && onCancel()}
+      className={
+        mobile
+          ? 'fixed inset-0 z-50 flex flex-col bg-[var(--bg)]'
+          : 'fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-32'
+      }
+      onClick={() => !mobile && !busy && onCancel()}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-[520px] max-w-[92vw] rounded-lg border border-red-500/40 bg-[var(--bg-raised)] p-4 shadow-xl"
+        className={
+          mobile
+            ? 'flex min-h-0 flex-1 flex-col border-t-2 border-red-500/40 p-3'
+            : 'w-[520px] max-w-[92vw] rounded-lg border border-red-500/40 bg-[var(--bg-raised)] p-4 shadow-xl'
+        }
       >
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="shrink-0 text-sm font-semibold">{title}</h2>
+        {/* The body is what can run long — a discard lists every line it is
+            about to destroy — so on a phone it is the only part that scrolls,
+            and the answer buttons stay where a thumb left them. */}
+        <div className={mobile ? 'min-h-0 flex-1 overflow-y-auto' : ''}>
         <div className="mt-2 text-xs text-[var(--text-dim)]">{body}</div>
 
         {command && (
@@ -83,7 +105,9 @@ export function ConfirmDialog({
           </label>
         )}
 
-        <div className="mt-4 flex justify-end gap-1.5">
+        </div>
+
+        <div className="mt-4 flex shrink-0 justify-end gap-1.5">
           <button ref={cancelRef} type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>

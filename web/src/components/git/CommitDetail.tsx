@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatDateTime, relativeTime } from '../../lib/format.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, inputClass, toggleClass } from '../controlClass.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView } from './DiffView.tsx';
@@ -52,7 +53,7 @@ function CommitActions({
   const dirty = (status?.entries.length ?? 0) > 0;
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 max-md:gap-2">
       <button
         type="button"
         className={actionClass}
@@ -135,7 +136,7 @@ function CommitActions({
             value={name}
             placeholder="feature/from-here"
             onChange={(e) => setName(e.target.value)}
-            className={`${inputClass} w-56 font-mono text-[11px]`}
+            className={`${inputClass} w-56 font-mono text-[11px] max-md:w-full max-md:min-w-0`}
           />
           <button
             type="button"
@@ -223,6 +224,7 @@ export function CommitDetail({
   selectedPath: string | null;
   onSelectPath: (path: string | null) => void;
 }) {
+  const mobile = useIsMobile();
   const detailQ = useQuery({
     queryKey: ['git', 'commit', repoId, sha],
     queryFn: () => gitApi.commit(repoId, sha),
@@ -312,12 +314,17 @@ export function CommitDetail({
               type="button"
               onClick={() => onSelectPath(file.path)}
               title={file.origPath ? `${file.origPath} → ${file.path}` : file.path}
-              className={`flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 font-mono ${
+              className={`flex max-w-full cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 font-mono max-md:min-h-11 max-md:py-1.5 ${
                 selectedPath === file.path ? 'bg-[var(--bg-hover)]' : 'hover:bg-[var(--bg-hover)]/60'
               }`}
             >
-              <span className={`w-2 ${STATUS_TONE[file.status] ?? 'text-[var(--text-dim)]'}`}>{file.status}</span>
-              <span className="max-w-[22rem] truncate">{file.path}</span>
+              <span className={`w-2 shrink-0 ${STATUS_TONE[file.status] ?? 'text-[var(--text-dim)]'}`}>{file.status}</span>
+              {/* A path nearly as wide as a phone is a chip that fills the row,
+                  and the front of it is the least useful half — so there the
+                  ellipsis goes to the START. `truncate-start` is plain CSS and
+                  takes no Tailwind variant, hence the branch rather than a
+                  `max-md:`. */}
+              <span className={`truncate ${mobile ? 'truncate-start max-w-full' : 'max-w-[22rem]'}`}>{file.path}</span>
             </button>
           ))}
           {detail.truncated && <span className="text-amber-400">…more files than are listed</span>}

@@ -35,6 +35,7 @@ export function GitToolbar({
   onToggleLog,
   tab,
   onTab,
+  onOpenRefs,
 }: {
   overview: GitOverview | undefined;
   repoId: string | null;
@@ -45,6 +46,12 @@ export function GitToolbar({
   onToggleLog: () => void;
   tab: 'commits' | 'work';
   onTab: (tab: 'commits' | 'work') => void;
+  /**
+   * Open the refs sheet. Present on a phone only, where the column those refs
+   * live in is not on screen — the button is drawn exactly when there is
+   * something for it to open, so a desktop grows no control it does not need.
+   */
+  onOpenRefs?: () => void;
 }) {
   const [opening, setOpening] = useState(false);
   const [pushing, setPushing] = useState<null | { force: boolean }>(null);
@@ -204,7 +211,15 @@ export function GitToolbar({
   ];
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-1.5">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-1.5 max-md:gap-1.5 max-md:px-2">
+      {/* The way into everything the refs column holds, and on a phone the only
+          one: branches, remotes, tags, stashes and worktrees are a tap away
+          rather than a column away. */}
+      {onOpenRefs && (
+        <button type="button" onClick={onOpenRefs} className={`${actionClass} shrink-0`} aria-label="Branches and tags">
+          ⎇ Refs
+        </button>
+      )}
       <RepoPicker overview={overview} repoId={repoId} onPick={onPick} onChanged={onChanged} busy={false} />
 
       {status && (
@@ -245,7 +260,10 @@ export function GitToolbar({
         </span>
       )}
 
-      <span className="ml-auto flex items-center gap-1.5">
+      {/* `ml-auto` only above the fold line: once this row wraps — which it
+          always does at 360px — pushing a group right means pushing it onto a
+          line of its own, which reads as a gap rather than as an alignment. */}
+      <span className="ml-auto flex items-center gap-1.5 max-md:ml-0 max-md:flex-wrap">
         <span className="flex items-center gap-0.5">
           <button type="button" onClick={() => onTab('commits')} className={toggleClass(tab === 'commits')} title="The history">
             Commits
@@ -277,7 +295,11 @@ export function GitToolbar({
               className={actionClass}
               title={terminalOnly.reason ?? 'Open a terminal in this repository'}
             >
-              ❯
+              {/* A glyph on a desktop, where a tooltip explains it; a word on a
+                  phone, where nothing ever will. Same two-span rule the rest of
+                  the app follows. */}
+              <span className="max-md:hidden">❯</span>
+              <span className="hidden max-md:inline">❯ Terminal</span>
             </button>
             <button
               type="button"
@@ -286,7 +308,8 @@ export function GitToolbar({
               className={actionClass}
               title={vsCodeOnly.reason ?? 'Open this repository in VS Code'}
             >
-              {'{ }'}
+              <span className="max-md:hidden">{'{ }'}</span>
+              <span className="hidden max-md:inline">{'{ } VS Code'}</span>
             </button>
             <button
               type="button"
@@ -295,7 +318,8 @@ export function GitToolbar({
               className={actionClass}
               title={folderOnly.reason ?? 'Open this folder in Explorer'}
             >
-              📁
+              <span className="max-md:hidden">📁</span>
+              <span className="hidden max-md:inline">📁 Explorer</span>
             </button>
           </>
         )}
