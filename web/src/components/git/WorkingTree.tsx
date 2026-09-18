@@ -18,6 +18,7 @@ import { CommitBox } from './CommitBox.tsx';
 import { ConflictSides } from './ConflictSides.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView, pairedWith } from './DiffView.tsx';
+import { RowActions } from './RowActions.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 /**
@@ -377,49 +378,37 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
           )}
           {entry.submodule && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">submodule</span>}
         </button>
-        {/* Always drawn below 48rem: `group-hover:` is compiled inside
-            `@media (hover: hover)`, so on a phone this cluster did not appear
-            at all — and with it went staging a single file. */}
-        <span className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100">
-          {staged ? (
-            <button
-              type="button"
-              onClick={() => unstage([entry.path])}
-              title="Unstage"
-              aria-label="Unstage"
-              className={FILE_ACT}
-            >
-              −
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => stage([entry.path])}
-              title={entry.conflicted ? 'Mark as resolved' : 'Stage'}
-              aria-label={entry.conflicted ? 'Mark as resolved' : 'Stage'}
-              className={FILE_ACT}
-            >
-              +
-            </button>
-          )}
-          {!staged && !entry.conflicted && (
-            <button
-              type="button"
-              onClick={() =>
-                askDiscard(
-                  [entry.path],
-                  entry.unstaged === 'untracked' ? entry.path : `the changes to ${entry.path}`,
-                  entry.unstaged === 'untracked',
-                )
-              }
-              title={entry.unstaged === 'untracked' ? 'Delete this untracked file' : 'Discard these changes'}
-              aria-label={entry.unstaged === 'untracked' ? 'Delete this untracked file' : 'Discard these changes'}
-              className={`${FILE_ACT} hover:text-red-300`}
-            >
-              ↺
-            </button>
-          )}
-        </span>
+        <RowActions
+          name={entry.path}
+          say={action.say}
+          actions={[
+            staged
+              ? { label: '−', words: 'Unstage', hint: 'Take it back out of the next commit', primary: true, run: () => unstage([entry.path]) }
+              : {
+                  label: '+',
+                  words: entry.conflicted ? 'Mark as resolved' : 'Stage',
+                  hint: entry.conflicted ? 'Staging a conflicted file is how it is resolved' : 'Put it in the next commit',
+                  primary: true,
+                  run: () => stage([entry.path]),
+                },
+            ...(!staged && !entry.conflicted
+              ? [
+                  {
+                    label: '↺',
+                    words: entry.unstaged === 'untracked' ? 'Delete this untracked file' : 'Discard these changes',
+                    hint: 'Asks first, and a copy goes to the bin',
+                    danger: true,
+                    run: () =>
+                      askDiscard(
+                        [entry.path],
+                        entry.unstaged === 'untracked' ? entry.path : `the changes to ${entry.path}`,
+                        entry.unstaged === 'untracked',
+                      ),
+                  },
+                ]
+              : []),
+          ]}
+        />
       </div>
     );
   };

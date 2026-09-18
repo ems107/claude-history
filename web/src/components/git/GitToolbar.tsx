@@ -10,7 +10,9 @@ import { useState } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
-import { actionClass, toggleClass } from '../controlClass.ts';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
+import { actionClass, squareClass, toggleClass } from '../controlClass.ts';
+import { Sheet } from '../Sheet.tsx';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
 import { SplitButton, type SplitOption } from './SplitButton.tsx';
@@ -53,6 +55,10 @@ export function GitToolbar({
    */
   onOpenRefs?: () => void;
 }) {
+  const mobile = useIsMobile();
+  /** Everything that is neither where you are nor what you are looking at. */
+  const [more, setMore] = useState(false);
+  useBackDismiss(mobile && more, () => setMore(false));
   const [opening, setOpening] = useState(false);
   const [pushing, setPushing] = useState<null | { force: boolean }>(null);
   const action = useGitAction(repoId);
@@ -210,6 +216,233 @@ export function GitToolbar({
     },
   ];
 
+  /**
+   * The three that reach the network, shared by both layouts.
+   *
+   * On a phone they are the whole of a row and divide it equally, so the
+   * three targets are the same size and none of them is a 10px caret at the
+   * end of a line that has already wrapped twice.
+   */
+  /**
+   * What went wrong, and the ways out of it — shared, because a refusal is
+   * the same fact on both layouts, and it is the one thing on this bar that
+   * must never be a tooltip.
+   */
+  const dialogs = <>
+      {pushing && status && (
+        <PushDialog
+          status={status}
+          remotes={remotesQ.data ?? []}
+          busy={action.busy}
+          initialForce={pushing.force}
+          onCancel={() => setPushing(null)}
+          onPush={(body) => {
+            setPushing(null);
+            if (repoId) void action.run(() => gitApi.push(repoId, body));
+          }}
+        />
+      )}
+  </>;
+  const feedback = (
+    <>
+      {repo?.error && <p className="w-full text-[11px] text-red-400">{repo.error}</p>}
+
+      {/* A refusal here is a decision waiting to be made, so the two ways out
+          sit next to it rather than in a menu somewhere else. */}
+      {action.error && (
+        <div className="w-full rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300">
+          <p>{action.error}</p>
+          <span className="mt-1 flex flex-wrap items-center gap-1.5">
+            {diverged && repoId && (
+              <>
+                <button
+                  type="button"
+                  className={actionClass}
+                  title="git pull --rebase"
+                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'rebase' }))}
+                >
+                  Pull with rebase
+                </button>
+                <button
+                  type="button"
+                  className={actionClass}
+                  title="git pull --no-rebase"
+                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'merge' }))}
+                >
+                  Pull with merge
+                </button>
+              </>
+            )}
+            {/* The one place this button really matters: git asked for
+                credentials and the answer is to run the command once by hand.
+                Over remote access that cannot be done from here, and saying so
+                is better than a button that opens a window somewhere else. */}
+            {needsCredentials && repoId && !hideLocal && (
+              <button
+                type="button"
+                className={actionClass}
+                disabled={terminalOnly.disabled}
+                title={terminalOnly.reason ?? undefined}
+                onClick={() => open('terminal')}
+              >
+                ❯ Open a terminal here
+              </button>
+            )}
+            <button type="button" className={actionClass} onClick={action.clear}>
+              Dismiss
+            </button>
+          </span>
+        </div>
+      )}
+      {action.note && (
+        <p className="w-full truncate text-[11px] text-emerald-400" title={action.note}>
+          {action.note.split('\n')[0]}
+        </p>
+      )}
+    </>
+  );
+  const network = repoId ? (
+    <span className="flex items-center gap-1.5 max-md:gap-1 max-md:[&>*]:flex-1 max-md:[&_button:first-child]:flex-1">
+          <SplitButton
+            label="Fetch"
+            busy={action.busy}
+            defaultKey={s.gitFetchDefault}
+            options={fetchOptions}
+            title="Update the remote-tracking branches"
+          />
+          <SplitButton
+            label={`Pull${status && status.behind > 0 ? ` ↓${status.behind}` : ''}`}
+            busy={action.busy}
+            defaultKey={s.gitPullDefault}
+            options={pullOptions}
+            title="Bring the upstream's commits in"
+          />
+          <SplitButton
+            label={`Push${status && status.ahead > 0 ? ` ↑${status.ahead}` : ''}`}
+            busy={action.busy}
+            defaultKey={s.gitPushDefault}
+            options={pushOptions}
+            title="Send commits to the remote"
+          />
+    </span>
+  ) : null;
+  /**
+   * The bar, on a phone: three rows with a shape instead of one that wraps.
+   *
+   * The wrapping version measured 259px of chrome above the first commit on a
+   * 775px screen — a third of the window — with six bordered buttons of equal
+   * weight, so switching what you are LOOKING at (Commits / Working tree) drew
+   * the eye exactly as hard as opening the folder in Explorer. It also gave the
+   * repository picker the whole of a row and then spent it on the front of a
+   * path, leaving the name itself as `l…`.
+   *
+   * So: where you are, then what you are looking at, then what reaches the
+   * network. Everything that is neither goes behind one `⋮` with words next to
+   * it, which is the same answer the session's own actions take.
+   */
+  if (mobile) {
+    const abnormal = [
+      conflicted > 0 ? `${conflicted} conflicted` : null,
+      status && !status.branch ? `detached at ${status.detachedAt?.slice(0, 7)}` : null,
+      status?.truncated ? 'more changes than are listed' : null,
+      status?.stale ? 'figures are from before the command now running' : null,
+    ].filter(Boolean);
+    const tab_ = (which: 'commits' | 'work', label: string, count?: number) => (
+      <button
+        type="button"
+        onClick={() => onTab(which)}
+        aria-pressed={tab === which}
+        className={`flex min-h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded text-xs ${
+          tab === which ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'text-[var(--text-dim)]'
+        }`}
+      >
+        {label}
+        {count ? <span className="tabular-nums">{count}</span> : null}
+      </button>
+    );
+    return (
+      <div className="shrink-0 border-b border-[var(--border)]">
+        {/* 1. Which repository, and the branch as the way into everything else
+               about it — tapping a branch name to see the branches is what a
+               person means by it, and it saves the row a second button. */}
+        <div className="flex items-center gap-1.5 px-2 pt-1.5">
+          <h1 className="shrink-0 text-sm font-semibold">Git</h1>
+          <span aria-hidden className="shrink-0 text-[var(--text-dim)]">
+            ·
+          </span>
+          <RepoPicker overview={overview} repoId={repoId} onPick={onPick} onChanged={onChanged} busy={false} compact />
+          {onOpenRefs && (
+            <button
+              type="button"
+              onClick={onOpenRefs}
+              className="ml-auto flex min-h-10 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 font-mono text-xs text-[var(--accent)]"
+            >
+              ⎇ <span className="max-w-24 truncate">{status?.branch ?? 'HEAD'}</span>
+              <span aria-hidden className="text-[var(--text-dim)]">›</span>
+            </button>
+          )}
+        </div>
+
+        {/* 2. Which half of the repository, and everything that is neither. */}
+        <div className="flex items-center gap-1.5 px-2 pt-1">
+          <span className="flex min-w-0 flex-1 rounded border border-[var(--border)] p-0.5">
+            {tab_('commits', 'Commits')}
+            {tab_('work', 'Working tree', changed)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setMore(true)}
+            className={squareClass(more)}
+            aria-label="More things to do in this repository"
+          >
+            ⋮
+          </button>
+        </div>
+
+        {/* 3. The three that go out to a remote. */}
+        {network && <div className="px-2 pt-1">{network}</div>}
+
+        {/* Only when there is something abnormal to say: `clean` is the absence
+            of a count on the tab above, and repeating it is a row spent on it. */}
+        {abnormal.length > 0 && (
+          <p className="px-2 pt-1 text-[11px] text-amber-400">{abnormal.join(' · ')}</p>
+        )}
+
+        <div className="px-2 pb-1.5">{feedback}</div>
+        {dialogs}
+
+        {more && (
+          <Sheet title="This repository" onClose={() => setMore(false)}>
+            <MoreRow label="Command log" hint="Every git command this app has run" onClick={() => { setMore(false); onToggleLog(); }} />
+            <MoreRow label="Look for repositories again" hint="Walk the scan roots" onClick={() => { setMore(false); onChanged(); }} />
+            {!hideLocal && (
+              <>
+                <MoreRow
+                  label="❯ Open a terminal here"
+                  hint={terminalOnly.reason ?? 'Resolve a conflict, or store your credentials once'}
+                  disabled={!repoId || terminalOnly.disabled}
+                  onClick={() => { setMore(false); open('terminal'); }}
+                />
+                <MoreRow
+                  label="{ } Open in VS Code"
+                  hint={vsCodeOnly.reason ?? undefined}
+                  disabled={!repoId || vsCodeOnly.disabled}
+                  onClick={() => { setMore(false); open('vscode'); }}
+                />
+                <MoreRow
+                  label="📁 Open in Explorer"
+                  hint={folderOnly.reason ?? undefined}
+                  disabled={!repoId || folderOnly.disabled}
+                  onClick={() => { setMore(false); open('explorer'); }}
+                />
+              </>
+            )}
+          </Sheet>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-1.5 max-md:gap-1.5 max-md:px-2">
       {/* The way into everything the refs column holds, and on a phone the only
@@ -325,100 +558,47 @@ export function GitToolbar({
         )}
       </span>
 
-      {repoId && (
-        <span className="flex items-center gap-1.5">
-          <SplitButton
-            label="Fetch"
-            busy={action.busy}
-            defaultKey={s.gitFetchDefault}
-            options={fetchOptions}
-            title="Update the remote-tracking branches"
-          />
-          <SplitButton
-            label={`Pull${status && status.behind > 0 ? ` ↓${status.behind}` : ''}`}
-            busy={action.busy}
-            defaultKey={s.gitPullDefault}
-            options={pullOptions}
-            title="Bring the upstream's commits in"
-          />
-          <SplitButton
-            label={`Push${status && status.ahead > 0 ? ` ↑${status.ahead}` : ''}`}
-            busy={action.busy}
-            defaultKey={s.gitPushDefault}
-            options={pushOptions}
-            title="Send commits to the remote"
-          />
-        </span>
-      )}
+      {network}
 
-      {repo?.error && <p className="w-full text-[11px] text-red-400">{repo.error}</p>}
+      {feedback}
 
-      {/* A refusal here is a decision waiting to be made, so the two ways out
-          sit next to it rather than in a menu somewhere else. */}
-      {action.error && (
-        <div className="w-full rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300">
-          <p>{action.error}</p>
-          <span className="mt-1 flex flex-wrap items-center gap-1.5">
-            {diverged && repoId && (
-              <>
-                <button
-                  type="button"
-                  className={actionClass}
-                  title="git pull --rebase"
-                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'rebase' }))}
-                >
-                  Pull with rebase
-                </button>
-                <button
-                  type="button"
-                  className={actionClass}
-                  title="git pull --no-rebase"
-                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'merge' }))}
-                >
-                  Pull with merge
-                </button>
-              </>
-            )}
-            {/* The one place this button really matters: git asked for
-                credentials and the answer is to run the command once by hand.
-                Over remote access that cannot be done from here, and saying so
-                is better than a button that opens a window somewhere else. */}
-            {needsCredentials && repoId && !hideLocal && (
-              <button
-                type="button"
-                className={actionClass}
-                disabled={terminalOnly.disabled}
-                title={terminalOnly.reason ?? undefined}
-                onClick={() => open('terminal')}
-              >
-                ❯ Open a terminal here
-              </button>
-            )}
-            <button type="button" className={actionClass} onClick={action.clear}>
-              Dismiss
-            </button>
-          </span>
-        </div>
-      )}
-      {action.note && (
-        <p className="w-full truncate text-[11px] text-emerald-400" title={action.note}>
-          {action.note.split('\n')[0]}
-        </p>
-      )}
-
-      {pushing && status && (
-        <PushDialog
-          status={status}
-          remotes={remotesQ.data ?? []}
-          busy={action.busy}
-          initialForce={pushing.force}
-          onCancel={() => setPushing(null)}
-          onPush={(body) => {
-            setPushing(null);
-            if (repoId) void action.run(() => gitApi.push(repoId, body));
-          }}
-        />
-      )}
+      {dialogs}
     </div>
+  );
+}
+
+/**
+ * One line of the `⋮` sheet: what it does, and why, in words.
+ *
+ * The bar these came from drew them as `❯`, `{ }` and `📁` with the meaning in
+ * a `title` — which on Android is nowhere at all. A sheet has the room for the
+ * sentence, which is the whole reason they moved into one.
+ */
+function MoreRow({
+  label,
+  hint,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex min-h-14 w-full cursor-pointer items-center gap-3 border-b border-[var(--border)] px-1 py-2 text-left last:border-b-0 disabled:cursor-default disabled:opacity-40"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm">{label}</span>
+        {hint && <span className="block text-xs text-[var(--text-dim)]">{hint}</span>}
+      </span>
+      <span aria-hidden className="shrink-0 text-[var(--text-dim)]">
+        ›
+      </span>
+    </button>
   );
 }

@@ -24,12 +24,21 @@ export function RepoPicker({
   onPick,
   onChanged,
   busy,
+  compact = false,
 }: {
   overview: GitOverview | undefined;
   repoId: string | null;
   onPick: (id: string) => void;
   onChanged: () => void;
   busy: boolean;
+  /**
+   * The trigger is the repository's NAME and nothing else.
+   *
+   * The full path beside it is the right thing on a desktop, where there is
+   * room for both; on a phone it took the whole row and left the name reading
+   * `l…`, which is the one word the control exists to show.
+   */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -85,11 +94,17 @@ export function RepoPicker({
         onClick={() => setOpen(!open)}
         disabled={busy}
         title={current?.path ?? 'Choose a repository'}
-        className={`${actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)] max-md:max-w-[15rem]`}
+        className={
+          compact
+            ? 'flex min-h-10 min-w-0 cursor-pointer items-center gap-1 rounded px-1 text-sm font-semibold text-[var(--text)]'
+            : `${actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`
+        }
       >
-        <span className="text-[var(--text-dim)]">▾</span>
-        <span className="truncate font-medium">{current?.name ?? 'Choose a repository…'}</span>
-        {current && <span className="truncate font-mono text-[10px] text-[var(--text-dim)]">{current.path}</span>}
+        <span className="min-w-0 truncate font-medium">{current?.name ?? 'Choose a repository…'}</span>
+        <span className="shrink-0 text-[var(--text-dim)]">▾</span>
+        {current && !compact && (
+          <span className="truncate font-mono text-[10px] text-[var(--text-dim)]">{current.path}</span>
+        )}
       </button>
 
       {open && mobile && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}

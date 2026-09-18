@@ -329,10 +329,34 @@ const sheetStack: Array<{ key: string; dismiss: () => void }> = [];
  * opened by anything else sees zero and waits for the next touch to carry it.
  *
  * `click` as well as `pointerdown` because that is the one React treats as
- * discrete; the counter is decremented from a task of its own, which is the
- * first moment the dispatch is certainly over.
+ * discrete.
+ *
+ * **The credit outlives the dispatch by `GESTURE_CREDIT_MS`, and that is the
+ * correction that cost a bug.** It used to be given back from a task of its
+ * own — "the first moment the dispatch is certainly over" — which is stricter
+ * than anything Chrome asks for, and it broke every layer whose openness lives
+ * in the URL: `setSearchParams` lands in a router transition, so the render and
+ * its layout effects run in a LATER task, find the depth back at zero, and wait
+ * for a gesture that never comes. On the device, Back then left the Git tab for
+ * the session list instead of closing the commit that was open.
+ *
+ * What Chrome actually does was measured on the DT50 rather than reasoned
+ * about: a marker pushed 0 ms, 16 ms and 120 ms after a real tap was **honoured
+ * every time** — the entry is skippable for want of user ACTIVATION, not for
+ * being a task late. The paragraph above still holds for the case it was
+ * written for, because that one is seconds late, not milliseconds.
  */
 let gestureDepth = 0;
+
+/**
+ * How long a tap goes on counting as the thing that opened a layer.
+ *
+ * Long enough for a router transition to render on this device, and far short
+ * of the case the waiting path exists for — the embedded terminal, which fills
+ * the window when its `start` request comes back seconds later and must still
+ * ride the next touch.
+ */
+const GESTURE_CREDIT_MS = 400;
 
 /**
  * Counted from module load, and that is the part that has to be right: a
@@ -345,7 +369,7 @@ if (typeof document !== 'undefined') {
     gestureDepth++;
     setTimeout(() => {
       gestureDepth--;
-    }, 0);
+    }, GESTURE_CREDIT_MS);
   };
   // **`click`, not `pointerdown`**, and that is the second thing this had to
   // learn. Chrome grants the activation on the click — for a tap, at the point

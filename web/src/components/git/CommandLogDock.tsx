@@ -3,7 +3,9 @@ import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass } from '../controlClass.ts';
+import { Sheet } from '../Sheet.tsx';
 import { FollowBottomButton, useFollowBottom } from '../viewer/FollowBottom.tsx';
 import { CommandLogRow } from './CommandLogRow.tsx';
 
@@ -36,6 +38,11 @@ export function CommandLogDock({
   const [showReads, setShowReads] = useState(true);
   const follow = useFollowBottom();
 
+  const mobile = useIsMobile();
+  // It is a sheet below 48rem, and every sheet owes Android's Back an answer —
+  // this one did not have it, and a log opened once then covered the page until
+  // somebody found Close.
+  useBackDismiss(mobile && open, onToggle);
   // Closed, only the newest entry is fetched: a dock nobody is looking at
   // should cost a row, not the whole ring.
   const { data } = useQuery({
@@ -47,6 +54,58 @@ export function CommandLogDock({
   const entries = showReads ? all : all.filter((e) => e.mutation);
   const hiddenReads = all.length - entries.length;
   const last = all[all.length - 1];
+
+  const body = (
+    <div ref={follow.scrollRef} className="h-full overflow-y-auto">
+      <div ref={follow.contentRef}>
+        {data && data.dropped > 0 && (
+          <p className="px-2 py-1 text-[11px] text-amber-400">
+            {data.dropped} older command{data.dropped === 1 ? '' : 's'} are no longer kept.
+          </p>
+        )}
+        {entries.length === 0 ? (
+          <p className="px-2 py-2 text-[11px] text-[var(--text-dim)] italic">
+            {all.length === 0 ? 'Nothing has run yet.' : 'Only reads so far, and they are hidden.'}
+          </p>
+        ) : (
+          entries.map((entry) => <CommandLogRow key={entry.seq} entry={entry} />)
+        )}
+      </div>
+    </div>
+  );
+
+  /**
+   * On a phone it is a sheet, or it is nothing at all.
+   *
+   * As a dock it spent a permanent row of a 775px screen on a strip reading
+   * `⌘ Command log 380 git worktree list --porcelain` — the least useful line
+   * available, since the last command is almost always a read the app made by
+   * itself. It is diagnostics: it belongs behind the `⋮`, where it now is, and
+   * the whole window is the right size for it when it is open.
+   */
+  if (mobile) {
+    if (!open) return null;
+    return (
+      <Sheet
+        title="Command log"
+        onClose={onToggle}
+        closeLabel="Close"
+        extra={
+          <label className="flex shrink-0 items-center gap-1 text-[11px] text-[var(--text-dim)]">
+            <input
+              type="checkbox"
+              checked={showReads}
+              onChange={(e) => setShowReads(e.target.checked)}
+              className="size-4 accent-[var(--accent)]"
+            />
+            reads
+          </label>
+        }
+      >
+        <div className="-mx-3 h-full">{body}</div>
+      </Sheet>
+    );
+  }
 
   return (
     <div className="shrink-0 border-t border-[var(--border)]">
@@ -116,22 +175,7 @@ export function CommandLogDock({
 
       {open && (
         <div className="relative" style={{ height }}>
-          <div ref={follow.scrollRef} className="h-full overflow-y-auto">
-            <div ref={follow.contentRef}>
-              {data && data.dropped > 0 && (
-                <p className="px-2 py-1 text-[11px] text-amber-400">
-                  {data.dropped} older command{data.dropped === 1 ? '' : 's'} are no longer kept.
-                </p>
-              )}
-              {entries.length === 0 ? (
-                <p className="px-2 py-2 text-[11px] text-[var(--text-dim)] italic">
-                  {all.length === 0 ? 'Nothing has run yet.' : 'Only reads so far, and they are hidden.'}
-                </p>
-              ) : (
-                entries.map((entry) => <CommandLogRow key={entry.seq} entry={entry} />)
-              )}
-            </div>
-          </div>
+          {body}
           <FollowBottomButton following={follow.following} toggle={follow.toggle} unseen={follow.unseen} />
         </div>
       )}

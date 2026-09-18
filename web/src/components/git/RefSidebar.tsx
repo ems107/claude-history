@@ -14,11 +14,13 @@ import { useState, type ReactNode } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { relativeTime } from '../../lib/format.ts';
-import { useIsMobile } from '../../lib/mobile.ts';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, inputClass } from '../controlClass.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
+import { Sheet } from '../Sheet.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
-import { MenuButton, type SplitOption } from './SplitButton.tsx';
+import { type SplitOption } from './SplitButton.tsx';
+import { ACT_CLASS, RowActions, rowClass } from './RowActions.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 /**
@@ -79,73 +81,6 @@ function Section({
     </div>
   );
 }
-
-/**
- * A row's actions.
- *
- * Revealed on hover where there is a pointer, and **always drawn below 48rem**.
- * Tailwind v4 compiles `hover:` inside `@media (hover: hover)`, so on a phone
- * `group-hover:opacity-100` never fires at all: these were not hard to find
- * there, they did not exist — and with them went checking out a branch, merging
- * one, deleting one, publishing a tag and every stash verb this tab has.
- */
-const ROW_ACTIONS = 'flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100';
-
-/**
- * One action on a ref row. It always carries a title, and when it is disabled
- * that title is the server's reason rather than the action's name — a dead
- * control that cannot say why is the bug this whole pattern avoids.
- *
- * **On a phone there are no tooltips, so a disabled one is not disabled**: it
- * stays live and its tap puts that same reason where the rest of this
- * repository's refusals are read, under the sections. The alternative the
- * phone rules allow — not drawing it at all — would answer "why can I not check
- * this out" by removing the question, and the sentence is the useful half.
- *
- * 44px square below the fold line, from a 11×17 glyph: these run `git checkout`
- * and `git branch -D`, and a mis-tap between two of them is not a small thing.
- */
-const ACT_CLASS =
-  'cursor-pointer px-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-30 max-md:inline-flex max-md:size-11 max-md:items-center max-md:justify-center max-md:px-0 max-md:text-base';
-
-function Act({
-  label,
-  title,
-  onClick,
-  disabled,
-  reason,
-  danger,
-  say,
-}: {
-  label: string;
-  title: string;
-  onClick: () => void;
-  disabled?: boolean;
-  reason?: string;
-  danger?: boolean;
-  /** Where a refusal goes on a screen with no tooltips. */
-  say?: (message: string) => void;
-}) {
-  const mobile = useIsMobile();
-  const blocked = !!disabled;
-  // `busy` is not a reason anybody needs told — it is a moment, and it passes.
-  const explainable = blocked && mobile && !!(reason ?? title) && !!say;
-  return (
-    <button
-      type="button"
-      onClick={explainable ? () => say(reason ?? title) : onClick}
-      disabled={blocked && !explainable}
-      title={blocked ? (reason ?? title) : title}
-      aria-label={title}
-      className={`${ACT_CLASS} ${danger ? 'hover:text-red-300' : ''} ${explainable ? 'opacity-30' : ''}`}
-    >
-      {label}
-    </button>
-  );
-}
-
-const rowClass =
-  'flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-[11px] hover:bg-[var(--bg-hover)]/60 max-md:min-h-11 max-md:py-1 max-md:text-xs';
 
 function Empty({ children }: { children: ReactNode }) {
   return <p className="px-2 py-1 text-[11px] text-[var(--text-dim)] italic">{children}</p>;
@@ -340,33 +275,44 @@ export function RefSidebar({
               )}
             </button>
             {!branch.current && repoId && (
-              <span className={ROW_ACTIONS}>
-                <Act
-                  label="→"
-                  title={branch.worktreePath ? `Checked out in ${branch.worktreePath}` : `Check out ${branch.name}`}
-                  disabled={action.busy || !!branch.worktreePath || !!status?.blocked.checkout}
-                  reason={status?.blocked.checkout}
-                  say={action.say}
-                  onClick={() => checkout(branch.name)}
-                />
-                <Act
-                  label="⇥"
-                  title={`Merge ${branch.name} into ${status?.branch ?? 'HEAD'}`}
-                  disabled={action.busy || !!status?.blocked.merge}
-                  reason={status?.blocked.merge}
-                  say={action.say}
-                  onClick={() => merge(branch.name)}
-                />
-                <MenuButton
-                  label="▾"
-                  title="The other ways to merge it"
-                  className={`${ACT_CLASS} px-0.5`}
-                  disabled={action.busy}
-                  options={mergeOptions(branch.name)}
-                  mainKey={mergeDefault}
-                />
-                <Act label="✕" title={`Delete ${branch.name}`} danger onClick={() => setDeleting(branch)} />
-              </span>
+              <RowActions
+                name={branch.name}
+                say={action.say}
+                actions={[
+                  {
+                    label: '→',
+                    words: `Check out ${branch.name}`,
+                    hint: 'Move HEAD here; what you have changed comes with you',
+                    disabled: action.busy || !!branch.worktreePath || !!status?.blocked.checkout,
+                    reason: branch.worktreePath
+                      ? `It is checked out in ${branch.worktreePath}`
+                      : status?.blocked.checkout,
+                    run: () => checkout(branch.name),
+                  },
+                  {
+                    label: '⇥',
+                    words: `Merge ${branch.name} into ${status?.branch ?? 'HEAD'}`,
+                    hint: 'The way your settings say',
+                    disabled: action.busy || !!status?.blocked.merge,
+                    reason: status?.blocked.merge,
+                    coveredByMenu: true,
+                    run: () => merge(branch.name),
+                  },
+                  {
+                    label: '▾',
+                    words: 'The other ways to merge it',
+                    disabled: action.busy,
+                    menu: { options: mergeOptions(branch.name), mainKey: mergeDefault },
+                  },
+                  {
+                    label: '✕',
+                    words: `Delete ${branch.name}`,
+                    hint: 'Asks first',
+                    danger: true,
+                    run: () => setDeleting(branch),
+                  },
+                ]}
+              />
             )}
           </div>
         ))}
@@ -398,16 +344,20 @@ export function RefSidebar({
                   )}
                 </button>
                 {branch.localMissing && repoId && (
-                  <span className={ROW_ACTIONS}>
-                    <Act
-                      label="→"
-                      title={`Create a local ${branch.name} tracking ${branch.remote}/${branch.name}`}
-                      disabled={action.busy || !!status?.blocked.checkout}
-                      reason={status?.blocked.checkout}
-                      say={action.say}
-                      onClick={() => checkout(branch.name)}
-                    />
-                  </span>
+                  <RowActions
+                    name={`${branch.remote}/${branch.name}`}
+                    say={action.say}
+                    actions={[
+                      {
+                        label: '→',
+                        words: `Create a local ${branch.name}`,
+                        hint: `Tracking ${branch.remote}/${branch.name}`,
+                        disabled: action.busy || !!status?.blocked.checkout,
+                        reason: status?.blocked.checkout,
+                        run: () => checkout(branch.name),
+                      },
+                    ]}
+                  />
                 )}
               </div>
             ))}
@@ -499,15 +449,26 @@ export function RefSidebar({
               {tag.at && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(tag.at)}</span>}
             </button>
             {repoId && (
-              <span className={ROW_ACTIONS}>
-                <Act
-                  label="↑"
-                  title={`Publish ${tag.name} to the remote`}
-                  disabled={action.busy}
-                  onClick={() => run(() => gitApi.pushTag(repoId, { name: tag.name }))}
-                />
-                <Act label="✕" title={`Delete ${tag.name}`} danger onClick={() => setDeletingTag(tag)} />
-              </span>
+              <RowActions
+                name={tag.name}
+                say={action.say}
+                actions={[
+                  {
+                    label: '↑',
+                    words: `Publish ${tag.name} to the remote`,
+                    hint: 'git push <remote> ' + tag.name,
+                    disabled: action.busy,
+                    run: () => run(() => gitApi.pushTag(repoId, { name: tag.name })),
+                  },
+                  {
+                    label: '✕',
+                    words: `Delete ${tag.name}`,
+                    hint: 'Here only, not on the remote. Asks first',
+                    danger: true,
+                    run: () => setDeletingTag(tag),
+                  },
+                ]}
+              />
             )}
           </div>
         ))}
@@ -539,21 +500,33 @@ export function RefSidebar({
             <span className="min-w-0 flex-1 truncate">{stash.message}</span>
             <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(stash.at)}</span>
             {repoId && (
-              <span className={ROW_ACTIONS}>
-                <Act
-                  label="↓"
-                  title="Apply it and keep it"
-                  disabled={action.busy}
-                  onClick={() => run(() => gitApi.stashAction(repoId, 'apply', { index: stash.index }))}
-                />
-                <Act
-                  label="⤓"
-                  title="Apply it and remove it"
-                  disabled={action.busy}
-                  onClick={() => run(() => gitApi.stashAction(repoId, 'pop', { index: stash.index }))}
-                />
-                <Act label="✕" title="Throw it away" danger onClick={() => setDroppingStash(stash)} />
-              </span>
+              <RowActions
+                name={stash.message || `stash@{${stash.index}}`}
+                say={action.say}
+                actions={[
+                  {
+                    label: '↓',
+                    words: 'Apply it, and keep it in the list',
+                    hint: 'git stash apply',
+                    disabled: action.busy,
+                    run: () => run(() => gitApi.stashAction(repoId, 'apply', { index: stash.index })),
+                  },
+                  {
+                    label: '⤓',
+                    words: 'Apply it and take it off the list',
+                    hint: 'git stash pop',
+                    disabled: action.busy,
+                    run: () => run(() => gitApi.stashAction(repoId, 'pop', { index: stash.index })),
+                  },
+                  {
+                    label: '✕',
+                    words: 'Throw it away',
+                    hint: 'Asks first: a dropped stash is not in any commit',
+                    danger: true,
+                    run: () => setDroppingStash(stash),
+                  },
+                ]}
+              />
             )}
           </div>
         ))}
@@ -630,9 +603,19 @@ export function RefSidebar({
             {wt.isMain && <span className="shrink-0 text-[10px] text-[var(--text-dim)]">main</span>}
             {wt.locked && <span className="shrink-0 text-[10px] text-amber-400">locked</span>}
             {repoId && !wt.isMain && (
-              <span className={ROW_ACTIONS}>
-                <Act label="✕" title="Remove this worktree" danger onClick={() => setRemovingWorktree(wt)} />
-              </span>
+              <RowActions
+                name={wt.path}
+                say={action.say}
+                actions={[
+                  {
+                    label: '✕',
+                    words: 'Remove this worktree',
+                    hint: 'Asks first. The folder goes with it',
+                    danger: true,
+                    run: () => setRemovingWorktree(wt),
+                  },
+                ]}
+              />
             )}
           </div>
         ))}

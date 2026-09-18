@@ -44,13 +44,21 @@ export function GitPage() {
   const graph = useDragSize({ key: 'git.graphHeight', axis: 'y', min: 120, max: 900, initial: 340 });
   // Dragging the dock's top edge upwards makes it taller, so this one inverts.
   const dock = useDragSize({ key: 'git.logHeight', axis: 'y', min: 80, max: 600, initial: 200, invert: true });
-  const [logOpen, setLogOpen] = useState(() => localStorage.getItem('git.logOpen') === '1');
+  /**
+   * Whether the command log is showing.
+   *
+   * Remembered on a desktop, where it is a dock at the foot of the page and
+   * leaving it open is a way of working. NOT remembered on a phone, where it is
+   * a sheet over everything: a diagnostic panel that reopens itself on top of
+   * the page every time you come back is not a preference anybody expressed.
+   */
+  const [logOpen, setLogOpen] = useState(() => !mobile && localStorage.getItem('git.logOpen') === '1');
   const toggleLog = useCallback(() => {
     setLogOpen((prev) => {
-      localStorage.setItem('git.logOpen', prev ? '0' : '1');
+      if (!mobile) localStorage.setItem('git.logOpen', prev ? '0' : '1');
       return !prev;
     });
-  }, []);
+  }, [mobile]);
   /** The refs sheet, which on a desktop is the column that is simply there. */
   const [refsOpen, setRefsOpen] = useState(false);
   useBackDismiss(mobile && refsOpen, () => setRefsOpen(false));
@@ -192,10 +200,10 @@ export function GitPage() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Nothing in the bottom bar lights for this page — it is behind the
-            More menu — so the title is the only thing that says where you are.
-            Same rule Prompts, Plans and Starred follow. */}
-        {mobile && <h1 className="shrink-0 px-3 pt-2 text-sm font-semibold">Git</h1>}
+        {/* The page's own name is the first thing on the toolbar's first row,
+            beside the repository it is showing — nothing in the bottom bar
+            lights for this page, so something has to say where you are, and a
+            heading on a line of its own was saying it twice. */}
         <GitToolbar
           overview={overviewQ.data}
           repoId={repoId}

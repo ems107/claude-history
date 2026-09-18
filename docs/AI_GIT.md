@@ -16,7 +16,8 @@ A visual git client over the repositories on this machine (`/git`). `~/.claude` 
 - **Discarding is the only thing in this tab git cannot undo**, so it is made recoverable instead: `GitUndoStore` copies the bytes first, beside `userdata.json` and never in the cache dir — "Clear cache" must not be a way to lose work.
 - **Network calls are user-triggered only.** `fetch`, `pull` and `push` run when somebody presses one of those buttons and at no other time. The `.git` watcher is local and invalidates local state — **it must never lead to a fetch** ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)).
 - **The tab has no keyboard shortcuts, deliberately.** Everything in it can change a repository. Escape closing a dialog and Enter submitting a path field are the only key handlers, and neither can run git.
-- **A phone gets every verb this tab has**, one pane at a time, and the desktop does not move for it ([AI_MOBILE.md](AI_MOBILE.md)).
+- **A phone gets every verb this tab has**, one pane at a time and in WORDS — a glyph with its meaning in a `title` is a glyph with no meaning at all on Android. `components/git/RowActions.tsx` is the one home for "what can be done to this row", and the desktop does not move for any of it ([AI_MOBILE.md](AI_MOBILE.md)).
+- **Every sheet this tab opens answers Android's Back**, and the layer whose openness is a search param is the one that needed a fix in `lib/mobile.ts` rather than here ([AI_MOBILE.md](AI_MOBILE.md)).
 
 ## Where each rule lives
 

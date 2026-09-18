@@ -1,6 +1,7 @@
 import { GIT_MESSAGE_MAX, type GitStatus } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
 import { gitApi } from '../../api/git.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, toggleClass } from '../controlClass.ts';
 import { useGitAction } from './useGitAction.ts';
 
@@ -23,6 +24,18 @@ export function CommitBox({
   status: GitStatus;
   onDone: () => void;
 }) {
+  const mobile = useIsMobile();
+  /**
+   * Open on a phone only once there is something to write about.
+   *
+   * Three rows of textarea, an Amend toggle, the branch it would land on and a
+   * Commit button is 190px of a 775px screen — and with nothing staged all of
+   * it is inert, so the working tree's own list was left with a third of the
+   * window and a void under it. Staging anything opens it, which is the moment
+   * it becomes the thing you are about to do; a tap opens it the rest of the
+   * time, for an amend with nothing new in it.
+   */
+  const [opened, setOpened] = useState(false);
   const [text, setText] = useState('');
   const [amend, setAmend] = useState(false);
   const [prefilled, setPrefilled] = useState<string | null>(null);
@@ -74,6 +87,20 @@ export function CommitBox({
         onDone();
       });
   };
+
+  const stagedCount = status.entries.filter((e) => e.staged && !e.conflicted).length;
+  if (mobile && !opened && stagedCount === 0) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpened(true)}
+        className="flex min-h-11 w-full shrink-0 items-center gap-2 border-t border-[var(--border)] px-3 text-left text-xs text-[var(--text-dim)]"
+      >
+        <span className="flex-1">Nothing is staged</span>
+        <span className="text-[var(--text)]">Write a commit ›</span>
+      </button>
+    );
+  }
 
   return (
     <div className="border-t border-[var(--border)] p-2">
