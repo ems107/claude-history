@@ -2,24 +2,46 @@ import type { GitRepoRoot } from '@claude-history/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
+import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { relativeTime } from '../../lib/format.ts';
 import { actionClass, inputClass } from '../controlClass.ts';
 
 /**
  * Where the GIT tab looks for repositories.
  *
- * The picker can add one in passing; this is where the lists are actually
- * managed. Kept out of SettingsPage.tsx for the same reason the retention panel
- * is: that file is long enough, and this owns its own data.
+ * The picker in the tab can add one in passing; this is where the lists are
+ * actually managed — which is why it lives beside the other panels of the
+ * settings page rather than under `components/git/`.
  */
-export function GitSettings() {
+export function GitReposPanel() {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['git', 'repos'], queryFn: () => gitApi.overview() });
   const [draft, setDraft] = useState('');
   const [rootDraft, setRootDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [browsing, setBrowsing] = useState<'root' | 'repo' | null>(null);
+  // The dialog opens on the server's own desktop, so only the BUTTON is refused
+  // over the network — the box beside it goes on working, which is the whole
+  // point of refusing one and not the other.
+  const browse = useLocalOnly('pickFolder');
+  const hideLocal = useHideLocalOnly();
+
+  /** The Windows folder browser, filling whichever of the two boxes asked. */
+  const browseFor = (which: 'root' | 'repo') => {
+    setBrowsing(which);
+    setError(null);
+    api
+      .pickFolder((which === 'root' ? rootDraft : draft).trim() || undefined)
+      // null is Cancel, and leaves what was typed alone.
+      .then((picked) => {
+        if (picked) (which === 'root' ? setRootDraft : setDraft)(picked);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBrowsing(null));
+  };
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['git'] });
 
@@ -98,13 +120,24 @@ export function GitSettings() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && rootDraft.trim()) run(gitApi.addPath(rootDraft, true));
             }}
-            className={`${inputClass} font-mono text-[11px]`}
+            className={`${inputClass} min-w-0 flex-1 font-mono text-[11px]`}
           />
+          {!hideLocal && (
+            <button
+              type="button"
+              disabled={busy || browsing !== null || browse.disabled}
+              onClick={() => browseFor('root')}
+              className={`${actionClass} shrink-0`}
+              title={browse.reason ?? 'Browse for a folder'}
+            >
+              {browsing === 'root' ? 'Browsing…' : '📁'}
+            </button>
+          )}
           <button
             type="button"
             disabled={busy || !rootDraft.trim()}
             onClick={() => run(gitApi.addPath(rootDraft, true))}
-            className={actionClass}
+            className={`${actionClass} shrink-0`}
           >
             Add
           </button>
@@ -128,13 +161,24 @@ export function GitSettings() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && draft.trim()) run(gitApi.addPath(draft, false));
             }}
-            className={`${inputClass} font-mono text-[11px]`}
+            className={`${inputClass} min-w-0 flex-1 font-mono text-[11px]`}
           />
+          {!hideLocal && (
+            <button
+              type="button"
+              disabled={busy || browsing !== null || browse.disabled}
+              onClick={() => browseFor('repo')}
+              className={`${actionClass} shrink-0`}
+              title={browse.reason ?? 'Browse for a folder'}
+            >
+              {browsing === 'repo' ? 'Browsing…' : '📁'}
+            </button>
+          )}
           <button
             type="button"
             disabled={busy || !draft.trim()}
             onClick={() => run(gitApi.addPath(draft, false))}
-            className={actionClass}
+            className={`${actionClass} shrink-0`}
           >
             Add
           </button>

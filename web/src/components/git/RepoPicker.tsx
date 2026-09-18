@@ -218,7 +218,7 @@ export function RepoPicker({
                   {working ? 'Scanning…' : 'Rescan'}
                 </button>
                 <Link
-                  to="/settings#git"
+                  to="/settings/git#git-repos"
                   onClick={() => setOpen(false)}
                   className="ml-auto text-[11px] text-[var(--text-dim)] hover:text-[var(--text)]"
                 >

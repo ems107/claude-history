@@ -516,6 +516,48 @@ export type GitMergeMode = (typeof GIT_MERGE_MODES)[number];
 export const GIT_PUSH_MODES = ['push', 'dialog'] as const;
 export type GitPushMode = (typeof GIT_PUSH_MODES)[number];
 
+/**
+ * What each mode IS, said once: the command in its plain form, and one clause
+ * about the trade it makes.
+ *
+ * Here rather than in the settings page because two screens say it — the `▾`
+ * beside every one of these buttons, and the row in Settings that picks what
+ * the main click does — and the first time those two disagreed about what
+ * `--ff-only` means, one of them would be lying.
+ *
+ * The toolbar's own menu resolves these against the repository open at the time
+ * (`git fetch --prune origin`, `git push --set-upstream origin my-branch`),
+ * which is a different and more useful fact in that place. This is the form
+ * that is true of every repository, which is the only form a SETTING can have.
+ */
+export interface GitModeLabel {
+  command: string;
+  gist: string;
+}
+
+export const GIT_FETCH_LABELS: Record<GitFetchMode, GitModeLabel> = {
+  'all-prune': { command: 'git fetch --prune --all', gist: 'every remote, and drop the branches somebody deleted' },
+  all: { command: 'git fetch --all', gist: 'every remote, keeping stale branches for ever' },
+  current: { command: 'git fetch --prune <remote>', gist: "only this branch's remote" },
+};
+
+export const GIT_PULL_LABELS: Record<GitPullMode, GitModeLabel> = {
+  'ff-only': { command: 'git pull --ff-only', gist: 'refuse rather than invent a merge commit' },
+  rebase: { command: 'git pull --rebase', gist: 'replay my commits on top of theirs' },
+  merge: { command: 'git pull --no-rebase', gist: 'join the two with a merge commit' },
+};
+
+export const GIT_MERGE_LABELS: Record<GitMergeMode, GitModeLabel> = {
+  ff: { command: 'git merge', gist: 'fast-forward where it can' },
+  'no-ff': { command: 'git merge --no-ff', gist: 'always leave a merge commit' },
+  squash: { command: 'git merge --squash', gist: 'stage the result and commit nothing' },
+};
+
+export const GIT_PUSH_LABELS: Record<GitPushMode, GitModeLabel> = {
+  push: { command: 'git push', gist: 'send it, setting the upstream where there is none' },
+  dialog: { command: '(the options window)', gist: 'ask every time, with the command shown' },
+};
+
 export interface GitFetchRequest {
   remote?: string;
   /** Omitted means "whatever the settings say" — the setting is the default, not the UI. */

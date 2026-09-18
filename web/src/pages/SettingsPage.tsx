@@ -9,6 +9,7 @@ import { ChangedView } from '../components/settings/ChangedView.tsx';
 import { ClaudeArea } from '../components/settings/ClaudeArea.tsx';
 import { SettingsContext } from '../components/settings/context.ts';
 import { DataArea } from '../components/settings/DataArea.tsx';
+import { GitArea } from '../components/settings/GitArea.tsx';
 import { NotificationsArea } from '../components/settings/NotificationsArea.tsx';
 import { ProjectsArea } from '../components/settings/ProjectsArea.tsx';
 import { RemoteAccessArea } from '../components/settings/RemoteAccessArea.tsx';
@@ -27,6 +28,7 @@ const AREA_CONTENT: Record<AreaId, () => ReactElement> = {
   notifications: NotificationsArea,
   claude: ClaudeArea,
   access: RemoteAccessArea,
+  git: GitArea,
   data: DataArea,
   system: SystemArea,
 };
