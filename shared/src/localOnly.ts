@@ -25,6 +25,7 @@ export type LocalOnlyAction =
   | 'openFolder'
   | 'openVsCode'
   | 'resumeTerminal'
+  | 'openTerminal'
   | 'openFile'
   | 'pickFolder'
   | 'openClaudeFolder'
@@ -49,6 +50,9 @@ export const LOCAL_ONLY_ACTIONS: Record<LocalOnlyAction, string> = {
   openFolder: NOT_REMOTELY,
   openVsCode: NOT_REMOTELY,
   resumeTerminal: NOT_REMOTELY,
+  // The Git tab's escape hatch — a shell in the repository, with nothing
+  // running in it. Same window on the same desktop as the rest of these.
+  openTerminal: NOT_REMOTELY,
   openFile: NOT_REMOTELY,
   // The dialog would open on the server's desktop and the folder it browses is
   // that machine's disk, so from here there is nothing it could pick that this

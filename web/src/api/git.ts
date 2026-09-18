@@ -36,7 +36,7 @@ import type {
   GitWorktreeAddRequest,
   GitWorktreeRemoveRequest,
 } from '@claude-history/shared';
-import { getJson } from './client.ts';
+import { getJson, noteAuthFailure } from './client.ts';
 
 /**
  * The git tab's slice of the API.
@@ -46,6 +46,12 @@ import { getJson } from './client.ts';
  * exact string a failed GET throws — has to live in one place, and mutations
  * keep the shape that surfaces the SERVER's message rather than a status code,
  * because every refusal here was written to be read by a person.
+ *
+ * `noteAuthFailure` comes from there for a reason that only shows up over
+ * remote access: a signed-out browser gets 401 from every one of these, and
+ * without announcing it each call would render its own error box while the
+ * truth is one fact about the page. That event is what puts the login screen
+ * back, and a slice of the API that posts on its own has to raise it too.
  */
 async function post<T>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -54,7 +60,10 @@ async function post<T>(url: string, body?: unknown): Promise<T> {
     body: JSON.stringify(body ?? {}),
   });
   const payload = (await res.json().catch(() => ({}))) as { error?: string } & T;
-  if (!res.ok) throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    noteAuthFailure(res.status);
+    throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+  }
   return payload;
 }
 
@@ -68,7 +77,10 @@ export const gitApi = {
   refreshRepos: () => post<{ ok: true; overview: GitOverview }>('/api/git/repos/refresh'),
   setHidden: (id: string, hidden: boolean) =>
     post<{ ok: true; overview: GitOverview }>(`/api/git/repos/${id}/hidden`, { hidden }),
-  open: (id: string, target: GitOpenTarget) => post<{ ok: true }>(`/api/git/repos/${id}/open`, { target }),
+  // The target is a query parameter because the server's local-only hook reads
+  // it before there is a body to read — see util/localOnlyRoutes.ts.
+  open: (id: string, target: GitOpenTarget) =>
+    post<{ ok: true }>(`/api/git/repos/${id}/open?target=${encodeURIComponent(target)}`),
 
   log: (id: string, opts: { offset?: number; ref?: string | null; path?: string | null } = {}) => {
     const params = new URLSearchParams();

@@ -417,7 +417,11 @@ export class GitService {
       const started = Date.now();
       try {
         const result = await discoverRepos({
-          projects: this.index.projects().map((p) => ({ key: p.key, path: p.path })),
+          // `projectsAll`, not `projects`: hiding a project is a statement about
+          // not wanting to read its conversations in a list, and a folder you
+          // chose not to see is still one whose repository you may want to work
+          // in. This tab keeps its own hidden list for the other question.
+          projects: this.index.projectsAll().map((p) => ({ key: p.key, path: p.path })),
           scanRoots: this.index.getGitScanRoots(),
           manual: this.index.getGitRepos(),
           hidden: this.index.getGitHidden(),

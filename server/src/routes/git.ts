@@ -129,11 +129,16 @@ export function registerGitRoutes(app: FastifyInstance, ctx: AppContext): void {
    * conflict elsewhere" and "store your credentials once in a terminal" real
    * answers instead of dead ends — and the folder comes from the resolved repo,
    * never from the request.
+   *
+   * The target is in the QUERY and not in the body, which is the one thing about
+   * this endpoint that is not free choice: every one of these opens a window on
+   * the server's own desktop, so `util/localOnlyRoutes.ts` has to be able to
+   * name which — and that hook runs before a body exists.
    */
-  app.post<{ Params: { id: string }; Body: GitOpenRequest }>('/api/git/repos/:id/open', async (request, reply) => {
+  app.post<{ Params: { id: string }; Querystring: GitOpenRequest }>('/api/git/repos/:id/open', async (request, reply) => {
     const repo = ctx.git.repo(request.params.id);
     if (!repo) return reply.code(404).send({ error: 'Repository not found' });
-    const target = request.body?.target;
+    const target = request.query?.target;
     if (target !== 'explorer' && target !== 'vscode' && target !== 'terminal') {
       return reply.code(400).send({ error: 'target must be explorer, vscode or terminal' });
     }

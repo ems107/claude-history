@@ -1,6 +1,7 @@
 import type { GitStatus } from '@claude-history/shared';
 import { useState } from 'react';
 import { gitApi } from '../../api/git.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { actionClass } from '../controlClass.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { useGitAction } from './useGitAction.ts';
@@ -26,6 +27,10 @@ const KIND_LABEL: Record<string, string> = {
 export function RepoStateBanner({ repoId, status }: { repoId: string | null; status: GitStatus | undefined }) {
   const action = useGitAction(repoId);
   const [aborting, setAborting] = useState(false);
+  // Above the early return, where every hook has to be.
+  const terminalOnly = useLocalOnly('openTerminal');
+  const vsCodeOnly = useLocalOnly('openVsCode');
+  const hideLocal = useHideLocalOnly();
   const inProgress = status?.inProgress;
   if (!inProgress || !status || !repoId) return null;
 
@@ -81,14 +86,32 @@ export function RepoStateBanner({ repoId, status }: { repoId: string | null; sta
         <button type="button" onClick={() => setAborting(true)} disabled={action.busy} className={actionClass}>
           Abort…
         </button>
-        <span className="ml-auto flex items-center gap-1.5">
-          <button type="button" onClick={() => open('terminal')} className={actionClass} title="Open a terminal here">
-            ❯ Terminal
-          </button>
-          <button type="button" onClick={() => open('vscode')} className={actionClass} title="Open this repository in VS Code">
-            {'{ }'} VS Code
-          </button>
-        </span>
+        {/* The way OUT of the app, which is how a conflict is really resolved.
+            Both open a window on the server's machine, so both are refused over
+            remote access — greyed with the reason on a desktop, and left out on
+            a phone, which is never that machine. */}
+        {!hideLocal && (
+          <span className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => open('terminal')}
+              disabled={terminalOnly.disabled}
+              className={actionClass}
+              title={terminalOnly.reason ?? 'Open a terminal here'}
+            >
+              ❯ Terminal
+            </button>
+            <button
+              type="button"
+              onClick={() => open('vscode')}
+              disabled={vsCodeOnly.disabled}
+              className={actionClass}
+              title={vsCodeOnly.reason ?? 'Open this repository in VS Code'}
+            >
+              {'{ }'} VS Code
+            </button>
+          </span>
+        )}
       </div>
 
       {/* Always visible, not only as a tooltip. */}

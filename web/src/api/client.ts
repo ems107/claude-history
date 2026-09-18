@@ -74,7 +74,8 @@ export interface SettingsResponse {
  */
 export const UNAUTHORIZED_EVENT = 'ch:unauthorized';
 
-function noteAuthFailure(status: number): void {
+/** Exported for api/git.ts, which posts on its own and must announce these too. */
+export function noteAuthFailure(status: number): void {
   if (status === 401 || status === 403) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 

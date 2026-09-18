@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { actionClass, toggleClass } from '../controlClass.ts';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
@@ -69,6 +70,15 @@ export function GitToolbar({
 
   const changed = status ? status.entries.filter((e) => e.unstaged !== 'ignored').length : 0;
   const conflicted = status ? status.entries.filter((e) => e.conflicted).length : 0;
+
+  // All three open a window on the machine the server runs on, so all three are
+  // refused over remote access (409) — these only decide what is DRAWN. On a
+  // desktop they grey with the reason; a phone is never that machine, so there
+  // they are left out rather than left as a permanent apology.
+  const terminalOnly = useLocalOnly('openTerminal');
+  const vsCodeOnly = useLocalOnly('openVsCode');
+  const folderOnly = useLocalOnly('openFolder');
+  const hideLocal = useHideLocalOnly();
 
   const open = (target: 'explorer' | 'vscode' | 'terminal') => {
     if (!repoId) return;
@@ -258,33 +268,37 @@ export function GitToolbar({
         >
           ⌘ log
         </button>
-        <button
-          type="button"
-          disabled={!repoId || opening}
-          onClick={() => open('terminal')}
-          className={actionClass}
-          title="Open a terminal in this repository"
-        >
-          ❯
-        </button>
-        <button
-          type="button"
-          disabled={!repoId || opening}
-          onClick={() => open('vscode')}
-          className={actionClass}
-          title="Open this repository in VS Code"
-        >
-          {'{ }'}
-        </button>
-        <button
-          type="button"
-          disabled={!repoId || opening}
-          onClick={() => open('explorer')}
-          className={actionClass}
-          title="Open this folder in Explorer"
-        >
-          📁
-        </button>
+        {!hideLocal && (
+          <>
+            <button
+              type="button"
+              disabled={!repoId || opening || terminalOnly.disabled}
+              onClick={() => open('terminal')}
+              className={actionClass}
+              title={terminalOnly.reason ?? 'Open a terminal in this repository'}
+            >
+              ❯
+            </button>
+            <button
+              type="button"
+              disabled={!repoId || opening || vsCodeOnly.disabled}
+              onClick={() => open('vscode')}
+              className={actionClass}
+              title={vsCodeOnly.reason ?? 'Open this repository in VS Code'}
+            >
+              {'{ }'}
+            </button>
+            <button
+              type="button"
+              disabled={!repoId || opening || folderOnly.disabled}
+              onClick={() => open('explorer')}
+              className={actionClass}
+              title={folderOnly.reason ?? 'Open this folder in Explorer'}
+            >
+              📁
+            </button>
+          </>
+        )}
       </span>
 
       {repoId && (
@@ -341,8 +355,18 @@ export function GitToolbar({
                 </button>
               </>
             )}
-            {needsCredentials && repoId && (
-              <button type="button" className={actionClass} onClick={() => open('terminal')}>
+            {/* The one place this button really matters: git asked for
+                credentials and the answer is to run the command once by hand.
+                Over remote access that cannot be done from here, and saying so
+                is better than a button that opens a window somewhere else. */}
+            {needsCredentials && repoId && !hideLocal && (
+              <button
+                type="button"
+                className={actionClass}
+                disabled={terminalOnly.disabled}
+                title={terminalOnly.reason ?? undefined}
+                onClick={() => open('terminal')}
+              >
                 ❯ Open a terminal here
               </button>
             )}

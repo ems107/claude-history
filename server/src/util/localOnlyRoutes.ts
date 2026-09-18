@@ -20,6 +20,7 @@ interface Rule {
 
 const SESSION_OPEN = /^\/api\/sessions\/[^/]+\/open$/;
 const SESSION_RESUME = /^\/api\/sessions\/[^/]+\/resume$/;
+const GIT_OPEN = /^\/api\/git\/repos\/[^/]+\/open$/;
 
 const RULES: Rule[] = [
   { method: 'POST', test: (p) => SESSION_RESUME.test(p), action: 'resumeTerminal' },
@@ -40,14 +41,26 @@ const RULES: Rule[] = [
 /**
  * The action this request would perform on the server's own desktop, or null.
  *
- * `/api/sessions/:id/open` is the one that needs its query: the same endpoint
- * opens Explorer or VS Code, and the two are worth naming apart in the message
- * a person reads.
+ * Two of them need their query, because each opens one of several things and
+ * those are worth naming apart in the message a person reads:
+ * `/api/sessions/:id/open` and the Git tab's `/api/git/repos/:id/open`.
+ *
+ * It is also why the Git tab's target travels in the query rather than in the
+ * body: this hook runs before any body is parsed, so a target hidden in one
+ * could not be read here at all — and this list only means anything if it is
+ * exhaustive.
  */
 export function localOnlyAction(request: FastifyRequest): LocalOnlyAction | null {
   const path = request.url.split('?')[0];
   if (request.method === 'POST' && SESSION_OPEN.test(path)) {
     return (request.query as { target?: string } | undefined)?.target === 'vscode' ? 'openVsCode' : 'openFolder';
+  }
+  if (request.method === 'POST' && GIT_OPEN.test(path)) {
+    const target = (request.query as { target?: string } | undefined)?.target;
+    // A target this does not recognise is refused as the terminal rather than
+    // let through: the handler answers 400 to it anyway, and the one thing that
+    // must never slip past is a window opening on a desktop nobody is at.
+    return target === 'explorer' ? 'openFolder' : target === 'vscode' ? 'openVsCode' : 'openTerminal';
   }
   return RULES.find((r) => r.method === request.method && r.test(path))?.action ?? null;
 }

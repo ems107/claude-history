@@ -260,7 +260,7 @@ export function SessionMenu({
   const mobile = useIsMobile();
   // Android's Back closes the sheet rather than leaving the session.
   useBackDismiss(mobile && pop.open, pop.close);
-  // The thirteen actions that only work on the machine are not drawn at all
+  // The fourteen actions that only work on the machine are not drawn at all
   // here: a phone is never that machine ([useHideLocalOnly]).
   const hideLocal = useHideLocalOnly();
   const a = useSessionActions(detail.summary);

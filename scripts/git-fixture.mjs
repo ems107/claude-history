@@ -3,12 +3,16 @@
 // Usage:  node scripts/git-fixture.mjs [--reset] [--root <dir>] [--git <git.exe>] [--json]
 //
 // NOTHING in this project may be verified against a real repository on this
-// machine — not a write, not even a read. Every check in CLAUDE.md's "Git tab"
-// section runs against what this script builds, served by a SECOND server
-// instance with its own data root, cache and userdata.json:
+// machine — not a write, not even a read. Every check in docs/AI_GIT.md runs
+// against what this script builds, served by a SECOND server instance with its
+// own data root, cache and userdata.json:
 //
-//   node server/src/main.ts --data-root <tmp> --port 7434 --logs-dir <tmp>
+//   node server/src/main.ts --data-root <tmp> --port 7436 --logs-dir <tmp>
 //   (with CLAUDE_HISTORY_CACHE pointing into <tmp> as well)
+//
+// 7436 because the other three are spoken for: 7433 is the installed release,
+// 7434 the dev instance and 7435 preview.ps1. A bench on any of them would be
+// taking a port that belongs to something the user is using.
 //
 // Everything lands under %TEMP%\claude-history-git-fixture. Author identity is
 // set PER REPO (`git config`, never `--global`), commit timestamps are fixed,

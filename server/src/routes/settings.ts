@@ -9,6 +9,7 @@ import type { AppContext } from '../context.ts';
 import { createLogger } from '../core/logger.ts';
 import type { ReadCause } from '../core/usage.ts';
 import { busyWith, refuseWhileActive } from '../util/appSessions.ts';
+import { refuseWhileGitBusy } from '../util/gitBusy.ts';
 import { APP_VERSION } from '../version.ts';
 
 const log = createLogger('server');
@@ -157,6 +158,11 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn(`uninstall refused: Claude is ${uninstallBusy}`);
       return reply.code(409).send({ error: `Claude is ${uninstallBusy}. Wait for it to finish.` });
     }
+    const uninstallGit = refuseWhileGitBusy(ctx, 'uninstalling');
+    if (uninstallGit) {
+      log.warn(`uninstall refused: ${ctx.git.busyDescription}`);
+      return reply.code(409).send(uninstallGit);
+    }
     // Going away mid-rebase would leave a repository in a state nothing in this
     // app put it in, and nothing here could finish for you.
     if (ctx.git.busy) {
@@ -212,6 +218,13 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
       log.warn(`stop refused: the app is running ${stopActive.activeSessions.length} session(s)`);
       return reply.code(409).send(stopActive);
     }
+    // Same shape of loss one step over: a repository left mid-rebase by the
+    // process that started it.
+    const stopGit = refuseWhileGitBusy(ctx, 'stopping the server');
+    if (stopGit) {
+      log.warn(`stop refused: ${ctx.git.busyDescription}`);
+      return reply.code(409).send(stopGit);
+    }
     // Stopping here kills the download in flight and leaves nothing behind —
     // which is exactly how one update was lost, since the natural reaction to a
     // slow one is to stop and restart the server.
@@ -262,6 +275,11 @@ export function registerSettingsRoutes(app: FastifyInstance, ctx: AppContext): v
     if (restartActive) {
       log.warn(`restart refused: the app is running ${restartActive.activeSessions.length} session(s)`);
       return reply.code(409).send(restartActive);
+    }
+    const restartGit = refuseWhileGitBusy(ctx, 'restarting the server');
+    if (restartGit) {
+      log.warn(`restart refused: ${ctx.git.busyDescription}`);
+      return reply.code(409).send(restartGit);
     }
     const install = ctx.updates.install;
     if (!install) {
