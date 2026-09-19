@@ -18,7 +18,6 @@ import {
   segmentClass,
   segmentedClass,
   squareClass,
-  toggleClass,
 } from '../controlClass.ts';
 import { Popover } from '../Popover.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
@@ -126,6 +125,38 @@ export function GitToolbar({
       .catch(() => undefined)
       .finally(() => setOpening(false));
   };
+
+  /**
+   * One choice of what is on screen, drawn the way this app draws that choice.
+   *
+   * `segmentClass` and not `toggleClass`, and the difference is stated in
+   * `controlClass.ts`: a segmented control is for alternatives — the box around
+   * the group is what says only one of them can be on — while three separate
+   * bordered buttons say that each is its own idea. The desktop had said the
+   * second thing about Commits and the working tree since they existed, and
+   * once the command log joined them as a view rather than a dock it was three
+   * loose buttons claiming to be independent of one another while behaving as
+   * exactly the opposite.
+   *
+   * One helper for both layouts, because a phone drew the segmented version all
+   * along and two spellings of one control is how they drift.
+   */
+  const viewSegment = (opts: { active: boolean; label: string; onClick: () => void; count?: number; title?: string }) => (
+    <button
+      type="button"
+      onClick={opts.onClick}
+      aria-pressed={opts.active}
+      title={opts.title}
+      className={segmentClass(opts.active)}
+    >
+      <span className="truncate">{opts.label}</span>
+      {opts.count ? (
+        <span className="shrink-0 rounded bg-[var(--accent)]/20 px-1 text-[10px] tabular-nums text-[var(--accent)]">
+          {opts.count}
+        </span>
+      ) : null}
+    </button>
+  );
 
   // The remote of the branch's upstream, for the labels only — `origin/main`
   // splits at the first slash, and the server resolves the real one anyway.
@@ -490,21 +521,6 @@ export function GitToolbar({
       status?.truncated ? 'more changes than are listed' : null,
       status?.stale ? 'figures are from before the command now running' : null,
     ].filter(Boolean);
-    const tab_ = (which: 'commits' | 'work', label: string, count?: number) => (
-      <button
-        type="button"
-        onClick={() => onTab(which)}
-        aria-pressed={tab === which}
-        className={segmentClass(tab === which)}
-      >
-        <span className="truncate">{label}</span>
-        {count ? (
-          <span className="shrink-0 rounded bg-[var(--accent)]/20 px-1 text-[10px] tabular-nums text-[var(--accent)]">
-            {count}
-          </span>
-        ) : null}
-      </button>
-    );
     return (
       <div className="shrink-0 border-b border-[var(--border)]">
         {/* 1. Which repository, and the branch as the way into everything else
@@ -532,9 +548,18 @@ export function GitToolbar({
 
         {/* 2. Which half of the repository, and everything that is neither. */}
         <div className={controlRow + ' px-2 pt-1'}>
+          {/* Two segments here and three on a desktop, and that is not a
+              drift: on a phone the log is a SHEET over the page rather than a
+              view that replaces it, so it is not a peer of these two. It lives
+              behind the `⋮` with the rest of the diagnostics. */}
           <span className={`${segmentedClass} flex-1`}>
-            {tab_('commits', 'Commits')}
-            {tab_('work', 'Working tree', changed)}
+            {viewSegment({ active: tab === 'commits', label: 'Commits', onClick: () => onTab('commits') })}
+            {viewSegment({
+              active: tab === 'work',
+              label: 'Working tree',
+              count: changed,
+              onClick: () => onTab('work'),
+            })}
           </span>
           <button
             ref={moreRef}
@@ -649,38 +674,48 @@ export function GitToolbar({
           always does at 360px — pushing a group right means pushing it onto a
           line of its own, which reads as a gap rather than as an alignment. */}
       <span className="ml-auto flex items-center gap-1.5 max-md:ml-0 max-md:flex-wrap">
-        {/* Three views, one at a time — so none of them may look chosen while
-            another one is on screen. The log used to be a dock at the foot of
-            the page and could be open beside either of the other two; now that
-            it takes the whole area under this bar, `Commits` still lit up
-            underneath it was the bar saying something untrue. */}
-        <span className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => onTab('commits')}
-            className={toggleClass(!logOpen && tab === 'commits')}
-            title="The history"
-          >
-            Commits
-          </button>
-          <button
-            type="button"
-            onClick={() => onTab('work')}
-            className={toggleClass(!logOpen && tab === 'work')}
-            title="What has changed and is not committed"
-          >
-            Working tree
-            {changed > 0 && <span className="ml-1 tabular-nums text-[var(--accent)]">{changed}</span>}
-          </button>
+        {/* Three views, one at a time, in the one control that says so. The
+            log used to be a dock at the foot of the page and could be open
+            beside either of the other two; now that it takes the whole area
+            under this bar it is their peer, and three loose bordered buttons
+            claiming to be independent ideas was the bar contradicting its own
+            behaviour. */}
+        {/* `[&>button]:flex-none` is load-bearing. `segmentClass` carries
+            `flex-1 min-w-0`, which is right where the control owns a row — a
+            phone, the commit's two panes — and wrong in a toolbar, where the
+            group is one item among eight: with a flex basis of 0 the three
+            segments split the track equally and `Working tree` came out as
+            `Workin…` on a 1400px window. Content-sized here, and the row wraps
+            rather than squeezing, like every other control on it. */}
+        <span className={`${segmentedClass} shrink-0 [&>button]:flex-none`}>
+          {viewSegment({
+            active: !logOpen && tab === 'commits',
+            label: 'Commits',
+            title: 'The history',
+            onClick: () => onTab('commits'),
+          })}
+          {viewSegment({
+            active: !logOpen && tab === 'work',
+            label: 'Working tree',
+            count: changed,
+            title: 'What has changed and is not committed',
+            onClick: () => onTab('work'),
+          })}
+          {/* Pressing the segment that is already on does nothing, which is
+              what a segmented control means and what `Details / Files` does.
+              The way back out is the other two segments and the panel's own
+              `✕` — a toggle here would have the control answer a press by
+              selecting a DIFFERENT segment, which is the one thing it promises
+              not to do. */}
+          {viewSegment({
+            active: logOpen,
+            label: '⌘ Log',
+            title: 'Every git command this app runs',
+            onClick: () => {
+              if (!logOpen) onToggleLog();
+            },
+          })}
         </span>
-        <button
-          type="button"
-          onClick={onToggleLog}
-          className={toggleClass(logOpen)}
-          title="Every git command this app runs"
-        >
-          ⌘ log
-        </button>
         {!hideLocal && (
           <>
             <button
