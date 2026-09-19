@@ -102,7 +102,9 @@ A fold does not survive a **change of session**, either: the page is not remount
 
 `Sheet` and `Popover`, and the question is how much is behind it rather than how much is in it.
 
-**A sheet is a PLACE.** The branches of a repository, a file's diff, the command log: you go there, you do something, you come back. It takes the page, it has a title row and a Close, and — since it leaves the frame alone — the bottom bar is still under it and the gear still above, so it is a layer over the page rather than a trapdoor out of the app. `useBackDismiss` in the caller, always.
+**A sheet is a PLACE.** The branches of a repository, a file's diff, the command log: you go there, you do something, you come back. It takes the page, it has a title row, and — since it leaves the frame alone — the bottom bar is still under it and the gear still above, so it is a layer over the page rather than a trapdoor out of the app. `useBackDismiss` in the caller, **always**, because it has no Close button and that hook is now the only way out.
+
+**There is no Close and no Done.** The button did exactly what Back does, on the one device this is drawn for, and spent the top right of every layer saying so; Back has the whole bottom of the phone and is the first control any Android reader reaches for. `Sheet` answers **Escape** as well, which is the case Back cannot serve: a window narrow enough to be "a phone" by the one rule here can still be a window with a keyboard and no Back key under it.
 
 **A popover is an ANSWER to the control you just pressed.** The other ways to pull, what can be done to this branch, the five things behind the toolbar's `⋮`. Five rows do not need the window, and taking it means the page you were working in disappears to tell you a command log exists. It is `Popover`, which:
 
@@ -110,6 +112,8 @@ A fold does not survive a **change of session**, either: the page is not remount
 - **caps its height rather than measuring it.** It anchors the edge that touches the trigger — `top` below, `bottom` when it flips — and puts the room left over into `max-height`. Reading `scrollHeight` and setting that as the height needs a layout pass first, which is a frame at the wrong size, and it came back a few pixels short: a five-row menu grew a scrollbar and clipped the last line of the last row.
 - **flips only when it is worth it** (`below < 200 && above > below`). Flipping for twenty pixels puts the panel over the thing you just pressed.
 - **closes on a scroll, after a 250ms grace.** A panel anchored to a rectangle that has moved is worse than no panel; the grace is because the tap that opened it can still be carrying momentum from the flick before it.
+
+**Whatever opened a layer wears the accent for as long as it is up** — `actionOpenClass` for the `actionClass` shapes, `openClass` for the rest, `squareClass(true)` for the square. It is the one question a popover raises that a full-screen sheet does not: a menu floating over the page with nothing to say where it came from. Both are whole strings rather than something appended to `actionClass`, because two `border-*` utilities in one class list is a question about which one Tailwind happened to emit last.
 
 Both carry a `data-` hook (`data-sheet`, `data-popover`) for the device harness, which used to find them by a class and lost them the day the class changed.
 
