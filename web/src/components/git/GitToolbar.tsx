@@ -706,10 +706,22 @@ export function GitToolbar({
               The way back out is the other two segments and the panel's own
               `✕` — a toggle here would have the control answer a press by
               selecting a DIFFERENT segment, which is the one thing it promises
-              not to do. */}
+              not to do.
+
+              **No icon, here or on its two neighbours.** The `⌘` this carried
+              was the Mac Command key on a Windows-only app, meaning "command"
+              by pun. Drawn and measured at 14px, a replacement set does not
+              exist: a git-branch mark for Commits is good, and then Working
+              tree has no unambiguous metaphor that this very row has not
+              already spent — a folder is the Explorer button beside it — and
+              the Log's two best ones are taken as well, a terminal by `❯` two
+              controls along and a clock by what Commits already means. One
+              good icon out of three is three icons' worth of width for one
+              icon's worth of meaning, and these labels are words that already
+              say it. */}
           {viewSegment({
             active: logOpen,
-            label: '⌘ Log',
+            label: 'Log',
             title: 'Every git command this app runs',
             onClick: () => {
               if (!logOpen) onToggleLog();

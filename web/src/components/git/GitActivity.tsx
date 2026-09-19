@@ -120,7 +120,7 @@ export function GitActivity({
           {extra}
           {onOpenLog && (
             <button type="button" className={actionClass} onClick={onOpenLog} title="Every git command this app runs">
-              ⌘ Open the log
+              Open the log
             </button>
           )}
           <button type="button" className={actionClass} onClick={action.clear}>

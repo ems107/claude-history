@@ -183,7 +183,7 @@ export function CommandLogPanel({ open, onClose, repoId }: { open: boolean; onCl
    * On a phone it is a sheet, or it is nothing at all.
    *
    * As a dock it spent a permanent row of a 775px screen on a strip reading
-   * `⌘ Command log 380 git worktree list --porcelain` — the least useful line
+   * `Command log 380 git worktree list --porcelain` — the least useful line
    * available, since the last command is almost always a read the app made by
    * itself. It is diagnostics: it belongs behind the `⋮`, where it now is, and
    * the whole window is the right size for it when it is open.
@@ -207,7 +207,7 @@ export function CommandLogPanel({ open, onClose, repoId }: { open: boolean; onCl
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-1.5 text-[11px]">
-        <span className="shrink-0 text-[var(--text)]">⌘ Command log</span>
+        <span className="shrink-0 text-[var(--text)]">Command log</span>
         <span className="shrink-0 tabular-nums text-[var(--text-dim)]">{data?.newestSeq ?? 0}</span>
         {controls}
         <span className="ml-auto flex items-center gap-2">
