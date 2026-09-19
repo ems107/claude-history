@@ -747,7 +747,18 @@ export class AutoReloadService {
       const timer = setTimeout(() => {
         timedOut = true;
         // claude spawns children of its own, so kill the tree, not just the pid.
-        if (child.pid) spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+        //
+        // The `error` listener is what keeps a failed kill from ending the
+        // server: an `error` nobody listens for is thrown by the EventEmitter,
+        // reaches `uncaughtException` and exits the process. Same reasoning,
+        // written out in full, as `killTree` in `util/git.ts` — and here it
+        // would fire on the one path that only runs when a claude has ALREADY
+        // hung, which is no moment to take the whole app down over a cleanup.
+        if (child.pid) {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {
+            // Nothing left to try. The timeout is recorded either way.
+          });
+        }
       }, RUN_TIMEOUT_MS);
       child.once('error', (err) => {
         clearTimeout(timer);
