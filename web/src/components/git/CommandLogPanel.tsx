@@ -171,8 +171,12 @@ export function CommandLogPanel({ open, onClose, repoId }: { open: boolean; onCl
   if (!open) return null;
   if (mobile) {
     return (
-      <Sheet title="Command log" subtitle={caption(running)} onClose={onClose} extra={copyShown}>
+      <Sheet title="Command log" onClose={onClose} extra={copyShown}>
         <div className="flex h-full flex-col">
+          {/* A paragraph rather than the sheet's subtitle: that one is a single
+              truncated line, and an explanation cut off at `…record` explains
+              nothing. */}
+          <p className="pb-1.5 text-[11px] text-[var(--text-dim)]">{caption(running)}</p>
           <div className="flex flex-wrap items-center gap-2 pb-2 text-[11px]">{controls}</div>
           <div className="-mx-3 min-h-0 flex-1">{body}</div>
         </div>
