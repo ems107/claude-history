@@ -14,11 +14,13 @@ import type { useGitAction } from './useGitAction.ts';
  * So the buttons stay exactly as they were (`BusyBar`) and everything that has
  * to be READ moves here, where there is a line's worth of room for it:
  *
- * - **running**: the verb, the exact command, a counter, and a way to stop it.
- *   The counter is not decoration. A fetch against an unreachable remote takes
- *   two minutes to time out, holding the repository's lock the whole time, and
- *   "it has been going for 1m 40s" is the difference between waiting and
- *   wondering whether anything was sent at all.
+ * - **running**, once it has been going long enough to wonder about: the verb,
+ *   the exact command, a counter, and a way to stop it. The counter is not
+ *   decoration. A fetch against an unreachable remote takes two minutes to time
+ *   out, holding the repository's lock the whole time, and "it has been going
+ *   for 1m 40s" is the difference between waiting and wondering whether
+ *   anything was sent at all. Anything quicker than that gets the button's own
+ *   `BusyBar` and no row — see `WONDER_MS`.
  * - **failed**: the server's sentence, which was written to be read by a
  *   person, and under it — folded — what git ACTUALLY printed. The second one
  *   used to be thrown away by the API client on the one occasion anybody wants
@@ -26,6 +28,9 @@ import type { useGitAction } from './useGitAction.ts';
  * - **done**: what git said, expandable, because a fetch or a push answers in
  *   several lines and only the first was ever shown.
  */
+/** How long something has to run before it earns a row of its own. */
+const WONDER_MS = 700;
+
 export function GitActivity({
   action,
   extra,
@@ -40,15 +45,41 @@ export function GitActivity({
   const { activity, error, gitStderr, note } = action;
   const [showStderr, setShowStderr] = useState(false);
 
-  // One tick a second, and only while something is running.
-  const [, tick] = useState(0);
+  /**
+   * **A row appears when something has run long enough to wonder about it, and
+   * not before.**
+   *
+   * Every button in this tab goes through the same hook, so without a floor
+   * this strip opened and shut on every stage, unstage and commit: measured,
+   * staging the bench's 403 files put `Working · 0s` on screen for 525ms and
+   * took it away again — a line of chrome arriving and leaving under the file
+   * list, saying nothing anybody needed, with no command to read and no Stop
+   * to press. Below the floor the instant feedback is the button's own
+   * `BusyBar`, which takes no space and cannot shift anything.
+   *
+   * 700ms rather than a round half-second because the heaviest local operation
+   * the bench has measures 525, and the strip is for the two-minute fetch, not
+   * for a busy half-second.
+   */
+  const [slow, setSlow] = useState(false);
   useEffect(() => {
-    if (!activity) return;
-    const timer = setInterval(() => tick((n) => n + 1), 1_000);
-    return () => clearInterval(timer);
+    if (!activity) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), WONDER_MS);
+    return () => clearTimeout(timer);
   }, [activity]);
 
-  if (activity) {
+  // One tick a second, and only once the row is on screen to be ticked.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!activity || !slow) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1_000);
+    return () => clearInterval(timer);
+  }, [activity, slow]);
+
+  if (activity && slow) {
     return (
       <div className="w-full rounded border border-[var(--accent)]/40 bg-[var(--accent)]/5 px-2 py-1.5 text-[11px]">
         <div className="flex flex-wrap items-center gap-2">

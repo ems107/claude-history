@@ -2,7 +2,6 @@ import { isProtectedBranch, type GitRemote, type GitStatus } from '@claude-histo
 import { useEffect, useState } from 'react';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
-import { BusyBar } from './BusyBar.tsx';
 
 /**
  * Push, with the choices that change what happens made visible.
@@ -175,15 +174,16 @@ export function PushDialog({
           <button type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>
+          {/* No `Pushing…` and no progress bar, for the reason `ConfirmDialog`
+              sets out: this closes before the push runs, so a busy state here
+              always belongs to some other command. */}
           <button
             type="button"
             disabled={!ready || busy}
-            aria-busy={busy === true}
-            className={`${force ? dangerClass : actionClass} relative`}
+            className={force ? dangerClass : actionClass}
             onClick={() => onPush({ remote, setUpstream: needsUpstream, forceWithLease: force, tags, confirm: force })}
           >
             {force ? 'Force push' : 'Push'}
-            {busy && <BusyBar />}
           </button>
         </div>
       </div>

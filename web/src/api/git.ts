@@ -39,21 +39,6 @@ import type {
 import { getJson, noteAuthFailure } from './client.ts';
 
 /**
- * The git tab's slice of the API.
- *
- * Its own module rather than another twenty entries on the flat `api` object,
- * but it imports that module's `getJson` on purpose: the error contract — the
- * exact string a failed GET throws — has to live in one place, and mutations
- * keep the shape that surfaces the SERVER's message rather than a status code,
- * because every refusal here was written to be read by a person.
- *
- * `noteAuthFailure` comes from there for a reason that only shows up over
- * remote access: a signed-out browser gets 401 from every one of these, and
- * without announcing it each call would render its own error box while the
- * truth is one fact about the page. That event is what puts the login screen
- * back, and a slice of the API that posts on its own has to raise it too.
- */
-/**
  * A refusal, with git's own words still attached.
  *
  * The server sends two things when a command fails: `error`, a sentence
@@ -74,6 +59,20 @@ export class GitRequestError extends Error {
 }
 
 /**
+ * The git tab's slice of the API.
+ *
+ * Its own module rather than another twenty entries on the flat `api` object,
+ * but it imports that module's `getJson` on purpose: the error contract — the
+ * exact string a failed GET throws — has to live in one place, and mutations
+ * keep the shape that surfaces the SERVER's message rather than a status code,
+ * because every refusal here was written to be read by a person.
+ *
+ * `noteAuthFailure` comes from there for a reason that only shows up over
+ * remote access: a signed-out browser gets 401 from every one of these, and
+ * without announcing it each call would render its own error box while the
+ * truth is one fact about the page. That event is what puts the login screen
+ * back, and a slice of the API that posts on its own has to raise it too.
+ *
  * `signal` is what makes Stop possible at all, and it needs nothing on the
  * server: closing the response is already how a fetch nobody is waiting for is
  * killed (`abortSignalOf`, which takes the whole git process tree with it).

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
-import { BusyBar } from './BusyBar.tsx';
 
 /**
  * The confirmation for anything that cannot be undone.
@@ -115,19 +114,18 @@ export function ConfirmDialog({
           <button ref={cancelRef} type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>
-          {/* The label stays put while it works. `Working…` was wider than most
-              of the verbs it replaced, so the one button you had just aimed at
-              grew under the pointer — and the dialog is about to close anyway,
-              which is the clearest progress report there is. */}
-          <button
-            type="button"
-            onClick={onConfirm}
-            aria-busy={busy === true}
-            className={`${dangerClass} relative`}
-            disabled={!ready || busy}
-          >
+          {/* **The label stays put, and there is no progress bar under it
+              either.** It used to read `Working…` while busy, which was wider
+              than most of the verbs it replaced and grew the one button you had
+              just aimed at. But `busy` here can never be THIS button's own
+              command: every caller closes the dialog before it runs, so the
+              only way to see this mounted and busy is with something ELSE
+              holding the repository — and a bar saying "working" on the button
+              you are looking at would then be pointing at the wrong command.
+              Disabled with no explanation of its own is the honest answer; the
+              strip under the toolbar is where the other command is named. */}
+          <button type="button" onClick={onConfirm} className={dangerClass} disabled={!ready || busy}>
             {confirmLabel}
-            {busy && <BusyBar />}
           </button>
         </div>
       </div>

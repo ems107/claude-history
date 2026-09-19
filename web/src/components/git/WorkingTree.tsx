@@ -421,7 +421,13 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   /** What the confirm dialog is about to move, computed once for the four places it says it. */
   const losing = discardingLines ? pickedLines() : [];
 
-  const errorBar = (
+  /**
+   * What this pane's own actions are doing or have said. Called `errorBar`
+   * while a failure was the only thing it could hold; it carries the running
+   * state and the result now, and a name that says otherwise is a name that
+   * has to be read twice.
+   */
+  const activityBar = (
     <div className="mb-2 empty:hidden">
       <GitActivity action={action} />
     </div>
@@ -460,7 +466,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
       {/* Where a refusal is read. On a desktop it belongs at the top of the
           diff pane, which is where the thing refused was; on a phone that pane
           is a sheet that may not be open, so it goes above the list instead. */}
-      {mobile && errorBar}
+      {mobile && activityBar}
 
       <div className="flex min-h-0 flex-1">
       <div
@@ -565,7 +571,7 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
           Two columns whose floors are 220 and 340 do not fit in 360, and the
           diff is the half that wants every pixel there is. */}
       <DiffPane mobile={mobile} path={selected?.path ?? null} onClose={closeFile}>
-        {!mobile && errorBar}
+        {!mobile && activityBar}
         {!selected ? (
           <p className="text-[11px] text-[var(--text-dim)]">Pick a file to see what changed in it.</p>
         ) : selectedIsConflicted ? (
