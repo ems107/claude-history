@@ -147,12 +147,17 @@ export function RepoPicker({
                   {repo.path}
                 </span>
               </button>
+              {/* `+6` said nothing, and what it said it said in a `title`,
+                  which on Android is nowhere. The word costs six characters and
+                  is the whole of the fact: there are six other working trees on
+                  this machine with the same remote, and they are deliberately
+                  not folded into one entry. */}
               {repo.siblings.length > 0 && (
                 <span
                   className="shrink-0 rounded bg-sky-500/10 px-1 text-[10px] text-sky-300"
-                  title={`${repo.siblings.length} other clone${repo.siblings.length === 1 ? '' : 's'} of the same remote`}
+                  title={`${repo.siblings.length} other clone${repo.siblings.length === 1 ? '' : 's'} of the same remote on this machine`}
                 >
-                  +{repo.siblings.length}
+                  +{repo.siblings.length} clone{repo.siblings.length === 1 ? '' : 's'}
                 </span>
               )}
               <span
@@ -167,16 +172,36 @@ export function RepoPicker({
               >
                 {repo.origins.includes('manual') ? 'added' : repo.origins.includes('scan') ? 'scanned' : 'project'}
               </span>
+              {/* **A word, not a `✕`.** It was a bare glyph beside the row you
+                  are trying to tap, drawn permanently on a phone, whose meaning
+                  lived in a `title` — and hiding is the one thing in this panel
+                  that removes something from view. The way back is in Settings,
+                  and the button says so, because a control that takes something
+                  away owes you where it went. */}
               <button
                 type="button"
                 onClick={() => hide(repo)}
-                title="Hide this repository from the list (nothing is deleted)"
-                className="shrink-0 cursor-pointer px-1 text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)] max-md:min-h-11 max-md:px-2 max-md:opacity-100"
+                title="Keep it out of this list. Nothing is deleted, and Settings › Git brings it back."
+                aria-label={`Hide ${repo.name} from this list`}
+                className="shrink-0 cursor-pointer rounded px-1.5 text-[11px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:inline-flex max-md:min-h-11 max-md:items-center max-md:px-2 max-md:text-xs max-md:opacity-100"
               >
-                ✕
+                Hide
               </button>
             </div>
           ))}
+
+          {/* The key to the last word on every row. Those three answer "why is
+              this one in my list", which is a question asked once and then
+              never again — so it is a line at the foot rather than three
+              sentences up the middle of the list, and it is DRAWN, because a
+              `title` on each of them is an answer only a mouse can ask for. */}
+          {repos.length > 0 && (
+            <p className="mt-2 px-1.5 text-[10px] text-[var(--text-dim)]">
+              <span className="text-[var(--text)]">project</span> — a folder Claude Code has run in ·{' '}
+              <span className="text-[var(--text)]">scanned</span> — found under one of your roots ·{' '}
+              <span className="text-[var(--text)]">added</span> — a path you added by hand
+            </p>
+          )}
 
           <div className="mt-2 border-t border-[var(--border)] pt-2">
             {adding ? (
@@ -252,7 +277,7 @@ export function RepoPicker({
                 <Link
                   to="/settings/git#git-repos"
                   onClick={() => setOpen(false)}
-                  className="ml-auto text-[11px] text-[var(--text-dim)] hover:text-[var(--text)]"
+                  className="ml-auto text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] max-md:inline-flex max-md:min-h-11 max-md:items-center"
                 >
                   Manage in Settings →
                 </Link>

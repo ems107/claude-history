@@ -96,7 +96,8 @@ export function GitReposPanel() {
   if (data && !data.available) return <p className="text-red-400">{data.error}</p>;
 
   const visible = data?.repos.filter((r) => !r.hidden).length ?? 0;
-  const hidden = data?.repos.filter((r) => r.hidden).length ?? 0;
+  const hiddenRepos = data?.repos.filter((r) => r.hidden) ?? [];
+  const hidden = hiddenRepos.length;
 
   return (
     <>
@@ -184,6 +185,43 @@ export function GitReposPanel() {
           </button>
         </div>
       </div>
+
+      {/**
+       * The way back from the picker's `Hide`.
+       *
+       * Hiding was a one-way door for exactly as long as it existed: the server
+       * has always taken `hidden: false`, and nothing in the app ever sent it —
+       * so a repository hidden by a mis-tap was gone until somebody edited
+       * `userdata.json` by hand. The section only appears when there is
+       * something in it, which is also how you find out that hiding is
+       * reversible: the count beside *Rescan* said `1 hidden` and offered no
+       * way to act on it.
+       */}
+      {hiddenRepos.length > 0 && (
+        <div>
+          <p className="mb-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">Hidden</p>
+          <p className="mb-1 text-[11px] text-[var(--text-dim)]">
+            Kept out of the Git tab's picker. Still on disk, still a project — this only decides what that list shows.
+          </p>
+          {hiddenRepos.map((repo) => (
+            <div key={repo.id} className="flex items-center gap-2 py-0.5">
+              <span className="shrink-0 font-medium">{repo.name}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-dim)]" title={repo.path}>
+                {repo.path}
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => run(gitApi.setHidden(repo.id, false))}
+                className={`${actionClass} shrink-0`}
+                title={`Put ${repo.name} back in the picker`}
+              >
+                Show
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {error && <p className="text-[11px] text-red-400">{error}</p>}
 
