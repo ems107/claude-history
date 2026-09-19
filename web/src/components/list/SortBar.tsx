@@ -29,10 +29,17 @@ export function SortBar({
 }) {
   return (
     // One row of seven controls, with a 192px floor on the search box alone,
-    // needs about 600px — which is why a phone is drawn by `MobileListBar`
+    // needs about 770px — which is why a phone is drawn by `MobileListBar`
     // instead of by a narrower version of this. Nothing here has a `max-md:`
     // variant on purpose: below 48rem this component is never rendered.
-    <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm">
+    //
+    // **But 48rem is 768px and the sidebar takes 256 of them**, so the width
+    // this is actually given starts at about 540 — and what it did with that
+    // was overflow, which scrolls the whole DOCUMENT sideways and takes the app
+    // header with it. So it wraps: the sort group goes to a second line when
+    // the row cannot hold it, `ml-auto` keeps it to the right on whichever line
+    // it lands, and a window wide enough for one row still gets one row.
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-4 py-2 text-sm">
       {children}
       <span className="whitespace-nowrap text-[var(--text-dim)]">
         {resultCount === totalCount ? `${totalCount} sessions` : `${resultCount} of ${totalCount} sessions`}

@@ -51,12 +51,24 @@ export function GitPage() {
    * and leaving it on is a way of working. NOT remembered on a phone, where it
    * is a sheet over everything: a diagnostic panel that reopens itself on top
    * of the page every time you come back is not a preference anybody expressed.
+   *
+   * **So a flag each, and the crossing is why.** One flag carried the desktop's
+   * "on" straight into that sheet — narrow the window with the log showing, or
+   * turn the phone sideways and back, and a diagnostic panel was covering the
+   * repository. Kept apart, each side keeps its own answer and a crossing
+   * restores what that side was left at.
    */
-  const [logOpen, setLogOpen] = useState(() => !mobile && localStorage.getItem('git.logOpen') === '1');
+  const [desktopLogOpen, setDesktopLogOpen] = useState(() => localStorage.getItem('git.logOpen') === '1');
+  const [phoneLogOpen, setPhoneLogOpen] = useState(false);
+  const logOpen = mobile ? phoneLogOpen : desktopLogOpen;
   const showLog = useCallback(
     (next: boolean) => {
-      setLogOpen(next);
-      if (!mobile) localStorage.setItem('git.logOpen', next ? '1' : '0');
+      if (mobile) {
+        setPhoneLogOpen(next);
+        return;
+      }
+      setDesktopLogOpen(next);
+      localStorage.setItem('git.logOpen', next ? '1' : '0');
     },
     [mobile],
   );

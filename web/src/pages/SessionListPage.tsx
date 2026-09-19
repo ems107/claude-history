@@ -21,7 +21,7 @@ import {
   type FilterState,
 } from '../lib/filters.ts';
 import { saveListParams, saveListScroll, savedListScroll } from '../lib/listState.ts';
-import { MOBILE_QUERY, useBackDismiss, useIsMobile } from '../lib/mobile.ts';
+import { useBackDismiss, useIsMobile } from '../lib/mobile.ts';
 import {
   applyTuning,
   parseTuning,
@@ -58,12 +58,29 @@ export function SessionListPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: api.projects });
   const [searchParams, setSearchParams] = useSearchParams();
   const mobile = useIsMobile();
-  // Open on a desktop, where it is a column beside the list; closed on a phone,
-  // where it is a sheet over it and would otherwise be the first thing anybody
-  // saw. Read once, from the media query rather than from `mobile`, because
-  // this is an initial value and `useIsMobile` has not answered yet on the
-  // first render.
-  const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(MOBILE_QUERY).matches);
+  /**
+   * Open on a desktop, where it is a column beside the list; closed on a phone,
+   * where it is a sheet over it and would otherwise be the first thing anybody
+   * saw.
+   *
+   * **Two flags and not one, because they are two different controls.** A
+   * column that is normally there and a full-screen sheet that is normally not
+   * do not share a resting state, and one flag meant the desktop's `true`
+   * walked straight into the phone's branch the moment the line was crossed:
+   * narrow the window, or turn the phone from landscape to portrait, and a
+   * `fixed inset-0` sheet of filters was suddenly covering the list nobody had
+   * asked to leave. Kept apart, each side remembers its own answer and a
+   * crossing restores it — which is also what makes turning the phone back
+   * give you the column you had.
+   */
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [phoneFiltersOpen, setPhoneFiltersOpen] = useState(false);
+  const sidebarOpen = mobile ? phoneFiltersOpen : desktopSidebarOpen;
+  const setSidebarOpen = useCallback(
+    (next: boolean | ((prev: boolean) => boolean)) =>
+      mobile ? setPhoneFiltersOpen(next) : setDesktopSidebarOpen(next),
+    [mobile],
+  );
   // Android's Back closes the sheet instead of leaving the list.
   useBackDismiss(mobile && sidebarOpen, () => setSidebarOpen(false));
   const [sidebarWidth, setSidebarWidth] = useState(() => Number(localStorage.getItem('sidebarWidth')) || 256);

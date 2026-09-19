@@ -187,7 +187,10 @@ export function PlansPage() {
           }}
         />
       ) : (
-        <div className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 text-sm">
+        // Wraps for the reason `SortBar` states: the row is wider than the
+        // window is allowed to be, and a row that overflows scrolls the whole
+        // document sideways.
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--border)] px-4 py-2 text-sm">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}

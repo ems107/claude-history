@@ -51,7 +51,17 @@ export function useLocalOnly(action: LocalOnlyAction): { disabled: boolean; reas
  *
  * The server is unaffected and still refuses all fourteen (409). This decides
  * what is DRAWN, never what is allowed.
+ *
+ * **Both hooks are CALLED, and only then combined.** `useIsMobile() &&
+ * useIsRemote()` reads better and is a crash: `&&` short-circuits, so above the
+ * breakpoint the query hook was never reached at all, and the first render
+ * below it ran one hook more than the render before it. A hook order that
+ * changes is not something React recovers from — it throws out of the render,
+ * and the whole app went with it. That was the blank page a narrowed window
+ * left behind, and a phone turned sideways crosses the same line.
  */
 export function useHideLocalOnly(): boolean {
-  return useIsMobile() && useIsRemote();
+  const mobile = useIsMobile();
+  const remote = useIsRemote();
+  return mobile && remote;
 }

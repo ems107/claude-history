@@ -393,7 +393,12 @@ export function LogsPage() {
           <UpdateLogView />
         ) : (
           <>
-            <div className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 max-md:flex-wrap max-md:gap-2">
+            {/* Wrapping is not a phone rule here. The aside beside it is 224px
+                of a window that may be 768, so this row runs out of space well
+                before the breakpoint does — and a row that overflows scrolls
+                the whole document sideways. It wraps whenever it has to and at
+                no other time. */}
+            <div className="flex flex-wrap items-center gap-3 border-b border-[var(--border)] px-3 py-2 max-md:gap-2">
               <input
                 type="text"
                 value={draftQuery}

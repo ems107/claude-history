@@ -203,10 +203,19 @@ export function App() {
           publishes goes to 0 with it — a `display: none` box reports nothing to
           a ResizeObserver, and a sheet would go on leaving a header's worth of
           gap above nothing. */}
+      {/* **And it wraps**, which is the whole of what the band between a phone
+          and a laptop needed. The row is a wordmark, six destinations and four
+          readings: about 860px of content, on a window that is allowed to be
+          768. It used to simply overflow, which on a `flex-col` page means the
+          DOCUMENT scrolls sideways — the gear and the bell off the right edge,
+          and every page under them dragged along. Wrapping puts the readings on
+          a second line for the ~250px where they do not fit and costs nothing
+          anywhere else: above that there is no wrap, so the desktop is the row
+          it always was, and `usePublishedHeight` measures whichever it is. */}
       {!bareDetail && (
       <header
         ref={headerRef}
-        className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1"
+        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border)] px-4 py-2 max-md:gap-x-2 max-md:px-3 max-md:py-1"
       >
         {/* Title and version share a baseline, so the small version text sits
             on the title's bottom edge instead of floating at its mid-height. */}
