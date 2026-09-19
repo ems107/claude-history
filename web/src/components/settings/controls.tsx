@@ -1,6 +1,7 @@
 import type { AppSettings } from '@claude-history/shared';
 import { type ReactNode, useEffect, useState } from 'react';
 import { entryForField, findGroup, sameSettingValue, valueText } from '../../lib/settingsCatalog.ts';
+import { inputClass, selectClass } from '../controlClass.ts';
 import { Fold } from '../Fold.tsx';
 import { useSettingsPage } from './context.ts';
 
@@ -13,12 +14,13 @@ import { useSettingsPage } from './context.ts';
  * and finds its own id and its own name in `lib/settingsCatalog.ts`.
  */
 
-/** Classes three kinds of input share, so a rework touches one line. */
-export const inputClass =
-  'rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
+/**
+ * Re-exported rather than defined: both moved up to `controlClass.ts` when the
+ * Git tab needed them too, and an area file importing them from here is still
+ * importing them from the right place for a settings row.
+ */
+export { inputClass, selectClass } from '../controlClass.ts';
 const numberClass = `w-20 text-right ${inputClass}`;
-export const selectClass =
-  'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
 
 /**
  * What an explanation under a control looks like — the class, for the two places

@@ -2,6 +2,7 @@ import type { AppConfig } from './config.ts';
 import type { BindDecision } from './core/bind.ts';
 import type { AutoReloadService } from './core/autoReload.ts';
 import type { DeepSearchService } from './core/deepSearch.ts';
+import type { GitService } from './core/gitService.ts';
 import type { SessionIndex } from './core/index.ts';
 import type { NotificationsService } from './core/notifications.ts';
 import type { ReadMarksService } from './core/readMarks.ts';
@@ -32,4 +33,6 @@ export interface AppContext {
   readMarks: ReadMarksService;
   /** The embedded terminals — the other half of `chatMode`. */
   terminals: SessionTerminalService;
+  /** The GIT tab: the repositories it knows, their locks and the command panel. */
+  git: GitService;
 }

@@ -7,6 +7,8 @@ import { NotificationsService } from './core/notifications.ts';
 import { ReadMarksService } from './core/readMarks.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
+import { GitService } from './core/gitService.ts';
+import { GitUndoStore } from './core/gitUndo.ts';
 import { SearchService } from './core/search.ts';
 import { SessionChatService } from './core/sessionChat.ts';
 import { SessionTerminalService } from './core/sessionTerminal.ts';
@@ -62,6 +64,7 @@ async function main(): Promise<void> {
   const notifications = new NotificationsService(config, index, chat);
   // Nothing to start: it has no source of its own to watch, only readers.
   const readMarks = new ReadMarksService(index);
+  const git = new GitService(index, new GitUndoStore(config.gitUndoDir));
   const app = await buildApp({
     config,
     bind,
@@ -75,11 +78,16 @@ async function main(): Promise<void> {
     terminals,
     notifications,
     readMarks,
+    git,
   });
   updates.start(() => index.getSettings());
   autoReload.start(index.events);
   chat.start();
   notifications.start();
+  // Installs the command recorder. It deliberately discovers nothing here:
+  // the repository list is not needed until the tab is opened, and startup
+  // time is the one delay a user actually feels.
+  git.start();
   // Loading the native pseudo-terminal module. Awaited so the very first status
   // read already knows whether the feature works; a failure is recorded inside
   // and reported through `blockedReason`, never thrown.
@@ -88,6 +96,7 @@ async function main(): Promise<void> {
   // them; the logger runs this on every exit path there is.
   onShutdown(() => chat.shutdown());
   onShutdown(() => terminals.shutdown());
+  onShutdown(() => git.shutdown());
 
   const watcher = new Watcher(config, index);
   watcher.start();

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router';
-import { GearIcon } from './icons.tsx';
-import { useBackDismiss, useIsShort, useIsTyping } from '../lib/mobile.ts';
+import { useBackDismiss, useIsShort, useIsTyping, usePublishedHeight } from '../lib/mobile.ts';
 
 /**
  * The navigation, on a phone.
@@ -13,8 +12,16 @@ import { useBackDismiss, useIsShort, useIsTyping } from '../lib/mobile.ts';
  *
  * So the destinations come down here, where a thumb is. Five of them, and the
  * middle one is the one that MAKES something. `More` is a menu rather than a
- * page: a page of four links is a screen you have to leave again, and every one
+ * page: a page of three links is a screen you have to leave again, and every one
  * of those links is a place you were trying to get to in one tap.
+ *
+ * **What earns a tab is being a place you work in, not a place you read.** Git
+ * is the fifth for that reason — a toolbar, a repository open in it and a dozen
+ * actions, all of which began two taps deep behind a menu that closed over the
+ * page. Settings went the other way, up into the app header beside the bell,
+ * where a desktop has always had it: it is about the app rather than about
+ * anything the app is showing, and it is not somewhere anybody goes twice a
+ * minute.
  *
  * **In the flow, not `fixed`.** The app root is already a full-height flex
  * column, so a `shrink-0` row at the end of it is a bar the content cannot slide
@@ -74,6 +81,23 @@ function NewIcon() {
   );
 }
 
+/**
+ * A commit with a branch leaving it — the one shape that means "git" without a
+ * brand on it. Two nodes on a trunk and a third off to the side, which is what
+ * the graph on the page itself draws.
+ */
+function GitIcon() {
+  return (
+    <svg {...base}>
+      <circle cx="4.5" cy="3.5" r="1.6" />
+      <circle cx="4.5" cy="12.5" r="1.6" />
+      <circle cx="11.5" cy="8" r="1.6" />
+      <path d="M4.5 5.1v5.8" />
+      <path d="M9.9 8H7.5a3 3 0 0 1-3-3" />
+    </svg>
+  );
+}
+
 /** Three dots — everything that did not fit. */
 function MoreIcon() {
   return (
@@ -105,7 +129,16 @@ function Tab({ to, label, icon, accent }: { to: string; label: string; icon: Rea
   );
 }
 
-/** The three places that did not earn a tab of their own. */
+/**
+ * The places that did not earn a tab of their own.
+ *
+ * Git left this list for a tab: it is not a list of things you read like the
+ * other three, it is a place you WORK, with its own toolbar, its own sheets and
+ * a repository open in it — and everything you do there begins with two taps
+ * through a menu that closes over the page. Settings left it for the header,
+ * where a desktop has always had it and where the bell and the usage readout
+ * already are: it belongs with the app rather than with the app's contents.
+ */
 const MORE: Array<[string, string, string]> = [
   ['/prompts', 'Prompts', 'Every prompt you have typed, across all sessions'],
   ['/plans', 'Plans', 'Every plan written in a session, newest first'],
@@ -136,10 +169,14 @@ export function MobileTabBar({ chatEnabled }: { chatEnabled: boolean }) {
   // a route, so it needs the marker; the destinations inside it are routes and
   // Back handles those itself.
   useBackDismiss(more, () => setMore(false));
+  // Published for the sheets, which stop above it. Returning null below takes
+  // the variable to 0 with the bar, which is the case that has to be right.
+  const barRef = usePublishedHeight('--app-bar-h');
   if (typing || short || coversTheBar(pathname)) return null;
   const inMore = MORE.some(([to]) => pathname === to);
   return (
     <nav
+      ref={barRef}
       // The gesture bar is under this, so the padding is the bar's own rather
       // than something the page below has to know about.
       className="relative flex shrink-0 items-stretch border-t border-[var(--border)] bg-[var(--bg-raised)] pb-[var(--safe-bottom)] md:hidden"
@@ -148,11 +185,11 @@ export function MobileTabBar({ chatEnabled }: { chatEnabled: boolean }) {
       <Tab to="/" label="Sessions" icon={<SessionsIcon />} />
       <Tab to="/stats" label="Stats" icon={<StatsIcon />} />
       {chatEnabled && <Tab to="/new" label="New" icon={<NewIcon />} accent />}
+      <Tab to="/git" label="Git" icon={<GitIcon />} />
       <button type="button" onClick={() => setMore((v) => !v)} className={tabClass(more || inMore)} aria-expanded={more}>
         <MoreIcon />
         <span className="max-w-full truncate">More</span>
       </button>
-      <Tab to="/settings" label="Settings" icon={<GearIcon className="size-5" />} />
 
       {more && (
         <>

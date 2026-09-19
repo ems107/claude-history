@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../../api/client.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { useActiveSessionsGuard } from '../ActiveSessionsDialog.tsx';
-import { actionClass } from '../controlClass.ts';
+import { dangerClass } from '../controlClass.ts';
 import { useSettingsPage } from './context.ts';
 import { Anchored, Subgroup } from './controls.tsx';
 import { UninstallDialog } from './UninstallDialog.tsx';
@@ -59,7 +59,7 @@ export function DangerZone() {
       <Anchored id="act-stop-server" className="space-y-1">
         <button
           type="button"
-          className={`${actionClass} border-red-500/40 text-red-300 hover:border-red-400`}
+          className={dangerClass}
           disabled={stopped || stopServer.disabled}
           title={stopServer.reason ?? undefined}
           onClick={() => {
@@ -88,7 +88,7 @@ export function DangerZone() {
       <Anchored id="act-uninstall" className="space-y-1 border-t border-[var(--border)] pt-3">
         <button
           type="button"
-          className={`${actionClass} border-red-500/40 text-red-300 hover:border-red-400`}
+          className={dangerClass}
           disabled={!meta.paths.installRoot || stopped || uninstall.disabled}
           title={uninstall.reason ?? meta.paths.installRoot ?? 'Not a managed install — nothing to uninstall'}
           onClick={() => setUninstalling(true)}

@@ -74,7 +74,8 @@ export interface SettingsResponse {
  */
 export const UNAUTHORIZED_EVENT = 'ch:unauthorized';
 
-function noteAuthFailure(status: number): void {
+/** Exported for api/git.ts, which posts on its own and must announce these too. */
+export function noteAuthFailure(status: number): void {
   if (status === 401 || status === 403) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 
@@ -109,7 +110,8 @@ function refusal(res: Response, body: { error?: string; activeSessions?: ActiveA
   return new Error(message);
 }
 
-async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+/** Exported for api/git.ts, so the failed-GET error string exists exactly once. */
+export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, { signal });
   if (!res.ok) {
     noteAuthFailure(res.status);

@@ -21,6 +21,10 @@ import {
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
   defaultSettings,
+  GIT_FETCH_MODES,
+  GIT_MERGE_MODES,
+  GIT_PULL_MODES,
+  GIT_PUSH_MODES,
   LIVE_BUSY,
   LIVE_WAITING,
   LOG_LEVEL_CHOICES,
@@ -39,6 +43,7 @@ import { CACHE_VERSION, DiskCache, readJsonFileOrQuarantine, writeJsonAtomic, ty
 import { UserdataBackups, type UserdataCounts } from './userdataBackups.ts';
 import type { AuthConfig } from './auth.ts';
 import { enrichSession, type SearchBlock } from './enricher.ts';
+import type { GitStoredPath } from './gitRepos.ts';
 import { appendedText, safeParse, str } from './jsonl.ts';
 import { readHistoryData, type HistoryData } from './history.ts';
 import { readLiveSessions } from './live.ts';
@@ -65,6 +70,38 @@ function starKey(sessionId: string, uuid: string): string {
  * input is NaN — and a NaN floor compares false against everything, quietly
  * turning "at most one read every N seconds" into "read every time".
  */
+/** Stored repository paths, tolerating the plain-string form as well as the record. */
+function readStoredPaths(raw: (GitStoredPath | string)[] | undefined): GitStoredPath[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GitStoredPath[] = [];
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      if (entry.trim()) out.push({ path: entry, addedAt: '' });
+    } else if (entry && typeof entry.path === 'string' && entry.path.trim()) {
+      out.push({ path: entry.path, addedAt: typeof entry.addedAt === 'string' ? entry.addedAt : '' });
+    }
+  }
+  return out;
+}
+
+/**
+ * A setting whose value is one of a fixed list. Anything else is refused back
+ * to the SHIPPED value rather than to the current one: the stored value is
+ * itself suspect once something unknown has been written over it, and these
+ * end up as flags on a git command line.
+ */
+function oneOf<T extends string>(
+  choices: readonly T[],
+  patched: T | undefined,
+  current: T,
+  field: string,
+): T {
+  const value = patched ?? current;
+  if (choices.includes(value)) return value;
+  log.warn(`${field} was ${JSON.stringify(value)} — not one of ${choices.join(', ')}`);
+  return choices[0];
+}
+
 function clampInt(patched: number | undefined, current: number, min: number): number {
   const value = Math.round(patched ?? current);
   if (!Number.isFinite(value)) return Math.max(min, Number.isFinite(current) ? current : min);
@@ -204,6 +241,14 @@ export class SessionIndex {
    * Null means none have been set, which is what keeps remote access off.
    */
   private auth: AuthConfig | null = null;
+  /**
+   * The GIT tab's repository lists. Data, not settings: they are lists rather
+   * than validated scalars, and the settings pruning in `applyUserdata` would
+   * fight them. Stored in userdata.json like everything else the user owns.
+   */
+  private gitRepos: GitStoredPath[] = [];
+  private gitScanRoots: GitStoredPath[] = [];
+  private gitHidden = new Set<string>();
   state: IndexState = 'scanning';
   cacheHits = 0;
   private enriching = false;
@@ -232,6 +277,9 @@ export class SessionIndex {
       prices?: PriceTable;
       settings?: Partial<AppSettings>;
       auth?: AuthConfig;
+      gitRepos?: (GitStoredPath | string)[];
+      gitScanRoots?: (GitStoredPath | string)[];
+      gitHidden?: string[];
     }>(this.config.userdataFile);
     if (stored.moveError) {
       log.error(
@@ -585,6 +633,9 @@ export class SessionIndex {
     prices?: PriceTable;
     settings?: Partial<AppSettings>;
     auth?: AuthConfig;
+    gitRepos?: (GitStoredPath | string)[];
+    gitScanRoots?: (GitStoredPath | string)[];
+    gitHidden?: string[];
   } | null): void {
     this.titleOverrides = userdata?.titleOverrides ?? {};
     this.pins = new Set(userdata?.pins ?? []);
@@ -632,6 +683,12 @@ export class SessionIndex {
     // edited by hand and a `PUT` cannot end up meaning different things.
     this.settings.hiddenProjects = sanitizeHiddenProjects(this.settings.hiddenProjects);
     this.settings.projectGroups = sanitizeProjectGroups(this.settings.projectGroups);
+    // The GIT tab's lists. Objects rather than bare strings, so a future alias
+    // or pin needs no migration — but a plain string is still read, in case one
+    // was ever written by hand.
+    this.gitRepos = readStoredPaths(userdata?.gitRepos);
+    this.gitScanRoots = readStoredPaths(userdata?.gitScanRoots);
+    this.gitHidden = new Set(userdata?.gitHidden ?? []);
   }
 
   /**
@@ -676,9 +733,35 @@ export class SessionIndex {
       pins: [...this.pins],
       stars: [...this.stars.values()],
       settings: this.settings,
+      gitRepos: this.gitRepos,
+      gitScanRoots: this.gitScanRoots,
+      gitHidden: [...this.gitHidden],
       ...(this.prices ? { prices: this.prices } : {}),
       ...(this.auth ? { auth: this.auth } : {}),
     });
+  }
+
+  getGitRepos(): GitStoredPath[] {
+    return this.gitRepos;
+  }
+
+  getGitScanRoots(): GitStoredPath[] {
+    return this.gitScanRoots;
+  }
+
+  getGitHidden(): Set<string> {
+    return this.gitHidden;
+  }
+
+  async setGitPaths(next: {
+    repos?: GitStoredPath[];
+    scanRoots?: GitStoredPath[];
+    hidden?: Set<string>;
+  }): Promise<void> {
+    if (next.repos) this.gitRepos = next.repos;
+    if (next.scanRoots) this.gitScanRoots = next.scanRoots;
+    if (next.hidden) this.gitHidden = next.hidden;
+    await this.saveUserdata();
   }
 
   get priceTable(): PriceTable {
@@ -753,6 +836,12 @@ export class SessionIndex {
       ),
       // Windows' "Copy as path" wraps the path in quotes; keep them out of the cwd.
       autoReloadCwd: (patch.autoReloadCwd ?? this.settings.autoReloadCwd).trim().replace(/^"(.*)"$/, '$1'),
+      // Each git button's main click. An unknown value falls back to the
+      // shipped one rather than being stored: these reach `runGit` as flags.
+      gitFetchDefault: oneOf(GIT_FETCH_MODES, patch.gitFetchDefault, this.settings.gitFetchDefault, 'gitFetchDefault'),
+      gitPullDefault: oneOf(GIT_PULL_MODES, patch.gitPullDefault, this.settings.gitPullDefault, 'gitPullDefault'),
+      gitPushDefault: oneOf(GIT_PUSH_MODES, patch.gitPushDefault, this.settings.gitPushDefault, 'gitPushDefault'),
+      gitMergeDefault: oneOf(GIT_MERGE_MODES, patch.gitMergeDefault, this.settings.gitMergeDefault, 'gitMergeDefault'),
       logLevel: (LOG_LEVEL_CHOICES as readonly string[]).includes(patch.logLevel ?? this.settings.logLevel)
         ? (patch.logLevel ?? this.settings.logLevel)
         : DEFAULT_SETTINGS.logLevel,

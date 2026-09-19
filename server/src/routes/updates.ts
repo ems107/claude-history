@@ -2,6 +2,7 @@ import type { UpdateStatusResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { refuseWhileActive } from '../util/appSessions.ts';
+import { refuseWhileGitBusy } from '../util/gitBusy.ts';
 
 export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/update', async (): Promise<UpdateStatusResponse> => ctx.updates.getStatus());
@@ -18,6 +19,9 @@ export function registerUpdateRoutes(app: FastifyInstance, ctx: AppContext): voi
     // one that is still holding a transcript just the same.
     const active = refuseWhileActive(ctx, 'update');
     if (active) return reply.code(409).send(active);
+    // And the other thing this process is the only one that can finish.
+    const gitBusy = refuseWhileGitBusy(ctx, 'installing an update');
+    if (gitBusy) return reply.code(409).send(gitBusy);
     try {
       const started = ctx.updates.apply(ctx.config.port, request.body?.version);
       // Taken here, by the version that is still running and known to work: a

@@ -1,7 +1,8 @@
 import type { SearchMode, SearchWordScope } from '@claude-history/shared';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import type { SearchOptions } from '../core/searchText.ts';
+import { abortSignalOf } from '../util/replyAbort.ts';
 
 const VALID_ROLES = new Set(['title', 'user', 'assistant']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -35,19 +36,6 @@ function readOptions(tuning: Tuning): SearchOptions {
   const mode: SearchMode = tuning.mode === 'words' ? 'words' : 'phrase';
   const scope: SearchWordScope = tuning.co === 'session' ? 'session' : 'message';
   return { roles, mode, scope, wholeWord: tuning.w === '1' };
-}
-
-/**
- * The scan can run for seconds, so a client that gave up must stop it. The
- * signal is the RESPONSE closing unfinished: the request body arrived long ago
- * and its own close event says nothing about whether anyone is still listening.
- */
-function abortSignalOf(reply: FastifyReply): AbortSignal {
-  const controller = new AbortController();
-  reply.raw.on('close', () => {
-    if (!reply.raw.writableFinished) controller.abort();
-  });
-  return controller.signal;
 }
 
 export function registerSearchRoutes(app: FastifyInstance, ctx: AppContext): void {

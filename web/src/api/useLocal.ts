@@ -49,7 +49,7 @@ export function useLocalOnly(action: LocalOnlyAction): { disabled: boolean; reas
  * works from here: "Copy resume command" instead of "Resume in terminal",
  * typing a path instead of browsing for one.
  *
- * The server is unaffected and still refuses all thirteen (409). This decides
+ * The server is unaffected and still refuses all fourteen (409). This decides
  * what is DRAWN, never what is allowed.
  */
 export function useHideLocalOnly(): boolean {

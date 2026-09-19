@@ -174,6 +174,19 @@ export function useEvents(): void {
           burst(['sessions']);
           void queryClient.invalidateQueries({ queryKey: ['live'] });
           break;
+        // Throttled to one a second by the server, and it carries only the
+        // newest seq — the panel fetches from where it left off, so a tab with
+        // it closed pays nothing for this.
+        case 'git-commands':
+          void queryClient.invalidateQueries({ queryKey: ['git', 'commands'] });
+          break;
+        // A repository's gitdir changed: branch switched, index written, merge
+        // started. LOCAL state only — this must never lead to a fetch.
+        case 'git-repo-changed':
+          void queryClient.invalidateQueries({ queryKey: ['git', 'status', event.id] });
+          void queryClient.invalidateQueries({ queryKey: ['git', 'branches', event.id] });
+          void queryClient.invalidateQueries({ queryKey: ['git', 'stashes', event.id] });
+          break;
         // A terminal opened, its CLI exited, or it was closed. Its own event
         // rather than `live-changed`: the pseudo-terminal outlives the CLI
         // inside it on purpose, so ~/.claude/sessions cannot speak for it.

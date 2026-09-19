@@ -11,11 +11,24 @@
  * that is why they are worth having.** At the desktop's 22 px and 26 px these
  * are fine targets for a pointer and impossible ones for a thumb; fifteen files
  * draw one of these, so the phone's floor is set here once rather than fifteen
- * times. `toggleClass` grows by a minimum height, because it is already
- * `inline-flex` and centres its own label; `actionClass` grows by padding,
- * because it is put on plain `<button>`s that would not centre a taller box.
- * Above 48rem none of the variants apply and the strings are the ones they
- * always were.
+ * times. Above 48rem none of the variants apply and the strings are the ones
+ * they always were.
+ *
+ * **And on a phone there is ONE number: 40.** `squareClass` is 40×40,
+ * `toggleClass` and `actionClass` have a 40px floor, `segmentedClass` is 40
+ * tall exactly, and `BAR_H` is there for anything that is none of those and
+ * still shares their row. It used to be a range — 36 for a "dense toolbar
+ * chip", 40 for a square — and a range is not a rule anybody can follow: what
+ * it produced was a 46px segmented control beside a 40px `⋮` in the Git tab's
+ * bar, and six pixels of difference on one line is the only thing anybody sees.
+ * A floor rather than a fixed height on the two that carry a label, because a
+ * label can wrap and a clipped word is worse than a tall button; the boxes with
+ * nothing but an icon or a segment in them get the height itself.
+ *
+ * **And the number is about the thing you PRESS, not only the box around it.**
+ * A segmented control with a border and 2px of padding is 40 on the outside and
+ * 34 where the finger lands, which passes a measuring script and fails a thumb.
+ * `segmentedClass` gave up its border for that reason.
  */
 
 /**
@@ -29,7 +42,7 @@
  * and a text-only control looks the same either way.
  */
 export function toggleClass(active: boolean, disabled = false): string {
-  return `inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs max-md:min-h-9 max-md:gap-2 max-md:px-2.5 max-md:text-[13px] ${
+  return `inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs max-md:min-h-10 max-md:gap-2 max-md:px-2.5 max-md:text-[13px] ${
     disabled
       ? 'cursor-default border-[var(--border)] text-[var(--text-dim)]/50'
       : active
@@ -50,8 +63,52 @@ export function toggleClass(active: boolean, disabled = false): string {
  * reflects a state, but almost every one of them can be refused — by remote
  * access, by a request in flight, or by a Claude of ours still running.
  */
-export const actionClass =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40 max-md:px-3 max-md:py-2 max-md:text-sm';
+const ACTION_SHAPE =
+  'cursor-pointer rounded border px-2 py-1 text-xs disabled:cursor-default disabled:opacity-40 max-md:inline-flex max-md:min-h-10 max-md:items-center max-md:justify-center max-md:px-3 max-md:py-2 max-md:text-sm';
+
+export const actionClass = `${ACTION_SHAPE} border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]`;
+
+/**
+ * **The same button while the thing it opened is open.**
+ *
+ * A caret that opens a menu and then looks exactly as it did before leaves the
+ * menu floating with nothing to say where it came from — which is the one
+ * question a popover raises that a full-screen sheet does not. The trigger
+ * holds the accent for as long as its panel is up, the way the square already
+ * did, and `openClass` is the same look for the controls that are not this
+ * shape.
+ *
+ * Built as a whole string rather than appended to `actionClass`, because two
+ * `border-*` utilities in one class list is a question about which one
+ * Tailwind happened to emit last.
+ */
+export const actionOpenClass = `${ACTION_SHAPE} border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]`;
+
+/** The accent a trigger wears while its panel is up, for shapes of their own. */
+export const openClass = 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]';
+
+/**
+ * The same button for something that cannot be undone.
+ *
+ * Its own export because it was written out twice in `DangerZone` and twice
+ * more in the Git tab's two dialogs, which is four chances for one red to stop
+ * matching the others. The tone is the whole of it: the shape is `actionClass`.
+ */
+export const dangerClass = `${actionClass} border-red-500/40 text-red-300 hover:border-red-400`;
+
+/**
+ * Classes three kinds of input share, so a rework touches one line.
+ *
+ * Up here rather than with the settings page that first needed them: the Git
+ * tab draws text fields too, and a component under `components/git/` importing
+ * from `components/settings/` would be a layer put on backwards.
+ */
+export const inputClass =
+  'rounded border border-[var(--border)] bg-transparent px-1.5 py-0.5 disabled:opacity-40 focus:border-[var(--text-dim)] focus:outline-none';
+
+/** The same, for a `<select>`, which draws its own arrow and needs a background. */
+export const selectClass =
+  'cursor-pointer rounded border border-[var(--border)] bg-[var(--bg-raised)] px-1.5 py-0.5 disabled:opacity-40';
 
 /**
  * The one square control in the app, and the reason it is written here.
@@ -71,6 +128,47 @@ export function squareClass(active = false): string {
     active
       ? 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]'
       : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)] hover:text-[var(--text)]'
+  }`;
+}
+
+/**
+ * **The height of anything in a toolbar row on a phone, in one place.**
+ *
+ * 40px, which is `squareClass`'s own size, and the rule is that everything
+ * standing beside one of those is exactly as tall. It reads as a rule nobody
+ * would state until it is broken: the Git tab's bar had a segmented control of
+ * 46px (a 40px button inside 2px of padding inside a 1px border) next to a 40px
+ * `⋮`, and six pixels of difference between two boxes on the same line is the
+ * only thing on that bar anybody noticed.
+ *
+ * It is a HEIGHT and not a min-height, because the things that use it are boxes
+ * with something centred in them rather than text that may wrap — and a
+ * min-height is how the 46px happened. Above 48rem nothing applies: a desktop
+ * toolbar is sized by its padding, as it always was.
+ */
+export const BAR_H = 'max-md:h-10';
+
+/**
+ * A segmented control: two or three choices in one box, exactly one of them on.
+ *
+ * For a choice about WHAT YOU ARE LOOKING AT — commits or the working tree, a
+ * commit's message or its files. Not for actions, which are buttons, and not
+ * for a setting, which is `toggleClass`: the box around the group is the thing
+ * that says these are alternatives, and three separate bordered buttons say
+ * instead that each is its own idea.
+ *
+ * **A track rather than a frame, and that is the whole of why it is a shape and
+ * not a border.** With a 1px border and 2px of padding the box is 40 and each
+ * segment inside it is 34 — the group obeys the rule and the thing you actually
+ * press does not. So the group has no border and no padding: a tinted track
+ * with the segments filling it edge to edge, `overflow-hidden` rounding their
+ * outer corners for them, and every segment exactly as tall as the control.
+ */
+export const segmentedClass = `flex min-w-0 items-center overflow-hidden rounded bg-[var(--bg-hover)]/60 ${BAR_H}`;
+
+export function segmentClass(active: boolean): string {
+  return `flex h-full min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 px-2 py-1 text-xs max-md:py-0 max-md:text-[13px] ${
+    active ? 'bg-[var(--accent)]/15 font-medium text-[var(--accent)]' : 'text-[var(--text-dim)]'
   }`;
 }
 

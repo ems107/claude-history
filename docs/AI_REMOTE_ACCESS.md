@@ -162,6 +162,8 @@ What pays for it: the `pre-restore` copy taken automatically before every restor
 
 A local-only button is greyed out with a tooltip, and the endpoint behind it answers 409 with the **same sentence** — both read `LOCAL_ONLY_ACTIONS` from `shared/`. The button is the explanation; the 409 is the guarantee. Neither is optional: a handler that forgets the check answers `{ok: true}` and opens a window nobody is looking at.
 
+**Matching is on the URL and its QUERY, never on a body**, and the reason is worth keeping: the hook runs before any body is parsed. Two endpoints open one of several things, and both put the target in the query so this list can tell them apart — `/api/sessions/:id/open?target=vscode` and the GIT tab's `/api/git/repos/:id/open?target=explorer|vscode|terminal`. An unrecognised target on the second is refused as the terminal rather than let through: the handler 400s it anyway, and the failure worth preventing is the one that gets through ([The GIT tab](AI_GIT.md)).
+
 ## HTTP, and the two things it breaks
 
 There is no HTTPS: this is a personal tool on a home LAN or inside a WireGuard tunnel, and certificates for an IP address cost more than they buy here. The password does cross the LAN in clear, which is the accepted trade and the reason this is not for any other kind of network.

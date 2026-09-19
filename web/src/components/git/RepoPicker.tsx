@@ -1,0 +1,267 @@
+import type { GitOverview } from '@claude-history/shared';
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router';
+import { gitApi } from '../../api/git.ts';
+import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
+import { actionClass, actionOpenClass, BAR_H, inputClass, openClass } from '../controlClass.ts';
+
+/**
+ * Which repository the tab is looking at, and the quickest way to add one.
+ *
+ * The dropdown recipe is the app's existing one (ViewButton / ExportButton):
+ * a relatively-positioned wrapper, an absolutely-positioned panel, and an
+ * outside-click listener on `document` that only exists while it is open.
+ *
+ * 544px of panel anchored to the left edge of a 360px screen hangs 184px off
+ * the right of it, so below 48rem it is pinned to the window instead — the
+ * same clamp the usage widget and the bell already take, with the scrim and
+ * Android's Back to close it, because an outside-click listener on `mousedown`
+ * is not a gesture a thumb makes.
+ */
+export function RepoPicker({
+  overview,
+  repoId,
+  onPick,
+  onChanged,
+  busy,
+  compact = false,
+}: {
+  overview: GitOverview | undefined;
+  repoId: string | null;
+  onPick: (id: string) => void;
+  onChanged: () => void;
+  busy: boolean;
+  /**
+   * The trigger is the repository's NAME and nothing else.
+   *
+   * The full path beside it is the right thing on a desktop, where there is
+   * room for both; on a phone it took the whole row and left the name reading
+   * `l…`, which is the one word the control exists to show.
+   */
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [asRoot, setAsRoot] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const mobile = useIsMobile();
+  useBackDismiss(mobile && open, () => setOpen(false));
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (wrap.current && !wrap.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  const repos = (overview?.repos ?? []).filter((r) => !r.hidden);
+  const current = repos.find((r) => r.id === repoId) ?? null;
+
+  const add = () => {
+    const path = draft.trim();
+    if (!path) return;
+    setWorking(true);
+    setError(null);
+    gitApi
+      .addPath(path, asRoot)
+      .then(() => {
+        setDraft('');
+        setAdding(false);
+        onChanged();
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setWorking(false));
+  };
+
+  /**
+   * **Nothing here removes anything.** Hiding a repository used to be a `✕` on
+   * every row of this list, which is a list you open to CHOOSE from — the one
+   * control that takes an entry away, sitting beside the eleven that select
+   * one. It lives in *Settings › Git* now, as a tick per row, which is where
+   * the same question about projects is already answered.
+   */
+
+  return (
+    <div ref={wrap} className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        disabled={busy}
+        title={current?.path ?? 'Choose a repository'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        // Marked while its list is up, like every other trigger in the tab.
+        className={
+          compact
+            ? `flex ${BAR_H} min-w-0 cursor-pointer items-center gap-1 rounded border px-2 text-sm font-semibold ${
+                open ? openClass : 'border-transparent text-[var(--text)]'
+              }`
+            : `${open ? actionOpenClass : actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`
+        }
+      >
+        {/* The NAME never gives way to the path. Both truncating meant the
+            shorter one lost: a 60-character path beside `branchy` left the
+            button reading `bran…`, which is the one word it is there to say. */}
+        <span className="max-w-[14rem] shrink-0 truncate font-medium">
+          {current?.name ?? 'Choose a repository…'}
+        </span>
+        <span className="shrink-0 text-[var(--text-dim)]">▾</span>
+        {current && !compact && (
+          <span className="truncate-start min-w-0 truncate font-mono text-[10px] text-[var(--text-dim)]">
+            {current.path}
+          </span>
+        )}
+      </button>
+
+      {open && mobile && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
+      {open && (
+        <div className="absolute left-0 z-30 mt-1 max-h-[70vh] w-[34rem] overflow-y-auto rounded border border-[var(--border)] bg-[var(--bg-raised)] p-2 text-xs shadow-xl max-md:fixed max-md:inset-x-2 max-md:z-50 max-md:max-h-[80dvh] max-md:w-auto">
+          {repos.length === 0 && (
+            <p className="px-1 py-2 text-[var(--text-dim)]">
+              No repositories yet. Add a folder to scan — one root covering where you keep your clones is usually
+              all it takes.
+            </p>
+          )}
+
+          {repos.map((repo) => (
+            <div
+              key={repo.id}
+              className={`flex items-center gap-2 rounded px-1.5 py-1 ${
+                repo.id === repoId ? 'bg-[var(--bg-hover)]' : 'hover:bg-[var(--bg-hover)]/60'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  onPick(repo.id);
+                  setOpen(false);
+                }}
+                className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 text-left"
+              >
+                <span className="shrink-0 font-medium text-[var(--text)]">{repo.name}</span>
+                {repo.currentBranch && (
+                  <span className="shrink-0 font-mono text-[10px] text-[var(--accent)]">⎇ {repo.currentBranch}</span>
+                )}
+                <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-[var(--text-dim)]" title={repo.path}>
+                  {repo.path}
+                </span>
+              </button>
+              <span
+                className="shrink-0 text-[10px] text-[var(--text-dim)]"
+                title={
+                  repo.origins.includes('scan')
+                    ? 'Found under a scan root'
+                    : repo.origins.includes('manual')
+                      ? 'Added by hand'
+                      : 'A folder Claude Code has run in'
+                }
+              >
+                {repo.origins.includes('manual') ? 'added' : repo.origins.includes('scan') ? 'scanned' : 'project'}
+              </span>
+            </div>
+          ))}
+
+          {/* The key to the last word on every row. Those three answer "why is
+              this one in my list", which is a question asked once and then
+              never again — so it is a line at the foot rather than three
+              sentences up the middle of the list, and it is DRAWN, because a
+              `title` on each of them is an answer only a mouse can ask for. */}
+          {repos.length > 0 && (
+            <p className="mt-2 px-1.5 text-[10px] text-[var(--text-dim)]">
+              <span className="text-[var(--text)]">project</span> — a folder Claude Code has run in ·{' '}
+              <span className="text-[var(--text)]">scanned</span> — found under one of your roots ·{' '}
+              <span className="text-[var(--text)]">added</span> — a path you added by hand
+            </p>
+          )}
+
+          <div className="mt-2 border-t border-[var(--border)] pt-2">
+            {adding ? (
+              <div className="space-y-1.5">
+                <input
+                  autoFocus
+                  type="text"
+                  spellCheck={false}
+                  value={draft}
+                  placeholder={asRoot ? 'C:\\Users\\you\\Git' : 'C:\\Users\\you\\Git\\my-project'}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') add();
+                    if (e.key === 'Escape') {
+                      setAdding(false);
+                      setError(null);
+                    }
+                  }}
+                  className={`${inputClass} font-mono text-[11px]`}
+                />
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={asRoot}
+                    onChange={(e) => setAsRoot(e.target.checked)}
+                    className="accent-[var(--accent)]"
+                  />
+                  <span>
+                    This is a folder to scan, not a repository
+                    <span className="block text-[10px] text-[var(--text-dim)]">
+                      Every repository up to two levels inside it is picked up.
+                    </span>
+                  </span>
+                </label>
+                {error && <p className="text-[11px] text-red-400">{error}</p>}
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={add} disabled={working || !draft.trim()} className={actionClass}>
+                    {working ? 'Adding…' : 'Add'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdding(false);
+                      setError(null);
+                    }}
+                    className={actionClass}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setAdding(true)} className={actionClass}>
+                  + Add a folder…
+                </button>
+                <button
+                  type="button"
+                  disabled={working}
+                  onClick={() => {
+                    setWorking(true);
+                    gitApi
+                      .refreshRepos()
+                      .then(onChanged)
+                      .catch(() => undefined)
+                      .finally(() => setWorking(false));
+                  }}
+                  className={actionClass}
+                  title="Walk the scan roots again"
+                >
+                  {working ? 'Scanning…' : 'Rescan'}
+                </button>
+                <Link
+                  to="/settings/git#git-repos"
+                  onClick={() => setOpen(false)}
+                  className="ml-auto text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] max-md:inline-flex max-md:min-h-11 max-md:items-center"
+                >
+                  Manage in Settings →
+                </Link>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

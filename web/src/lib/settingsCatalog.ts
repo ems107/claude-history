@@ -1,5 +1,14 @@
-import type { AppSettings } from '@claude-history/shared';
-import { APP_NAME, foldText, logoPresetLabel, TONE_INHERIT } from '@claude-history/shared';
+import type { AppSettings, GitModeLabel } from '@claude-history/shared';
+import {
+  APP_NAME,
+  foldText,
+  GIT_FETCH_LABELS,
+  GIT_MERGE_LABELS,
+  GIT_PULL_LABELS,
+  GIT_PUSH_LABELS,
+  logoPresetLabel,
+  TONE_INHERIT,
+} from '@claude-history/shared';
 
 /**
  * What settings exist, and where each one lives.
@@ -22,7 +31,7 @@ import { APP_NAME, foldText, logoPresetLabel, TONE_INHERIT } from '@claude-histo
  * having rather than a crash.
  */
 
-export type AreaId = 'theme' | 'projects' | 'notifications' | 'claude' | 'access' | 'data' | 'system';
+export type AreaId = 'theme' | 'projects' | 'notifications' | 'claude' | 'access' | 'git' | 'data' | 'system';
 
 export interface Area {
   id: AreaId;
@@ -109,6 +118,20 @@ const toneChoice = (v: unknown): string => (v === TONE_INHERIT ? 'general tone' 
 const logoColour = (v: unknown): string => (typeof v === 'string' ? (logoPresetLabel(v) ?? v) : valueText(v));
 
 /**
+ * A git mode said as the command it runs.
+ *
+ * `all-prune` is a key, and a key is the one thing nobody comes to this page to
+ * read: the question behind every one of these four rows is "what happens when
+ * I press Fetch", and `git fetch --prune --all` is that answer. The badge and
+ * the Changed list both spell it this way, so "changed from `git pull --ff-only`
+ * to `git pull --rebase`" reads as the sentence it is.
+ */
+const gitMode =
+  (labels: Record<string, GitModeLabel>) =>
+  (v: unknown): string =>
+    typeof v === 'string' && labels[v] ? labels[v].command : valueText(v);
+
+/**
  * A suffix said as the name it makes. What is stored is `laptop`; what the tab
  * reads is `Claude History laptop`, and that is the answer somebody scanning
  * this page came for — the stored half on its own looks like a whole name that
@@ -177,6 +200,11 @@ export const AREAS: Area[] = [
     blurb: 'Letting other machines on this network use claude-history, and what it takes.',
   },
   {
+    id: 'git',
+    title: 'Git',
+    blurb: 'Which repositories the Git tab works on, and what each of its buttons does when clicked.',
+  },
+  {
     id: 'data',
     title: 'Your data',
     blurb: 'The one file that cannot be rebuilt, and how long anything survives.',
@@ -206,6 +234,9 @@ export const GROUPS: Group[] = [
   { id: 'chat', area: 'claude', title: 'Sending prompts from the app', short: 'Sending prompts' },
 
   { id: 'remote-access', area: 'access', title: 'Remote access' },
+
+  { id: 'git-buttons', area: 'git', title: 'What each button does when clicked', short: 'The buttons' },
+  { id: 'git-repos', area: 'git', title: 'Which repositories the Git tab shows', short: 'Repositories' },
 
   { id: 'backups', area: 'data', title: 'Your data, and how to get it back', short: 'Backups' },
   { id: 'prices', area: 'data', title: 'Prices' },
@@ -492,6 +523,46 @@ export const ENTRIES: Entry[] = [
     group: 'remote-access',
     label: 'Sign out everywhere',
     keywords: 'logout devices sessions cookie',
+  },
+
+  // Git
+  {
+    id: 'set-gitFetchDefault',
+    group: 'git-buttons',
+    field: 'gitFetchDefault',
+    label: 'What Fetch does',
+    keywords: 'git fetch prune all remote stale tracking branches default click',
+    format: gitMode(GIT_FETCH_LABELS),
+  },
+  {
+    id: 'set-gitPullDefault',
+    group: 'git-buttons',
+    field: 'gitPullDefault',
+    label: 'What Pull does',
+    keywords: 'git pull rebase merge fast-forward ff-only diverged default click',
+    format: gitMode(GIT_PULL_LABELS),
+  },
+  {
+    id: 'set-gitPushDefault',
+    group: 'git-buttons',
+    field: 'gitPushDefault',
+    label: 'What Push does',
+    keywords: 'git push upstream dialog options force lease default click',
+    format: gitMode(GIT_PUSH_LABELS),
+  },
+  {
+    id: 'set-gitMergeDefault',
+    group: 'git-buttons',
+    field: 'gitMergeDefault',
+    label: 'What Merge does',
+    keywords: 'git merge no-ff squash fast-forward commit default click',
+    format: gitMode(GIT_MERGE_LABELS),
+  },
+  {
+    id: 'act-git-repos',
+    group: 'git-repos',
+    label: 'Repositories and folders to scan',
+    keywords: 'git repository repo clone folder scan root add remove hide path worktree',
   },
 
   // Your data

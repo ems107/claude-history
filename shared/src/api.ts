@@ -1,5 +1,6 @@
 // REST API contract shared between server and web.
 
+import type { GitFetchMode, GitMergeMode, GitPullMode, GitPushMode } from './git.ts';
 import type {
   LiveInfo,
   PlanRecord,
@@ -1023,6 +1024,7 @@ export interface AppSettings {
    * CLI, which is why it is the one marked experimental on screen: everything
    * it draws, it draws itself.
    */
+  chatIdleTimeoutMinutes: number;
   chatMode: ChatUiMode;
   /**
    * How many Claude Code processes this app may have alive at once, counting
@@ -1049,6 +1051,22 @@ export interface AppSettings {
    * one of them is offered a login or an explanation.
    */
   remoteAccessEnabled: boolean;
+  /**
+   * What the main click of each git button does; its dropdown always offers the
+   * rest. These are defaults in the real sense — the SERVER applies them when a
+   * request names no mode — rather than a habit of the toolbar, so the command
+   * that runs is the one the setting names wherever it was asked for.
+   *
+   * The shipped values are the conservative ones: `--all --prune` keeps the
+   * remote branch list truthful without touching a local branch, and `--ff-only`
+   * never writes a merge commit nobody asked for — it refuses and offers rebase
+   * or merge next to the refusal.
+   */
+  gitFetchDefault: GitFetchMode;
+  gitPullDefault: GitPullMode;
+  /** Whether Push sends straight away or opens the options dialog every time. */
+  gitPushDefault: GitPushMode;
+  gitMergeDefault: GitMergeMode;
   /** Lowest level actually written to the log files. */
   logLevel: LogLevel;
   /** Daily log files older than this are deleted (minimum 1). */
@@ -1161,9 +1179,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoReloadCwd: '',
   autoReloadHideSessions: false,
   chatEnabled: true,
+  chatIdleTimeoutMinutes: 10,
   chatMode: 'terminal',
   maxActiveSessions: 10,
   remoteAccessEnabled: false,
+  gitFetchDefault: 'all-prune',
+  gitPullDefault: 'ff-only',
+  gitPushDefault: 'push',
+  gitMergeDefault: 'ff',
   logLevel: 'info',
   logRetentionDays: 14,
   logoColor: LOGO_DEFAULT_COLOR,
@@ -2120,6 +2143,8 @@ export const LOG_SOURCES = [
   'chat',
   /** The Claude Code processes running inside an embedded terminal. */
   'terminal',
+  /** Every git invocation the GIT tab makes: mutations at info, reads at debug. */
+  'git',
   /** Reading Claude Code's own `cleanupPeriodDays` out of its settings files. */
   'retention',
   /** Reading and launching the local files a transcript names. */
@@ -2319,4 +2344,16 @@ export type ServerEvent =
    * and is refetched whole.
    */
   | { type: 'read-marks-changed' }
+  /**
+   * New rows in the git command panel. A NOTICE carrying only the newest seq,
+   * never the entries: a panel nobody has open should cost nothing, and one
+   * that is open fetches from `since` and learns what it missed.
+   */
+  | { type: 'git-commands'; seq: number }
+  /**
+   * A repository's gitdir changed — branch switched, index written, a merge
+   * started. LOCAL only: it invalidates status and refs, and must NEVER be
+   * wired to a fetch. The whole network policy depends on that staying true.
+   */
+  | { type: 'git-repo-changed'; id: string }
   | { type: 'logs-appended' };

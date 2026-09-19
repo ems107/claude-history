@@ -131,6 +131,48 @@ export function useKeyboardInset(): void {
   }, []);
 }
 
+/**
+ * Publish an element's height as a CSS variable on `:root`.
+ *
+ * For the app's own frame — the header and the bottom bar — so that anything
+ * drawn OVER a page can stop short of them. A sheet used to be `inset-0` and
+ * covered the lot: open the branches on a phone and the app header was gone,
+ * with the bell, the gear and the way home in it, for as long as you were
+ * looking at a list of branches. It is a layer over the PAGE, not over the app,
+ * and this is what lets it say so without every sheet knowing how tall a
+ * header is.
+ *
+ * A variable rather than a returned number because the readers are `fixed`
+ * boxes in other trees, and none of them should re-render because a usage
+ * widget grew a line. A **callback ref**, so an element that unmounts — the bar
+ * hides itself while you type, the header stands aside in landscape — writes
+ * its own `0px` on the way out; the observer alone would not, since a box that
+ * no longer exists reports nothing.
+ */
+export function usePublishedHeight(name: string): (el: HTMLElement | null) => void {
+  const stop = useRef<(() => void) | null>(null);
+  return useCallback(
+    (el: HTMLElement | null) => {
+      stop.current?.();
+      stop.current = null;
+      const root = document.documentElement;
+      if (!el) {
+        root.style.setProperty(name, '0px');
+        return;
+      }
+      const write = () => root.style.setProperty(name, `${Math.round(el.getBoundingClientRect().height)}px`);
+      write();
+      const observer = new ResizeObserver(write);
+      observer.observe(el);
+      stop.current = () => {
+        observer.disconnect();
+        root.style.setProperty(name, '0px');
+      };
+    },
+    [name],
+  );
+}
+
 /** Above this much scroll the header is always shown: the top of a list is not
  * somewhere anybody is trying to see more of. */
 const REVEAL_ABOVE_PX = 48;
@@ -329,10 +371,34 @@ const sheetStack: Array<{ key: string; dismiss: () => void }> = [];
  * opened by anything else sees zero and waits for the next touch to carry it.
  *
  * `click` as well as `pointerdown` because that is the one React treats as
- * discrete; the counter is decremented from a task of its own, which is the
- * first moment the dispatch is certainly over.
+ * discrete.
+ *
+ * **The credit outlives the dispatch by `GESTURE_CREDIT_MS`, and that is the
+ * correction that cost a bug.** It used to be given back from a task of its
+ * own — "the first moment the dispatch is certainly over" — which is stricter
+ * than anything Chrome asks for, and it broke every layer whose openness lives
+ * in the URL: `setSearchParams` lands in a router transition, so the render and
+ * its layout effects run in a LATER task, find the depth back at zero, and wait
+ * for a gesture that never comes. On the device, Back then left the Git tab for
+ * the session list instead of closing the commit that was open.
+ *
+ * What Chrome actually does was measured on the DT50 rather than reasoned
+ * about: a marker pushed 0 ms, 16 ms and 120 ms after a real tap was **honoured
+ * every time** — the entry is skippable for want of user ACTIVATION, not for
+ * being a task late. The paragraph above still holds for the case it was
+ * written for, because that one is seconds late, not milliseconds.
  */
 let gestureDepth = 0;
+
+/**
+ * How long a tap goes on counting as the thing that opened a layer.
+ *
+ * Long enough for a router transition to render on this device, and far short
+ * of the case the waiting path exists for — the embedded terminal, which fills
+ * the window when its `start` request comes back seconds later and must still
+ * ride the next touch.
+ */
+const GESTURE_CREDIT_MS = 400;
 
 /**
  * Counted from module load, and that is the part that has to be right: a
@@ -345,7 +411,7 @@ if (typeof document !== 'undefined') {
     gestureDepth++;
     setTimeout(() => {
       gestureDepth--;
-    }, 0);
+    }, GESTURE_CREDIT_MS);
   };
   // **`click`, not `pointerdown`**, and that is the second thing this had to
   // learn. Chrome grants the activation on the click — for a tap, at the point

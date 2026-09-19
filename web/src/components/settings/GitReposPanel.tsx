@@ -1,0 +1,282 @@
+import type { GitRepoRoot } from '@claude-history/shared';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { Link } from 'react-router';
+import { api } from '../../api/client.ts';
+import { gitApi } from '../../api/git.ts';
+import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
+import { relativeTime } from '../../lib/format.ts';
+import { actionClass, inputClass } from '../controlClass.ts';
+
+/**
+ * Where the GIT tab looks for repositories.
+ *
+ * The picker in the tab can add one in passing; this is where the lists are
+ * actually managed — which is why it lives beside the other panels of the
+ * settings page rather than under `components/git/`.
+ */
+export function GitReposPanel() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({ queryKey: ['git', 'repos'], queryFn: () => gitApi.overview() });
+  const [draft, setDraft] = useState('');
+  const [rootDraft, setRootDraft] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [browsing, setBrowsing] = useState<'root' | 'repo' | null>(null);
+  // The dialog opens on the server's own desktop, so only the BUTTON is refused
+  // over the network — the box beside it goes on working, which is the whole
+  // point of refusing one and not the other.
+  const browse = useLocalOnly('pickFolder');
+  const hideLocal = useHideLocalOnly();
+
+  /** The Windows folder browser, filling whichever of the two boxes asked. */
+  const browseFor = (which: 'root' | 'repo') => {
+    setBrowsing(which);
+    setError(null);
+    api
+      .pickFolder((which === 'root' ? rootDraft : draft).trim() || undefined)
+      // null is Cancel, and leaves what was typed alone.
+      .then((picked) => {
+        if (picked) (which === 'root' ? setRootDraft : setDraft)(picked);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBrowsing(null));
+  };
+
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['git'] });
+
+  /**
+   * Anything that talks to the server, with its refusal drawn where it happened.
+   *
+   * It does NOT touch the two path boxes, and that is the whole reason it is
+   * separate from `run` below. Everything here used to go through one helper
+   * that emptied both of them on success — right for adding a path, which is
+   * what it was written for, and wrong for every other button on the panel:
+   * typing a folder into one box and then ticking a repository, or pressing
+   * Rescan, threw away what had been typed.
+   */
+  const act = (work: Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    work
+      .then(refresh)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  /** The same, for the one case where emptying the box IS the success. */
+  const run = (work: Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    work
+      .then(() => {
+        setDraft('');
+        setRootDraft('');
+        refresh();
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  const list = (entries: GitRepoRoot[], asRoot: boolean) =>
+    entries.map((entry) => (
+      <div key={entry.path} className="group flex items-center gap-2 py-0.5">
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px]" title={entry.path}>
+          {entry.path}
+        </span>
+        {asRoot && (
+          <span
+            className={`shrink-0 text-[10px] ${entry.found === 0 ? 'text-amber-400' : 'text-[var(--text-dim)]'}`}
+            title="Repositories found under it on the last scan"
+          >
+            {entry.found} found
+          </span>
+        )}
+        {entry.error && (
+          <span className="shrink-0 text-[10px] text-red-400" title={entry.error}>
+            {entry.error}
+          </span>
+        )}
+        {entry.addedAt && (
+          <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(entry.addedAt)}</span>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => act(gitApi.removePath(entry.path, asRoot))}
+          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-red-300 max-md:min-h-11 max-md:px-2 max-md:text-xs max-md:opacity-100"
+          title="Remove from the list. Nothing on disk is touched."
+        >
+          remove
+        </button>
+      </div>
+    ));
+
+  if (isLoading) return <p className="text-[var(--text-dim)]">Reading…</p>;
+  if (data && !data.available) return <p className="text-red-400">{data.error}</p>;
+
+  const found = data?.repos ?? [];
+  const visible = found.filter((r) => !r.hidden).length;
+  const hidden = found.length - visible;
+
+  return (
+    <>
+      <div>
+        <p className="mb-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">Folders to scan</p>
+        {(data?.scanRoots.length ?? 0) === 0 ? (
+          <p className="text-[var(--text-dim)] italic">
+            None yet. One root covering where you keep your clones is usually all it takes — every repository up to
+            two levels inside it is picked up.
+          </p>
+        ) : (
+          list(data?.scanRoots ?? [], true)
+        )}
+        <div className="mt-1 flex gap-1.5">
+          <input
+            type="text"
+            spellCheck={false}
+            value={rootDraft}
+            placeholder="C:\Users\you\Git"
+            onChange={(e) => setRootDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && rootDraft.trim()) run(gitApi.addPath(rootDraft, true));
+            }}
+            className={`${inputClass} min-w-0 flex-1 font-mono text-[11px]`}
+          />
+          {!hideLocal && (
+            <button
+              type="button"
+              disabled={busy || browsing !== null || browse.disabled}
+              onClick={() => browseFor('root')}
+              className={`${actionClass} shrink-0`}
+              title={browse.reason ?? 'Browse for a folder'}
+            >
+              {browsing === 'root' ? 'Browsing…' : '📁'}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy || !rootDraft.trim()}
+            onClick={() => run(gitApi.addPath(rootDraft, true))}
+            className={`${actionClass} shrink-0`}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">Individual repositories</p>
+        {(data?.manual.length ?? 0) === 0 ? (
+          <p className="text-[var(--text-dim)] italic">None. Add one for a repository that sits outside your roots.</p>
+        ) : (
+          list(data?.manual ?? [], false)
+        )}
+        <div className="mt-1 flex gap-1.5">
+          <input
+            type="text"
+            spellCheck={false}
+            value={draft}
+            placeholder="C:\Users\you\Git\my-project"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && draft.trim()) run(gitApi.addPath(draft, false));
+            }}
+            className={`${inputClass} min-w-0 flex-1 font-mono text-[11px]`}
+          />
+          {!hideLocal && (
+            <button
+              type="button"
+              disabled={busy || browsing !== null || browse.disabled}
+              onClick={() => browseFor('repo')}
+              className={`${actionClass} shrink-0`}
+              title={browse.reason ?? 'Browse for a folder'}
+            >
+              {browsing === 'repo' ? 'Browsing…' : '📁'}
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy || !draft.trim()}
+            onClick={() => run(gitApi.addPath(draft, false))}
+            className={`${actionClass} shrink-0`}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+
+      {/**
+       * Which of them the Git tab shows — the same shape *Settings › Projects*
+       * uses for the same question, a tick per row and nothing else.
+       *
+       * It used to be a `✕` in the tab's own picker and nowhere else, which was
+       * wrong twice over. It was a one-way door: the server has always taken
+       * `hidden: false` and nothing in the app ever sent it, so a repository
+       * hidden by a mis-tap was gone until somebody edited `userdata.json` by
+       * hand. And it was in the wrong place: a list you open to CHOOSE from is
+       * not a list you manage, and putting the one control that removes an
+       * entry beside the eleven that select one is how a mis-tap happens.
+       */}
+      {found.length > 0 && (
+        <div>
+          <p className="mb-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">Shown in the Git tab</p>
+          <div className="max-h-96 overflow-y-auto rounded border border-[var(--border)]">
+            {found.map((repo) => (
+              <label
+                key={repo.id}
+                title={repo.path}
+                className="flex cursor-pointer items-center gap-2 px-2 py-1 select-none hover:bg-[var(--bg-hover)] max-md:min-h-11"
+              >
+                <input
+                  type="checkbox"
+                  checked={!repo.hidden}
+                  disabled={busy}
+                  onChange={(e) => act(gitApi.setHidden(repo.id, !e.target.checked))}
+                  className="accent-[var(--accent)] max-md:size-5"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className={`block truncate ${repo.hidden ? 'text-[var(--text-dim)]' : ''}`}>{repo.name}</span>
+                  <span className="truncate-start block truncate font-mono text-[10px] text-[var(--text-dim)]">
+                    {repo.path}
+                  </span>
+                </span>
+                {repo.currentBranch && (
+                  <span className="shrink-0 font-mono text-[10px] text-[var(--accent)]">⎇ {repo.currentBranch}</span>
+                )}
+                <span className="shrink-0 text-[10px] text-[var(--text-dim)]">
+                  {repo.origins.includes('manual') ? 'added' : repo.origins.includes('scan') ? 'scanned' : 'project'}
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--text-dim)]">
+            Unticking one keeps it out of the Git tab's picker. Nothing is deleted and nothing is refused — a
+            repository hidden here is still a folder you can work in.
+          </p>
+        </div>
+      )}
+
+      {error && <p className="text-[11px] text-red-400">{error}</p>}
+
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={busy} onClick={() => act(gitApi.refreshRepos())} className={actionClass}>
+          {busy ? 'Scanning…' : 'Rescan now'}
+        </button>
+        <span className="text-[11px] text-[var(--text-dim)]">
+          {visible} repositor{visible === 1 ? 'y' : 'ies'}
+          {hidden > 0 && `, ${hidden} hidden`}
+          {data?.scannedAt && ` · scanned ${relativeTime(data.scannedAt)}`}
+        </span>
+        <Link to="/git" className="ml-auto text-[11px] text-[var(--text-dim)] hover:text-[var(--text)]">
+          Open the Git tab →
+        </Link>
+      </div>
+
+      <p className="text-[11px] text-[var(--text-dim)]">
+        Folders Claude Code has run in are picked up on their own. Adding a path that sits inside a checkout stores
+        the checkout itself, and removing an entry here only takes it off this list — nothing on disk is touched.
+      </p>
+    </>
+  );
+}
