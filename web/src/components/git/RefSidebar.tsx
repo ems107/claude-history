@@ -18,6 +18,7 @@ import { groupRefs, type RefNode } from '../../lib/refTree.ts';
 import { actionClass, inputClass } from '../controlClass.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { CHEVRON, SectionAction } from './SectionAction.tsx';
 import { type SplitOption } from './SplitButton.tsx';
 import { RowActions, rowClass } from './RowActions.tsx';
 import { useGitAction } from './useGitAction.ts';
@@ -110,7 +111,7 @@ function Section({
           onToggle={toggle}
           className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-[11px] font-semibold tracking-wider text-[var(--text-dim)] uppercase hover:text-[var(--text)] max-md:min-h-10"
         >
-          <span aria-hidden className="w-2">
+          <span aria-hidden className={CHEVRON}>
             {open ? '▾' : '▸'}
           </span>
           <span>{title}</span>
@@ -121,37 +122,6 @@ function Section({
       </div>
       {open && <div className="pb-1">{children}</div>}
     </div>
-  );
-}
-
-/**
- * The small "+ new" beside a section title.
- *
- * It was a 10px word with 4px of padding: a 16px target on a screen whose floor
- * is 40, and the only way to make a branch or a tag from here.
- */
-function SectionAction({
-  label,
-  hint,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      title={hint}
-      aria-label={hint}
-      className="shrink-0 cursor-pointer rounded px-2 py-0.5 text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-30 max-md:inline-flex max-md:min-h-10 max-md:items-center max-md:px-2.5 max-md:text-xs"
-    >
-      {label}
-    </button>
   );
 }
 
@@ -195,11 +165,13 @@ function Tree<T>({
               onClick={() => toggle(node.path)}
               aria-expanded={!closed(node.path)}
               style={{ paddingLeft: indent(depth) }}
-              // The same rhythm as the rows it holds: a list where the folders
-              // are shorter than their contents reads as two lists interleaved.
-              className="flex w-full cursor-pointer items-center gap-1.5 py-0.5 pr-2 text-left text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)]/60 hover:text-[var(--text)] max-md:min-h-12 max-md:gap-2 max-md:text-[13px]"
+              // The same rhythm as the rows it holds — a list whose folders are
+              // shorter than their contents reads as two lists interleaved —
+              // and a tint, which is what says "this one is a heading" at a
+              // glance where 14px of indentation does not.
+              className="flex w-full cursor-pointer items-center gap-1.5 bg-[var(--bg-raised)]/50 py-0.5 pr-2 text-left text-[11px] text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:min-h-12 max-md:gap-2 max-md:text-[13px]"
             >
-              <span aria-hidden className="w-2 shrink-0">
+              <span aria-hidden className={CHEVRON}>
                 {closed(node.path) ? '▸' : '▾'}
               </span>
               <span className="min-w-0 flex-1 truncate">{node.name}/</span>

@@ -72,15 +72,26 @@ export function SplitButton({
 
   return (
     <div ref={ref} className="relative inline-flex">
+      {/* **A refused main button is not a dead one on a phone.** It greys and
+          explains itself in a `title` on a desktop; Android has no tooltips, so
+          there the tap opens the menu instead — which is where the same refusal
+          is written under every entry it applies to. A disabled control that
+          cannot say why is the one thing this tab is not allowed to draw, and
+          `Pull` is refused often enough (no upstream, a merge in progress) that
+          it was the commonest control on the bar with nothing to say. */}
       <button
         type="button"
-        disabled={busy || !!main.blocked}
+        disabled={busy || (!!main.blocked && !mobile)}
         onClick={() => {
+          if (main.blocked) {
+            setOpen(true);
+            return;
+          }
           setOpen(false);
           main.run();
         }}
         title={main.blocked ?? `${title ? `${title}\n` : ''}${main.command}`}
-        className={`${actionClass} rounded-r-none border-r-0`}
+        className={`${actionClass} rounded-r-none border-r-0 ${main.blocked ? 'opacity-40' : ''}`}
       >
         {busy ? '…' : label}
         {changed && main.short && <span className="ml-1 text-[var(--text-dim)]">({main.short})</span>}

@@ -450,7 +450,10 @@ export function CommitDetail({
                 type="button"
                 onClick={() => void copyPlain(commit.sha)}
                 title="Copy the full sha"
-                className="max-w-full cursor-pointer truncate font-mono text-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10"
+                // `inline-flex items-center` and not a bare button: with a
+                // 40px floor and nothing to centre it, the sha sat on the
+                // bottom edge of its own box and read as a line below its label.
+                className="inline-flex max-w-full cursor-pointer items-center truncate font-mono text-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10"
               >
                 {commit.sha}
               </button>

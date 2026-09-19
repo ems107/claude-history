@@ -19,6 +19,7 @@ import { ConflictSides } from './ConflictSides.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView, pairedWith } from './DiffView.tsx';
 import { RowActions } from './RowActions.tsx';
+import { CHEVRON, SectionAction } from './SectionAction.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 /**
@@ -111,7 +112,9 @@ function Group({
             tone ?? 'text-[var(--text-dim)]'
           }`}
         >
-          <span className="w-2">{open ? '▾' : '▸'}</span>
+          <span aria-hidden className={CHEVRON}>
+            {open ? '▾' : '▸'}
+          </span>
           <span>{title}</span>
           <span className="tabular-nums">{entries.length}</span>
         </FoldHeader>
@@ -420,17 +423,8 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
     <p className="mb-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-[11px] text-red-300">{action.error}</p>
   ) : null;
 
-  const groupBtn = (label: string, onClick: () => void, danger = false) => (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={action.busy}
-      className={`shrink-0 cursor-pointer px-1 text-[10px] max-md:min-h-11 max-md:px-2 max-md:text-xs ${
-        danger ? 'text-[var(--text-dim)] hover:text-red-300' : 'text-[var(--text-dim)] hover:text-[var(--text)]'
-      } disabled:opacity-40`}
-    >
-      {label}
-    </button>
+  const groupBtn = (label: string, onClick: () => void, danger = false, hint?: string) => (
+    <SectionAction label={label} hint={hint ?? label} disabled={action.busy} danger={danger} onClick={onClick} />
   );
 
   return (
@@ -478,7 +472,12 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
             title="Conflicted"
             entries={conflicted}
             tone="text-amber-400"
-            actions={groupBtn('stage all', () => stage(conflicted.map((e) => e.path)))}
+            actions={groupBtn(
+              'stage all',
+              () => stage(conflicted.map((e) => e.path)),
+              false,
+              'Mark every conflicted file as resolved',
+            )}
           >
             {(entry) => row(entry, false)}
           </Group>
@@ -486,7 +485,12 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
           <Group
             title="Staged"
             entries={staged}
-            actions={groupBtn('unstage all', () => unstage(staged.map((e) => e.path)))}
+            actions={groupBtn(
+              'unstage all',
+              () => unstage(staged.map((e) => e.path)),
+              false,
+              'Take every one of them back out of the next commit',
+            )}
           >
             {(entry) => row(entry, true)}
           </Group>
@@ -496,11 +500,12 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
             entries={changed}
             actions={
               <>
-                {groupBtn('stage all', () => stage(changed.map((e) => e.path)))}
+                {groupBtn('stage all', () => stage(changed.map((e) => e.path)), false, 'Put every change in the next commit')}
                 {groupBtn(
                   'discard all',
                   () => askDiscard(changed.map((e) => e.path), `the changes to ${changed.length} files`),
                   true,
+                  'Throw away every change here. Asks first, and a copy goes to the bin',
                 )}
               </>
             }
@@ -513,11 +518,12 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
             entries={untracked}
             actions={
               <>
-                {groupBtn('stage all', () => stage(untracked.map((e) => e.path)))}
+                {groupBtn('stage all', () => stage(untracked.map((e) => e.path)), false, 'Put every new file in the next commit')}
                 {groupBtn(
                   'delete all',
                   () => askDiscard(untracked.map((e) => e.path), `${untracked.length} untracked files`, true),
                   true,
+                  'Delete every untracked file. Asks first, and a copy goes to the bin',
                 )}
               </>
             }

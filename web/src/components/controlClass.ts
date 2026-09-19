@@ -24,6 +24,11 @@
  * A floor rather than a fixed height on the two that carry a label, because a
  * label can wrap and a clipped word is worse than a tall button; the boxes with
  * nothing but an icon or a segment in them get the height itself.
+ *
+ * **And the number is about the thing you PRESS, not only the box around it.**
+ * A segmented control with a border and 2px of padding is 40 on the outside and
+ * 34 where the finger lands, which passes a measuring script and fails a thumb.
+ * `segmentedClass` gave up its border for that reason.
  */
 
 /**
@@ -128,16 +133,20 @@ export const BAR_H = 'max-md:h-10';
  * For a choice about WHAT YOU ARE LOOKING AT — commits or the working tree, a
  * commit's message or its files. Not for actions, which are buttons, and not
  * for a setting, which is `toggleClass`: the box around the group is the thing
- * that says these are alternatives, and drawing three separate bordered buttons
- * says instead that each is its own idea.
+ * that says these are alternatives, and three separate bordered buttons say
+ * instead that each is its own idea.
  *
- * The box carries the row's height and the segments fill it, so the whole
- * control is 40px on a phone however tall the label inside is.
+ * **A track rather than a frame, and that is the whole of why it is a shape and
+ * not a border.** With a 1px border and 2px of padding the box is 40 and each
+ * segment inside it is 34 — the group obeys the rule and the thing you actually
+ * press does not. So the group has no border and no padding: a tinted track
+ * with the segments filling it edge to edge, `overflow-hidden` rounding their
+ * outer corners for them, and every segment exactly as tall as the control.
  */
-export const segmentedClass = `flex min-w-0 items-center rounded border border-[var(--border)] p-0.5 ${BAR_H}`;
+export const segmentedClass = `flex min-w-0 items-center overflow-hidden rounded bg-[var(--bg-hover)]/60 ${BAR_H}`;
 
 export function segmentClass(active: boolean): string {
-  return `flex h-full min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded px-2 text-xs max-md:text-[13px] ${
+  return `flex h-full min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 px-2 py-1 text-xs max-md:py-0 max-md:text-[13px] ${
     active ? 'bg-[var(--accent)]/15 font-medium text-[var(--accent)]' : 'text-[var(--text-dim)]'
   }`;
 }
