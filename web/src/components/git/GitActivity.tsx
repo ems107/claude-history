@@ -39,7 +39,6 @@ export function GitActivity({
 }) {
   const { activity, error, gitStderr, note } = action;
   const [showStderr, setShowStderr] = useState(false);
-  const [showAll, setShowAll] = useState(false);
 
   // One tick a second, and only while something is running.
   const [, tick] = useState(0);
@@ -132,39 +131,86 @@ export function GitActivity({
     );
   }
 
-  if (note) {
-    const lines = note.split('\n');
-    return (
-      <div className="w-full text-[11px] text-emerald-400">
-        <span className="flex items-start gap-2">
-          <span className={`min-w-0 flex-1 ${showAll ? 'whitespace-pre-wrap' : 'truncate'}`} title={note}>
-            {showAll ? note : lines[0]}
-          </span>
-          {/* A fetch answers in one line per ref it moved and a push in four.
-              Only the first was ever drawn, which is how "3 refs updated" and
-              "everything up to date" came to look identical. */}
-          {lines.length > 1 && (
-            <button
-              type="button"
-              onClick={() => setShowAll((v) => !v)}
-              aria-expanded={showAll}
-              className="shrink-0 cursor-pointer text-[10px] text-emerald-400/80 underline decoration-dotted underline-offset-2 hover:text-emerald-300 max-md:min-h-10"
-            >
-              {showAll ? 'less' : `${lines.length - 1} more line${lines.length === 2 ? '' : 's'}`}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={action.clear}
-            aria-label="Dismiss"
-            className="shrink-0 cursor-pointer px-1 text-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10 max-md:px-2"
-          >
-            ✕
-          </button>
-        </span>
-      </div>
-    );
-  }
+  // Its own component, because it owns a timer and a fold and neither may be
+  // declared behind an `if` in this one. Keyed on the note so a second result
+  // arrives as a fresh strip — an unfolded one and a running clock are both
+  // about the note that is there NOW.
+  if (note) return <NoteStrip key={note} note={note} clear={action.clear} />;
 
   return null;
+}
+
+/** How long a bare confirmation stays before taking its row back. */
+const FLEETING_MS = 6_000;
+
+function NoteStrip({
+  note,
+  clear,
+}: {
+  note: string;
+  clear: () => void;
+}) {
+  const lines = note.split('\n');
+  /**
+   * A short report opens READ, and that is not a preference either.
+   *
+   * git leads a fetch and a push with `From <url>` / `To <url>` and puts the
+   * refs it moved on the lines after it — so the one line a collapsed
+   * two-line note showed was the path, and the thing that actually happened
+   * was behind a click. Showing the LAST line instead would be reading git's
+   * English, which this tab does not do anywhere else. Three lines cost
+   * nothing to show; a fetch that moved thirty branches still folds.
+   */
+  const [showAll, setShowAll] = useState(lines.length <= 3);
+  /**
+   * **A result you have to act on stays; one that only confirms goes.**
+   *
+   * `Already up to date.` is the whole of what a fetch that moved nothing has
+   * to say, and it is worth saying — it is the only evidence the command ran at
+   * all, and silence after a click is the thing this strip exists to end. It is
+   * not worth a permanent row in a toolbar that wraps, though, so a note with
+   * nothing in it beyond the confirmation takes its row back after a few
+   * seconds. A failure never does: that one is a decision waiting to be made.
+   *
+   * A note with more than one line has something to READ — a fetch prints one
+   * line per ref it moved — so it waits to be dismissed. Either way the full
+   * text is in the command log afterwards, which is the panel's whole job.
+   */
+  const fleeting = lines.length === 1;
+  useEffect(() => {
+    if (!fleeting) return;
+    const timer = setTimeout(clear, FLEETING_MS);
+    return () => clearTimeout(timer);
+  }, [fleeting, note, clear]);
+
+  return (
+    <div className="w-full text-[11px] text-emerald-400">
+      <span className="flex items-start gap-2">
+        <span className={`min-w-0 flex-1 ${showAll ? 'whitespace-pre-wrap' : 'truncate'}`} title={note}>
+          {showAll ? note : lines[0]}
+        </span>
+        {/* A fetch answers in one line per ref it moved and a push in four.
+            Only the first was ever drawn, which is how "3 refs updated" and
+            "everything up to date" came to look identical. */}
+        {lines.length > 1 && (
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            aria-expanded={showAll}
+            className="shrink-0 cursor-pointer text-[10px] text-emerald-400/80 underline decoration-dotted underline-offset-2 hover:text-emerald-300 max-md:min-h-10"
+          >
+            {showAll ? 'less' : `${lines.length - 1} more line${lines.length === 2 ? '' : 's'}`}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={clear}
+          aria-label="Dismiss"
+          className="shrink-0 cursor-pointer px-1 text-[var(--text-dim)] hover:text-[var(--text)] max-md:min-h-10 max-md:px-2"
+        >
+          ✕
+        </button>
+      </span>
+    </div>
+  );
 }

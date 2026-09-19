@@ -7,7 +7,6 @@ import { commandFailed, pasteableCommand } from '../../lib/gitCommand.ts';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, segmentClass, segmentedClass } from '../controlClass.ts';
 import { Sheet } from '../Sheet.tsx';
-import { FollowBottomButton, useFollowBottom } from '../viewer/FollowBottom.tsx';
 import { CommandLogRow } from './CommandLogRow.tsx';
 
 /**
@@ -60,7 +59,6 @@ export function CommandLogPanel({ open, onClose, repoId }: { open: boolean; onCl
     return FILTERS.some((f) => f.key === stored) ? (stored as Filter) : 'actions';
   });
   const [mineOnly, setMineOnly] = useState(false);
-  const follow = useFollowBottom();
 
   const mobile = useIsMobile();
   // It is a sheet below 48rem, and every sheet owes Android's Back an answer —
@@ -118,31 +116,50 @@ export function CommandLogPanel({ open, onClose, repoId }: { open: boolean; onCl
     </>
   );
 
+  /**
+   * **Newest first**, which is what `/logs` has always done and what this panel
+   * did not.
+   *
+   * It was bottom-anchored with a "to the end" pill, inherited from a dock 200px
+   * tall where the end was the only part you could see. As a full view that is
+   * backwards: what you came to read is the command you just ran, and it was at
+   * the far side of everything that had happened before it. Prepending also
+   * means the row for a command still RUNNING is the first one on screen, which
+   * is the whole reason to have the panel open while it works.
+   *
+   * No "follow" tick like the log viewer's, on purpose: that one exists because
+   * the daily log writes on its own, continuously. This one only ever moves
+   * when the app runs git — usually because you pressed something — and the
+   * browser's own scroll anchoring keeps a prepended row from shifting what you
+   * are reading.
+   */
+  const shown = [...entries].reverse();
+
   const body = (
-    <div ref={follow.scrollRef} className="h-full overflow-y-auto">
-      <div ref={follow.contentRef}>
-        {data && data.dropped > 0 && (
-          <p className="px-2 py-1 text-[11px] text-amber-400">
-            {data.dropped} older command{data.dropped === 1 ? '' : 's'} are no longer kept.
-          </p>
-        )}
-        {entries.length === 0 ? (
-          <p className="px-2 py-2 text-[11px] text-[var(--text-dim)] italic">
-            {all.length === 0
-              ? 'Nothing has run yet.'
-              : filter === 'failures'
-                ? 'Nothing has failed. Everything the app ran, git accepted.'
-                : 'Nothing has changed a repository yet — the rest is under Everything.'}
-          </p>
-        ) : (
-          entries.map((entry) => <CommandLogRow key={entry.seq} entry={entry} />)
-        )}
-        {entries.length > 0 && hidden > 0 && (
-          <p className="px-2 py-1.5 text-[11px] text-[var(--text-dim)] italic">
-            {hidden} more not shown by this filter.
-          </p>
-        )}
-      </div>
+    <div className="h-full overflow-y-auto">
+      {shown.length === 0 ? (
+        <p className="px-2 py-2 text-[11px] text-[var(--text-dim)] italic">
+          {all.length === 0
+            ? 'Nothing has run yet.'
+            : filter === 'failures'
+              ? 'Nothing has failed. Everything the app ran, git accepted.'
+              : 'Nothing has changed a repository yet — the rest is under Everything.'}
+        </p>
+      ) : (
+        shown.map((entry) => <CommandLogRow key={entry.seq} entry={entry} />)
+      )}
+      {/* Both of these belong at the FOOT now: they are about what is older
+          than the last row, and older is downwards. */}
+      {shown.length > 0 && hidden > 0 && (
+        <p className="px-2 py-1.5 text-[11px] text-[var(--text-dim)] italic">
+          {hidden} more not shown by this filter.
+        </p>
+      )}
+      {data && data.dropped > 0 && (
+        <p className="px-2 py-1 text-[11px] text-amber-400">
+          {data.dropped} older command{data.dropped === 1 ? '' : 's'} are no longer kept.
+        </p>
+      )}
     </div>
   );
 
@@ -150,7 +167,10 @@ export function CommandLogPanel({ open, onClose, repoId }: { open: boolean; onCl
     <button
       type="button"
       className={`${actionClass} shrink-0`}
-      title="Copy every command shown, with its folder"
+      // Chronological, not the order on screen. What this is for is pasting
+      // into a terminal, and a list of commands to re-run is only meaningful
+      // in the order they ran.
+      title="Copy every command shown, with its folder, in the order they ran"
       onClick={() => {
         void copyPlain(entries.map((e) => pasteableCommand(e.argv, e.cwd)).join('\n'));
       }}
@@ -206,10 +226,7 @@ export function CommandLogPanel({ open, onClose, repoId }: { open: boolean; onCl
             that mixes `git status` with `git push` explains neither. */}
         <p className="w-full text-[var(--text-dim)]">{caption(running)}</p>
       </div>
-      <div className="relative min-h-0 flex-1">
-        {body}
-        <FollowBottomButton following={follow.following} toggle={follow.toggle} unseen={follow.unseen} />
-      </div>
+      <div className="min-h-0 flex-1">{body}</div>
     </div>
   );
 }
