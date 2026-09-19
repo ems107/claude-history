@@ -495,9 +495,24 @@ export function parseDiff(text: string, maxLines: number): GitFileDiff[] {
         // context line adds a phantom line to every diff.
         if (kind === '+' || kind === '-' || kind === ' ') {
           if (total >= maxLines) {
+            /**
+             * **Stop reading this file, rather than stop reading this hunk.**
+             *
+             * It used to null `current` and carry on, which put every remaining
+             * line of the hunk BODY through the header branch below — and a
+             * body line is content with one marker character in front of it, so
+             * an added line reading `++ foo` arrives here as `+++ foo` and is
+             * taken for the `+++ b/path` header. The file was then reported
+             * under a name taken out of its own contents, and asking for its
+             * diff asked for a path that does not exist. A Markdown file with
+             * `--- ` separators in it does the same through the other branch.
+             *
+             * Nothing is lost by leaving: the path, the status and `binary` are
+             * all settled before the first `@@`, and the hunks are thrown away
+             * anyway when `tooLarge` is set.
+             */
             tooLarge = true;
-            current = null;
-            continue;
+            break;
           }
           total++;
           if (kind === '+') {

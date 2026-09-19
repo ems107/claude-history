@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { dirEntry } from '../util/launcher.ts';
-import { runGit } from '../util/git.ts';
+import { redact, runGit } from '../util/git.ts';
 import { normalizeProjectKey } from './projects.ts';
 
 /**
@@ -346,7 +346,14 @@ export function toApiRepo(repo: ResolvedRepo, siblings: string[]): GitRepo {
     origins: [...repo.origins],
     projectKeys: repo.projectKeys,
     siblings,
-    remoteUrl: repo.remoteUrl,
+    // **Redacted on the way out.** A remote can be
+    // `https://user:ghp_…@host/repo`, and this field crosses to the browser on
+    // every overview — the one copy of a git string in this app that was not
+    // going through `redact`, because the panel and the log were the only two
+    // places anybody thought of it reaching. Nothing in the UI reads it today;
+    // what it is for is a human with `curl` and the bench, and the host and the
+    // path are the whole of what that reader wants.
+    remoteUrl: redact(repo.remoteUrl ?? '') || null,
     currentBranch: repo.currentBranch,
     bare: repo.bare,
     hidden: repo.hidden,

@@ -200,6 +200,14 @@ const REPORTED_OPS: GitOp[] = [
   'pull',
   'push',
   'pushUpstream',
+  // It has a rule of its own in `blockedFor` and was missing from here, so the
+  // map never carried it: `status.blocked.pushForce` came back undefined and
+  // the menu's *Force push, with lease…* looked live on a detached HEAD and on
+  // a branch with no upstream. The endpoint refused it correctly — `mutate`
+  // asks `blockedFor` directly — so what was broken is the half this tab exists
+  // to get right: a control that should say why it cannot run, saying nothing
+  // until it is pressed.
+  'pushForce',
   'pushDelete',
   'merge',
   'rebase',
@@ -1983,7 +1991,7 @@ export class GitService {
       const res = await this.network(repo, 'fetch', args, signal);
       if (!res.ok) throw new GitFailed(res);
       // fetch says nothing when nothing moved, which IS the answer.
-      return (res.stderr.trim() || res.stdout.trim() || 'Already up to date.').slice(0, 2_000);
+      return redact((res.stderr.trim() || res.stdout.trim() || 'Already up to date.').slice(0, 2_000));
     });
     return { status, message: result };
   }
@@ -2073,7 +2081,9 @@ export class GitService {
 
       const res = await this.network(repo, op, args, signal);
       if (!res.ok) throw new GitFailed(res);
-      return (res.stdout.trim() || res.stderr.trim()).slice(0, 2_000);
+      // Redacted for the same reason the panel is: a push prints the remote it
+      // pushed to, and that URL is where a token lives.
+      return redact((res.stdout.trim() || res.stderr.trim()).slice(0, 2_000));
     });
     return { status, message: result };
   }
@@ -2091,7 +2101,9 @@ export class GitService {
       await this.assertRef(repo, `refs/tags/${name}`);
       const res = await this.network(repo, 'tagPush', ['push', '--porcelain', '--', remote, `refs/tags/${name}`], signal);
       if (!res.ok) throw new GitFailed(res);
-      return (res.stdout.trim() || res.stderr.trim()).slice(0, 2_000);
+      // Redacted for the same reason the panel is: a push prints the remote it
+      // pushed to, and that URL is where a token lives.
+      return redact((res.stdout.trim() || res.stderr.trim()).slice(0, 2_000));
     });
     return { status, message: result };
   }

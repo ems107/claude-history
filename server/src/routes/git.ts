@@ -37,7 +37,7 @@ interface GitMutationResult {
   undoId?: string | null;
 }
 import { createLogger } from '../core/logger.ts';
-import { GIT_AUTH_HINT, GitSpawnError, gitErrorLine, isAuthFailure, isNonFastForward } from '../util/git.ts';
+import { GIT_AUTH_HINT, GitSpawnError, gitErrorLine, isAuthFailure, isNonFastForward, redact } from '../util/git.ts';
 import { launchShell, openInExplorer, openInVsCode } from '../util/launcher.ts';
 import { abortSignalOf } from '../util/replyAbort.ts';
 
@@ -62,15 +62,15 @@ export function sendGitError(reply: FastifyReply, err: unknown): FastifyReply {
   if (err instanceof GitFailed) {
     const { result } = err;
     if (isAuthFailure(result.stderr)) {
-      return reply.code(409).send({ error: GIT_AUTH_HINT, gitStderr: result.stderr.trim().slice(0, 2_000) });
+      return reply.code(409).send({ error: GIT_AUTH_HINT, gitStderr: redact(result.stderr.trim().slice(0, 2_000)) });
     }
     if (isNonFastForward(result.stderr)) {
       return reply.code(409).send({
         error: 'The remote has commits you do not have — fetch and rebase, then push again.',
-        gitStderr: result.stderr.trim().slice(0, 2_000),
+        gitStderr: redact(result.stderr.trim().slice(0, 2_000)),
       });
     }
-    return reply.code(409).send({ error: gitErrorLine(result), gitStderr: result.stderr.trim().slice(0, 2_000) });
+    return reply.code(409).send({ error: gitErrorLine(result), gitStderr: redact(result.stderr.trim().slice(0, 2_000)) });
   }
   return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
 }

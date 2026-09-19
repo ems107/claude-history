@@ -232,10 +232,24 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
       if (errBytes <= STDERR_MAX_BYTES) err.push(chunk);
     });
 
-    // git spawns children of its own — git-remote-https, ssh, the credential
-    // helper — so the tree goes, not just the pid.
+    /**
+     * git spawns children of its own — git-remote-https, ssh, the credential
+     * helper — so the tree goes, not just the pid.
+     *
+     * **The `error` listener is not politeness.** A `ChildProcess` that fails to
+     * start emits `error`, and an `error` with nobody listening is thrown by
+     * the EventEmitter itself: it would reach `uncaughtException`, which this
+     * app answers by exiting. So a `taskkill` that could not be launched —
+     * a mangled PATH is all it takes — would take the whole server down, and it
+     * would do it on the one path in this file that only ever runs when
+     * something has ALREADY gone wrong. Failing to kill is survivable; the
+     * timeout has already been recorded and git will finish or not on its own.
+     */
     const killTree = (): void => {
-      if (child.pid) spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+      if (!child.pid) return;
+      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }).on('error', () => {
+        // Nothing left to try, and nothing worth ending the process over.
+      });
     };
     const timer = setTimeout(() => {
       timedOut = true;
@@ -346,6 +360,14 @@ export function isNonFastForward(stderr: string): boolean {
  * The one line worth showing from a failed command. git puts the useful
  * sentence last as often as first, so prefer a `fatal:`/`error:` line and fall
  * back to the final non-empty one.
+ *
+ * **Redacted, like everything else that leaves here.** This line goes into an
+ * HTTP body and from there into a toast the user may screenshot, and the
+ * sentence it most often carries is
+ * `Authentication failed for 'https://user:token@host/repo'` — git prints the
+ * remote URL in exactly the failure a token is most likely to be in. The panel
+ * and the daily log already hid it; the answer to the request was the one side
+ * that did not, which made the promise in `redact` untrue rather than partial.
  */
 export function gitErrorLine(result: GitRunResult): string {
   const lines = result.stderr
@@ -357,5 +379,5 @@ export function gitErrorLine(result: GitRunResult): string {
     if (result.aborted) return 'The command was cancelled.';
     return `git exited with code ${result.exitCode}.`;
   }
-  return lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines[lines.length - 1];
+  return redact(lines.find((l) => /^(fatal|error):/i.test(l)) ?? lines[lines.length - 1]);
 }
