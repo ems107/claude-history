@@ -16,9 +16,11 @@ import { MenuButton, type SplitOption } from './SplitButton.tsx';
  * tooltips, so the words have to be drawn, and four labelled buttons do not fit
  * on a 450px row.
  *
- * So below 48rem the strip becomes one `⋮` and a sheet with room for the whole
- * sentence, the git command under it, and the reason a dead one is dead. Above
- * that line nothing changes at all.
+ * So below 48rem the strip becomes one `⋮` and a popover under it with room for
+ * the whole sentence, the git command beneath it, and the reason a dead one is
+ * dead. A popover rather than a sheet: five verbs do not need the window, and
+ * taking it meant the branch list you were reading disappeared to show them.
+ * Above 48rem nothing changes at all.
  */
 /**
  * The strip itself, on a desktop.
@@ -29,7 +31,7 @@ import { MenuButton, type SplitOption } from './SplitButton.tsx';
  * there, they did not exist — and with them went checking out a branch, merging
  * one, deleting one, publishing a tag and every stash verb this tab has.
  */
-export const ROW_ACTIONS = 'flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100';
+const ROW_ACTIONS = 'flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100 max-md:opacity-100';
 
 /**
  * One action on a ref row. It always carries a title, and when it is disabled
@@ -45,10 +47,10 @@ export const ROW_ACTIONS = 'flex shrink-0 items-center gap-0.5 opacity-0 group-h
  * 44px square below the fold line, from a 11×17 glyph: these run `git checkout`
  * and `git branch -D`, and a mis-tap between two of them is not a small thing.
  */
-export const ACT_CLASS =
+const ACT_CLASS =
   'cursor-pointer px-1 text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] disabled:cursor-default disabled:opacity-30 max-md:inline-flex max-md:size-11 max-md:items-center max-md:justify-center max-md:px-0 max-md:text-base';
 
-export function Act({
+function Act({
   label,
   title,
   onClick,
@@ -111,7 +113,7 @@ export const rowBodyClass = 'flex min-w-0 flex-1 cursor-pointer items-center gap
 export interface RowAction {
   /** The glyph, for the strip. */
   label: string;
-  /** The same thing in words, for the sheet. Never a repeat of the glyph. */
+  /** The same thing in words, for the menu. Never a repeat of the glyph. */
   words: string;
   hint?: string;
   disabled?: boolean;
@@ -121,19 +123,19 @@ export interface RowAction {
   /** A sub-menu rather than one action — the merge caret and its variants. */
   menu?: { options: SplitOption[]; mainKey: string };
   /**
-   * Leave it out of the sheet, because the menu beside it already lists it.
+   * Leave it out of the menu, because the sub-menu beside it already lists it.
    *
    * On a desktop the strip has both — one press for the usual thing, a caret
-   * for the rest — and that is the right trade there. In a sheet they are two
+   * for the rest — and that is the right trade there. In a menu they are two
    * rows saying the same thing, so the strip's shortcut goes and the menu's own
    * entry carries the mark instead.
    */
   coveredByMenu?: boolean;
   /**
-   * Drawn as a WORD beside the `⋮` on a phone, rather than inside the sheet.
+   * Drawn as a WORD beside the `⋮` on a phone, rather than inside the menu.
    *
    * For the one verb on a row that is pressed over and over — staging a file —
-   * where a tap to open a sheet and a tap to choose is one tap too many for
+   * where a tap to open a menu and a tap to choose is one tap too many for
    * something you do to six files in a row. At most one per row, and never
    * anything destructive: a word that stages is worth the width, a word that
    * discards is a mis-tap with no undo but the bin.

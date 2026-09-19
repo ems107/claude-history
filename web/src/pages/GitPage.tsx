@@ -201,7 +201,7 @@ export function GitPage() {
 
   return (
     <div className="flex h-full">
-      {/* The refs column, and on a phone the sheet the toolbar's ⌥ opens. */}
+      {/* The refs column, and on a phone the sheet the toolbar's branch chip opens. */}
       {!mobile && (
         <>
           <aside

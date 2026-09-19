@@ -45,6 +45,26 @@ export function GitReposPanel() {
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['git'] });
 
+  /**
+   * Anything that talks to the server, with its refusal drawn where it happened.
+   *
+   * It does NOT touch the two path boxes, and that is the whole reason it is
+   * separate from `run` below. Everything here used to go through one helper
+   * that emptied both of them on success — right for adding a path, which is
+   * what it was written for, and wrong for every other button on the panel:
+   * typing a folder into one box and then ticking a repository, or pressing
+   * Rescan, threw away what had been typed.
+   */
+  const act = (work: Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    work
+      .then(refresh)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  /** The same, for the one case where emptying the box IS the success. */
   const run = (work: Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -83,7 +103,7 @@ export function GitReposPanel() {
         <button
           type="button"
           disabled={busy}
-          onClick={() => run(gitApi.removePath(entry.path, asRoot))}
+          onClick={() => act(gitApi.removePath(entry.path, asRoot))}
           className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-red-300 max-md:min-h-11 max-md:px-2 max-md:text-xs max-md:opacity-100"
           title="Remove from the list. Nothing on disk is touched."
         >
@@ -212,7 +232,7 @@ export function GitReposPanel() {
                   type="checkbox"
                   checked={!repo.hidden}
                   disabled={busy}
-                  onChange={(e) => run(gitApi.setHidden(repo.id, !e.target.checked))}
+                  onChange={(e) => act(gitApi.setHidden(repo.id, !e.target.checked))}
                   className="accent-[var(--accent)] max-md:size-5"
                 />
                 <span className="min-w-0 flex-1">
@@ -240,7 +260,7 @@ export function GitReposPanel() {
       {error && <p className="text-[11px] text-red-400">{error}</p>}
 
       <div className="flex items-center gap-2">
-        <button type="button" disabled={busy} onClick={() => run(gitApi.refreshRepos())} className={actionClass}>
+        <button type="button" disabled={busy} onClick={() => act(gitApi.refreshRepos())} className={actionClass}>
           {busy ? 'Scanning…' : 'Rescan now'}
         </button>
         <span className="text-[11px] text-[var(--text-dim)]">

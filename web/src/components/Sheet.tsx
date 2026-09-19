@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from 'react';
  *
  * The one shape this app has for "something opened on top of what you were
  * reading, on a screen with no room beside it": a title row that does not
- * scroll, a body that does, and a Done big enough for a thumb. Every phone
+ * scroll and a body that does. Every phone
  * layer in the app is this shape — the list's filters, the session's actions,
  * the inspector, the Git tab's refs and its dialogs — and it lives up here
  * rather than under `list/`, where it started, because by now four different
@@ -56,7 +56,7 @@ export function Sheet({
      * **It covers the page, not the app.** `inset-0` took the app header with
      * it — the mark, the usage, the bell and the gear — so opening the branches
      * on a phone meant losing every way out of the Git tab until you found
-     * Close. It now sits between the two `usePublishedHeight` variables, which
+     * the way out. It now sits between the two `usePublishedHeight` variables, which
      * are `0px` whenever the frame is not drawn (a session in landscape, the
      * bar hiding itself while you type), so nothing has to know which case it
      * is in.

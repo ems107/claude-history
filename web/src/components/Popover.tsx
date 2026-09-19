@@ -45,10 +45,34 @@ export function Popover({
   const [box, setBox] = useState<{ top?: number; bottom?: number; left: number; maxHeight: number } | null>(null);
   useBackDismiss(true, onClose);
 
+  /**
+   * Escape takes the innermost layer, and **the capture phase is what makes
+   * that true**. A popover opened over a sheet is the ordinary case here — a
+   * branch's `⋮` inside the branches — and both listen on `document`, so
+   * without this the order is whichever registered first and one key would
+   * close the sheet out from under the menu on top of it. Back has the same
+   * rule and gets it from `sheetStack`; this is the keyboard's half.
+   */
+  useLayoutEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
   useLayoutEffect(() => {
     const place = () => {
       const anchor = anchorRef.current;
-      if (!anchor) return;
+      // No trigger to hang off: close rather than sit there invisible. The
+      // panel would be hidden at -9999 and the scrim would not — a transparent
+      // sheet over the whole window swallowing every tap.
+      if (!anchor) {
+        onClose();
+        return;
+      }
       const at = anchor.getBoundingClientRect();
       const w = Math.min(width, window.innerWidth - MARGIN * 2);
       // Right edges aligned, which is where these have always opened, then

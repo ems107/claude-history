@@ -30,9 +30,11 @@ export interface SplitOption {
  * changing a preference to do something once. So: the default is a preference,
  * and the rest are here.
  *
- * The dropdown recipe is the app's own (ViewButton / RepoPicker): click outside
- * to close, and NO keyboard handlers — everything in this tab can change a
- * repository, and that rule has no exceptions.
+ * Where the menu appears is `Popover`'s business, not this file's. The rule
+ * this tab does keep is the one about keys: no bare-key shortcut can run
+ * anything here, because everything here can change a repository. Escape
+ * closing the menu is the exception the rule already names, and it belongs to
+ * the popover rather than to the button.
  *
  * Every entry carries the exact command it runs. That is the same contract as
  * the command panel, moved to before the click instead of after it.
@@ -119,7 +121,7 @@ export function SplitButton({
  * window: that fixed the refs column clipping it and put the menu at the
  * opposite end of the screen from the finger that opened it.
  */
-export function OptionMenu({
+function OptionMenu({
   options,
   mainKey,
   onClose,

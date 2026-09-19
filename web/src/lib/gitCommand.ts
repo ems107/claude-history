@@ -10,7 +10,7 @@
  * and expanding shows the argv exactly as it ran. Nothing is ever hidden
  * without a number next to it.
  */
-export function condenseArgv(argv: string[]): { shown: string[]; hidden: number } {
+function condenseArgv(argv: string[]): { shown: string[]; hidden: number } {
   let i = 0;
   let hidden = 0;
   while (i < argv.length) {

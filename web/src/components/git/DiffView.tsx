@@ -77,7 +77,7 @@ export interface HunkActions {
   reaching?: boolean;
 }
 
-export const lineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
+const lineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
 
 /**
  * The line on the other side of the same edit, or null when there is none.

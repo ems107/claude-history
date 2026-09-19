@@ -27,8 +27,8 @@ export const ROW_H = 26;
  * in were 208px of a 360px screen.
  */
 export const ROW_H_MOBILE = 44;
-export const LANE_W = 14;
-export const LANE_X0 = 10;
+const LANE_W = 14;
+const LANE_X0 = 10;
 /**
  * Past this the lanes are clipped. A repository with thirty live branches must
  * not push the subject off the row — the graph is an aid, not the content.

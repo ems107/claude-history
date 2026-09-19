@@ -48,14 +48,17 @@ export function ConfirmDialog({
 
   useEffect(() => {
     cancelRef.current?.focus();
+    // In the capture phase and stopping there: this is the innermost layer, and
+    // on a narrow window it can be standing on a `Sheet` that answers Escape
+    // too. One key closes one thing — the same rule `sheetStack` gives Back.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      }
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
   }, [onCancel]);
 
   const ready = !requireTyped || typed === requireTyped;
