@@ -160,9 +160,22 @@ export function GitToolbar({
       {/* Beside the word, never instead of it: the icon is what the eye finds
           the control by on a bar of eight, and the label is what says which
           one it is — a glyph with its meaning in a `title` is a glyph with no
-          meaning at all on a phone. */}
-      <span className="shrink-0">{opts.icon}</span>
-      <span className="truncate">{opts.label}</span>
+          meaning at all on a phone.
+
+          **The two are a pair at 4px inside the segment's own 6px**, and the
+          reason it is not the app's usual 6 is that the number is not what you
+          see. None of these three icons has ink out to the right edge of its
+          16-unit box — the `±` stops at 12 of 16 — so the gap that reaches the
+          eye is the number plus whatever the box has spare: measured at a
+          numeric 4 it is 6.2px for the list, 7.4 for the graph and 8.2 for the
+          `±`, which is already at or above what a text-only control's 6 gives.
+          At 6 they floated. Below 4 the `±` crowds the W of `Working` — drawn
+          and compared at 3 before settling here. The count chip keeps the
+          segment's real 6, because it IS a separate thing from the label. */}
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="shrink-0">{opts.icon}</span>
+        <span className="truncate">{opts.label}</span>
+      </span>
       {opts.count ? (
         <span className="shrink-0 rounded bg-[var(--accent)]/20 px-1 text-[10px] tabular-nums text-[var(--accent)]">
           {opts.count}
