@@ -63,8 +63,29 @@ export function toggleClass(active: boolean, disabled = false): string {
  * reflects a state, but almost every one of them can be refused — by remote
  * access, by a request in flight, or by a Claude of ours still running.
  */
-export const actionClass =
-  'cursor-pointer rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:border-[var(--text-dim)] disabled:cursor-default disabled:opacity-40 max-md:inline-flex max-md:min-h-10 max-md:items-center max-md:justify-center max-md:px-3 max-md:py-2 max-md:text-sm';
+const ACTION_SHAPE =
+  'cursor-pointer rounded border px-2 py-1 text-xs disabled:cursor-default disabled:opacity-40 max-md:inline-flex max-md:min-h-10 max-md:items-center max-md:justify-center max-md:px-3 max-md:py-2 max-md:text-sm';
+
+export const actionClass = `${ACTION_SHAPE} border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--text-dim)]`;
+
+/**
+ * **The same button while the thing it opened is open.**
+ *
+ * A caret that opens a menu and then looks exactly as it did before leaves the
+ * menu floating with nothing to say where it came from — which is the one
+ * question a popover raises that a full-screen sheet does not. The trigger
+ * holds the accent for as long as its panel is up, the way the square already
+ * did, and `openClass` is the same look for the controls that are not this
+ * shape.
+ *
+ * Built as a whole string rather than appended to `actionClass`, because two
+ * `border-*` utilities in one class list is a question about which one
+ * Tailwind happened to emit last.
+ */
+export const actionOpenClass = `${ACTION_SHAPE} border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]`;
+
+/** The accent a trigger wears while its panel is up, for shapes of their own. */
+export const openClass = 'border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]';
 
 /**
  * The same button for something that cannot be undone.

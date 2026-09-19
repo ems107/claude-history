@@ -201,7 +201,8 @@ function Bin({
  * One component so the contents are written once. A phone that keeps both
  * columns has 360px to divide between a 220px file list and a diff whose
  * gutters alone are 128 — so below 48rem the list is the page and the diff
- * arrives over it, closed by Done or by Back.
+ * arrives over it, closed by Back — there is no button for it, because Back
+ * is the one control every reader of this already reaches for.
  */
 function DiffPane({
   mobile,
@@ -219,7 +220,7 @@ function DiffPane({
   // The basename: the whole path is what the row you tapped already showed, and
   // a sheet's title bar has no room to repeat it.
   return (
-    <Sheet title={path.split(/[\/]/).pop() ?? path} onClose={onClose} closeLabel="Close">
+    <Sheet title={path.split(/[\/]/).pop() ?? path} onClose={onClose}>
       <div className="pt-2">{children}</div>
     </Sheet>
   );

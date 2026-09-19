@@ -30,11 +30,14 @@ export function GraphList({
   repoId,
   refFilter,
   selected,
+  headSha,
   onSelect,
 }: {
   repoId: string;
   refFilter: string | null;
   selected: string | null;
+  /** Where the working tree is standing, so the row can say so. */
+  headSha?: string | null;
   onSelect: (sha: string) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -94,6 +97,7 @@ export function GraphList({
                 rowH={rowH}
                 stacked={mobile}
                 selected={selected === commit.sha}
+                isHead={!!headSha && headSha === commit.sha}
                 onSelect={onSelect}
               />
             </div>

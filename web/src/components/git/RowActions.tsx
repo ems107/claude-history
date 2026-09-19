@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useIsMobile } from '../../lib/mobile.ts';
+import { openClass } from '../controlClass.ts';
 import { Popover } from '../Popover.tsx';
 import { MenuButton, type SplitOption } from './SplitButton.tsx';
 
@@ -212,7 +213,10 @@ export function RowActions({
           onClick={() => setOpen(true)}
           aria-label={`What can be done to ${name}`}
           aria-haspopup="menu"
-          className="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded border border-[var(--border)] text-base text-[var(--text-dim)] active:bg-[var(--bg-hover)]"
+          aria-expanded={open}
+          className={`inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded border text-base ${
+            open ? openClass : 'border-[var(--border)] text-[var(--text-dim)] active:bg-[var(--bg-hover)]'
+          }`}
         >
           ⋮
         </button>

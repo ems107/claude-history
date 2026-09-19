@@ -40,8 +40,9 @@ export function CommandLogDock({
 
   const mobile = useIsMobile();
   // It is a sheet below 48rem, and every sheet owes Android's Back an answer —
-  // this one did not have it, and a log opened once then covered the page until
-  // somebody found Close.
+  // this one did not have it, and a log opened once then covered the page with
+  // nothing to take it away again. There is no Close button now, so a sheet
+  // that forgets this is a sheet with no way out at all.
   useBackDismiss(mobile && open, onToggle);
   // Closed, only the newest entry is fetched: a dock nobody is looking at
   // should cost a row, not the whole ring.
@@ -89,7 +90,6 @@ export function CommandLogDock({
       <Sheet
         title="Command log"
         onClose={onToggle}
-        closeLabel="Close"
         extra={
           <label className="flex shrink-0 items-center gap-1 text-[11px] text-[var(--text-dim)]">
             <input

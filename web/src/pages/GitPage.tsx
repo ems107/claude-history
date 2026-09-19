@@ -280,6 +280,7 @@ export function GitPage() {
                 repoId={repoId}
                 refFilter={selectedRef}
                 selected={selectedSha}
+                headSha={status?.headSha}
                 onSelect={(sha) => {
                   setSearchParams(
                     (prev) => {
@@ -335,7 +336,6 @@ export function GitPage() {
                 title={`Commit ${selectedSha?.slice(0, 7)}`}
                 subtitle={openCommit.data?.commit.subject}
                 onClose={closeDetail}
-                closeLabel="Close"
               >
                 <div className="pt-2 text-xs">{detail}</div>
               </Sheet>

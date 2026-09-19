@@ -29,6 +29,7 @@ export function GraphRow({
   rowH,
   stacked = false,
   selected,
+  isHead = false,
   onSelect,
 }: {
   commit: GitCommit;
@@ -38,11 +39,29 @@ export function GraphRow({
   rowH: number;
   stacked?: boolean;
   selected: boolean;
+  /** This is where the working tree is standing. */
+  isHead?: boolean;
   onSelect: (sha: string) => void;
 }) {
-  const tone = selected
-    ? 'bg-[var(--bg-hover)] outline outline-1 -outline-offset-1 outline-[var(--accent-dim)]'
-    : 'hover:bg-[var(--bg-hover)]/50';
+  /**
+   * **Where you ARE and what you are LOOKING AT are two different rows**, and
+   * the list only ever said the second. Scrolling a thousand commits, nothing
+   * answered the question this view exists to answer first — which one is
+   * checked out — except reading the refs on each row, and a detached HEAD has
+   * none to read.
+   *
+   * So HEAD is the accent as a wash, permanently, and selection stays what it
+   * was: a lift and an outline. Written as one ternary chain rather than two
+   * appended classes, because two `bg-*` in one list is a question about which
+   * one Tailwind emitted last.
+   */
+  const tone = `${
+    isHead
+      ? 'bg-[var(--accent)]/12'
+      : selected
+        ? 'bg-[var(--bg-hover)]'
+        : 'hover:bg-[var(--bg-hover)]/50'
+  } ${selected ? 'outline outline-1 -outline-offset-1 outline-[var(--accent)]' : ''}`;
   const refs = commit.refs.map((ref) => (
     <RefChip key={`${ref.kind}:${ref.fullRef}`} kind={ref.kind} name={ref.name} isHead={ref.isHead} />
   ));

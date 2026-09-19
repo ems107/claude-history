@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useIsMobile } from '../../lib/mobile.ts';
-import { actionClass } from '../controlClass.ts';
+import { actionClass, actionOpenClass, openClass } from '../controlClass.ts';
 import { Popover } from '../Popover.tsx';
 
 export interface SplitOption {
@@ -92,7 +92,9 @@ export function SplitButton({
         disabled={busy}
         onClick={() => setOpen((v) => !v)}
         title="The other ways to do this"
-        className={`${actionClass} rounded-l-none px-1 max-md:inline-flex max-md:min-h-10 max-md:min-w-10 max-md:items-center max-md:justify-center max-md:px-0`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`${open ? actionOpenClass : actionClass} rounded-l-none px-1 max-md:inline-flex max-md:min-h-10 max-md:min-w-10 max-md:items-center max-md:justify-center max-md:px-0`}
         aria-label="More options"
       >
         ▾
@@ -190,7 +192,9 @@ export function MenuButton({
         disabled={disabled}
         title={title}
         aria-label={title}
-        className={className}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`${className} ${open ? openClass : ''}`}
         onClick={() => setOpen((v) => !v)}
       >
         {label}

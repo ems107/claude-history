@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 /**
  * A panel that becomes the whole screen on a phone.
@@ -19,18 +19,38 @@ export function Sheet({
   subtitle,
   onClose,
   extra,
-  closeLabel = 'Done',
   children,
 }: {
   title: string;
   /** A second line under it — what this layer is ABOUT, where the title is what it is. */
   subtitle?: ReactNode;
+  /** How this layer goes away. Back does it, and so does Escape. */
   onClose: () => void;
   extra?: ReactNode;
-  /** `Done` for something being tuned; `Close` for something merely being read. */
-  closeLabel?: string;
   children: ReactNode;
 }) {
+  /**
+   * **There is no Close button, and Escape is what replaces it.**
+   *
+   * The button said `Done` or `Close` and did exactly what Back does — which on
+   * the device it is drawn for is the control every reader reaches for first,
+   * and which now has the whole bottom of the phone to itself since a sheet
+   * stops above the navigation bar rather than covering it. A second way out,
+   * drawn permanently in the top right of every layer, was a word in the one
+   * place a title should be.
+   *
+   * Escape is the desktop's own answer and the one case Back cannot serve: a
+   * window narrow enough to be "a phone" by this app's one rule can still be a
+   * window with a keyboard and no Back key under it.
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     /**
      * **It covers the page, not the app.** `inset-0` took the app header with
@@ -53,13 +73,6 @@ export function Sheet({
           {subtitle && <span className="min-w-0 truncate text-xs text-[var(--text-dim)]">{subtitle}</span>}
         </span>
         {extra}
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-10 shrink-0 rounded border border-[var(--border)] px-3 text-sm text-[var(--text-dim)]"
-        >
-          {closeLabel}
-        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6">{children}</div>
     </div>

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { gitApi } from '../../api/git.ts';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
-import { actionClass, BAR_H, inputClass } from '../controlClass.ts';
+import { actionClass, actionOpenClass, BAR_H, inputClass, openClass } from '../controlClass.ts';
 
 /**
  * Which repository the tab is looking at, and the quickest way to add one.
@@ -93,10 +93,15 @@ export function RepoPicker({
         onClick={() => setOpen(!open)}
         disabled={busy}
         title={current?.path ?? 'Choose a repository'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        // Marked while its list is up, like every other trigger in the tab.
         className={
           compact
-            ? `flex ${BAR_H} min-w-0 cursor-pointer items-center gap-1 rounded px-1 text-sm font-semibold text-[var(--text)]`
-            : `${actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`
+            ? `flex ${BAR_H} min-w-0 cursor-pointer items-center gap-1 rounded border px-2 text-sm font-semibold ${
+                open ? openClass : 'border-transparent text-[var(--text)]'
+              }`
+            : `${open ? actionOpenClass : actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`
         }
       >
         {/* The NAME never gives way to the path. Both truncating meant the
