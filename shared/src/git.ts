@@ -381,6 +381,19 @@ export interface GitCommandLogEntry {
   cwd: string;
   /** First bytes of anything fed on stdin (a commit message, a pathspec list). */
   stdinPreview: string | null;
+  /**
+   * It is still going. A field of its own rather than `exitCode === null`,
+   * because those are two different facts: a process killed by a signal also
+   * comes back with a null code, and reading one as the other would have
+   * drawn a command that was stopped as a command still running.
+   *
+   * An entry is written when the process is SPAWNED and filled in when it
+   * closes, keeping its `seq` — which is the whole reason a two-minute fetch
+   * is visible in this panel while it is happening rather than after it.
+   */
+  running: boolean;
+  /** What the command was for — `status`, `log`, `branches`, `fetch`. */
+  label: string | null;
   exitCode: number | null;
   durationMs: number;
   /** It changed the repository, as opposed to reading it. */

@@ -1,7 +1,7 @@
 import type { GitCommandLogEntry } from '@claude-history/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { copyPlain } from '../../lib/clipboard.ts';
-import { formatDateTime } from '../../lib/format.ts';
+import { formatClock, formatDateTime } from '../../lib/format.ts';
 import { commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
 
@@ -25,14 +25,48 @@ function clockTime(iso: string): string {
   return at < 0 ? iso : iso.slice(at + 1, at + 13);
 }
 
+/**
+ * What the right-hand end of the row says, in one string.
+ *
+ * A running command counts, which is why it is computed here rather than
+ * stored: the server writes the row when the process is spawned and fills in
+ * `durationMs` when it closes, so until then the only honest number is the one
+ * read off the clock.
+ */
+function outcome(entry: GitCommandLogEntry, now: number): string {
+  if (entry.running) return `running · ${formatClock(now - Date.parse(entry.at))}`;
+  if (entry.timedOut) return `timed out · ${entry.durationMs} ms`;
+  if (entry.aborted) return `stopped · ${entry.durationMs} ms`;
+  // A null code on a command that HAS finished means it never started, or it
+  // was killed — either way "exit null" is not a sentence.
+  if (entry.exitCode === null) return `did not run · ${entry.durationMs} ms`;
+  return `exit ${entry.exitCode} · ${entry.durationMs} ms`;
+}
+
 export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const failed = entry.exitCode !== 0 && entry.exitCode !== null;
-  const running = entry.exitCode === null;
+  const running = entry.running;
+  // Anything that finished without a clean zero: a non-zero code, a timeout, a
+  // kill, a git that could not be started at all. Reading `exitCode !== 0`
+  // alone let the last two through as successes.
+  const failed = !running && entry.exitCode !== 0;
+
+  // One tick a second, and only while this row is the one still going.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1_000);
+    return () => clearInterval(timer);
+  }, [running]);
+  const said = outcome(entry, Date.now());
 
   return (
-    <div className={`border-b border-[var(--border)]/40 ${failed ? 'border-l-2 border-l-red-500/50' : ''}`}>
+    <div
+      className={`border-b border-[var(--border)]/40 ${
+        failed ? 'border-l-2 border-l-red-500/50' : running ? 'border-l-2 border-l-amber-400/60' : ''
+      }`}
+    >
       {/**
        * **One line on a desktop, two on a phone**, and the split is where the
        * row stops being readable: five things — a clock, a repository, the
@@ -56,6 +90,17 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
           {entry.repoName && (
             <span className="shrink-0 text-[10px] text-[var(--text-dim)] max-md:hidden">{entry.repoName}</span>
           )}
+          {/* What it was FOR, in one word, before the command it turned into.
+              `git for-each-ref --format=%(refname)…` and
+              `git rev-list --count --left-right` are unreadable at a glance and
+              perfectly clear once the row says `branches` and `ahead-behind` —
+              which is the difference between a wall of git and a list of things
+              the app did. */}
+          {entry.label && (
+            <span className="w-24 shrink-0 truncate text-[10px] text-[var(--accent)]/70 max-md:hidden">
+              {entry.label}
+            </span>
+          )}
           <span className="min-w-0 flex-1">
             <span
               className={`block ${open ? 'break-all whitespace-pre-wrap' : 'truncate'} max-md:text-xs ${
@@ -72,16 +117,18 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
             </span>
             <span className="mt-0.5 hidden text-[11px] text-[var(--text-dim)] max-md:block">
               {clockTime(entry.at)}
-              {entry.repoName ? ` · ${entry.repoName}` : ''} ·{' '}
-              <span className={failed ? 'text-red-400' : ''}>
-                {running ? 'running' : `exit ${entry.exitCode}`}
-              </span>{' '}
-              · {entry.durationMs} ms
+              {entry.repoName ? ` · ${entry.repoName}` : ''}
+              {entry.label ? ` · ${entry.label}` : ''} ·{' '}
+              <span className={failed ? 'text-red-400' : running ? 'text-amber-400' : ''}>{said}</span>
               {entry.mutation ? '' : ' · read'}
             </span>
           </span>
-          <span className="shrink-0 tabular-nums text-[var(--text-dim)] max-md:hidden">
-            {running ? 'running' : `exit ${entry.exitCode}`} · {entry.durationMs} ms
+          <span
+            className={`shrink-0 tabular-nums max-md:hidden ${
+              failed ? 'text-red-400' : running ? 'text-amber-400' : 'text-[var(--text-dim)]'
+            }`}
+          >
+            {said}
           </span>
         </FoldHeader>
         {/* A sibling, never nested: nothing interactive may live inside a FoldHeader. */}
@@ -122,7 +169,14 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
           {entry.stdinPreview && <Block label="stdin" text={entry.stdinPreview} />}
           {entry.stdout && <Block label="stdout" text={entry.stdout} />}
           {entry.stderr && <Block label="stderr" text={entry.stderr} tone="text-red-300/80" />}
-          {!entry.stdout && !entry.stderr && <p className="text-[var(--text-dim)] italic">It printed nothing.</p>}
+          {/* Output is collected in memory and written here when the process
+              closes, so a command still going has none YET — which is a
+              different sentence from having printed none. */}
+          {!entry.stdout && !entry.stderr && (
+            <p className="text-[var(--text-dim)] italic">
+              {running ? 'Still going; its output arrives when it finishes.' : 'It printed nothing.'}
+            </p>
+          )}
           {entry.truncated && <p className="text-amber-400">Output longer than what is kept here.</p>}
         </div>
       )}
