@@ -585,6 +585,18 @@ export interface GitFetchRequest {
   remote?: string;
   /** Omitted means "whatever the settings say" — the setting is the default, not the UI. */
   mode?: GitFetchMode;
+  /**
+   * Also `--prune-tags --tags`: bring every tag the remote has, and DELETE
+   * every local tag it does not.
+   *
+   * Deliberately not a `GitFetchMode`. That list is what the settings choose
+   * from, and this one deletes local objects — including a tag made here and
+   * never pushed — so it lives where force pushing and deleting a remote
+   * branch live: an entry in the menu, behind its own confirmation, and
+   * impossible to make the thing a button does by default.
+   */
+  pruneTags?: boolean;
+  confirm?: boolean;
 }
 
 export interface GitPullRequest {

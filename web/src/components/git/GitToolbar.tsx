@@ -21,11 +21,18 @@ import {
   toggleClass,
 } from '../controlClass.ts';
 import { Popover } from '../Popover.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { GitActivity } from './GitActivity.tsx';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
 import { SplitButton, type SplitOption } from './SplitButton.tsx';
 import { useGitAction } from './useGitAction.ts';
+
+/**
+ * Said in three places — the menu entry, the confirmation and the strip that
+ * runs it — so they cannot come to disagree about what the dangerous one does.
+ */
+const PRUNE_TAGS_COMMAND = 'git fetch --prune --prune-tags --tags --all';
 
 /**
  * The repository's headline: which one, where its HEAD is, and how far it has
@@ -70,6 +77,7 @@ export function GitToolbar({
   const moreRef = useRef<HTMLButtonElement>(null);
   const [opening, setOpening] = useState(false);
   const [pushing, setPushing] = useState<null | { force: boolean }>(null);
+  const [pruningTags, setPruningTags] = useState(false);
   const action = useGitAction(repoId);
   const repo = overview?.repos.find((r) => r.id === repoId) ?? null;
 
@@ -78,6 +86,14 @@ export function GitToolbar({
     queryKey: ['git', 'remotes', repoId],
     queryFn: () => gitApi.remotes(repoId as string),
     enabled: !!repoId && !!pushing,
+  });
+  // How much there is to lose, for the tag-pruning confirmation. The same key
+  // the refs panel uses, so on a desktop this is already in the cache and the
+  // dialog costs nothing at all.
+  const tagsQ = useQuery({
+    queryKey: ['git', 'tags', repoId],
+    queryFn: () => gitApi.tags(repoId as string),
+    enabled: !!repoId && pruningTags,
   });
 
   // What each button's main click does. The server applies the same settings
@@ -161,6 +177,23 @@ export function GitToolbar({
       short: remote,
       blocked: status?.blocked.fetch ?? null,
       run: () => runFetch(`git fetch --prune ${remote}`, { mode: 'current' }),
+    },
+    {
+      /**
+       * The only fetch that deletes something of yours.
+       *
+       * Its key is deliberately not one of `GIT_FETCH_MODES`: that list is
+       * what *Settings › Git* chooses the main click from, and nothing
+       * destructive may become what a button does by default. It sits where
+       * force pushing sits — in the menu, marked, behind a confirmation.
+       */
+      key: 'prune-tags',
+      label: 'Fetch tags, dropping the ones the remote has deleted',
+      command: PRUNE_TAGS_COMMAND,
+      hint: 'Deletes every local tag the remote does not have, including ones made here and never pushed.',
+      danger: true,
+      blocked: status?.blocked.fetch ?? null,
+      run: () => setPruningTags(true),
     },
   ];
 
@@ -279,6 +312,34 @@ export function GitToolbar({
    * must never be a tooltip.
    */
   const dialogs = <>
+      {pruningTags && (
+        <ConfirmDialog
+          title="Fetch tags, and delete the ones the remote has not got"
+          body={
+            <>
+              This brings in every tag the remotes have <em>and removes every local tag they do not</em> — which is
+              the half that cannot be undone. A tag you made here and have never pushed looks exactly like a tag
+              somebody deleted, and both go.
+              {tagsQ.data && (
+                <p className="mt-1">
+                  There {tagsQ.data.length === 1 ? 'is' : 'are'}{' '}
+                  <span className="text-[var(--text)]">{tagsQ.data.length}</span> local tag
+                  {tagsQ.data.length === 1 ? '' : 's'} here. Which of them survive depends on what the remote answers.
+                </p>
+              )}
+              <p className="mt-1">Ordinary Fetch never touches tags, and is one entry up the same menu.</p>
+            </>
+          }
+          command={PRUNE_TAGS_COMMAND}
+          confirmLabel="Fetch and prune tags"
+          busy={action.busy}
+          onCancel={() => setPruningTags(false)}
+          onConfirm={() => {
+            setPruningTags(false);
+            runFetch(PRUNE_TAGS_COMMAND, { mode: 'all-prune', pruneTags: true, confirm: true });
+          }}
+        />
+      )}
       {pushing && status && (
         <PushDialog
           status={status}

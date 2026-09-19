@@ -2027,17 +2027,33 @@ export class GitService {
    */
   async fetch(
     repo: ResolvedRepo,
-    body: { remote?: unknown; mode?: unknown },
+    body: { remote?: unknown; mode?: unknown; pruneTags?: unknown; confirm?: unknown },
     signal?: AbortSignal,
   ): Promise<{ status: GitStatus; message: string }> {
     const mode = this.mode(GIT_FETCH_MODES, body.mode, 'gitFetchDefault');
+    /**
+     * `--prune-tags` is the one variant of fetch that DELETES something local.
+     *
+     * Ordinary pruning only removes remote-tracking refs whose branch is gone
+     * from the remote, and no local branch is touched by it. Tags are not like
+     * that: a tag is a local object, and pruning them drops every one the
+     * remote does not have — including one made here five minutes ago and
+     * never pushed. So it is never a mode (the settings cannot name it), it is
+     * never implied by another option, and it needs `confirm` like every other
+     * irreversible thing in this file.
+     *
+     * `--tags` goes with it deliberately: pruning tags without fetching them
+     * would delete the local ones the remote lacks and not bring the ones it
+     * has, which is the destructive half of the operation on its own.
+     */
+    const pruneTags = body.pruneTags === true;
+    if (pruneTags) GitService.requireConfirm(body.confirm, 'Deleting the local tags the remote does not have');
     const { result, status } = await this.mutate(repo, 'fetch', async () => {
       const args = ['fetch'];
-      // Pruning only ever removes remote-tracking refs whose branch is gone
-      // from the remote; no local branch is touched. Never `--prune-tags`,
-      // which WOULD delete local tags — including ones made here and never
-      // pushed.
-      if (mode !== 'all') args.push('--prune');
+      // `--prune-tags` only prunes alongside `--prune`; git's own documentation
+      // is explicit that the two belong together.
+      if (pruneTags || mode !== 'all') args.push('--prune');
+      if (pruneTags) args.push('--prune-tags', '--tags');
       if (mode === 'current') args.push(await this.validRemote(repo, body.remote));
       else args.push('--all');
       const res = await this.network(repo, 'fetch', args, signal);
