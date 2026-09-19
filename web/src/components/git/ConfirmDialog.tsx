@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
+import { BusyBar } from './BusyBar.tsx';
 
 /**
  * The confirmation for anything that cannot be undone.
@@ -114,8 +115,19 @@ export function ConfirmDialog({
           <button ref={cancelRef} type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>
-          <button type="button" onClick={onConfirm} className={dangerClass} disabled={!ready || busy}>
-            {busy ? 'Working…' : confirmLabel}
+          {/* The label stays put while it works. `Working…` was wider than most
+              of the verbs it replaced, so the one button you had just aimed at
+              grew under the pointer — and the dialog is about to close anyway,
+              which is the clearest progress report there is. */}
+          <button
+            type="button"
+            onClick={onConfirm}
+            aria-busy={busy === true}
+            className={`${dangerClass} relative`}
+            disabled={!ready || busy}
+          >
+            {confirmLabel}
+            {busy && <BusyBar />}
           </button>
         </div>
       </div>

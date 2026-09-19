@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { gitApi } from '../../api/git.ts';
 import { useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, toggleClass } from '../controlClass.ts';
+import { GitActivity } from './GitActivity.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 const MAX_TEXTAREA_PX = 220;
@@ -152,12 +153,9 @@ export function CommitBox({
           {status.headSha?.slice(0, 7)} is already on {status.upstream} — amending it will need a force push.
         </p>
       )}
-      {action.error && (
-        <p className="mt-1 rounded border border-red-500/40 bg-red-500/10 p-1.5 text-[11px] text-red-300">
-          {action.error}
-        </p>
-      )}
-      {action.note && <p className="mt-1 text-[11px] text-emerald-400">{action.note}</p>}
+      <div className="mt-1 empty:hidden">
+        <GitActivity action={action} />
+      </div>
     </div>
   );
 }

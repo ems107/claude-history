@@ -48,6 +48,23 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
   const [copied, setCopied] = useState(false);
   const running = entry.running;
   const failed = commandFailed(entry);
+  /**
+   * A command somebody STOPPED did not do its job — so it belongs under
+   * Failures with the rest — but it is not a fault, and red is the app saying
+   * something went wrong. Amber is the tone the rest of the UI keeps for "a
+   * state you chose, and should know about".
+   *
+   * Written out in full on both branches rather than composed from a colour
+   * name: Tailwind reads the source for class names and finds nothing in
+   * `text-${tone}`.
+   */
+  const attention = running || entry.aborted;
+  const toneText = attention ? 'text-amber-400' : failed ? 'text-red-400' : 'text-[var(--text-dim)]';
+  const toneEdge = attention
+    ? 'border-l-2 border-l-amber-400/60'
+    : failed
+      ? 'border-l-2 border-l-red-500/50'
+      : '';
 
   // One tick a second, and only while this row is the one still going.
   const [, tick] = useState(0);
@@ -59,11 +76,7 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
   const said = outcome(entry, Date.now());
 
   return (
-    <div
-      className={`border-b border-[var(--border)]/40 ${
-        failed ? 'border-l-2 border-l-red-500/50' : running ? 'border-l-2 border-l-amber-400/60' : ''
-      }`}
-    >
+    <div className={`border-b border-[var(--border)]/40 ${toneEdge}`}>
       {/**
        * **One line on a desktop, two on a phone**, and the split is where the
        * row stops being readable: five things — a clock, a repository, the
@@ -104,13 +117,7 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
           <span className="min-w-0 flex-1">
             <span
               className={`block ${open ? 'break-all whitespace-pre-wrap' : 'truncate'} max-md:text-xs ${
-                running
-                  ? 'text-amber-400'
-                  : failed
-                    ? 'text-red-400'
-                    : entry.mutation
-                      ? 'text-[var(--text)]'
-                      : 'text-[var(--text)]/75'
+                attention || failed ? toneText : entry.mutation ? 'text-[var(--text)]' : 'text-[var(--text)]/75'
               }`}
             >
               {open ? `git ${entry.argv.join(' ')}` : commandLine(entry.argv)}
@@ -119,17 +126,11 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
               {clockTime(entry.at)}
               {entry.repoName ? ` · ${entry.repoName}` : ''}
               {entry.label ? ` · ${entry.label}` : ''} ·{' '}
-              <span className={failed ? 'text-red-400' : running ? 'text-amber-400' : ''}>{said}</span>
+              <span className={toneText}>{said}</span>
               {entry.mutation ? '' : ' · read'}
             </span>
           </span>
-          <span
-            className={`shrink-0 tabular-nums max-md:hidden ${
-              failed ? 'text-red-400' : running ? 'text-amber-400' : 'text-[var(--text-dim)]'
-            }`}
-          >
-            {said}
-          </span>
+          <span className={`shrink-0 tabular-nums max-md:hidden ${toneText}`}>{said}</span>
         </FoldHeader>
         {/* A sibling, never nested: nothing interactive may live inside a FoldHeader. */}
         <button

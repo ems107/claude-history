@@ -18,6 +18,7 @@ import { CommitBox } from './CommitBox.tsx';
 import { ConflictSides } from './ConflictSides.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { DiffView, pairedWith } from './DiffView.tsx';
+import { GitActivity } from './GitActivity.tsx';
 import { RowActions } from './RowActions.tsx';
 import { CHEVRON, SectionAction } from './SectionAction.tsx';
 import { useGitAction } from './useGitAction.ts';
@@ -420,9 +421,11 @@ export function WorkingTree({ repoId, status }: { repoId: string; status: GitSta
   /** What the confirm dialog is about to move, computed once for the four places it says it. */
   const losing = discardingLines ? pickedLines() : [];
 
-  const errorBar = action.error ? (
-    <p className="mb-2 rounded border border-red-500/40 bg-red-500/10 p-2 text-[11px] text-red-300">{action.error}</p>
-  ) : null;
+  const errorBar = (
+    <div className="mb-2 empty:hidden">
+      <GitActivity action={action} />
+    </div>
+  );
 
   const groupBtn = (label: string, onClick: () => void, danger = false, hint?: string) => (
     <SectionAction label={label} hint={hint ?? label} disabled={action.busy} danger={danger} onClick={onClick} />

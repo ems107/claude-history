@@ -18,6 +18,7 @@ import { groupRefs, type RefNode } from '../../lib/refTree.ts';
 import { actionClass, inputClass } from '../controlClass.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { GitActivity } from './GitActivity.tsx';
 import { CHEVRON, SectionAction } from './SectionAction.tsx';
 import { type SplitOption } from './SplitButton.tsx';
 import { RowActions, rowBodyClass, rowClass } from './RowActions.tsx';
@@ -816,12 +817,9 @@ export function RefSidebar({
           </Section>
         )}
 
-      {action.error && (
-        <p className="m-2 rounded border border-red-500/40 bg-red-500/10 p-1.5 text-[11px] text-red-300">
-          {action.error}
-        </p>
-      )}
-      {action.note && <p className="m-2 text-[11px] text-emerald-400">{action.note}</p>}
+      <div className="m-2 empty:hidden">
+        <GitActivity action={action} />
+      </div>
 
       {deleting && (
         <ConfirmDialog

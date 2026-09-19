@@ -53,16 +53,43 @@ import { getJson, noteAuthFailure } from './client.ts';
  * truth is one fact about the page. That event is what puts the login screen
  * back, and a slice of the API that posts on its own has to raise it too.
  */
-async function post<T>(url: string, body?: unknown): Promise<T> {
+/**
+ * A refusal, with git's own words still attached.
+ *
+ * The server sends two things when a command fails: `error`, a sentence
+ * written to be read by a person, and `gitStderr`, what git actually printed.
+ * The sentence was all that survived this function, so the one screen that
+ * could explain an authentication failure or a rejected push showed the
+ * summary and threw the evidence away — on the exact occasion somebody needs
+ * it. Both travel now, and the panel decides which to show first.
+ */
+export class GitRequestError extends Error {
+  constructor(
+    message: string,
+    readonly gitStderr: string | null,
+  ) {
+    super(message);
+    this.name = 'GitRequestError';
+  }
+}
+
+/**
+ * `signal` is what makes Stop possible at all, and it needs nothing on the
+ * server: closing the response is already how a fetch nobody is waiting for is
+ * killed (`abortSignalOf`, which takes the whole git process tree with it).
+ * The capability existed; what was missing was a way to ask for it.
+ */
+async function post<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body ?? {}),
+    signal,
   });
-  const payload = (await res.json().catch(() => ({}))) as { error?: string } & T;
+  const payload = (await res.json().catch(() => ({}))) as { error?: string; gitStderr?: string } & T;
   if (!res.ok) {
     noteAuthFailure(res.status);
-    throw new Error(payload.error ?? `${res.status} ${res.statusText}`);
+    throw new GitRequestError(payload.error ?? `${res.status} ${res.statusText}`, payload.gitStderr ?? null);
   }
   return payload;
 }
@@ -134,10 +161,17 @@ export const gitApi = {
   continuation: (id: string, action: 'continue' | 'abort' | 'skip') =>
     post<GitMutationResponse>(`/api/git/repos/${id}/${action}`, {}),
 
-  fetch: (id: string, body: GitFetchRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/fetch`, body),
-  pull: (id: string, body: GitPullRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/pull`, body),
-  push: (id: string, body: GitPushRequest = {}) => post<GitMutationResponse>(`/api/git/repos/${id}/push`, body),
-  pushTag: (id: string, body: GitTagPushRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/tag/push`, body),
+  // The four that reach a remote, and the only ones that take a signal: they
+  // are the ones that can run for two minutes, and the ones whose server side
+  // already answers a closed response by killing the git process tree.
+  fetch: (id: string, body: GitFetchRequest = {}, signal?: AbortSignal) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/fetch`, body, signal),
+  pull: (id: string, body: GitPullRequest = {}, signal?: AbortSignal) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/pull`, body, signal),
+  push: (id: string, body: GitPushRequest = {}, signal?: AbortSignal) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/push`, body, signal),
+  pushTag: (id: string, body: GitTagPushRequest, signal?: AbortSignal) =>
+    post<GitMutationResponse>(`/api/git/repos/${id}/tag/push`, body, signal),
 
   rebase: (id: string, body: GitRebaseRequest) => post<GitMutationResponse>(`/api/git/repos/${id}/rebase`, body),
   cherryPick: (id: string, body: GitCherryPickRequest) =>

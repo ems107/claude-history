@@ -2,6 +2,7 @@ import { isProtectedBranch, type GitRemote, type GitStatus } from '@claude-histo
 import { useEffect, useState } from 'react';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, dangerClass, inputClass } from '../controlClass.ts';
+import { BusyBar } from './BusyBar.tsx';
 
 /**
  * Push, with the choices that change what happens made visible.
@@ -177,10 +178,12 @@ export function PushDialog({
           <button
             type="button"
             disabled={!ready || busy}
-            className={force ? dangerClass : actionClass}
+            aria-busy={busy === true}
+            className={`${force ? dangerClass : actionClass} relative`}
             onClick={() => onPush({ remote, setUpstream: needsUpstream, forceWithLease: force, tags, confirm: force })}
           >
-            {busy ? 'Pushing…' : force ? 'Force push' : 'Push'}
+            {force ? 'Force push' : 'Push'}
+            {busy && <BusyBar />}
           </button>
         </div>
       </div>

@@ -21,6 +21,7 @@ import {
   toggleClass,
 } from '../controlClass.ts';
 import { Popover } from '../Popover.tsx';
+import { GitActivity } from './GitActivity.tsx';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
 import { SplitButton, type SplitOption } from './SplitButton.tsx';
@@ -118,6 +119,21 @@ export function GitToolbar({
   // the closures below cannot run without one.
   const id = repoId as string;
 
+  /**
+   * A fetch, with the words the strip under the bar will say while it runs.
+   *
+   * The command is repeated there rather than only in this menu on purpose: the
+   * menu is what you read BEFORE, and once the click has happened the question
+   * changes from "which one is this" to "what is taking so long".
+   */
+  const runFetch = (command: string, body: Parameters<typeof gitApi.fetch>[1]) =>
+    void action.run((signal) => gitApi.fetch(id, body, signal), {
+      verb: 'fetch',
+      what: 'Fetch',
+      command,
+      cancellable: true,
+    });
+
   const fetchOptions: SplitOption[] = [
     {
       key: GIT_FETCH_MODES[0],
@@ -126,7 +142,7 @@ export function GitToolbar({
       hint: 'Pruning drops the origin/x entries whose branch is gone. No local branch is touched.',
       short: 'all, pruned',
       blocked: status?.blocked.fetch ?? null,
-      run: () => void action.run(() => gitApi.fetch(id, { mode: 'all-prune' })),
+      run: () => runFetch('git fetch --prune --all', { mode: 'all-prune' }),
     },
     {
       key: 'all',
@@ -135,7 +151,7 @@ export function GitToolbar({
       hint: 'The list of remote branches grows for ever, including ones deleted months ago.',
       short: 'no prune',
       blocked: status?.blocked.fetch ?? null,
-      run: () => void action.run(() => gitApi.fetch(id, { mode: 'all' })),
+      run: () => runFetch('git fetch --all', { mode: 'all' }),
     },
     {
       key: 'current',
@@ -144,9 +160,23 @@ export function GitToolbar({
       hint: 'Quicker where there are several remotes; the others stay behind without saying so.',
       short: remote,
       blocked: status?.blocked.fetch ?? null,
-      run: () => void action.run(() => gitApi.fetch(id, { mode: 'current' })),
+      run: () => runFetch(`git fetch --prune ${remote}`, { mode: 'current' }),
     },
   ];
+
+  /**
+   * A pull, which is `risky` for the strip: unlike a fetch it can be in the
+   * middle of a merge or a rebase when it is stopped, and the offer to stop it
+   * has to say so.
+   */
+  const runPull = (command: string, mode: 'ff-only' | 'rebase' | 'merge') =>
+    void action.run((signal) => gitApi.pull(id, { mode }, signal), {
+      verb: 'pull',
+      what: 'Pull',
+      command,
+      cancellable: true,
+      risky: true,
+    });
 
   const pullOptions: SplitOption[] = [
     {
@@ -156,7 +186,7 @@ export function GitToolbar({
       hint: 'Refuses if both sides have moved, and offers the other two here rather than choosing for you.',
       short: 'ff-only',
       blocked: status?.blocked.pull ?? null,
-      run: () => void action.run(() => gitApi.pull(id, { mode: 'ff-only' })),
+      run: () => runPull('git pull --ff-only', 'ff-only'),
     },
     {
       key: 'rebase',
@@ -165,7 +195,7 @@ export function GitToolbar({
       hint: 'Replays your commits on top of theirs. A conflict stops mid-rebase, which you then have to finish.',
       short: 'rebase',
       blocked: status?.blocked.pull ?? null,
-      run: () => void action.run(() => gitApi.pull(id, { mode: 'rebase' })),
+      run: () => runPull('git pull --rebase', 'rebase'),
     },
     {
       key: 'merge',
@@ -174,7 +204,7 @@ export function GitToolbar({
       hint: 'Never fails, but leaves a “Merge branch…” commit every time the two sides have both moved.',
       short: 'merge',
       blocked: status?.blocked.pull ?? null,
-      run: () => void action.run(() => gitApi.pull(id, { mode: 'merge' })),
+      run: () => runPull('git pull --no-rebase', 'merge'),
     },
   ];
 
@@ -190,8 +220,19 @@ export function GitToolbar({
       // exists for; the two refusals are different and so are their reasons.
       blocked: (needsUpstream ? status?.blocked.pushUpstream : status?.blocked.push) ?? null,
       run: () =>
-        void action.run(() =>
-          gitApi.push(id, { setUpstream: needsUpstream, forceWithLease: false, tags: false, confirm: false }),
+        void action.run(
+          (signal) =>
+            gitApi.push(
+              id,
+              { setUpstream: needsUpstream, forceWithLease: false, tags: false, confirm: false },
+              signal,
+            ),
+          {
+            verb: 'push',
+            what: 'Push',
+            command: `git push${needsUpstream ? ' --set-upstream' : ''} ${remote} ${branch}`,
+            cancellable: true,
+          },
         ),
     },
     {
@@ -209,8 +250,9 @@ export function GitToolbar({
       hint: 'Publishes every local tag, not only the ones on this branch.',
       blocked: status?.blocked.push ?? null,
       run: () =>
-        void action.run(() =>
-          gitApi.push(id, { setUpstream: false, forceWithLease: false, tags: true, confirm: false }),
+        void action.run(
+          (signal) => gitApi.push(id, { setUpstream: false, forceWithLease: false, tags: true, confirm: false }, signal),
+          { verb: 'push', what: 'Push', command: `git push --tags ${remote} ${branch}`, cancellable: true },
         ),
     },
     {
@@ -246,67 +288,96 @@ export function GitToolbar({
           onCancel={() => setPushing(null)}
           onPush={(body) => {
             setPushing(null);
-            if (repoId) void action.run(() => gitApi.push(repoId, body));
+            if (repoId)
+              void action.run((signal) => gitApi.push(repoId, body, signal), {
+                verb: 'push',
+                what: body.forceWithLease ? 'Force push' : 'Push',
+                // The dialog shows this same line before the click; the strip
+                // shows it again during, because by then the question has
+                // changed from "which one is this" to "what is taking so long".
+                command: [
+                  'git push',
+                  body.setUpstream ? '--set-upstream' : '',
+                  body.forceWithLease ? '--force-with-lease' : '',
+                  body.tags ? '--tags' : '',
+                  body.remote,
+                  branch,
+                ]
+                  .filter(Boolean)
+                  .join(' '),
+                cancellable: true,
+              });
           }}
         />
       )}
   </>;
+  /**
+   * A refusal here is a decision waiting to be made, so the ways out of the two
+   * that HAVE one sit next to it rather than in a menu somewhere else.
+   * Everything that is the same on every failure — the sentence, git's own
+   * output, Dismiss — is `GitActivity`'s, along with the running state that
+   * used to have nowhere to be said at all.
+   */
+  const waysOut = (
+    <>
+      {diverged && repoId && (
+        <>
+          <button
+            type="button"
+            className={actionClass}
+            title="git pull --rebase"
+            onClick={() =>
+              void action.run((signal) => gitApi.pull(repoId, { mode: 'rebase' }, signal), {
+                verb: 'pull',
+                what: 'Pull',
+                command: 'git pull --rebase',
+                cancellable: true,
+                risky: true,
+              })
+            }
+          >
+            Pull with rebase
+          </button>
+          <button
+            type="button"
+            className={actionClass}
+            title="git pull --no-rebase"
+            onClick={() =>
+              void action.run((signal) => gitApi.pull(repoId, { mode: 'merge' }, signal), {
+                verb: 'pull',
+                what: 'Pull',
+                command: 'git pull --no-rebase',
+                cancellable: true,
+                risky: true,
+              })
+            }
+          >
+            Pull with merge
+          </button>
+        </>
+      )}
+      {/* The one place this button really matters: git asked for credentials
+          and the answer is to run the command once by hand. Over remote access
+          that cannot be done from here, and saying so is better than a button
+          that opens a window somewhere else. */}
+      {needsCredentials && repoId && !hideLocal && (
+        <button
+          type="button"
+          className={actionClass}
+          disabled={terminalOnly.disabled}
+          title={terminalOnly.reason ?? undefined}
+          onClick={() => open('terminal')}
+        >
+          ❯ Open a terminal here
+        </button>
+      )}
+    </>
+  );
+
   const feedback = (
     <>
       {repo?.error && <p className="w-full text-[11px] text-red-400">{repo.error}</p>}
-
-      {/* A refusal here is a decision waiting to be made, so the two ways out
-          sit next to it rather than in a menu somewhere else. */}
-      {action.error && (
-        <div className="w-full rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300">
-          <p>{action.error}</p>
-          <span className="mt-1 flex flex-wrap items-center gap-1.5">
-            {diverged && repoId && (
-              <>
-                <button
-                  type="button"
-                  className={actionClass}
-                  title="git pull --rebase"
-                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'rebase' }))}
-                >
-                  Pull with rebase
-                </button>
-                <button
-                  type="button"
-                  className={actionClass}
-                  title="git pull --no-rebase"
-                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'merge' }))}
-                >
-                  Pull with merge
-                </button>
-              </>
-            )}
-            {/* The one place this button really matters: git asked for
-                credentials and the answer is to run the command once by hand.
-                Over remote access that cannot be done from here, and saying so
-                is better than a button that opens a window somewhere else. */}
-            {needsCredentials && repoId && !hideLocal && (
-              <button
-                type="button"
-                className={actionClass}
-                disabled={terminalOnly.disabled}
-                title={terminalOnly.reason ?? undefined}
-                onClick={() => open('terminal')}
-              >
-                ❯ Open a terminal here
-              </button>
-            )}
-            <button type="button" className={actionClass} onClick={action.clear}>
-              Dismiss
-            </button>
-          </span>
-        </div>
-      )}
-      {action.note && (
-        <p className="w-full truncate text-[11px] text-emerald-400" title={action.note}>
-          {action.note.split('\n')[0]}
-        </p>
-      )}
+      <GitActivity action={action} extra={waysOut} onOpenLog={logOpen ? undefined : onToggleLog} />
     </>
   );
   const network = repoId ? (
@@ -314,6 +385,7 @@ export function GitToolbar({
           <SplitButton
             label="Fetch"
             busy={action.busy}
+            running={action.activity?.verb === 'fetch'}
             defaultKey={s.gitFetchDefault}
             options={fetchOptions}
             title="Update the remote-tracking branches"
@@ -321,6 +393,7 @@ export function GitToolbar({
           <SplitButton
             label={`Pull${status && status.behind > 0 ? ` ↓${status.behind}` : ''}`}
             busy={action.busy}
+            running={action.activity?.verb === 'pull'}
             defaultKey={s.gitPullDefault}
             options={pullOptions}
             title="Bring the upstream's commits in"
@@ -328,6 +401,7 @@ export function GitToolbar({
           <SplitButton
             label={`Push${status && status.ahead > 0 ? ` ↑${status.ahead}` : ''}`}
             busy={action.busy}
+            running={action.activity?.verb === 'push'}
             defaultKey={s.gitPushDefault}
             options={pushOptions}
             title="Send commits to the remote"

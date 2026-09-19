@@ -4,6 +4,7 @@ import { gitApi } from '../../api/git.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { actionClass } from '../controlClass.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { GitActivity } from './GitActivity.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 const KIND_LABEL: Record<string, string> = {
@@ -116,7 +117,9 @@ export function RepoStateBanner({ repoId, status }: { repoId: string | null; sta
 
       {/* Always visible, not only as a tooltip. */}
       {status.blocked.continue && <p className="mt-1 text-[11px] text-amber-300/80">{status.blocked.continue}</p>}
-      {action.error && <p className="mt-1 text-[11px] text-red-300">{action.error}</p>}
+      <div className="mt-1 empty:hidden">
+        <GitActivity action={action} />
+      </div>
 
       {aborting && (
         <ConfirmDialog

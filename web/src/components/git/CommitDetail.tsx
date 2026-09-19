@@ -7,6 +7,7 @@ import { formatDateTime, relativeTime } from '../../lib/format.ts';
 import { actionClass, inputClass, segmentClass, segmentedClass, toggleClass } from '../controlClass.ts';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { FileDiffBody } from './DiffView.tsx';
+import { GitActivity } from './GitActivity.tsx';
 import { RefChip } from './RefChip.tsx';
 import { SplitButton, type SplitOption } from './SplitButton.tsx';
 import { useGitAction } from './useGitAction.ts';
@@ -136,8 +137,7 @@ function CommitActions({
       >
         Reset here…
       </button>
-      {action.error && <span className="w-full text-[11px] text-red-300">{action.error}</span>}
-      {action.note && <span className="w-full truncate text-[11px] text-emerald-400">{action.note.split('\n')[0]}</span>}
+      <GitActivity action={action} />
 
       {rebasing && (
         <ConfirmDialog
