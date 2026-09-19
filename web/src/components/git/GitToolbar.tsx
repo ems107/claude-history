@@ -6,7 +6,7 @@ import {
   type GitStatus,
 } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
@@ -19,6 +19,7 @@ import {
   segmentedClass,
   squareClass,
 } from '../controlClass.ts';
+import { ChangesIcon, CommandLogIcon, CommitsIcon } from '../icons.tsx';
 import { Popover } from '../Popover.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { GitActivity } from './GitActivity.tsx';
@@ -141,7 +142,14 @@ export function GitToolbar({
    * One helper for both layouts, because a phone drew the segmented version all
    * along and two spellings of one control is how they drift.
    */
-  const viewSegment = (opts: { active: boolean; label: string; onClick: () => void; count?: number; title?: string }) => (
+  const viewSegment = (opts: {
+    active: boolean;
+    label: string;
+    onClick: () => void;
+    icon: ReactNode;
+    count?: number;
+    title?: string;
+  }) => (
     <button
       type="button"
       onClick={opts.onClick}
@@ -149,6 +157,11 @@ export function GitToolbar({
       title={opts.title}
       className={segmentClass(opts.active)}
     >
+      {/* Beside the word, never instead of it: the icon is what the eye finds
+          the control by on a bar of eight, and the label is what says which
+          one it is — a glyph with its meaning in a `title` is a glyph with no
+          meaning at all on a phone. */}
+      <span className="shrink-0">{opts.icon}</span>
       <span className="truncate">{opts.label}</span>
       {opts.count ? (
         <span className="shrink-0 rounded bg-[var(--accent)]/20 px-1 text-[10px] tabular-nums text-[var(--accent)]">
@@ -553,9 +566,10 @@ export function GitToolbar({
               view that replaces it, so it is not a peer of these two. It lives
               behind the `⋮` with the rest of the diagnostics. */}
           <span className={`${segmentedClass} flex-1`}>
-            {viewSegment({ active: tab === 'commits', label: 'Commits', onClick: () => onTab('commits') })}
+            {viewSegment({ active: tab === 'commits', label: 'Commits', icon: <CommitsIcon />, onClick: () => onTab('commits') })}
             {viewSegment({
               active: tab === 'work',
+              icon: <ChangesIcon />,
               label: 'Working tree',
               count: changed,
               onClick: () => onTab('work'),
@@ -690,12 +704,14 @@ export function GitToolbar({
         <span className={`${segmentedClass} shrink-0 [&>button]:flex-none`}>
           {viewSegment({
             active: !logOpen && tab === 'commits',
+            icon: <CommitsIcon />,
             label: 'Commits',
             title: 'The history',
             onClick: () => onTab('commits'),
           })}
           {viewSegment({
             active: !logOpen && tab === 'work',
+            icon: <ChangesIcon />,
             label: 'Working tree',
             count: changed,
             title: 'What has changed and is not committed',
@@ -708,19 +724,17 @@ export function GitToolbar({
               selecting a DIFFERENT segment, which is the one thing it promises
               not to do.
 
-              **No icon, here or on its two neighbours.** The `⌘` this carried
-              was the Mac Command key on a Windows-only app, meaning "command"
-              by pun. Drawn and measured at 14px, a replacement set does not
-              exist: a git-branch mark for Commits is good, and then Working
-              tree has no unambiguous metaphor that this very row has not
-              already spent — a folder is the Explorer button beside it — and
-              the Log's two best ones are taken as well, a terminal by `❯` two
-              controls along and a clock by what Commits already means. One
-              good icon out of three is three icons' worth of width for one
-              icon's worth of meaning, and these labels are words that already
-              say it. */}
+              The `⌘` this used to carry is gone with it: it was the Mac
+              Command key on a Windows-only app, meaning "command" by pun, and
+              it was the only one of the three wearing anything, which marks a
+              segment as DIFFERENT rather than as one of a set. The three now
+              share a set drawn on the app's own grid (`icons.tsx`), and the
+              log's is a list rather than a terminal `>_` — that one reads
+              better on its own and is already spoken for by the `❯` two
+              controls along. */}
           {viewSegment({
             active: logOpen,
+            icon: <CommandLogIcon />,
             label: 'Log',
             title: 'Every git command this app runs',
             onClick: () => {
