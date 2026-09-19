@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { gitApi } from '../api/git.ts';
 import { CommandLogDock } from '../components/git/CommandLogDock.tsx';
 import { CommitDetail } from '../components/git/CommitDetail.tsx';
@@ -39,6 +39,8 @@ const LAST_REPO_KEY = 'git.lastRepo';
  */
 export function GitPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const mobile = useIsMobile();
   const sidebar = useDragSize({ key: 'git.sidebarWidth', axis: 'x', min: 180, max: 520, initial: 240 });
   const graph = useDragSize({ key: 'git.graphHeight', axis: 'y', min: 120, max: 900, initial: 340 });
@@ -74,7 +76,12 @@ export function GitPage() {
           else next.set(key, value);
           return next;
         },
-        { replace: true },
+        // The entry's own state travels with it. A replace that dropped it
+        // would take the `gitCommit` flag off the entry the commit sheet is
+        // standing on, and Close would stop knowing it may simply go back —
+        // read from `history` rather than from a hook so this keeps one
+        // identity for the life of the page.
+        { replace: true, state: (window.history.state as { usr?: unknown } | null)?.usr },
       );
     },
     [setSearchParams],
@@ -104,14 +111,31 @@ export function GitPage() {
   const selectedSha = searchParams.get('c');
   const tab: 'commits' | 'work' = searchParams.get('tab') === 'work' ? 'work' : 'commits';
   /**
-   * On a phone the commit's detail is a sheet over the graph, so Back closes it
-   * — which means letting go of `?c=`, exactly what the ✕ does. The URL is
-   * still the state: a link to a commit opens the sheet on arrival, which is
-   * what somebody following that link was asking for.
+   * On a phone the commit's detail is a sheet over the graph, and **it is a
+   * history entry of its own rather than a marker** — the one layer on this
+   * page whose openness already lives in the URL, which is the case
+   * `docs/AI_MOBILE.md` says to make a route instead of inventing Back for it.
+   *
+   * It was the other way round for one commit and produced the bug that names
+   * this one: the sheet pushed a marker, and Close then did
+   * `setSearchParams(replace)` on top of that marker — replacing the URL AND
+   * the marker's state, while the entry underneath still carried `?c=`. So the
+   * sheet closed, and the next Back re-opened the commit you had just closed.
+   * Replacing a marker is not something `useBackDismiss` can defend against;
+   * not needing one is.
+   *
+   * So: choosing a commit PUSHES, Back pops it, and Close does the same pop
+   * itself — `openedHere` is how it knows it may. Arriving on a link straight
+   * to `?c=` sets no flag, so there Close drops the parameter instead and Back
+   * leaves the page, which is the only honest answer when the entry underneath
+   * belongs to whoever sent the link.
    */
+  const openedHere = (location.state as { gitCommit?: boolean } | null)?.gitCommit === true;
   const detailOpen = mobile && !!selectedSha;
-  const closeDetail = useCallback(() => setParam('c', null), [setParam]);
-  useBackDismiss(detailOpen, closeDetail);
+  const closeDetail = useCallback(() => {
+    if (openedHere) navigate(-1);
+    else setParam('c', null);
+  }, [openedHere, navigate, setParam]);
 
   const enabled = !!repoId;
   const statusQ = useQuery({
@@ -165,13 +189,7 @@ export function GitPage() {
   );
 
   const detail = repoId && selectedSha && (
-    <CommitDetail
-      repoId={repoId}
-      sha={selectedSha}
-      status={status}
-      selectedPath={searchParams.get('f')}
-      onSelectPath={(path) => setParam('f', path)}
-    />
+    <CommitDetail repoId={repoId} sha={selectedSha} status={status} />
   );
 
   return (
@@ -200,10 +218,8 @@ export function GitPage() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* The page's own name is the first thing on the toolbar's first row,
-            beside the repository it is showing — nothing in the bottom bar
-            lights for this page, so something has to say where you are, and a
-            heading on a line of its own was saying it twice. */}
+        {/* No heading row: the bottom bar's own Git tab lights for this page,
+            which is where somebody looks to find out where they are. */}
         <GitToolbar
           overview={overviewQ.data}
           repoId={repoId}
@@ -258,15 +274,18 @@ export function GitPage() {
                 refFilter={selectedRef}
                 selected={selectedSha}
                 onSelect={(sha) => {
-                  // A file chosen inside one commit means nothing in the next.
                   setSearchParams(
                     (prev) => {
                       const next = new URLSearchParams(prev);
                       next.set('c', sha);
-                      next.delete('f');
                       return next;
                     },
-                    { replace: true },
+                    // On a phone this OPENS something over the page, so it is a
+                    // step Back has to be able to undo; on a desktop it fills a
+                    // pane that is already there, and a history entry per click
+                    // down a graph would be a Back button that takes a minute to
+                    // get out of the page.
+                    mobile ? { state: { gitCommit: true } } : { replace: true },
                   );
                 }}
               />

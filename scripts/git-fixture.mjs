@@ -20,7 +20,8 @@
 // bench is reproducible, offline, and cannot touch anything of yours.
 //
 //   repos/linear       20 commits, one branch, tracking the local bare remote
-//   repos/branchy      6 branches, 4 merges, 3 tags, 2 stashes
+//   repos/branchy      9 branches over three levels of name, 4 merges, 3 tags,
+//                      2 stashes
 //   repos/forky        6 unmerged branches off ONE old commit — the shape that
 //                      broke the graph's lanes, and that nothing else here has
 //   repos/conflict     two branches that collide on the same lines
@@ -179,6 +180,17 @@ function buildBranchy(dir, remote) {
       });
     }
   });
+
+  // Two more under a THIRD level, left unmerged. The refs panel draws a branch
+  // name as the folder path it already is, so it needs a case where a folder
+  // contains a folder — `feat/` holding `alpha`, `beta` and an `api/` — and one
+  // where a lone deep branch must NOT become two chevrons to reach one row.
+  for (const deep of ['feat/api/retry', 'feat/api/timeout', 'release/2026.09']) {
+    git(dir, ['checkout', '-q', '-b', deep, 'main']);
+    write(dir, `src/${deep.replaceAll('/', '-')}.txt`, `${deep}\n`);
+    commit(dir, `${deep}: one change`);
+    git(dir, ['checkout', '-q', 'main']);
+  }
 
   git(dir, ['tag', '-a', 'v1.0.0', '-m', 'First real release'], {
     env: { GIT_AUTHOR_DATE: `${tick()} ${TZ}`, GIT_COMMITTER_DATE: `${clock} ${TZ}` },

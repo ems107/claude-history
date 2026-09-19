@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { gitApi } from '../../api/git.ts';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
-import { actionClass, inputClass } from '../controlClass.ts';
+import { actionClass, BAR_H, inputClass } from '../controlClass.ts';
 
 /**
  * Which repository the tab is looking at, and the quickest way to add one.
@@ -96,14 +96,21 @@ export function RepoPicker({
         title={current?.path ?? 'Choose a repository'}
         className={
           compact
-            ? 'flex min-h-10 min-w-0 cursor-pointer items-center gap-1 rounded px-1 text-sm font-semibold text-[var(--text)]'
+            ? `flex ${BAR_H} min-w-0 cursor-pointer items-center gap-1 rounded px-1 text-sm font-semibold text-[var(--text)]`
             : `${actionClass} flex max-w-[26rem] items-center gap-1.5 text-[var(--text)]`
         }
       >
-        <span className="min-w-0 truncate font-medium">{current?.name ?? 'Choose a repository…'}</span>
+        {/* The NAME never gives way to the path. Both truncating meant the
+            shorter one lost: a 60-character path beside `branchy` left the
+            button reading `bran…`, which is the one word it is there to say. */}
+        <span className="max-w-[14rem] shrink-0 truncate font-medium">
+          {current?.name ?? 'Choose a repository…'}
+        </span>
         <span className="shrink-0 text-[var(--text-dim)]">▾</span>
         {current && !compact && (
-          <span className="truncate font-mono text-[10px] text-[var(--text-dim)]">{current.path}</span>
+          <span className="truncate-start min-w-0 truncate font-mono text-[10px] text-[var(--text-dim)]">
+            {current.path}
+          </span>
         )}
       </button>
 

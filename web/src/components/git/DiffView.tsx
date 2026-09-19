@@ -256,6 +256,43 @@ function Hunk({
   );
 }
 
+/**
+ * What is inside a file's fold: the hunks, or the reason there are none.
+ *
+ * Exported because the commit's Files tab draws its own row — a path split over
+ * two lines, a tally, a 56px target — and needs this underneath it. Two copies
+ * of "binary / too large / no textual changes" is two places for one of them to
+ * stop being true.
+ */
+export function FileDiffBody({
+  file,
+  actions,
+  onExpand,
+}: {
+  file: GitFileDiff;
+  actions?: HunkActions;
+  onExpand?: () => void;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      {file.binary ? (
+        <p className="px-2 py-2 text-[11px] text-[var(--text-dim)]">Binary file — no text to compare.</p>
+      ) : file.tooLarge ? (
+        // A trimmed answer must never read like an empty one.
+        <p className="px-2 py-2 text-[11px] text-amber-400">
+          This diff is too large to show here. Open the file in VS Code, or narrow the commit range.
+        </p>
+      ) : file.hunks.length === 0 ? (
+        <p className="px-2 py-2 text-[11px] text-[var(--text-dim)]">
+          No textual changes — a mode change or a rename with identical content.
+        </p>
+      ) : (
+        file.hunks.map((hunk, i) => <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} />)
+      )}
+    </div>
+  );
+}
+
 function FileDiff({
   file,
   openByDefault,
@@ -291,26 +328,7 @@ function FileDiff({
         </FoldHeader>
       </div>
 
-      {open && (
-        <div className="overflow-x-auto">
-          {file.binary ? (
-            <p className="px-2 py-2 text-[11px] text-[var(--text-dim)]">Binary file — no text to compare.</p>
-          ) : file.tooLarge ? (
-            // A trimmed answer must never read like an empty one.
-            <p className="px-2 py-2 text-[11px] text-amber-400">
-              This diff is too large to show here. Open the file in VS Code, or narrow the commit range.
-            </p>
-          ) : file.hunks.length === 0 ? (
-            <p className="px-2 py-2 text-[11px] text-[var(--text-dim)]">
-              No textual changes — a mode change or a rename with identical content.
-            </p>
-          ) : (
-            file.hunks.map((hunk, i) => (
-              <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} />
-            ))
-          )}
-        </div>
-      )}
+      {open && <FileDiffBody file={file} actions={actions} onExpand={onExpand} />}
     </div>
   );
 }

@@ -11,7 +11,15 @@ import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
-import { actionClass, squareClass, toggleClass } from '../controlClass.ts';
+import {
+  actionClass,
+  BAR_H,
+  controlRow,
+  segmentClass,
+  segmentedClass,
+  squareClass,
+  toggleClass,
+} from '../controlClass.ts';
 import { Sheet } from '../Sheet.tsx';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
@@ -352,12 +360,14 @@ export function GitToolbar({
         type="button"
         onClick={() => onTab(which)}
         aria-pressed={tab === which}
-        className={`flex min-h-10 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded text-xs ${
-          tab === which ? 'bg-[var(--accent)]/15 text-[var(--accent)]' : 'text-[var(--text-dim)]'
-        }`}
+        className={segmentClass(tab === which)}
       >
-        {label}
-        {count ? <span className="tabular-nums">{count}</span> : null}
+        <span className="truncate">{label}</span>
+        {count ? (
+          <span className="shrink-0 rounded bg-[var(--accent)]/20 px-1 text-[10px] tabular-nums text-[var(--accent)]">
+            {count}
+          </span>
+        ) : null}
       </button>
     );
     return (
@@ -365,27 +375,29 @@ export function GitToolbar({
         {/* 1. Which repository, and the branch as the way into everything else
                about it — tapping a branch name to see the branches is what a
                person means by it, and it saves the row a second button. */}
-        <div className="flex items-center gap-1.5 px-2 pt-1.5">
-          <h1 className="shrink-0 text-sm font-semibold">Git</h1>
-          <span aria-hidden className="shrink-0 text-[var(--text-dim)]">
-            ·
-          </span>
+        {/* No page title here any more: `Git` is a tab of its own in the bottom
+            bar and lights up for this page, so a heading saying it again was a
+            word taken off the repository's name — the one thing on the row that
+            cannot be guessed. */}
+        <div className={controlRow + ' px-2 pt-1.5'}>
           <RepoPicker overview={overview} repoId={repoId} onPick={onPick} onChanged={onChanged} busy={false} compact />
           {onOpenRefs && (
             <button
               type="button"
               onClick={onOpenRefs}
-              className="ml-auto flex min-h-10 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 font-mono text-xs text-[var(--accent)]"
+              aria-label="Branches, remotes, tags and stashes"
+              className={`ml-auto flex ${BAR_H} shrink-0 cursor-pointer items-center gap-1 rounded border border-[var(--border)] px-2 font-mono text-xs text-[var(--accent)]`}
             >
-              ⎇ <span className="max-w-24 truncate">{status?.branch ?? 'HEAD'}</span>
-              <span aria-hidden className="text-[var(--text-dim)]">›</span>
+              <span aria-hidden>⎇</span>
+              <span className="max-w-28 truncate">{status?.branch ?? 'HEAD'}</span>
+              <span aria-hidden className="text-[var(--text-dim)]">▾</span>
             </button>
           )}
         </div>
 
         {/* 2. Which half of the repository, and everything that is neither. */}
-        <div className="flex items-center gap-1.5 px-2 pt-1">
-          <span className="flex min-w-0 flex-1 rounded border border-[var(--border)] p-0.5">
+        <div className={controlRow + ' px-2 pt-1'}>
+          <span className={`${segmentedClass} flex-1`}>
             {tab_('commits', 'Commits')}
             {tab_('work', 'Working tree', changed)}
           </span>

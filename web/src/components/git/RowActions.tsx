@@ -83,8 +83,17 @@ export function Act({
   );
 }
 
+/**
+ * One ref in a list: a branch, a tag, a stash, a worktree.
+ *
+ * 11px and half a line of padding on a desktop, where the panel is a dense
+ * index you scan with your eyes. 48 and 13px below 48rem — above the 44px floor
+ * rather than on it, because every one of these rows has a `⋮` at the end of it
+ * that is itself 44, and a target the exact height of its own row leaves
+ * nothing between one branch and the next.
+ */
 export const rowClass =
-  'flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-[11px] hover:bg-[var(--bg-hover)]/60 max-md:min-h-11 max-md:py-1 max-md:text-xs';
+  'flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-[11px] hover:bg-[var(--bg-hover)]/60 max-md:min-h-12 max-md:gap-2 max-md:py-1 max-md:text-[13px]';
 
 /** One thing that can be done to a row, in both of its spellings. */
 export interface RowAction {
