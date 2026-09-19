@@ -1,4 +1,4 @@
-import type { GitOverview, GitRepo } from '@claude-history/shared';
+import type { GitOverview } from '@claude-history/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { gitApi } from '../../api/git.ts';
@@ -78,14 +78,13 @@ export function RepoPicker({
       .finally(() => setWorking(false));
   };
 
-  const hide = (repo: GitRepo) => {
-    setWorking(true);
-    gitApi
-      .setHidden(repo.id, true)
-      .then(onChanged)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setWorking(false));
-  };
+  /**
+   * **Nothing here removes anything.** Hiding a repository used to be a `✕` on
+   * every row of this list, which is a list you open to CHOOSE from — the one
+   * control that takes an entry away, sitting beside the eleven that select
+   * one. It lives in *Settings › Git* now, as a tick per row, which is where
+   * the same question about projects is already answered.
+   */
 
   return (
     <div ref={wrap} className="relative inline-block">
@@ -127,7 +126,7 @@ export function RepoPicker({
           {repos.map((repo) => (
             <div
               key={repo.id}
-              className={`group flex items-center gap-2 rounded px-1.5 py-1 ${
+              className={`flex items-center gap-2 rounded px-1.5 py-1 ${
                 repo.id === repoId ? 'bg-[var(--bg-hover)]' : 'hover:bg-[var(--bg-hover)]/60'
               }`}
             >
@@ -147,19 +146,6 @@ export function RepoPicker({
                   {repo.path}
                 </span>
               </button>
-              {/* `+6` said nothing, and what it said it said in a `title`,
-                  which on Android is nowhere. The word costs six characters and
-                  is the whole of the fact: there are six other working trees on
-                  this machine with the same remote, and they are deliberately
-                  not folded into one entry. */}
-              {repo.siblings.length > 0 && (
-                <span
-                  className="shrink-0 rounded bg-sky-500/10 px-1 text-[10px] text-sky-300"
-                  title={`${repo.siblings.length} other clone${repo.siblings.length === 1 ? '' : 's'} of the same remote on this machine`}
-                >
-                  +{repo.siblings.length} clone{repo.siblings.length === 1 ? '' : 's'}
-                </span>
-              )}
               <span
                 className="shrink-0 text-[10px] text-[var(--text-dim)]"
                 title={
@@ -172,21 +158,6 @@ export function RepoPicker({
               >
                 {repo.origins.includes('manual') ? 'added' : repo.origins.includes('scan') ? 'scanned' : 'project'}
               </span>
-              {/* **A word, not a `✕`.** It was a bare glyph beside the row you
-                  are trying to tap, drawn permanently on a phone, whose meaning
-                  lived in a `title` — and hiding is the one thing in this panel
-                  that removes something from view. The way back is in Settings,
-                  and the button says so, because a control that takes something
-                  away owes you where it went. */}
-              <button
-                type="button"
-                onClick={() => hide(repo)}
-                title="Keep it out of this list. Nothing is deleted, and Settings › Git brings it back."
-                aria-label={`Hide ${repo.name} from this list`}
-                className="shrink-0 cursor-pointer rounded px-1.5 text-[11px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] max-md:inline-flex max-md:min-h-11 max-md:items-center max-md:px-2 max-md:text-xs max-md:opacity-100"
-              >
-                Hide
-              </button>
             </div>
           ))}
 

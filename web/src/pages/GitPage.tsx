@@ -159,6 +159,13 @@ export function GitPage() {
     queryFn: () => gitApi.worktrees(repoId as string),
     enabled,
   });
+  // Only so the sheet's header can carry the subject. Same key as the one
+  // `CommitDetail` uses, so TanStack serves both from one request.
+  const openCommit = useQuery({
+    queryKey: ['git', 'commit', repoId, selectedSha],
+    queryFn: () => gitApi.commit(repoId as string, selectedSha as string),
+    enabled: enabled && !!selectedSha,
+  });
 
   if (overviewQ.isLoading) {
     return <div className="p-8 text-[var(--text-dim)]">Looking for repositories…</div>;
@@ -319,8 +326,17 @@ export function GitPage() {
               </>
             )}
 
+            {/* The subject is the header's second line, so the pane below it
+                can lead with the buttons instead of repeating it. Read from the
+                cache rather than passed down: `CommitDetail` asks for the same
+                query key, so this costs no request. */}
             {detailOpen && (
-              <Sheet title={`Commit ${selectedSha?.slice(0, 7)}`} onClose={closeDetail} closeLabel="Close">
+              <Sheet
+                title={`Commit ${selectedSha?.slice(0, 7)}`}
+                subtitle={openCommit.data?.commit.subject}
+                onClose={closeDetail}
+                closeLabel="Close"
+              >
                 <div className="pt-2 text-xs">{detail}</div>
               </Sheet>
             )}

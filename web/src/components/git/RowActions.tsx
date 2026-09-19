@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
-import { Sheet } from '../Sheet.tsx';
+import { useRef, useState } from 'react';
+import { useIsMobile } from '../../lib/mobile.ts';
+import { Popover } from '../Popover.tsx';
 import { MenuButton, type SplitOption } from './SplitButton.tsx';
 
 /**
@@ -86,14 +86,25 @@ export function Act({
 /**
  * One ref in a list: a branch, a tag, a stash, a worktree.
  *
- * 11px and half a line of padding on a desktop, where the panel is a dense
- * index you scan with your eyes. 48 and 13px below 48rem — above the 44px floor
- * rather than on it, because every one of these rows has a `⋮` at the end of it
- * that is itself 44, and a target the exact height of its own row leaves
- * nothing between one branch and the next.
+ * 11px on a desktop, where the panel is a dense index you scan with your eyes.
+ * 48 and 13px below 48rem — above the 44px floor rather than on it, because
+ * every one of these rows has a `⋮` at the end of it that is itself 40, and a
+ * target the exact height of its own row leaves nothing between one branch and
+ * the next.
+ *
+ * **It carries no padding of its own, and `items-stretch` is not a detail.**
+ * The padding used to be here and the tappable part was a button inside it,
+ * sized to its own text: so the tap flash — which Android paints on the element
+ * that was hit — was a 20px strip floating in the middle of a 48px row, inset
+ * from both edges. It read as the wrong thing being pressed. The body below
+ * takes the padding and the full height instead, so what lights up is exactly
+ * what you pressed: everything up to the `⋮`.
  */
 export const rowClass =
-  'flex w-full items-center gap-1.5 px-2 py-0.5 text-left text-[11px] hover:bg-[var(--bg-hover)]/60 max-md:min-h-12 max-md:gap-2 max-md:py-1 max-md:text-[13px]';
+  'flex w-full items-stretch gap-1.5 pr-2 text-left text-[11px] hover:bg-[var(--bg-hover)]/60 max-md:min-h-12 max-md:gap-2 max-md:text-[13px]';
+
+/** The part of a row that selects it — the whole of it except the `⋮`. */
+export const rowBodyClass = 'flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-0.5 text-left';
 
 /** One thing that can be done to a row, in both of its spellings. */
 export interface RowAction {
@@ -140,7 +151,7 @@ export function RowActions({
 }) {
   const mobile = useIsMobile();
   const [open, setOpen] = useState(false);
-  useBackDismiss(mobile && open, () => setOpen(false));
+  const trigger = useRef<HTMLButtonElement>(null);
   if (actions.length === 0) return null;
 
   if (!mobile) {
@@ -190,18 +201,25 @@ export function RowActions({
           {primary.words}
         </button>
       )}
+      {/* **A box, not a glyph floating at the end of a row.** Three dots in
+          `text-dim` on a dark row is the same weight as the text beside it and
+          reads as punctuation; it is the only way to every verb this row has,
+          so it is drawn as the button it is. */}
       {rest.length > 0 && (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label={`What can be done to ${name}`}
-        className={`${ACT_CLASS} shrink-0`}
-      >
-        ⋮
-      </button>
+        <button
+          ref={trigger}
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label={`What can be done to ${name}`}
+          aria-haspopup="menu"
+          className="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded border border-[var(--border)] text-base text-[var(--text-dim)] active:bg-[var(--bg-hover)]"
+        >
+          ⋮
+        </button>
       )}
       {open && (
-        <Sheet title={name} onClose={() => setOpen(false)} closeLabel="Close">
+        <Popover anchorRef={trigger} onClose={() => setOpen(false)} label={`What can be done to ${name}`}>
+          <p className="truncate px-2 pt-1 pb-1.5 text-[11px] text-[var(--text-dim)]">{name}</p>
           {rest
             .filter((a) => !a.coveredByMenu)
             .flatMap((a) =>
@@ -234,7 +252,7 @@ export function RowActions({
                   />,
                 ],
           )}
-        </Sheet>
+        </Popover>
       )}
     </>
   );
@@ -261,7 +279,7 @@ function RowActionRow({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`flex min-h-14 w-full cursor-pointer items-center gap-3 border-b border-[var(--border)] px-1 py-2 text-left last:border-b-0 disabled:cursor-default disabled:opacity-50 ${
+      className={`flex min-h-12 w-full cursor-pointer items-center gap-3 rounded border-b border-[var(--border)]/60 px-2 py-1.5 text-left last:border-b-0 hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-50 ${
         danger ? 'text-red-300' : ''
       }`}
     >

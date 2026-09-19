@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router';
-import { useBackDismiss, useIsShort, useIsTyping } from '../lib/mobile.ts';
+import { useBackDismiss, useIsShort, useIsTyping, usePublishedHeight } from '../lib/mobile.ts';
 
 /**
  * The navigation, on a phone.
@@ -169,10 +169,14 @@ export function MobileTabBar({ chatEnabled }: { chatEnabled: boolean }) {
   // a route, so it needs the marker; the destinations inside it are routes and
   // Back handles those itself.
   useBackDismiss(more, () => setMore(false));
+  // Published for the sheets, which stop above it. Returning null below takes
+  // the variable to 0 with the bar, which is the case that has to be right.
+  const barRef = usePublishedHeight('--app-bar-h');
   if (typing || short || coversTheBar(pathname)) return null;
   const inMore = MORE.some(([to]) => pathname === to);
   return (
     <nav
+      ref={barRef}
       // The gesture bar is under this, so the padding is the bar's own rather
       // than something the page below has to know about.
       className="relative flex shrink-0 items-stretch border-t border-[var(--border)] bg-[var(--bg-raised)] pb-[var(--safe-bottom)] md:hidden"

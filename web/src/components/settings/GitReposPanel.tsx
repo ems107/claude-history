@@ -95,9 +95,9 @@ export function GitReposPanel() {
   if (isLoading) return <p className="text-[var(--text-dim)]">Reading…</p>;
   if (data && !data.available) return <p className="text-red-400">{data.error}</p>;
 
-  const visible = data?.repos.filter((r) => !r.hidden).length ?? 0;
-  const hiddenRepos = data?.repos.filter((r) => r.hidden) ?? [];
-  const hidden = hiddenRepos.length;
+  const found = data?.repos ?? [];
+  const visible = found.filter((r) => !r.hidden).length;
+  const hidden = found.length - visible;
 
   return (
     <>
@@ -187,39 +187,53 @@ export function GitReposPanel() {
       </div>
 
       {/**
-       * The way back from the picker's `Hide`.
+       * Which of them the Git tab shows — the same shape *Settings › Projects*
+       * uses for the same question, a tick per row and nothing else.
        *
-       * Hiding was a one-way door for exactly as long as it existed: the server
-       * has always taken `hidden: false`, and nothing in the app ever sent it —
-       * so a repository hidden by a mis-tap was gone until somebody edited
-       * `userdata.json` by hand. The section only appears when there is
-       * something in it, which is also how you find out that hiding is
-       * reversible: the count beside *Rescan* said `1 hidden` and offered no
-       * way to act on it.
+       * It used to be a `✕` in the tab's own picker and nowhere else, which was
+       * wrong twice over. It was a one-way door: the server has always taken
+       * `hidden: false` and nothing in the app ever sent it, so a repository
+       * hidden by a mis-tap was gone until somebody edited `userdata.json` by
+       * hand. And it was in the wrong place: a list you open to CHOOSE from is
+       * not a list you manage, and putting the one control that removes an
+       * entry beside the eleven that select one is how a mis-tap happens.
        */}
-      {hiddenRepos.length > 0 && (
+      {found.length > 0 && (
         <div>
-          <p className="mb-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">Hidden</p>
-          <p className="mb-1 text-[11px] text-[var(--text-dim)]">
-            Kept out of the Git tab's picker. Still on disk, still a project — this only decides what that list shows.
-          </p>
-          {hiddenRepos.map((repo) => (
-            <div key={repo.id} className="flex items-center gap-2 py-0.5">
-              <span className="shrink-0 font-medium">{repo.name}</span>
-              <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-dim)]" title={repo.path}>
-                {repo.path}
-              </span>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => run(gitApi.setHidden(repo.id, false))}
-                className={`${actionClass} shrink-0`}
-                title={`Put ${repo.name} back in the picker`}
+          <p className="mb-1 text-[10px] tracking-wider text-[var(--text-dim)] uppercase">Shown in the Git tab</p>
+          <div className="max-h-96 overflow-y-auto rounded border border-[var(--border)]">
+            {found.map((repo) => (
+              <label
+                key={repo.id}
+                title={repo.path}
+                className="flex cursor-pointer items-center gap-2 px-2 py-1 select-none hover:bg-[var(--bg-hover)] max-md:min-h-11"
               >
-                Show
-              </button>
-            </div>
-          ))}
+                <input
+                  type="checkbox"
+                  checked={!repo.hidden}
+                  disabled={busy}
+                  onChange={(e) => run(gitApi.setHidden(repo.id, !e.target.checked))}
+                  className="accent-[var(--accent)] max-md:size-5"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className={`block truncate ${repo.hidden ? 'text-[var(--text-dim)]' : ''}`}>{repo.name}</span>
+                  <span className="truncate-start block truncate font-mono text-[10px] text-[var(--text-dim)]">
+                    {repo.path}
+                  </span>
+                </span>
+                {repo.currentBranch && (
+                  <span className="shrink-0 font-mono text-[10px] text-[var(--accent)]">⎇ {repo.currentBranch}</span>
+                )}
+                <span className="shrink-0 text-[10px] text-[var(--text-dim)]">
+                  {repo.origins.includes('manual') ? 'added' : repo.origins.includes('scan') ? 'scanned' : 'project'}
+                </span>
+              </label>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--text-dim)]">
+            Unticking one keeps it out of the Git tab's picker. Nothing is deleted and nothing is refused — a
+            repository hidden here is still a folder you can work in.
+          </p>
         </div>
       )}
 

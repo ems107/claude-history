@@ -367,8 +367,11 @@ export function CommitDetail({
   return (
     <div className="space-y-3">
       <span className={segmentedClass}>
+        {/* `Details`, not `Message`: the pane leads with what you can DO to
+            the commit and ends with what it says, and the subject is in the
+            header above this control either way. */}
         <button type="button" onClick={() => setPane('about')} className={segmentClass(pane === 'about')}>
-          Message
+          Details
         </button>
         <button type="button" onClick={() => setPane('files')} className={segmentClass(pane === 'files')}>
           <span className="truncate">Files</span>
@@ -381,21 +384,19 @@ export function CommitDetail({
 
       {pane === 'about' ? (
         <>
-          <div className="rounded border border-[var(--border)] bg-[var(--bg-raised)]/40 p-3">
-            <p className="text-sm font-medium">{commit.subject}</p>
-            {detail.body && (
-              <pre className="mt-2 max-h-64 overflow-auto rounded bg-black/30 p-2 text-[11px] whitespace-pre-wrap">
-                {detail.body}
-              </pre>
-            )}
-            {commit.refs.length > 0 && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {commit.refs.map((ref) => (
-                  <RefChip key={`${ref.kind}:${ref.fullRef}`} kind={ref.kind} name={ref.name} isHead={ref.isHead} />
-                ))}
-              </div>
-            )}
-          </div>
+          {/* **What you can do, then what it is, then what it says.** The
+              message used to lead and pushed the buttons below the fold on a
+              phone — but the subject is already the sheet's own subtitle, read
+              before this pane was even chosen, so leading with it again was a
+              screenful spent repeating the title. The full text keeps its place
+              at the foot, where it is the thing you scroll TO. */}
+          {commit.refs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {commit.refs.map((ref) => (
+                <RefChip key={`${ref.kind}:${ref.fullRef}`} kind={ref.kind} name={ref.name} isHead={ref.isHead} />
+              ))}
+            </div>
+          )}
 
           <CommitActions
             repoId={repoId}
@@ -459,6 +460,17 @@ export function CommitDetail({
               </button>
             </dd>
           </dl>
+
+          <div className="rounded border border-[var(--border)] bg-[var(--bg-raised)]/40 p-3">
+            <p className="text-sm font-medium">{commit.subject}</p>
+            {detail.body ? (
+              <pre className="mt-2 max-h-80 overflow-auto rounded bg-black/30 p-2 text-[11px] whitespace-pre-wrap">
+                {detail.body}
+              </pre>
+            ) : (
+              <p className="mt-1 text-[11px] text-[var(--text-dim)] italic">Nothing below the subject line.</p>
+            )}
+          </div>
         </>
       ) : detail.files.length === 0 ? (
         <p className="text-[11px] text-[var(--text-dim)]">This commit changed no files.</p>

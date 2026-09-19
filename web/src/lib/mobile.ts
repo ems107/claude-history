@@ -131,6 +131,48 @@ export function useKeyboardInset(): void {
   }, []);
 }
 
+/**
+ * Publish an element's height as a CSS variable on `:root`.
+ *
+ * For the app's own frame — the header and the bottom bar — so that anything
+ * drawn OVER a page can stop short of them. A sheet used to be `inset-0` and
+ * covered the lot: open the branches on a phone and the app header was gone,
+ * with the bell, the gear and the way home in it, for as long as you were
+ * looking at a list of branches. It is a layer over the PAGE, not over the app,
+ * and this is what lets it say so without every sheet knowing how tall a
+ * header is.
+ *
+ * A variable rather than a returned number because the readers are `fixed`
+ * boxes in other trees, and none of them should re-render because a usage
+ * widget grew a line. A **callback ref**, so an element that unmounts — the bar
+ * hides itself while you type, the header stands aside in landscape — writes
+ * its own `0px` on the way out; the observer alone would not, since a box that
+ * no longer exists reports nothing.
+ */
+export function usePublishedHeight(name: string): (el: HTMLElement | null) => void {
+  const stop = useRef<(() => void) | null>(null);
+  return useCallback(
+    (el: HTMLElement | null) => {
+      stop.current?.();
+      stop.current = null;
+      const root = document.documentElement;
+      if (!el) {
+        root.style.setProperty(name, '0px');
+        return;
+      }
+      const write = () => root.style.setProperty(name, `${Math.round(el.getBoundingClientRect().height)}px`);
+      write();
+      const observer = new ResizeObserver(write);
+      observer.observe(el);
+      stop.current = () => {
+        observer.disconnect();
+        root.style.setProperty(name, '0px');
+      };
+    },
+    [name],
+  );
+}
+
 /** Above this much scroll the header is always shown: the top of a list is not
  * somewhere anybody is trying to see more of. */
 const REVEAL_ABOVE_PX = 48;

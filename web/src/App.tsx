@@ -17,7 +17,7 @@ import { UpdateButton } from './components/UpdateButton.tsx';
 import { UsageWidget } from './components/UsageWidget.tsx';
 import { listUrl } from './lib/listState.ts';
 import { useAppIdentity } from './lib/appIdentity.ts';
-import { useIsMobile, useIsShort, useKeyboardInset } from './lib/mobile.ts';
+import { useIsMobile, useIsShort, useKeyboardInset, usePublishedHeight } from './lib/mobile.ts';
 import { GitPage } from './pages/GitPage.tsx';
 import { LogsPage } from './pages/LogsPage.tsx';
 import { NewSessionPage } from './pages/NewSessionPage.tsx';
@@ -130,6 +130,8 @@ export function App() {
   const short = useIsShort();
   const { pathname } = useLocation();
   const bareDetail = mobile && short && (pathname.startsWith('/session/') || pathname === '/new');
+  // What the frame takes, published for the layers that must not cover it.
+  const headerRef = usePublishedHeight('--app-header-h');
   const navigate = useNavigate();
   // Same query the UpdateButton uses — deduped by TanStack, no extra request.
   const { data: update } = useQuery({ queryKey: ['update'], queryFn: api.updateStatus });
@@ -197,10 +199,14 @@ export function App() {
           of the readings is drawn only when there IS something to install; the
           rest of the time it is a button that answers a question nobody asks
           from a phone, and Settings › Updates is where it is asked from. */}
+      {/* Unmounted rather than `hidden` when it stands aside, so the height it
+          publishes goes to 0 with it — a `display: none` box reports nothing to
+          a ResizeObserver, and a sheet would go on leaving a header's worth of
+          gap above nothing. */}
+      {!bareDetail && (
       <header
-        className={`flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1 ${
-          bareDetail ? 'hidden' : ''
-        }`}
+        ref={headerRef}
+        className="flex items-center gap-3 border-b border-[var(--border)] px-4 py-2 max-md:gap-2 max-md:px-3 max-md:py-1"
       >
         {/* Title and version share a baseline, so the small version text sits
             on the title's bottom edge instead of floating at its mid-height. */}
@@ -302,6 +308,7 @@ export function App() {
           </NavLink>
         </span>
       </header>
+      )}
       {/* Above the routes and outside `main`: the cards are `fixed`, they
           outlive any one page, and nothing in the layout may shift for them. */}
       <NotificationToasts />

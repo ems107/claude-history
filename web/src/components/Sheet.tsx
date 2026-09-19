@@ -16,12 +16,15 @@ import type { ReactNode } from 'react';
  */
 export function Sheet({
   title,
+  subtitle,
   onClose,
   extra,
   closeLabel = 'Done',
   children,
 }: {
   title: string;
+  /** A second line under it — what this layer is ABOUT, where the title is what it is. */
+  subtitle?: ReactNode;
   onClose: () => void;
   extra?: ReactNode;
   /** `Done` for something being tuned; `Close` for something merely being read. */
@@ -29,9 +32,26 @@ export function Sheet({
   children: ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-[var(--bg)]">
+    /**
+     * **It covers the page, not the app.** `inset-0` took the app header with
+     * it — the mark, the usage, the bell and the gear — so opening the branches
+     * on a phone meant losing every way out of the Git tab until you found
+     * Close. It now sits between the two `usePublishedHeight` variables, which
+     * are `0px` whenever the frame is not drawn (a session in landscape, the
+     * bar hiding itself while you type), so nothing has to know which case it
+     * is in.
+     */
+    <div
+      // A hook for the device harness, which used to find these by their class
+      // and lost them the day the class stopped being `inset-0`.
+      data-sheet={title}
+      className="fixed inset-x-0 top-[var(--app-header-h,0px)] bottom-[var(--app-bar-h,0px)] z-40 flex flex-col bg-[var(--bg)]"
+    >
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</h2>
+        <span className="flex min-w-0 flex-1 flex-col">
+          <h2 className="min-w-0 truncate text-sm font-semibold">{title}</h2>
+          {subtitle && <span className="min-w-0 truncate text-xs text-[var(--text-dim)]">{subtitle}</span>}
+        </span>
         {extra}
         <button
           type="button"

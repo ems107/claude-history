@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
+import { useRef, useState, type ReactNode } from 'react';
+import { useIsMobile } from '../../lib/mobile.ts';
 import { actionClass } from '../controlClass.ts';
+import { Popover } from '../Popover.tsx';
 
 export interface SplitOption {
   key: string;
@@ -53,16 +54,6 @@ export function SplitButton({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const mobile = useIsMobile();
-  useBackDismiss(mobile && open, () => setOpen(false));
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [open]);
 
   const main = options.find((o) => o.key === defaultKey) ?? options[0];
   if (!main) return null;
@@ -106,23 +97,25 @@ export function SplitButton({
       >
         ▾
       </button>
-      {open && mobile && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
-      {open && <OptionMenu options={options} mainKey={main.key} onClose={() => setOpen(false)} />}
+      {open && (
+        <Popover anchorRef={ref} onClose={() => setOpen(false)} label="The other ways to do this">
+          <OptionMenu options={options} mainKey={main.key} onClose={() => setOpen(false)} />
+        </Popover>
+      )}
     </div>
   );
 }
 
 /**
- * The list itself. Its own component because the sidebar's merge action wants
- * the same menu without the same button, and a second copy of these rows would
- * be a second place for the command line under each entry to go stale.
+ * The rows themselves. Its own component because the sidebar's merge action
+ * wants the same list without the same button, and a second copy of these rows
+ * would be a second place for the command line under each entry to go stale.
  *
- * Positioned against the nearest positioned ancestor, so whatever opens it must
- * be `relative` — except below 48rem, where it is pinned to the window instead.
- * 320px anchored to the right of a 360px screen is most of the screen already,
- * and opened from a ref row it was clipped outright by the sidebar's own
- * `overflow-hidden`: this menu is the ONLY way to a non-default fetch, pull or
- * merge, so being unreachable there was the whole feature missing.
+ * It is only the CONTENT now — `Popover` owns where it appears, which is
+ * directly under whatever was pressed. It used to position itself against the
+ * nearest positioned ancestor and, below 48rem, pin itself to the bottom of the
+ * window: that fixed the refs column clipping it and put the menu at the
+ * opposite end of the screen from the finger that opened it.
  */
 export function OptionMenu({
   options,
@@ -135,7 +128,7 @@ export function OptionMenu({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute top-full right-0 z-30 mt-1 w-80 rounded border border-[var(--border)] bg-[var(--bg-raised)] p-1 text-xs shadow-xl max-md:fixed max-md:inset-x-2 max-md:top-auto max-md:bottom-2 max-md:z-50 max-md:max-h-[70dvh] max-md:w-auto max-md:overflow-y-auto">
+    <>
       {options.map((option) => (
         <button
           key={option.key}
@@ -163,7 +156,7 @@ export function OptionMenu({
           )}
         </button>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -189,20 +182,9 @@ export function MenuButton({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
-  const mobile = useIsMobile();
-  useBackDismiss(mobile && open, () => setOpen(false));
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
-  }, [open]);
 
   return (
-    <span ref={ref} className="relative inline-flex">
+    <span ref={ref} className="inline-flex">
       <button
         type="button"
         disabled={disabled}
@@ -213,10 +195,11 @@ export function MenuButton({
       >
         {label}
       </button>
-      {/* The menu is pinned to the window on a phone, so the tap that closes it
-          cannot be an outside click on this wrapper — it needs a scrim. */}
-      {open && mobile && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
-      {open && <OptionMenu options={options} mainKey={mainKey} onClose={() => setOpen(false)} />}
+      {open && (
+        <Popover anchorRef={ref} onClose={() => setOpen(false)} label={title}>
+          <OptionMenu options={options} mainKey={mainKey} onClose={() => setOpen(false)} />
+        </Popover>
+      )}
     </span>
   );
 }

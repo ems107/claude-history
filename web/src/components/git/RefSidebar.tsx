@@ -20,7 +20,7 @@ import { FoldHeader } from '../FoldHeader.tsx';
 import { ConfirmDialog } from './ConfirmDialog.tsx';
 import { CHEVRON, SectionAction } from './SectionAction.tsx';
 import { type SplitOption } from './SplitButton.tsx';
-import { RowActions, rowClass } from './RowActions.tsx';
+import { RowActions, rowBodyClass, rowClass } from './RowActions.tsx';
 import { useGitAction } from './useGitAction.ts';
 
 /**
@@ -47,17 +47,20 @@ function useFold(key: string, initial: boolean): [boolean, () => void] {
 }
 
 /**
- * Which branch folders are CLOSED, remembered across visits.
+ * Which branch folders are OPEN, remembered across visits.
  *
- * The collapsed set rather than the open one, so a folder that did not exist
- * when you last looked — the branch you pushed this morning — arrives open.
+ * **Closed is the default**, and the open set rather than the closed one is
+ * what makes that true for a folder nobody has met yet — the `topic/` in a
+ * clone with sixty branches in it, which open would be sixty rows between you
+ * and `main`. A folder is a decision you make when you want what is inside it.
+ *
  * One key for the lot: a folder name is not worth a localStorage entry each,
  * and the whole point of this state is that it is trivia.
  */
-const FOLDERS_KEY = 'git.refFolders';
+const FOLDERS_KEY = 'git.refFoldersOpen';
 
 function useFolders(): { closed: (path: string) => boolean; toggle: (path: string) => void } {
-  const [closed, setClosed] = useState<Set<string>>(() => {
+  const [open, setOpen] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(FOLDERS_KEY);
       return new Set(raw ? (JSON.parse(raw) as string[]) : []);
@@ -66,9 +69,9 @@ function useFolders(): { closed: (path: string) => boolean; toggle: (path: strin
     }
   });
   return {
-    closed: (path) => closed.has(path),
+    closed: (path) => !open.has(path),
     toggle: (path) => {
-      setClosed((prev) => {
+      setOpen((prev) => {
         const next = new Set(prev);
         if (next.has(path)) next.delete(path);
         else next.add(path);
@@ -312,20 +315,20 @@ export function RefSidebar({
   const branchRow = (branch: GitBranch, name: string, depth: number) => (
     <div
       key={branch.fullRef}
-      style={{ paddingLeft: indent(depth) }}
       className={`group ${rowClass} ${
         branch.current ? 'bg-[var(--accent)]/8' : selectedRef === branch.name ? 'bg-[var(--bg-hover)]' : ''
       }`}
     >
       <button
         type="button"
+        style={{ paddingLeft: indent(depth) }}
         onClick={() => pick(branch.name)}
         title={
           branch.worktreePath
             ? `Checked out in another worktree: ${branch.worktreePath}`
             : (branch.lastSubject ?? branch.name)
         }
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+        className={rowBodyClass}
       >
         <span
           aria-hidden
@@ -508,14 +511,14 @@ export function RefSidebar({
                 return (
                   <div
                     key={branch.fullRef}
-                    style={{ paddingLeft: indent(depth) }}
                     className={`group ${rowClass} ${selectedRef === full ? 'bg-[var(--bg-hover)]' : ''}`}
                   >
                     <button
                       type="button"
+                      style={{ paddingLeft: indent(depth) }}
                       onClick={() => pick(full)}
                       title={full}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                      className={rowBodyClass}
                     >
                       <span className="min-w-0 flex-1 truncate text-sky-300/85">{name}</span>
                       {branch.localMissing && (
@@ -616,14 +619,14 @@ export function RefSidebar({
               leaf={(tag, name, depth) => (
                 <div
                   key={tag.name}
-                  style={{ paddingLeft: indent(depth) }}
                   className={`group ${rowClass} ${selectedRef === tag.name ? 'bg-[var(--bg-hover)]' : ''}`}
                 >
                   <button
                     type="button"
+                    style={{ paddingLeft: indent(depth) }}
                     onClick={() => pick(tag.name)}
                     title={tag.subject ?? tag.name}
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+                    className={rowBodyClass}
                   >
                     <span className="min-w-0 flex-1 truncate text-amber-400/90">{name}</span>
                     {tag.annotated && (
@@ -682,9 +685,11 @@ export function RefSidebar({
             {stashList.length === 0 && <Empty>No stashes.</Empty>}
             {stashList.map((stash) => (
               <div key={stash.ref} className={`group ${rowClass}`} title={`${stash.ref} on ${stash.branch ?? '?'}`}>
-                <span className="shrink-0 font-mono text-[10px] text-purple-400">{stash.index}</span>
-                <span className="min-w-0 flex-1 truncate">{stash.message}</span>
-                <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(stash.at)}</span>
+                <span className="flex min-w-0 flex-1 items-center gap-2 pl-2">
+                  <span className="shrink-0 font-mono text-[10px] text-purple-400">{stash.index}</span>
+                  <span className="min-w-0 flex-1 truncate">{stash.message}</span>
+                  <span className="shrink-0 text-[10px] text-[var(--text-dim)]">{relativeTime(stash.at)}</span>
+                </span>
                 {repoId && (
                   <RowActions
                     name={stash.message || `stash@{${stash.index}}`}
@@ -781,14 +786,16 @@ export function RefSidebar({
             {worktreeList.length === 0 && <Empty>No worktrees.</Empty>}
             {worktreeList.map((wt) => (
               <div key={wt.path} className={`group ${rowClass}`} title={wt.path}>
-                <span className="truncate-start min-w-0 flex-1 truncate font-mono text-[10px]">{wt.path}</span>
-                {wt.branch && (
-                  <Chip tone="bg-[var(--accent)]/15 text-[var(--accent)]">
-                    {wt.branch.replace(/^refs\/heads\//, '')}
-                  </Chip>
-                )}
-                {wt.isMain && <Chip tone="bg-[var(--bg-hover)] text-[var(--text-dim)]">main</Chip>}
-                {wt.locked && <Chip tone="bg-amber-400/15 text-amber-400">locked</Chip>}
+                <span className="flex min-w-0 flex-1 items-center gap-2 px-2">
+                  <span className="truncate-start min-w-0 flex-1 truncate font-mono text-[10px]">{wt.path}</span>
+                  {wt.branch && (
+                    <Chip tone="bg-[var(--accent)]/15 text-[var(--accent)]">
+                      {wt.branch.replace(/^refs\/heads\//, '')}
+                    </Chip>
+                  )}
+                  {wt.isMain && <Chip tone="bg-[var(--bg-hover)] text-[var(--text-dim)]">main</Chip>}
+                  {wt.locked && <Chip tone="bg-amber-400/15 text-amber-400">locked</Chip>}
+                </span>
                 {repoId && !wt.isMain && (
                   <RowActions
                     name={wt.path}

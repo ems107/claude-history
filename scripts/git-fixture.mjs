@@ -181,6 +181,15 @@ function buildBranchy(dir, remote) {
     }
   });
 
+  // A line far wider than any phone, so the diff has something to scroll
+  // sideways: every row there paints its own background, and the fault that
+  // needs a fixture is the colour stopping at the fold while the code carries
+  // on. Two commits, so the diff holds a long removal AND a long addition.
+  write(dir, 'src/wide.txt', `one very long line: ${'abcdefghij'.repeat(24)}\n`);
+  commit(dir, 'Add a line wider than a phone');
+  write(dir, 'src/wide.txt', `one very long line, edited: ${'klmnopqrst'.repeat(24)}\n`);
+  commit(dir, 'Edit the line wider than a phone');
+
   // Two more under a THIRD level, left unmerged. The refs panel draws a branch
   // name as the folder path it already is, so it needs a case where a folder
   // contains a folder — `feat/` holding `alpha`, `beta` and an `api/` — and one

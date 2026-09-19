@@ -92,13 +92,31 @@ function Row({ record, showPid }: { record: LogRecord; showPid: boolean }) {
         hasDetail ? 'cursor-pointer' : ''
       }`}
     >
-      <div className="flex items-start gap-3">
-        <span className="shrink-0 text-[var(--text-dim)] opacity-70">{clockTime(record.t)}</span>
-        <span className={`w-10 shrink-0 uppercase ${LEVEL_STYLE[record.lvl] ?? ''}`}>{record.lvl}</span>
-        <span className="w-24 shrink-0 truncate text-[var(--accent)] opacity-80">{record.src}</span>
-        {showPid && <span className="w-12 shrink-0 text-right text-[var(--text-dim)] opacity-70">{record.pid}</span>}
-        <span className={`min-w-0 flex-1 select-text ${open ? 'break-words whitespace-pre-wrap' : 'truncate'}`}>
-          {record.msg}
+      {/* **Four columns on a desktop, two lines on a phone.** The clock, the
+          level, the source and the pid are 160px of a 450px row before the
+          message starts, and the message is the only one of the five anybody
+          reads: at 360 it came out as `widget-mount: c…`. Below 48rem the
+          message takes the line and the other four become a dim one under it —
+          the same split the Git tab's command log takes, for the same reason. */}
+      <div className="flex items-start gap-3 max-md:gap-2">
+        <span className="shrink-0 text-[var(--text-dim)] opacity-70 max-md:hidden">{clockTime(record.t)}</span>
+        <span className={`w-10 shrink-0 uppercase max-md:hidden ${LEVEL_STYLE[record.lvl] ?? ''}`}>{record.lvl}</span>
+        <span className="w-24 shrink-0 truncate text-[var(--accent)] opacity-80 max-md:hidden">{record.src}</span>
+        {showPid && (
+          <span className="w-12 shrink-0 text-right text-[var(--text-dim)] opacity-70 max-md:hidden">
+            {record.pid}
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className={`block select-text max-md:text-xs ${open ? 'break-words whitespace-pre-wrap' : 'truncate'}`}>
+            {record.msg}
+          </span>
+          <span className="mt-0.5 hidden text-[11px] text-[var(--text-dim)] max-md:block">
+            {clockTime(record.t)} ·{' '}
+            <span className={`uppercase ${LEVEL_STYLE[record.lvl] ?? ''}`}>{record.lvl}</span> ·{' '}
+            <span className="text-[var(--accent)] opacity-80">{record.src}</span>
+            {showPid && ` · pid ${String(record.pid)}`}
+          </span>
         </span>
         <button
           type="button"
@@ -107,14 +125,18 @@ function Row({ record, showPid }: { record: LogRecord; showPid: boolean }) {
             e.stopPropagation();
             copy(JSON.stringify(record, null, 2));
           }}
-          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)]"
+          className="shrink-0 cursor-pointer px-1 text-[10px] text-[var(--text-dim)] opacity-0 group-hover:opacity-100 hover:text-[var(--text)] max-md:inline-flex max-md:min-h-10 max-md:items-center max-md:px-2 max-md:text-xs max-md:opacity-100"
         >
           {copied ? 'copied' : 'copy'}
         </button>
-        <span className="w-3 shrink-0 text-[var(--text-dim)]">{hasDetail ? (open ? '▾' : '▸') : ''}</span>
+        <span className="w-3 shrink-0 text-[var(--text-dim)] max-md:text-sm">
+          {hasDetail ? (open ? '▾' : '▸') : ''}
+        </span>
       </div>
       {open && (
-        <div className={`mt-1 ${detailIndent} space-y-1 text-[11px] text-[var(--text-dim)] select-text`}>
+        <div
+          className={`mt-1 ${detailIndent} space-y-1 text-[11px] text-[var(--text-dim)] select-text max-md:ml-0 max-md:text-xs`}
+        >
           {record.data !== undefined && (
             <pre className="overflow-x-auto rounded bg-black/30 p-2">{JSON.stringify(record.data, null, 2)}</pre>
           )}

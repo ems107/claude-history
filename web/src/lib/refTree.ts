@@ -16,10 +16,9 @@
  * branch; it is drawn as `feature/api`. The same thing VS Code calls compact
  * folders, and for the same reason.
  *
- * Order is preserved throughout — whatever order the caller handed the names in
- * is the order the leaves come back in, and a folder takes the position of its
- * first member. The server already sorts branches the way this panel wants
- * them, and re-sorting here would be a second opinion about it.
+ * **Folders first, alphabetically, then the loose refs.** A folder is a row you
+ * decide about once and a loose branch is one you act on; interleaved by first
+ * appearance, finding `main` meant reading past four collapsed folders.
  */
 
 export interface RefLeaf<T> {
@@ -80,18 +79,34 @@ export function groupRefs<T>(items: readonly T[], nameOf: (item: T) => string): 
   return emit(root);
 }
 
+/**
+ * **Folders first, then the loose refs, each group in alphabetical order.**
+ *
+ * Not the order they arrived in. A folder is a row you decide about once — is
+ * what I want in there — and a loose branch is a row you act on, so mixing the
+ * two means reading past collapsed folders to find `main`. Sorting is by the
+ * name as DRAWN, which after the single-child merge is `release/2026.09` rather
+ * than `release`; sorting by anything else puts rows in an order the screen
+ * contradicts.
+ */
 function emit<T>(node: Building<T>): RefNode<T>[] {
-  const out: RefNode<T>[] = [];
+  const folders: RefFolder<T>[] = [];
+  const leaves: RefLeaf<T>[] = [];
   for (const child of node.children.values()) {
     // A ref sitting where a folder also is (`feat` and `feat/x`): the ref is a
-    // row of its own, above the folder of the same name.
+    // row of its own, beside the folder of the same name.
     if (child.item !== null) {
-      out.push({ kind: 'leaf', name: child.name, path: child.path, item: child.item });
+      leaves.push({ kind: 'leaf', name: child.name, path: child.path, item: child.item });
     }
     if (child.children.size === 0) continue;
-    out.push(fold(child));
+    const made = fold(child);
+    if (made.kind === 'folder') folders.push(made);
+    else leaves.push(made);
   }
-  return out;
+  const byName = (a: RefNode<T>, b: RefNode<T>) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  folders.sort(byName);
+  leaves.sort(byName);
+  return [...folders, ...leaves];
 }
 
 /**

@@ -274,7 +274,20 @@ export function FileDiffBody({
   onExpand?: () => void;
 }) {
   return (
+    /**
+     * **The inner `w-max` is what makes a wide diff still look like a diff.**
+     *
+     * Every row here paints its own background — emerald for an addition, red
+     * for a removal, a tint for the hunk header. As direct children of the
+     * scroller they were each as wide as the VIEWPORT, so scrolling sideways
+     * ran off the end of the colour: the code carried on and the stripe behind
+     * it stopped dead at the fold, in a ragged line down the file. One box
+     * sized to the widest line, with `min-w-full` so a short diff still fills
+     * the pane, gives every row the same width and the colour reaches the end
+     * of the longest line in the file.
+     */
     <div className="overflow-x-auto">
+      <div className="w-max min-w-full">
       {file.binary ? (
         <p className="px-2 py-2 text-[11px] text-[var(--text-dim)]">Binary file — no text to compare.</p>
       ) : file.tooLarge ? (
@@ -289,6 +302,7 @@ export function FileDiffBody({
       ) : (
         file.hunks.map((hunk, i) => <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} />)
       )}
+      </div>
     </div>
   );
 }

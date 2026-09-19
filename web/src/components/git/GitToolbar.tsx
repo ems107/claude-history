@@ -6,11 +6,11 @@ import {
   type GitStatus,
 } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
-import { useBackDismiss, useIsMobile } from '../../lib/mobile.ts';
+import { useIsMobile } from '../../lib/mobile.ts';
 import {
   actionClass,
   BAR_H,
@@ -20,7 +20,7 @@ import {
   squareClass,
   toggleClass,
 } from '../controlClass.ts';
-import { Sheet } from '../Sheet.tsx';
+import { Popover } from '../Popover.tsx';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
 import { SplitButton, type SplitOption } from './SplitButton.tsx';
@@ -66,7 +66,7 @@ export function GitToolbar({
   const mobile = useIsMobile();
   /** Everything that is neither where you are nor what you are looking at. */
   const [more, setMore] = useState(false);
-  useBackDismiss(mobile && more, () => setMore(false));
+  const moreRef = useRef<HTMLButtonElement>(null);
   const [opening, setOpening] = useState(false);
   const [pushing, setPushing] = useState<null | { force: boolean }>(null);
   const action = useGitAction(repoId);
@@ -402,9 +402,11 @@ export function GitToolbar({
             {tab_('work', 'Working tree', changed)}
           </span>
           <button
+            ref={moreRef}
             type="button"
             onClick={() => setMore(true)}
             className={squareClass(more)}
+            aria-haspopup="menu"
             aria-label="More things to do in this repository"
           >
             ⋮
@@ -423,8 +425,11 @@ export function GitToolbar({
         <div className="px-2 pb-1.5">{feedback}</div>
         {dialogs}
 
+        {/* A popover under the button rather than a screen of its own. Five
+            rows do not need the window, and taking it meant the page you were
+            working in vanished to be told that a command log exists. */}
         {more && (
-          <Sheet title="This repository" onClose={() => setMore(false)}>
+          <Popover anchorRef={moreRef} onClose={() => setMore(false)} label="This repository">
             <MoreRow label="Command log" hint="Every git command this app has run" onClick={() => { setMore(false); onToggleLog(); }} />
             <MoreRow label="Look for repositories again" hint="Walk the scan roots" onClick={() => { setMore(false); onChanged(); }} />
             {!hideLocal && (
@@ -449,7 +454,7 @@ export function GitToolbar({
                 />
               </>
             )}
-          </Sheet>
+          </Popover>
         )}
       </div>
     );
@@ -602,7 +607,7 @@ function MoreRow({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex min-h-14 w-full cursor-pointer items-center gap-3 border-b border-[var(--border)] px-1 py-2 text-left last:border-b-0 disabled:cursor-default disabled:opacity-40"
+      className="flex min-h-12 w-full cursor-pointer items-center gap-3 rounded border-b border-[var(--border)]/60 px-2 py-1.5 text-left last:border-b-0 hover:bg-[var(--bg-hover)] disabled:cursor-default disabled:opacity-40"
     >
       <span className="min-w-0 flex-1">
         <span className="block text-sm">{label}</span>
