@@ -514,14 +514,24 @@ export function GitToolbar({
           always does at 360px — pushing a group right means pushing it onto a
           line of its own, which reads as a gap rather than as an alignment. */}
       <span className="ml-auto flex items-center gap-1.5 max-md:ml-0 max-md:flex-wrap">
+        {/* Three views, one at a time — so none of them may look chosen while
+            another one is on screen. The log used to be a dock at the foot of
+            the page and could be open beside either of the other two; now that
+            it takes the whole area under this bar, `Commits` still lit up
+            underneath it was the bar saying something untrue. */}
         <span className="flex items-center gap-0.5">
-          <button type="button" onClick={() => onTab('commits')} className={toggleClass(tab === 'commits')} title="The history">
+          <button
+            type="button"
+            onClick={() => onTab('commits')}
+            className={toggleClass(!logOpen && tab === 'commits')}
+            title="The history"
+          >
             Commits
           </button>
           <button
             type="button"
             onClick={() => onTab('work')}
-            className={toggleClass(tab === 'work')}
+            className={toggleClass(!logOpen && tab === 'work')}
             title="What has changed and is not committed"
           >
             Working tree

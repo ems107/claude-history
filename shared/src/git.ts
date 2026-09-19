@@ -394,6 +394,16 @@ export interface GitCommandLogEntry {
   running: boolean;
   /** What the command was for — `status`, `log`, `branches`, `fetch`. */
   label: string | null;
+  /**
+   * A non-zero exit is an ordinary answer for this one.
+   *
+   * `remote get-url origin` on a repository without an `origin` exits 2, and
+   * the app asks it of every repository it finds. Drawn as failures those
+   * probes were most of what a filtered panel showed — seven red rows saying
+   * nothing went wrong. The daily log has always made this distinction
+   * (`expectFailure` logs at debug); the panel had no word for it.
+   */
+  expected: boolean;
   exitCode: number | null;
   durationMs: number;
   /** It changed the repository, as opposed to reading it. */

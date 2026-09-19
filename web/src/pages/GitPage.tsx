@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { gitApi } from '../api/git.ts';
-import { CommandLogDock } from '../components/git/CommandLogDock.tsx';
+import { CommandLogPanel } from '../components/git/CommandLogPanel.tsx';
 import { CommitDetail } from '../components/git/CommitDetail.tsx';
 import { GitToolbar } from '../components/git/GitToolbar.tsx';
 import { GraphList } from '../components/git/GraphList.tsx';
@@ -44,23 +44,23 @@ export function GitPage() {
   const mobile = useIsMobile();
   const sidebar = useDragSize({ key: 'git.sidebarWidth', axis: 'x', min: 180, max: 520, initial: 240 });
   const graph = useDragSize({ key: 'git.graphHeight', axis: 'y', min: 120, max: 900, initial: 340 });
-  // Dragging the dock's top edge upwards makes it taller, so this one inverts.
-  const dock = useDragSize({ key: 'git.logHeight', axis: 'y', min: 80, max: 600, initial: 200, invert: true });
   /**
    * Whether the command log is showing.
    *
-   * Remembered on a desktop, where it is a dock at the foot of the page and
-   * leaving it open is a way of working. NOT remembered on a phone, where it is
-   * a sheet over everything: a diagnostic panel that reopens itself on top of
-   * the page every time you come back is not a preference anybody expressed.
+   * Remembered on a desktop, where it is one of the three views this page has
+   * and leaving it on is a way of working. NOT remembered on a phone, where it
+   * is a sheet over everything: a diagnostic panel that reopens itself on top
+   * of the page every time you come back is not a preference anybody expressed.
    */
   const [logOpen, setLogOpen] = useState(() => !mobile && localStorage.getItem('git.logOpen') === '1');
-  const toggleLog = useCallback(() => {
-    setLogOpen((prev) => {
-      if (!mobile) localStorage.setItem('git.logOpen', prev ? '0' : '1');
-      return !prev;
-    });
-  }, [mobile]);
+  const showLog = useCallback(
+    (next: boolean) => {
+      setLogOpen(next);
+      if (!mobile) localStorage.setItem('git.logOpen', next ? '1' : '0');
+    },
+    [mobile],
+  );
+  const toggleLog = useCallback(() => showLog(!logOpen), [showLog, logOpen]);
   /** The refs sheet, which on a desktop is the column that is simply there. */
   const [refsOpen, setRefsOpen] = useState(false);
   useBackDismiss(mobile && refsOpen, () => setRefsOpen(false));
@@ -236,12 +236,19 @@ export function GitPage() {
           logOpen={logOpen}
           onToggleLog={toggleLog}
           tab={tab}
-          onTab={(next) => setParam('tab', next === 'work' ? 'work' : null)}
+          onTab={(next) => {
+            // The three are one choice about what is on screen, so picking a
+            // side of the repository is also how you leave the log.
+            showLog(false);
+            setParam('tab', next === 'work' ? 'work' : null);
+          }}
           onOpenRefs={mobile ? () => setRefsOpen(true) : undefined}
         />
         <RepoStateBanner repoId={repoId} status={status} />
 
-        {!repoId ? (
+        {!mobile && logOpen ? (
+          <CommandLogPanel open onClose={() => showLog(false)} repoId={repoId} />
+        ) : !repoId ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-4 text-xs">
             <p className="text-[var(--text-dim)]">
               No repository selected. Add a folder to scan from the picker above — one root covering where you keep
@@ -343,12 +350,9 @@ export function GitPage() {
           </>
         )}
 
-        <CommandLogDock
-          open={logOpen}
-          onToggle={toggleLog}
-          height={dock.size}
-          onResizeStart={dock.onMouseDown}
-        />
+        {/* On a phone it is a sheet over the page, so it is rendered beside the
+            column rather than inside it; on a desktop it IS the column, above. */}
+        {mobile && <CommandLogPanel open={logOpen} onClose={() => showLog(false)} repoId={repoId} />}
       </div>
     </div>
   );

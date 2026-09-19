@@ -339,6 +339,7 @@ export class GitService {
       stdinPreview: opts.stdin ? redact(opts.stdin.slice(0, 200)) : null,
       running: true,
       label: opts.label ?? null,
+      expected: opts.expectFailure === true,
       exitCode: null,
       durationMs: 0,
       mutation: opts.mutation === true,

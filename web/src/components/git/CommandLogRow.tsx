@@ -2,7 +2,7 @@ import type { GitCommandLogEntry } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { formatClock, formatDateTime } from '../../lib/format.ts';
-import { commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
+import { commandFailed, commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
 
 /** One stream of a finished command, named so an empty one is not a mystery. */
@@ -47,10 +47,7 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const running = entry.running;
-  // Anything that finished without a clean zero: a non-zero code, a timeout, a
-  // kill, a git that could not be started at all. Reading `exitCode !== 0`
-  // alone let the last two through as successes.
-  const failed = !running && entry.exitCode !== 0;
+  const failed = commandFailed(entry);
 
   // One tick a second, and only while this row is the one still going.
   const [, tick] = useState(0);
@@ -87,20 +84,23 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
             {open ? '▾' : '▸'}
           </span>
           <span className="shrink-0 text-[var(--text-dim)] opacity-70 max-md:hidden">{clockTime(entry.at)}</span>
-          {entry.repoName && (
-            <span className="shrink-0 text-[10px] text-[var(--text-dim)] max-md:hidden">{entry.repoName}</span>
-          )}
+          {/* Both of these are fixed columns, present or not. The repository
+              and the label are absent often enough — a probe has no repository
+              yet, `git --version` has neither — that sizing them by content
+              staggered the command every few rows, and the command is the one
+              thing the eye runs down. */}
+          <span className="w-20 shrink-0 truncate text-[10px] text-[var(--text-dim)] max-md:hidden">
+            {entry.repoName ?? ''}
+          </span>
           {/* What it was FOR, in one word, before the command it turned into.
               `git for-each-ref --format=%(refname)…` and
               `git rev-list --count --left-right` are unreadable at a glance and
               perfectly clear once the row says `branches` and `ahead-behind` —
               which is the difference between a wall of git and a list of things
               the app did. */}
-          {entry.label && (
-            <span className="w-24 shrink-0 truncate text-[10px] text-[var(--accent)]/70 max-md:hidden">
-              {entry.label}
-            </span>
-          )}
+          <span className="w-24 shrink-0 truncate text-[10px] text-[var(--accent)]/70 max-md:hidden">
+            {entry.label ?? ''}
+          </span>
           <span className="min-w-0 flex-1">
             <span
               className={`block ${open ? 'break-all whitespace-pre-wrap' : 'truncate'} max-md:text-xs ${
