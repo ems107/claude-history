@@ -114,8 +114,18 @@ export function ConfirmDialog({
           <button ref={cancelRef} type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>
+          {/* **The label stays put, and there is no progress bar under it
+              either.** It used to read `Working…` while busy, which was wider
+              than most of the verbs it replaced and grew the one button you had
+              just aimed at. But `busy` here can never be THIS button's own
+              command: every caller closes the dialog before it runs, so the
+              only way to see this mounted and busy is with something ELSE
+              holding the repository — and a bar saying "working" on the button
+              you are looking at would then be pointing at the wrong command.
+              Disabled with no explanation of its own is the honest answer; the
+              strip under the toolbar is where the other command is named. */}
           <button type="button" onClick={onConfirm} className={dangerClass} disabled={!ready || busy}>
-            {busy ? 'Working…' : confirmLabel}
+            {confirmLabel}
           </button>
         </div>
       </div>

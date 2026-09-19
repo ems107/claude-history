@@ -275,6 +275,8 @@ export class GitService {
   private seq = 0;
   /** Entries the ring has dropped, so the panel can say what it is not showing. */
   private droppedTotal = 0;
+  /** Commands that have started and not finished, by the runner's own id. */
+  private inFlight = new Map<number, GitCommandLogEntry>();
 
   private locks = new Map<string, LockEntry>();
   /** Repo key -> the moment its own-write quiet period ends. */
@@ -295,13 +297,17 @@ export class GitService {
    * feels. The first `GET /api/git` pays for it.
    */
   start(): void {
-    setGitCommandSink((result, opts) => this.record(result, opts));
+    setGitCommandSink({
+      start: (runId, argv, opts) => this.recordStart(runId, argv, opts),
+      end: (runId, result, opts) => this.recordEnd(runId, result, opts),
+    });
     this.sweepTimer = setInterval(() => this.sweepWatchers(), WATCH_SWEEP_MS);
     this.sweepTimer.unref();
   }
 
   shutdown(): void {
     setGitCommandSink(null);
+    this.inFlight.clear();
     if (this.sweepTimer) clearInterval(this.sweepTimer);
     for (const key of [...this.watchers.keys()]) this.unwatch(key);
   }
@@ -312,41 +318,81 @@ export class GitService {
     return this.seq;
   }
 
-  private record(result: GitRunResult, opts: GitRunOptions): void {
+  /**
+   * A command has been spawned. The row exists from this moment, with nothing
+   * in it yet but what is already true: the argv, where, and what it is for.
+   *
+   * Written BEFORE the process starts rather than after it ends, which is what
+   * makes a two-minute fetch something you can watch instead of something you
+   * are told about afterwards — and what gives the one failure that used to be
+   * invisible, a git that will not start at all, a row of its own.
+   */
+  private recordStart(runId: number, argv: string[], opts: GitRunOptions): void {
     const repo = opts.repoKey ? this.byKey.get(opts.repoKey) : null;
     const entry: GitCommandLogEntry = {
       seq: ++this.seq,
       at: localIso(),
       repoId: repo?.id ?? null,
       repoName: repo?.name ?? null,
-      argv: result.argv.map(redact),
+      argv: argv.map(redact),
       cwd: opts.cwd,
       stdinPreview: opts.stdin ? redact(opts.stdin.slice(0, 200)) : null,
-      exitCode: result.exitCode,
-      durationMs: result.durationMs,
+      running: true,
+      label: opts.label ?? null,
+      expected: opts.expectFailure === true,
+      exitCode: null,
+      durationMs: 0,
       mutation: opts.mutation === true,
-      timedOut: result.timedOut,
-      aborted: result.aborted,
-      stdout: redact(result.stdout.slice(0, RING_OUTPUT_CHARS)),
-      stderr: redact(result.stderr.slice(0, RING_OUTPUT_CHARS)),
-      truncated: result.truncated || result.stdout.length > RING_OUTPUT_CHARS,
+      timedOut: false,
+      aborted: false,
+      stdout: '',
+      stderr: '',
+      truncated: false,
     };
+    this.inFlight.set(runId, entry);
     this.ring.push(entry);
     while (this.ring.length > RING_SIZE) {
       this.ring.shift();
       this.droppedTotal++;
     }
     this.events.emit('command', entry.seq);
+  }
 
-    // The daily log gets the audit, not the transcript: at the default level it
-    // reads as everything that CHANGED a repository and nothing else, and at
-    // debug it reproduces the panel.
+  /**
+   * The same row, filled in. It keeps its `seq` — a command is one entry that
+   * changes, never two — so the panel sees the update through its own `since=0`
+   * read without anything having to match them up.
+   */
+  private recordEnd(runId: number, result: GitRunResult, opts: GitRunOptions): void {
+    const entry = this.inFlight.get(runId);
+    this.inFlight.delete(runId);
+    const repo = opts.repoKey ? this.byKey.get(opts.repoKey) : null;
+    if (entry) {
+      entry.running = false;
+      entry.argv = result.argv.map(redact);
+      entry.exitCode = result.exitCode;
+      entry.durationMs = result.durationMs;
+      entry.timedOut = result.timedOut;
+      entry.aborted = result.aborted;
+      entry.stdout = redact(result.stdout.slice(0, RING_OUTPUT_CHARS));
+      entry.stderr = redact(result.stderr.slice(0, RING_OUTPUT_CHARS));
+      entry.truncated = result.truncated || result.stdout.length > RING_OUTPUT_CHARS;
+      this.events.emit('command', entry.seq);
+    }
+    // No `else`: an entry the ring has already dropped is not re-added. The
+    // panel reports what it lost through `dropped`, and a finished command
+    // arriving out of order after 300 newer ones would be a worse answer than
+    // the honest gap.
+
+    // The daily log gets the audit, not the transcript, and it gets it ONCE, at
+    // the end: at the default level it reads as everything that CHANGED a
+    // repository and nothing else, and at debug it reproduces the panel.
     const where = repo?.name ?? opts.cwd;
-    const line = `${entry.argv.join(' ')} in ${where} -> ${result.exitCode} in ${result.durationMs} ms`;
+    const line = `${result.argv.map(redact).join(' ')} in ${where} -> ${result.exitCode} in ${result.durationMs} ms`;
     if (result.timedOut) log.error(`timed out: ${line}`);
     else if (result.aborted) log.debug(`cancelled: ${line}`);
     else if (!result.ok && opts.expectFailure) log.debug(line);
-    else if (!result.ok) log.warn(`${line} :: ${entry.stderr.slice(0, 500)}`);
+    else if (!result.ok) log.warn(`${line} :: ${redact(result.stderr).slice(0, 500)}`);
     else if (opts.mutation) log.info(line);
     else log.debug(line);
   }
@@ -409,7 +455,13 @@ export class GitService {
   private async version(): Promise<string | null> {
     if (this.versionCache) return this.versionCache;
     try {
-      const res = await runGit({ cwd: process.cwd(), args: ['--version'], readOnly: true, timeoutMs: 10_000 });
+      const res = await runGit({
+        cwd: process.cwd(),
+        args: ['--version'],
+        readOnly: true,
+        timeoutMs: 10_000,
+        label: 'version',
+      });
       this.versionCache = res.ok ? res.stdout.trim() : null;
     } catch {
       this.versionCache = null;
@@ -1975,17 +2027,33 @@ export class GitService {
    */
   async fetch(
     repo: ResolvedRepo,
-    body: { remote?: unknown; mode?: unknown },
+    body: { remote?: unknown; mode?: unknown; pruneTags?: unknown; confirm?: unknown },
     signal?: AbortSignal,
   ): Promise<{ status: GitStatus; message: string }> {
     const mode = this.mode(GIT_FETCH_MODES, body.mode, 'gitFetchDefault');
+    /**
+     * `--prune-tags` is the one variant of fetch that DELETES something local.
+     *
+     * Ordinary pruning only removes remote-tracking refs whose branch is gone
+     * from the remote, and no local branch is touched by it. Tags are not like
+     * that: a tag is a local object, and pruning them drops every one the
+     * remote does not have — including one made here five minutes ago and
+     * never pushed. So it is never a mode (the settings cannot name it), it is
+     * never implied by another option, and it needs `confirm` like every other
+     * irreversible thing in this file.
+     *
+     * `--tags` goes with it deliberately: pruning tags without fetching them
+     * would delete the local ones the remote lacks and not bring the ones it
+     * has, which is the destructive half of the operation on its own.
+     */
+    const pruneTags = body.pruneTags === true;
+    if (pruneTags) GitService.requireConfirm(body.confirm, 'Deleting the local tags the remote does not have');
     const { result, status } = await this.mutate(repo, 'fetch', async () => {
       const args = ['fetch'];
-      // Pruning only ever removes remote-tracking refs whose branch is gone
-      // from the remote; no local branch is touched. Never `--prune-tags`,
-      // which WOULD delete local tags — including ones made here and never
-      // pushed.
-      if (mode !== 'all') args.push('--prune');
+      // `--prune-tags` only prunes alongside `--prune`; git's own documentation
+      // is explicit that the two belong together.
+      if (pruneTags || mode !== 'all') args.push('--prune');
+      if (pruneTags) args.push('--prune-tags', '--tags');
       if (mode === 'current') args.push(await this.validRemote(repo, body.remote));
       else args.push('--all');
       const res = await this.network(repo, 'fetch', args, signal);

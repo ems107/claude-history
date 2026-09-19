@@ -147,9 +147,24 @@ export interface GitRunResult {
   argv: string[];
 }
 
-export type GitCommandSink = (result: GitRunResult, opts: GitRunOptions) => void;
+/**
+ * Where a command is recorded, in TWO parts.
+ *
+ * It used to be one function, called from `close` — which meant a command was
+ * only ever recorded once it had finished. For a `status` that is 30 ms and
+ * nobody notices; for a fetch against an unreachable remote it is two minutes
+ * of a panel showing nothing at all, on the one occasion somebody has it open
+ * asking what the app is doing. So `start` fires before the spawn and `end`
+ * fills the same entry in, which is also the only way the "cancelled" and
+ * "timed out" states can ever be seen while they are true.
+ */
+export interface GitCommandSink {
+  start(runId: number, argv: string[], opts: GitRunOptions): void;
+  end(runId: number, result: GitRunResult, opts: GitRunOptions): void;
+}
 
 let sink: GitCommandSink | null = null;
+let runSeq = 0;
 
 /** Installed by GitService. Recording lives here so no call site can forget it. */
 export function setGitCommandSink(fn: GitCommandSink | null): void {
@@ -199,6 +214,15 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
   const argv = [...BASE_FLAGS, ...(opts.readOnly ? READ_ONLY_FLAGS : []), ...opts.args];
   const started = Date.now();
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+  // Before the spawn, so a git that will not start at all still leaves a row.
+  // That failure used to appear in no panel and no log line — the one shape of
+  // missing command this panel promises cannot happen.
+  const runId = ++runSeq;
+  try {
+    sink?.start(runId, argv, opts);
+  } catch {
+    // The panel must never be able to stop a command from running.
+  }
 
   return new Promise((resolve, reject) => {
     const child = spawn(exe, argv, {
@@ -266,6 +290,15 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
       opts.signal?.removeEventListener('abort', onAbort);
     };
 
+    /** Close the entry `start` opened. Both ways out of here owe it one. */
+    const report = (result: GitRunResult): void => {
+      try {
+        sink?.end(runId, result, opts);
+      } catch {
+        // The panel must never be able to break a command that already ran.
+      }
+    };
+
     if (opts.stdin !== undefined && child.stdin) {
       child.stdin.on('error', () => {
         // git can exit before reading it all (a rejected pathspec list); the
@@ -282,6 +315,20 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
       // above. A path that resolved and then would not spawn must not stay
       // cached.
       forgetGitExe();
+      // The entry opened above has to be closed even here, or the panel keeps
+      // a row spinning for ever over a process that never existed.
+      report({
+        ok: false,
+        exitCode: null,
+        stdout: '',
+        stderr: `git could not be started: ${error.message}`,
+        stdoutBytes: 0,
+        truncated: false,
+        timedOut: false,
+        aborted: false,
+        durationMs: Date.now() - started,
+        argv,
+      });
       reject(new GitSpawnError(`git could not be started: ${error.message}`));
     });
 
@@ -301,11 +348,7 @@ export function runGit(opts: GitRunOptions): Promise<GitRunResult> {
         durationMs: Date.now() - started,
         argv,
       };
-      try {
-        sink?.(result, opts);
-      } catch {
-        // The panel must never be able to break a command that already ran.
-      }
+      report(result);
       resolve(result);
     });
   });

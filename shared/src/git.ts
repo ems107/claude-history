@@ -381,6 +381,29 @@ export interface GitCommandLogEntry {
   cwd: string;
   /** First bytes of anything fed on stdin (a commit message, a pathspec list). */
   stdinPreview: string | null;
+  /**
+   * It is still going. A field of its own rather than `exitCode === null`,
+   * because those are two different facts: a process killed by a signal also
+   * comes back with a null code, and reading one as the other would have
+   * drawn a command that was stopped as a command still running.
+   *
+   * An entry is written when the process is SPAWNED and filled in when it
+   * closes, keeping its `seq` — which is the whole reason a two-minute fetch
+   * is visible in this panel while it is happening rather than after it.
+   */
+  running: boolean;
+  /** What the command was for — `status`, `log`, `branches`, `fetch`. */
+  label: string | null;
+  /**
+   * A non-zero exit is an ordinary answer for this one.
+   *
+   * `remote get-url origin` on a repository without an `origin` exits 2, and
+   * the app asks it of every repository it finds. Drawn as failures those
+   * probes were most of what a filtered panel showed — seven red rows saying
+   * nothing went wrong. The daily log has always made this distinction
+   * (`expectFailure` logs at debug); the panel had no word for it.
+   */
+  expected: boolean;
   exitCode: number | null;
   durationMs: number;
   /** It changed the repository, as opposed to reading it. */
@@ -562,6 +585,18 @@ export interface GitFetchRequest {
   remote?: string;
   /** Omitted means "whatever the settings say" — the setting is the default, not the UI. */
   mode?: GitFetchMode;
+  /**
+   * Also `--prune-tags --tags`: bring every tag the remote has, and DELETE
+   * every local tag it does not.
+   *
+   * Deliberately not a `GitFetchMode`. That list is what the settings choose
+   * from, and this one deletes local objects — including a tag made here and
+   * never pushed — so it lives where force pushing and deleting a remote
+   * branch live: an entry in the menu, behind its own confirmation, and
+   * impossible to make the thing a button does by default.
+   */
+  pruneTags?: boolean;
+  confirm?: boolean;
 }
 
 export interface GitPullRequest {

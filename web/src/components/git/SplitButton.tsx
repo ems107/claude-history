@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { useIsMobile } from '../../lib/mobile.ts';
 import { actionClass, actionOpenClass, openClass } from '../controlClass.ts';
 import { Popover } from '../Popover.tsx';
+import { BusyBar } from './BusyBar.tsx';
 
 export interface SplitOption {
   key: string;
@@ -44,13 +45,24 @@ export function SplitButton({
   options,
   defaultKey,
   busy,
+  running,
   title,
 }: {
   /** What the main button says: "Pull", "Push ↑2". */
   label: ReactNode;
   options: SplitOption[];
   defaultKey: string;
+  /** Something is running here — every one of these is refused meanwhile. */
   busy?: boolean;
+  /**
+   * And it is THIS one that is running.
+   *
+   * Separate from `busy` because they answer different questions and the
+   * answers differ: one command holds the repository's lock, so all three of
+   * these go dead together, but only one of them is the reason. Marking all
+   * three would say the app is doing three things at once.
+   */
+  running?: boolean;
   title?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -84,10 +96,16 @@ export function SplitButton({
           main.run();
         }}
         title={main.blocked ?? `${title ? `${title}\n` : ''}${main.command}`}
-        className={`${actionClass} rounded-r-none border-r-0 ${main.blocked ? 'opacity-40' : ''}`}
+        aria-busy={running === true}
+        className={`${actionClass} relative rounded-r-none border-r-0 ${main.blocked ? 'opacity-40' : ''}`}
       >
-        {busy ? '…' : label}
+        {/* The label, always. It used to be `busy ? '…' : label`, which made a
+            72px button 14px wide for the duration of a fetch and moved the two
+            next to it along with everything after them. What is running, for
+            how long and how to stop it is `GitActivity`'s job, under this bar. */}
+        {label}
         {changed && main.short && <span className="ml-1 text-[var(--text-dim)]">({main.short})</span>}
+        {running && <BusyBar />}
       </button>
       <button
         type="button"

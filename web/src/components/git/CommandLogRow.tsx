@@ -1,8 +1,8 @@
 import type { GitCommandLogEntry } from '@claude-history/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { copyPlain } from '../../lib/clipboard.ts';
-import { formatDateTime } from '../../lib/format.ts';
-import { commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
+import { formatClock, formatDateTime } from '../../lib/format.ts';
+import { commandFailed, commandLine, pasteableCommand } from '../../lib/gitCommand.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
 
 /** One stream of a finished command, named so an empty one is not a mystery. */
@@ -25,14 +25,58 @@ function clockTime(iso: string): string {
   return at < 0 ? iso : iso.slice(at + 1, at + 13);
 }
 
+/**
+ * What the right-hand end of the row says, in one string.
+ *
+ * A running command counts, which is why it is computed here rather than
+ * stored: the server writes the row when the process is spawned and fills in
+ * `durationMs` when it closes, so until then the only honest number is the one
+ * read off the clock.
+ */
+function outcome(entry: GitCommandLogEntry, now: number): string {
+  if (entry.running) return `running · ${formatClock(now - Date.parse(entry.at))}`;
+  if (entry.timedOut) return `timed out · ${entry.durationMs} ms`;
+  if (entry.aborted) return `stopped · ${entry.durationMs} ms`;
+  // A null code on a command that HAS finished means it never started, or it
+  // was killed — either way "exit null" is not a sentence.
+  if (entry.exitCode === null) return `did not run · ${entry.durationMs} ms`;
+  return `exit ${entry.exitCode} · ${entry.durationMs} ms`;
+}
+
 export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const failed = entry.exitCode !== 0 && entry.exitCode !== null;
-  const running = entry.exitCode === null;
+  const running = entry.running;
+  const failed = commandFailed(entry);
+  /**
+   * A command somebody STOPPED did not do its job — so it belongs under
+   * Failures with the rest — but it is not a fault, and red is the app saying
+   * something went wrong. Amber is the tone the rest of the UI keeps for "a
+   * state you chose, and should know about".
+   *
+   * Written out in full on both branches rather than composed from a colour
+   * name: Tailwind reads the source for class names and finds nothing in
+   * `text-${tone}`.
+   */
+  const attention = running || entry.aborted;
+  const toneText = attention ? 'text-amber-400' : failed ? 'text-red-400' : 'text-[var(--text-dim)]';
+  const toneEdge = attention
+    ? 'border-l-2 border-l-amber-400/60'
+    : failed
+      ? 'border-l-2 border-l-red-500/50'
+      : '';
+
+  // One tick a second, and only while this row is the one still going.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => tick((n) => n + 1), 1_000);
+    return () => clearInterval(timer);
+  }, [running]);
+  const said = outcome(entry, Date.now());
 
   return (
-    <div className={`border-b border-[var(--border)]/40 ${failed ? 'border-l-2 border-l-red-500/50' : ''}`}>
+    <div className={`border-b border-[var(--border)]/40 ${toneEdge}`}>
       {/**
        * **One line on a desktop, two on a phone**, and the split is where the
        * row stops being readable: five things — a clock, a repository, the
@@ -53,36 +97,40 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
             {open ? '▾' : '▸'}
           </span>
           <span className="shrink-0 text-[var(--text-dim)] opacity-70 max-md:hidden">{clockTime(entry.at)}</span>
-          {entry.repoName && (
-            <span className="shrink-0 text-[10px] text-[var(--text-dim)] max-md:hidden">{entry.repoName}</span>
-          )}
+          {/* Both of these are fixed columns, present or not. The repository
+              and the label are absent often enough — a probe has no repository
+              yet, `git --version` has neither — that sizing them by content
+              staggered the command every few rows, and the command is the one
+              thing the eye runs down. */}
+          <span className="w-20 shrink-0 truncate text-[10px] text-[var(--text-dim)] max-md:hidden">
+            {entry.repoName ?? ''}
+          </span>
+          {/* What it was FOR, in one word, before the command it turned into.
+              `git for-each-ref --format=%(refname)…` and
+              `git rev-list --count --left-right` are unreadable at a glance and
+              perfectly clear once the row says `branches` and `ahead-behind` —
+              which is the difference between a wall of git and a list of things
+              the app did. */}
+          <span className="w-24 shrink-0 truncate text-[10px] text-[var(--accent)]/70 max-md:hidden">
+            {entry.label ?? ''}
+          </span>
           <span className="min-w-0 flex-1">
             <span
               className={`block ${open ? 'break-all whitespace-pre-wrap' : 'truncate'} max-md:text-xs ${
-                running
-                  ? 'text-amber-400'
-                  : failed
-                    ? 'text-red-400'
-                    : entry.mutation
-                      ? 'text-[var(--text)]'
-                      : 'text-[var(--text)]/75'
+                attention || failed ? toneText : entry.mutation ? 'text-[var(--text)]' : 'text-[var(--text)]/75'
               }`}
             >
               {open ? `git ${entry.argv.join(' ')}` : commandLine(entry.argv)}
             </span>
             <span className="mt-0.5 hidden text-[11px] text-[var(--text-dim)] max-md:block">
               {clockTime(entry.at)}
-              {entry.repoName ? ` · ${entry.repoName}` : ''} ·{' '}
-              <span className={failed ? 'text-red-400' : ''}>
-                {running ? 'running' : `exit ${entry.exitCode}`}
-              </span>{' '}
-              · {entry.durationMs} ms
+              {entry.repoName ? ` · ${entry.repoName}` : ''}
+              {entry.label ? ` · ${entry.label}` : ''} ·{' '}
+              <span className={toneText}>{said}</span>
               {entry.mutation ? '' : ' · read'}
             </span>
           </span>
-          <span className="shrink-0 tabular-nums text-[var(--text-dim)] max-md:hidden">
-            {running ? 'running' : `exit ${entry.exitCode}`} · {entry.durationMs} ms
-          </span>
+          <span className={`shrink-0 tabular-nums max-md:hidden ${toneText}`}>{said}</span>
         </FoldHeader>
         {/* A sibling, never nested: nothing interactive may live inside a FoldHeader. */}
         <button
@@ -122,7 +170,14 @@ export function CommandLogRow({ entry }: { entry: GitCommandLogEntry }) {
           {entry.stdinPreview && <Block label="stdin" text={entry.stdinPreview} />}
           {entry.stdout && <Block label="stdout" text={entry.stdout} />}
           {entry.stderr && <Block label="stderr" text={entry.stderr} tone="text-red-300/80" />}
-          {!entry.stdout && !entry.stderr && <p className="text-[var(--text-dim)] italic">It printed nothing.</p>}
+          {/* Output is collected in memory and written here when the process
+              closes, so a command still going has none YET — which is a
+              different sentence from having printed none. */}
+          {!entry.stdout && !entry.stderr && (
+            <p className="text-[var(--text-dim)] italic">
+              {running ? 'Still going; its output arrives when it finishes.' : 'It printed nothing.'}
+            </p>
+          )}
           {entry.truncated && <p className="text-amber-400">Output longer than what is kept here.</p>}
         </div>
       )}

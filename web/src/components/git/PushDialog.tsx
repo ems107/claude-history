@@ -174,13 +174,16 @@ export function PushDialog({
           <button type="button" onClick={onCancel} className={actionClass} disabled={busy}>
             Cancel
           </button>
+          {/* No `Pushing…` and no progress bar, for the reason `ConfirmDialog`
+              sets out: this closes before the push runs, so a busy state here
+              always belongs to some other command. */}
           <button
             type="button"
             disabled={!ready || busy}
             className={force ? dangerClass : actionClass}
             onClick={() => onPush({ remote, setUpstream: needsUpstream, forceWithLease: force, tags, confirm: force })}
           >
-            {busy ? 'Pushing…' : force ? 'Force push' : 'Push'}
+            {force ? 'Force push' : 'Push'}
           </button>
         </div>
       </div>

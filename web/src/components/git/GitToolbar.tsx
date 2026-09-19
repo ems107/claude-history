@@ -6,7 +6,7 @@ import {
   type GitStatus,
 } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { api } from '../../api/client.ts';
 import { gitApi } from '../../api/git.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
@@ -18,13 +18,21 @@ import {
   segmentClass,
   segmentedClass,
   squareClass,
-  toggleClass,
 } from '../controlClass.ts';
+import { ChangesIcon, CommandLogIcon, CommitsIcon } from '../icons.tsx';
 import { Popover } from '../Popover.tsx';
+import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { GitActivity } from './GitActivity.tsx';
 import { PushDialog } from './PushDialog.tsx';
 import { RepoPicker } from './RepoPicker.tsx';
 import { SplitButton, type SplitOption } from './SplitButton.tsx';
 import { useGitAction } from './useGitAction.ts';
+
+/**
+ * Said in three places — the menu entry, the confirmation and the strip that
+ * runs it — so they cannot come to disagree about what the dangerous one does.
+ */
+const PRUNE_TAGS_COMMAND = 'git fetch --prune --prune-tags --tags --all';
 
 /**
  * The repository's headline: which one, where its HEAD is, and how far it has
@@ -69,6 +77,7 @@ export function GitToolbar({
   const moreRef = useRef<HTMLButtonElement>(null);
   const [opening, setOpening] = useState(false);
   const [pushing, setPushing] = useState<null | { force: boolean }>(null);
+  const [pruningTags, setPruningTags] = useState(false);
   const action = useGitAction(repoId);
   const repo = overview?.repos.find((r) => r.id === repoId) ?? null;
 
@@ -77,6 +86,14 @@ export function GitToolbar({
     queryKey: ['git', 'remotes', repoId],
     queryFn: () => gitApi.remotes(repoId as string),
     enabled: !!repoId && !!pushing,
+  });
+  // How much there is to lose, for the tag-pruning confirmation. The same key
+  // the refs panel uses, so on a desktop this is already in the cache and the
+  // dialog costs nothing at all.
+  const tagsQ = useQuery({
+    queryKey: ['git', 'tags', repoId],
+    queryFn: () => gitApi.tags(repoId as string),
+    enabled: !!repoId && pruningTags,
   });
 
   // What each button's main click does. The server applies the same settings
@@ -110,6 +127,65 @@ export function GitToolbar({
       .finally(() => setOpening(false));
   };
 
+  /**
+   * One choice of what is on screen, drawn the way this app draws that choice.
+   *
+   * `segmentClass` and not `toggleClass`, and the difference is stated in
+   * `controlClass.ts`: a segmented control is for alternatives — the box around
+   * the group is what says only one of them can be on — while three separate
+   * bordered buttons say that each is its own idea. The desktop had said the
+   * second thing about Commits and the working tree since they existed, and
+   * once the command log joined them as a view rather than a dock it was three
+   * loose buttons claiming to be independent of one another while behaving as
+   * exactly the opposite.
+   *
+   * One helper for both layouts, because a phone drew the segmented version all
+   * along and two spellings of one control is how they drift.
+   */
+  const viewSegment = (opts: {
+    active: boolean;
+    label: string;
+    onClick: () => void;
+    icon: ReactNode;
+    count?: number;
+    title?: string;
+  }) => (
+    <button
+      type="button"
+      onClick={opts.onClick}
+      aria-pressed={opts.active}
+      title={opts.title}
+      className={segmentClass(opts.active)}
+    >
+      {/* Beside the word, never instead of it: the icon is what the eye finds
+          the control by on a bar of eight, and the label is what says which
+          one it is — a glyph with its meaning in a `title` is a glyph with no
+          meaning at all on a phone.
+
+          **The two are a pair at 3px inside the segment's own 6px**, and the
+          reason that is not half the app's usual gap is that the number is not
+          what you see. None of these three icons has ink out to the right edge
+          of its 16-unit box — the `±` stops at 12 of 16 — so the gap that
+          reaches the eye is the number plus whatever the box has spare:
+          measured at a numeric 3 it is 5.2px for the list, 6.4 for the graph
+          and 7.2 for the `±`, which is still at or above what a text-only
+          control's 6 gives. Picked by looking at 6, 5, 4 and 3 side by side at
+          the size they are drawn, which is the only way this can be decided —
+          the arithmetic says what the eye will get, never whether it is right.
+          The count chip keeps the segment's real 6, because it IS a separate
+          thing from the label. */}
+      <span className="flex min-w-0 items-center gap-[3px]">
+        <span className="shrink-0">{opts.icon}</span>
+        <span className="truncate">{opts.label}</span>
+      </span>
+      {opts.count ? (
+        <span className="shrink-0 rounded bg-[var(--accent)]/20 px-1 text-[10px] tabular-nums text-[var(--accent)]">
+          {opts.count}
+        </span>
+      ) : null}
+    </button>
+  );
+
   // The remote of the branch's upstream, for the labels only — `origin/main`
   // splits at the first slash, and the server resolves the real one anyway.
   const remote = status?.upstream?.split('/')[0] ?? 'origin';
@@ -117,6 +193,21 @@ export function GitToolbar({
   // The buttons these belong to are only rendered with a repository open, so
   // the closures below cannot run without one.
   const id = repoId as string;
+
+  /**
+   * A fetch, with the words the strip under the bar will say while it runs.
+   *
+   * The command is repeated there rather than only in this menu on purpose: the
+   * menu is what you read BEFORE, and once the click has happened the question
+   * changes from "which one is this" to "what is taking so long".
+   */
+  const runFetch = (command: string, body: Parameters<typeof gitApi.fetch>[1]) =>
+    void action.run((signal) => gitApi.fetch(id, body, signal), {
+      verb: 'fetch',
+      what: 'Fetch',
+      command,
+      cancellable: true,
+    });
 
   const fetchOptions: SplitOption[] = [
     {
@@ -126,7 +217,7 @@ export function GitToolbar({
       hint: 'Pruning drops the origin/x entries whose branch is gone. No local branch is touched.',
       short: 'all, pruned',
       blocked: status?.blocked.fetch ?? null,
-      run: () => void action.run(() => gitApi.fetch(id, { mode: 'all-prune' })),
+      run: () => runFetch('git fetch --prune --all', { mode: 'all-prune' }),
     },
     {
       key: 'all',
@@ -135,7 +226,7 @@ export function GitToolbar({
       hint: 'The list of remote branches grows for ever, including ones deleted months ago.',
       short: 'no prune',
       blocked: status?.blocked.fetch ?? null,
-      run: () => void action.run(() => gitApi.fetch(id, { mode: 'all' })),
+      run: () => runFetch('git fetch --all', { mode: 'all' }),
     },
     {
       key: 'current',
@@ -144,9 +235,40 @@ export function GitToolbar({
       hint: 'Quicker where there are several remotes; the others stay behind without saying so.',
       short: remote,
       blocked: status?.blocked.fetch ?? null,
-      run: () => void action.run(() => gitApi.fetch(id, { mode: 'current' })),
+      run: () => runFetch(`git fetch --prune ${remote}`, { mode: 'current' }),
+    },
+    {
+      /**
+       * The only fetch that deletes something of yours.
+       *
+       * Its key is deliberately not one of `GIT_FETCH_MODES`: that list is
+       * what *Settings › Git* chooses the main click from, and nothing
+       * destructive may become what a button does by default. It sits where
+       * force pushing sits — in the menu, marked, behind a confirmation.
+       */
+      key: 'prune-tags',
+      label: 'Fetch tags, dropping the ones the remote has deleted',
+      command: PRUNE_TAGS_COMMAND,
+      hint: 'Deletes every local tag the remote does not have, including ones made here and never pushed.',
+      danger: true,
+      blocked: status?.blocked.fetch ?? null,
+      run: () => setPruningTags(true),
     },
   ];
+
+  /**
+   * A pull, which is `risky` for the strip: unlike a fetch it can be in the
+   * middle of a merge or a rebase when it is stopped, and the offer to stop it
+   * has to say so.
+   */
+  const runPull = (command: string, mode: 'ff-only' | 'rebase' | 'merge') =>
+    void action.run((signal) => gitApi.pull(id, { mode }, signal), {
+      verb: 'pull',
+      what: 'Pull',
+      command,
+      cancellable: true,
+      risky: true,
+    });
 
   const pullOptions: SplitOption[] = [
     {
@@ -156,7 +278,7 @@ export function GitToolbar({
       hint: 'Refuses if both sides have moved, and offers the other two here rather than choosing for you.',
       short: 'ff-only',
       blocked: status?.blocked.pull ?? null,
-      run: () => void action.run(() => gitApi.pull(id, { mode: 'ff-only' })),
+      run: () => runPull('git pull --ff-only', 'ff-only'),
     },
     {
       key: 'rebase',
@@ -165,7 +287,7 @@ export function GitToolbar({
       hint: 'Replays your commits on top of theirs. A conflict stops mid-rebase, which you then have to finish.',
       short: 'rebase',
       blocked: status?.blocked.pull ?? null,
-      run: () => void action.run(() => gitApi.pull(id, { mode: 'rebase' })),
+      run: () => runPull('git pull --rebase', 'rebase'),
     },
     {
       key: 'merge',
@@ -174,7 +296,7 @@ export function GitToolbar({
       hint: 'Never fails, but leaves a “Merge branch…” commit every time the two sides have both moved.',
       short: 'merge',
       blocked: status?.blocked.pull ?? null,
-      run: () => void action.run(() => gitApi.pull(id, { mode: 'merge' })),
+      run: () => runPull('git pull --no-rebase', 'merge'),
     },
   ];
 
@@ -190,8 +312,19 @@ export function GitToolbar({
       // exists for; the two refusals are different and so are their reasons.
       blocked: (needsUpstream ? status?.blocked.pushUpstream : status?.blocked.push) ?? null,
       run: () =>
-        void action.run(() =>
-          gitApi.push(id, { setUpstream: needsUpstream, forceWithLease: false, tags: false, confirm: false }),
+        void action.run(
+          (signal) =>
+            gitApi.push(
+              id,
+              { setUpstream: needsUpstream, forceWithLease: false, tags: false, confirm: false },
+              signal,
+            ),
+          {
+            verb: 'push',
+            what: 'Push',
+            command: `git push${needsUpstream ? ' --set-upstream' : ''} ${remote} ${branch}`,
+            cancellable: true,
+          },
         ),
     },
     {
@@ -209,8 +342,9 @@ export function GitToolbar({
       hint: 'Publishes every local tag, not only the ones on this branch.',
       blocked: status?.blocked.push ?? null,
       run: () =>
-        void action.run(() =>
-          gitApi.push(id, { setUpstream: false, forceWithLease: false, tags: true, confirm: false }),
+        void action.run(
+          (signal) => gitApi.push(id, { setUpstream: false, forceWithLease: false, tags: true, confirm: false }, signal),
+          { verb: 'push', what: 'Push', command: `git push --tags ${remote} ${branch}`, cancellable: true },
         ),
     },
     {
@@ -237,6 +371,34 @@ export function GitToolbar({
    * must never be a tooltip.
    */
   const dialogs = <>
+      {pruningTags && (
+        <ConfirmDialog
+          title="Fetch tags, and delete the ones the remote has not got"
+          body={
+            <>
+              This brings in every tag the remotes have <em>and removes every local tag they do not</em> — which is
+              the half that cannot be undone. A tag you made here and have never pushed looks exactly like a tag
+              somebody deleted, and both go.
+              {tagsQ.data && (
+                <p className="mt-1">
+                  There {tagsQ.data.length === 1 ? 'is' : 'are'}{' '}
+                  <span className="text-[var(--text)]">{tagsQ.data.length}</span> local tag
+                  {tagsQ.data.length === 1 ? '' : 's'} here. Which of them survive depends on what the remote answers.
+                </p>
+              )}
+              <p className="mt-1">Ordinary Fetch never touches tags, and is one entry up the same menu.</p>
+            </>
+          }
+          command={PRUNE_TAGS_COMMAND}
+          confirmLabel="Fetch and prune tags"
+          busy={action.busy}
+          onCancel={() => setPruningTags(false)}
+          onConfirm={() => {
+            setPruningTags(false);
+            runFetch(PRUNE_TAGS_COMMAND, { mode: 'all-prune', pruneTags: true, confirm: true });
+          }}
+        />
+      )}
       {pushing && status && (
         <PushDialog
           status={status}
@@ -246,67 +408,96 @@ export function GitToolbar({
           onCancel={() => setPushing(null)}
           onPush={(body) => {
             setPushing(null);
-            if (repoId) void action.run(() => gitApi.push(repoId, body));
+            if (repoId)
+              void action.run((signal) => gitApi.push(repoId, body, signal), {
+                verb: 'push',
+                what: body.forceWithLease ? 'Force push' : 'Push',
+                // The dialog shows this same line before the click; the strip
+                // shows it again during, because by then the question has
+                // changed from "which one is this" to "what is taking so long".
+                command: [
+                  'git push',
+                  body.setUpstream ? '--set-upstream' : '',
+                  body.forceWithLease ? '--force-with-lease' : '',
+                  body.tags ? '--tags' : '',
+                  body.remote,
+                  branch,
+                ]
+                  .filter(Boolean)
+                  .join(' '),
+                cancellable: true,
+              });
           }}
         />
       )}
   </>;
+  /**
+   * A refusal here is a decision waiting to be made, so the ways out of the two
+   * that HAVE one sit next to it rather than in a menu somewhere else.
+   * Everything that is the same on every failure — the sentence, git's own
+   * output, Dismiss — is `GitActivity`'s, along with the running state that
+   * used to have nowhere to be said at all.
+   */
+  const waysOut = (
+    <>
+      {diverged && repoId && (
+        <>
+          <button
+            type="button"
+            className={actionClass}
+            title="git pull --rebase"
+            onClick={() =>
+              void action.run((signal) => gitApi.pull(repoId, { mode: 'rebase' }, signal), {
+                verb: 'pull',
+                what: 'Pull',
+                command: 'git pull --rebase',
+                cancellable: true,
+                risky: true,
+              })
+            }
+          >
+            Pull with rebase
+          </button>
+          <button
+            type="button"
+            className={actionClass}
+            title="git pull --no-rebase"
+            onClick={() =>
+              void action.run((signal) => gitApi.pull(repoId, { mode: 'merge' }, signal), {
+                verb: 'pull',
+                what: 'Pull',
+                command: 'git pull --no-rebase',
+                cancellable: true,
+                risky: true,
+              })
+            }
+          >
+            Pull with merge
+          </button>
+        </>
+      )}
+      {/* The one place this button really matters: git asked for credentials
+          and the answer is to run the command once by hand. Over remote access
+          that cannot be done from here, and saying so is better than a button
+          that opens a window somewhere else. */}
+      {needsCredentials && repoId && !hideLocal && (
+        <button
+          type="button"
+          className={actionClass}
+          disabled={terminalOnly.disabled}
+          title={terminalOnly.reason ?? undefined}
+          onClick={() => open('terminal')}
+        >
+          ❯ Open a terminal here
+        </button>
+      )}
+    </>
+  );
+
   const feedback = (
     <>
       {repo?.error && <p className="w-full text-[11px] text-red-400">{repo.error}</p>}
-
-      {/* A refusal here is a decision waiting to be made, so the two ways out
-          sit next to it rather than in a menu somewhere else. */}
-      {action.error && (
-        <div className="w-full rounded border border-red-500/40 bg-red-500/10 px-2 py-1.5 text-[11px] text-red-300">
-          <p>{action.error}</p>
-          <span className="mt-1 flex flex-wrap items-center gap-1.5">
-            {diverged && repoId && (
-              <>
-                <button
-                  type="button"
-                  className={actionClass}
-                  title="git pull --rebase"
-                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'rebase' }))}
-                >
-                  Pull with rebase
-                </button>
-                <button
-                  type="button"
-                  className={actionClass}
-                  title="git pull --no-rebase"
-                  onClick={() => void action.run(() => gitApi.pull(repoId, { mode: 'merge' }))}
-                >
-                  Pull with merge
-                </button>
-              </>
-            )}
-            {/* The one place this button really matters: git asked for
-                credentials and the answer is to run the command once by hand.
-                Over remote access that cannot be done from here, and saying so
-                is better than a button that opens a window somewhere else. */}
-            {needsCredentials && repoId && !hideLocal && (
-              <button
-                type="button"
-                className={actionClass}
-                disabled={terminalOnly.disabled}
-                title={terminalOnly.reason ?? undefined}
-                onClick={() => open('terminal')}
-              >
-                ❯ Open a terminal here
-              </button>
-            )}
-            <button type="button" className={actionClass} onClick={action.clear}>
-              Dismiss
-            </button>
-          </span>
-        </div>
-      )}
-      {action.note && (
-        <p className="w-full truncate text-[11px] text-emerald-400" title={action.note}>
-          {action.note.split('\n')[0]}
-        </p>
-      )}
+      <GitActivity action={action} extra={waysOut} onOpenLog={logOpen ? undefined : onToggleLog} />
     </>
   );
   const network = repoId ? (
@@ -314,6 +505,7 @@ export function GitToolbar({
           <SplitButton
             label="Fetch"
             busy={action.busy}
+            running={action.activity?.verb === 'fetch'}
             defaultKey={s.gitFetchDefault}
             options={fetchOptions}
             title="Update the remote-tracking branches"
@@ -321,6 +513,7 @@ export function GitToolbar({
           <SplitButton
             label={`Pull${status && status.behind > 0 ? ` ↓${status.behind}` : ''}`}
             busy={action.busy}
+            running={action.activity?.verb === 'pull'}
             defaultKey={s.gitPullDefault}
             options={pullOptions}
             title="Bring the upstream's commits in"
@@ -328,6 +521,7 @@ export function GitToolbar({
           <SplitButton
             label={`Push${status && status.ahead > 0 ? ` ↑${status.ahead}` : ''}`}
             busy={action.busy}
+            running={action.activity?.verb === 'push'}
             defaultKey={s.gitPushDefault}
             options={pushOptions}
             title="Send commits to the remote"
@@ -355,21 +549,6 @@ export function GitToolbar({
       status?.truncated ? 'more changes than are listed' : null,
       status?.stale ? 'figures are from before the command now running' : null,
     ].filter(Boolean);
-    const tab_ = (which: 'commits' | 'work', label: string, count?: number) => (
-      <button
-        type="button"
-        onClick={() => onTab(which)}
-        aria-pressed={tab === which}
-        className={segmentClass(tab === which)}
-      >
-        <span className="truncate">{label}</span>
-        {count ? (
-          <span className="shrink-0 rounded bg-[var(--accent)]/20 px-1 text-[10px] tabular-nums text-[var(--accent)]">
-            {count}
-          </span>
-        ) : null}
-      </button>
-    );
     return (
       <div className="shrink-0 border-b border-[var(--border)]">
         {/* 1. Which repository, and the branch as the way into everything else
@@ -397,9 +576,19 @@ export function GitToolbar({
 
         {/* 2. Which half of the repository, and everything that is neither. */}
         <div className={controlRow + ' px-2 pt-1'}>
+          {/* Two segments here and three on a desktop, and that is not a
+              drift: on a phone the log is a SHEET over the page rather than a
+              view that replaces it, so it is not a peer of these two. It lives
+              behind the `⋮` with the rest of the diagnostics. */}
           <span className={`${segmentedClass} flex-1`}>
-            {tab_('commits', 'Commits')}
-            {tab_('work', 'Working tree', changed)}
+            {viewSegment({ active: tab === 'commits', label: 'Commits', icon: <CommitsIcon />, onClick: () => onTab('commits') })}
+            {viewSegment({
+              active: tab === 'work',
+              icon: <ChangesIcon />,
+              label: 'Working tree',
+              count: changed,
+              onClick: () => onTab('work'),
+            })}
           </span>
           <button
             ref={moreRef}
@@ -514,28 +703,60 @@ export function GitToolbar({
           always does at 360px — pushing a group right means pushing it onto a
           line of its own, which reads as a gap rather than as an alignment. */}
       <span className="ml-auto flex items-center gap-1.5 max-md:ml-0 max-md:flex-wrap">
-        <span className="flex items-center gap-0.5">
-          <button type="button" onClick={() => onTab('commits')} className={toggleClass(tab === 'commits')} title="The history">
-            Commits
-          </button>
-          <button
-            type="button"
-            onClick={() => onTab('work')}
-            className={toggleClass(tab === 'work')}
-            title="What has changed and is not committed"
-          >
-            Working tree
-            {changed > 0 && <span className="ml-1 tabular-nums text-[var(--accent)]">{changed}</span>}
-          </button>
+        {/* Three views, one at a time, in the one control that says so. The
+            log used to be a dock at the foot of the page and could be open
+            beside either of the other two; now that it takes the whole area
+            under this bar it is their peer, and three loose bordered buttons
+            claiming to be independent ideas was the bar contradicting its own
+            behaviour. */}
+        {/* `[&>button]:flex-none` is load-bearing. `segmentClass` carries
+            `flex-1 min-w-0`, which is right where the control owns a row — a
+            phone, the commit's two panes — and wrong in a toolbar, where the
+            group is one item among eight: with a flex basis of 0 the three
+            segments split the track equally and `Working tree` came out as
+            `Workin…` on a 1400px window. Content-sized here, and the row wraps
+            rather than squeezing, like every other control on it. */}
+        <span className={`${segmentedClass} shrink-0 [&>button]:flex-none`}>
+          {viewSegment({
+            active: !logOpen && tab === 'commits',
+            icon: <CommitsIcon />,
+            label: 'Commits',
+            title: 'The history',
+            onClick: () => onTab('commits'),
+          })}
+          {viewSegment({
+            active: !logOpen && tab === 'work',
+            icon: <ChangesIcon />,
+            label: 'Working tree',
+            count: changed,
+            title: 'What has changed and is not committed',
+            onClick: () => onTab('work'),
+          })}
+          {/* Pressing the segment that is already on does nothing, which is
+              what a segmented control means and what `Details / Files` does.
+              The way back out is the other two segments and the panel's own
+              `✕` — a toggle here would have the control answer a press by
+              selecting a DIFFERENT segment, which is the one thing it promises
+              not to do.
+
+              The `⌘` this used to carry is gone with it: it was the Mac
+              Command key on a Windows-only app, meaning "command" by pun, and
+              it was the only one of the three wearing anything, which marks a
+              segment as DIFFERENT rather than as one of a set. The three now
+              share a set drawn on the app's own grid (`icons.tsx`), and the
+              log's is a list rather than a terminal `>_` — that one reads
+              better on its own and is already spoken for by the `❯` two
+              controls along. */}
+          {viewSegment({
+            active: logOpen,
+            icon: <CommandLogIcon />,
+            label: 'Log',
+            title: 'Every git command this app runs',
+            onClick: () => {
+              if (!logOpen) onToggleLog();
+            },
+          })}
         </span>
-        <button
-          type="button"
-          onClick={onToggleLog}
-          className={toggleClass(logOpen)}
-          title="Every git command this app runs"
-        >
-          ⌘ log
-        </button>
         {!hideLocal && (
           <>
             <button

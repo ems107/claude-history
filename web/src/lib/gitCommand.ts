@@ -44,3 +44,21 @@ export function commandLine(argv: string[]): string {
 export function pasteableCommand(argv: string[], cwd: string): string {
   return `cd "${cwd}"; git ${argv.join(' ')}`;
 }
+
+/**
+ * Did it go wrong? Anything that finished without a clean zero.
+ *
+ * Here rather than in the row that draws it, because the filter above the list
+ * asks the same question and the two must not be able to disagree about what a
+ * failure is. `exitCode !== 0` on its own is not the answer: a command still
+ * running has no code yet, and one that timed out, was stopped, or could not be
+ * started at all comes back with a NULL code — all three of which used to read
+ * as success.
+ */
+export function commandFailed(entry: { running: boolean; exitCode: number | null; expected: boolean }): boolean {
+  // `expected` is the third thing a non-zero exit can mean. `git remote get-url
+  // origin` answers 2 for "there is no origin", `diff --quiet` answers 1 for
+  // "there are changes", `rev-parse --verify` answers 1 for "no such ref" — the
+  // caller asked the question in order to get that answer.
+  return !entry.running && entry.exitCode !== 0 && !entry.expected;
+}

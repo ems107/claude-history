@@ -265,6 +265,37 @@ body {
   }
 }
 
+/* A control that is busy, said WITHOUT changing the control.
+
+   The Git tab's buttons used to swap their label for a `…` while the command
+   ran — `Fetch` became one character wide, `Push` became `Pushing…` and every
+   button beside them moved. A toolbar that reflows on every click is the one
+   place a progress indicator must not be measured in layout, so this is a 2 px
+   bar travelling along the inside of the bottom edge, absolutely positioned:
+   it cannot take space, and the button keeps the width it had before, during
+   and after.
+
+   Not the app's spinner, which is the convention everywhere else and stays the
+   convention: a ring beside a label is a ring that WIDENS the label. The
+   spinner still appears, in the activity strip under the bar, where there is
+   room for it and for the sentence beside it.
+
+   `translateX` on a compositor transform, like the toast bar above, and no
+   `prefers-reduced-motion` rule for the reason set out below it: here the
+   movement is the information. */
+.busy-bar {
+  animation: busy-bar 1.1s ease-in-out infinite;
+}
+
+@keyframes busy-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
 /* None of this answers `prefers-reduced-motion`, and that is the decision, not
    an oversight: here the movement IS the information. A ring that does not turn
    says "this has finished" — the exact opposite of what it exists to say — so
