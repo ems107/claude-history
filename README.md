@@ -232,6 +232,6 @@ Everything the tool persists lives under one directory (default `%LOCALAPPDATA%\
 - In the list: `/` focus search · `j`/`k` or arrows move selection · `Enter` open session · `Esc` back / close drawer.
 - In a conversation: `Ctrl+F` find in it (`Ctrl+Shift+F` searches all of it) · `Enter` / `Shift+Enter` next / previous match, wrapping · `Esc` closes an open menu, then whatever is on top — a file, a subagent's transcript, the panel beside the conversation — then the find bar, and only then goes back.
 - Inside the embedded terminal every key belongs to the CLI — `Ctrl+F` there does not open the find bar, `Ctrl+V` pastes, and `Shift+Enter` breaks the line instead of sending the prompt.
-- **The Git tab has none, by design.** Everything in it can change a repository, and a stray keypress is not a trade worth making for a keystroke saved — every action there has a control you can see. `Esc` closes a confirmation and `Enter` submits a path field; neither can run git.
+- **The Git tab has none, by design.** Everything in it can change a repository, and a stray keypress is not a trade worth making for a keystroke saved — every action there has a control you can see. `Esc` closes whatever is on top — a confirmation, a menu, a panel — and `Enter` submits a path field; neither can run git.
 
 See `CLAUDE.md` for the developer documentation index — architecture, the verified Claude Code data-format rules and how each part is checked all live under `docs/`.
