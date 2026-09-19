@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { ActiveSessionsGuardProvider } from './components/ActiveSessionsDialog.tsx';
 import { Brandmark } from './components/Brandmark.tsx';
-import { controlRow } from './components/controlClass.ts';
+import { controlRow, squareClass, squareIcon } from './components/controlClass.ts';
 import { GearIcon } from './components/icons.tsx';
 import { api, UNAUTHORIZED_EVENT } from './api/client.ts';
 import { useEvents } from './api/useEvents.ts';
@@ -188,10 +188,13 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       {/* The one row that had to give. It needs about 900px and a phone has
-          360, so the destinations and the gear go to the bottom bar and what is
-          left is this: who this is on the left, and on the right the three
-          readings — what Claude has spent, what is waiting, and whether there is
-          a new version. The last of those is drawn only when there IS one; the
+          360, so the destinations go to the bottom bar and what is left is
+          this: who this is on the left, and on the right the three readings —
+          what Claude has spent, what is waiting, and whether there is a new
+          version — with the gear after them. The gear tried the bottom bar and
+          came back: that row is for places you are going, and it was holding a
+          fifth of it for the one screen nobody visits twice a minute. The last
+          of the readings is drawn only when there IS something to install; the
           rest of the time it is a button that answers a question nobody asks
           from a phone, and Settings › Updates is where it is asked from. */}
       <header
@@ -283,17 +286,19 @@ export function App() {
           <span className={update?.updateAvailable ? '' : 'max-md:hidden'}>
             <UpdateButton />
           </span>
+          {/* On BOTH sizes, and at the end of the same row as the bell. It was
+              a tab in the phone's bottom bar, which is the row for places you
+              are going; this is not one of those — it is about the app rather
+              than about what the app is showing, and the tab it was occupying
+              is worth more to the Git page. Same square as the bell beside it,
+              so the two read as one group. */}
           <NavLink
             to="/settings"
             title="Settings"
             aria-label="Settings"
-            className={({ isActive }) =>
-              `inline-flex cursor-pointer items-center rounded border border-[var(--border)] px-2 py-1 hover:border-[var(--text-dim)] hover:text-[var(--text)] max-md:hidden ${
-                isActive ? 'text-[var(--accent)]' : 'text-[var(--text-dim)]'
-              }`
-            }
+            className={({ isActive }) => squareClass(isActive)}
           >
-            <GearIcon />
+            <GearIcon className={squareIcon} />
           </NavLink>
         </span>
       </header>
