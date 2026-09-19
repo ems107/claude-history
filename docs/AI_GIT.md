@@ -17,7 +17,8 @@ A visual git client over the repositories on this machine (`/git`). `~/.claude` 
 - **Network calls are user-triggered only.** `fetch`, `pull` and `push` run when somebody presses one of those buttons and at no other time. The `.git` watcher is local and invalidates local state — **it must never lead to a fetch** ([AI_ARCHITECTURE.md](AI_ARCHITECTURE.md)).
 - **The tab has no keyboard shortcuts, deliberately.** Everything in it can change a repository. Escape closing a dialog and Enter submitting a path field are the only key handlers, and neither can run git.
 - **A phone gets every verb this tab has**, one pane at a time and in WORDS — a glyph with its meaning in a `title` is a glyph with no meaning at all on Android. `components/git/RowActions.tsx` is the one home for "what can be done to this row", and the desktop does not move for any of it ([AI_MOBILE.md](AI_MOBILE.md)).
-- **Every sheet this tab opens answers Android's Back**, and the layer whose openness is a search param is the one that needed a fix in `lib/mobile.ts` rather than here ([AI_MOBILE.md](AI_MOBILE.md)).
+- **Every sheet this tab opens answers Android's Back**, and the layer whose openness is a search param is a ROUTE rather than a marker: the commit sheet pushes, Back pops it, and its ✕ pops it too. Having both — a `?c=` and a `useBackDismiss` marker — is what made Close-then-Back reopen the commit you had just closed ([AI_MOBILE.md](AI_MOBILE.md)).
+- **Nothing in this tab is drawn twice.** A list of changed files and a diff with a fold header per file are the same list; a strip of glyphs and a sheet of the same actions are the same actions. Where two controls answer one question, one of them goes — and the one that stays is the one that can do the job without throwing the other's state away.
 
 ## Where each rule lives
 
@@ -30,6 +31,9 @@ A visual git client over the repositories on this machine (`/git`). `~/.claude` 
 | `server/src/core/gitUndo.ts` | the bin: the bytes taken before a working-tree write |
 | `server/src/routes/git.ts` | the REST surface; `repoOf` is the only place an id becomes a path |
 | `web/src/lib/gitGraph.ts` | the lane layout — pure, and checkable with no browser |
+| `web/src/lib/refTree.ts` | a branch name read as the folder path it is — pure, same reason |
+| `web/src/components/git/RowActions.tsx` | what can be done to one ROW, in both spellings: the desktop's glyph strip and the phone's sheet of sentences |
+| `web/src/components/git/SectionAction.tsx` | the small verb beside a section title (`+ New`, `stage all`), and the fold chevron both panels share |
 
 ## The credential lockdown is not optional and cannot be added later
 
@@ -122,6 +126,16 @@ The lists live in `shared/src/git.ts` and their ORDER is load-bearing twice: it 
 One global ring of 300 — global, not per repo, because the failures worth returning to are the ones where you no longer remember which repository it was. `redact()` runs on argv, stdout, stderr and the stdin preview before anything is stored or logged: the realistic leak is a remote URL carrying a token, which shows up in `git remote -v` and in a push's argv. The SSE event carries only the newest seq, never the entries, so a closed panel costs nothing.
 
 In the daily log the split is **mutations at `info`, failures at `warn`, reads at `debug`** — so at the default level the log reads as everything that CHANGED a repository and nothing else ([AI_LOGGING.md](AI_LOGGING.md)).
+
+## The refs panel is a tree, and the commit is two panes
+
+Both are the same observation: a list with structure in it should be drawn with that structure, and a screen should answer one question at a time.
+
+**A branch name is a path.** `lib/refTree.ts` groups on the slash and gives back folders and leaves; the panel renders them recursively with 14px of indent per level, a tint on the folder rows and one fold state for the lot in `localStorage` (the CLOSED set, so a branch pushed this morning arrives open). Two rules keep it from being worse than the flat list it replaces: a single-child chain merges into one row (`feat/api/`), and **a folder that would hold exactly one branch is not a folder** — `release/2026.09` stays a row, because a chevron you have to open to find one thing is two taps for nothing. The filter above it is a plain substring, deliberately: you are typing the part of a name you remember, every character must narrow the list, and a fuzzy matcher that answers `edgar/DES-32683` to `dst` then has to explain itself. While it has text in it every folder is open and every section with no hit is gone.
+
+**A commit is a message and a list of files**, and they are two panes of a segmented control rather than one scroll. The files are drawn once — the strip of path chips that used to filter the diff is gone, and the fold headers it duplicated are what remain — closed, each **fetching its own diff on opening**. That is not only tidier: `GET /api/git/repos/:id/diff?sha=…` with no path reads the whole commit, so a forty-file commit was forty diffs fetched to draw forty file names.
+
+**Checking out is a split button.** `git checkout <sha>` detaches HEAD, which is the right default from a commit row and a surprise to anybody who has not met it. When a local branch is standing on that very commit, checking THAT out gives the same files with HEAD still attached, and it is almost always what was meant — so it is an entry in the menu, one per branch at the commit, each printing the command it runs. `commit.refs` already carries them; the one whose `isHead` is set is left out, being where you already are.
 
 ## Going away mid-rebase
 
