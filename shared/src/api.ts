@@ -1491,6 +1491,15 @@ export interface ChatQuestionItem {
  */
 export interface ChatQuestion {
   toolName: string;
+  /**
+   * The call's own id, from the SDK's `toolUseID`.
+   *
+   * What it is for is agreement: remarks on a plan are stored under the
+   * `ExitPlanMode` call they are about, so the dialog and the Plan panel have
+   * to name the same plan or they end up holding two stacks. Before this the
+   * only thing identifying a pending question was `askedAt`.
+   */
+  toolUseId: string;
   questions: ChatQuestionItem[] | null;
   /** The tool's own input, when this is a permission rather than a question. */
   input?: unknown;

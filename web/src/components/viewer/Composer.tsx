@@ -363,6 +363,7 @@ export function Composer({
           Not a modal — a question is no reason to stop the app being usable. */}
       {status?.question && (
         <QuestionPanel
+          sessionId={sessionId}
           question={status.question}
           busy={answering}
           onAnswer={(answers, annotations) => answer(answers, undefined, annotations)}

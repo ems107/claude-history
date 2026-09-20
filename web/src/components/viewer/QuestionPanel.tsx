@@ -1,6 +1,8 @@
 import type { ChatPlanDecision, ChatQuestion } from '@claude-history/shared';
-import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { api } from '../../api/client.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { Markdown } from './Markdown.tsx';
 import { commentsFeedback } from '../../lib/plans.ts';
@@ -32,12 +34,15 @@ import { Sketch } from './Sketch.tsx';
 const footerBtn = (cls: string) => `${cls} max-md:w-full max-md:py-3 max-md:text-sm`;
 
 export function QuestionPanel({
+  sessionId,
   question,
   onAnswer,
   onDecline,
   onPlanDecision,
   busy,
 }: {
+  /** Whose plan this is — the remarks on it are stored per session and plan. */
+  sessionId: string;
   question: ChatQuestion;
   onAnswer: (answers: Record<string, string | string[]>, annotations: Record<string, { notes?: string }>) => void;
   onDecline: () => void;
@@ -55,10 +60,25 @@ export function QuestionPanel({
   const [note, setNote] = useState('');
   /** Reading the plan over the whole window instead of in the strip. */
   const [full, setFull] = useState(false);
-  /** Remarks filed against passages of the plan — see `PlanReview`. */
-  const [comments, setComments] = useState<PlanComment[]>([]);
-  const commentId = useRef(0);
   const isPlan = question.toolName === 'ExitPlanMode';
+  /**
+   * Remarks filed against passages of the plan — the SAME stack the Plan panel
+   * holds, read from the server rather than kept here.
+   *
+   * It was a `useState` for as long as this dialog was the only way in, and
+   * that cost exactly what it sounds like: a refresh mid-review emptied it.
+   * Now both doors key on `question.toolUseId`, so the two cannot disagree and
+   * a review survives everything except deleting it.
+   */
+  const queryClient = useQueryClient();
+  const reviews = useQuery({
+    queryKey: ['planReviews', sessionId],
+    queryFn: () => api.planReviews(sessionId),
+    enabled: isPlan,
+    staleTime: 30_000,
+  });
+  const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === question.toolUseId)?.comments ?? [];
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['planReviews', sessionId] });
 
   useEffect(() => {
     setNote('');
@@ -72,7 +92,9 @@ export function QuestionPanel({
     setFocused({});
     setActive(0);
     setFull(false);
-    setComments([]);
+    // The remarks are NOT reset here any more: they are keyed on the plan's own
+    // id, so a new question already reads a different (empty) stack — and
+    // clearing them would now delete a stack rather than forget one.
   }, [question.askedAt]);
 
   // Escape comes back from full screen, and stops there: the page's own handler
@@ -352,8 +374,16 @@ export function QuestionPanel({
           <PlanReview
             plan={question.plan}
             comments={comments}
-            onAdd={(c) => setComments((prev) => [...prev, { ...c, id: `c${String(++commentId.current)}` }])}
-            onRemove={(id) => setComments((prev) => prev.filter((c) => c.id !== id))}
+            onAdd={(c) => {
+              void api.savePlanComment(sessionId, question.toolUseId, { ...c, id: crypto.randomUUID() }).then(refresh);
+            }}
+            onRemove={(id) => {
+              void api.removePlanComment(sessionId, question.toolUseId, id).then(refresh);
+            }}
+            onEdit={(id, text) => {
+              const existing = comments.find((c) => c.id === id);
+              if (existing) void api.savePlanComment(sessionId, question.toolUseId, { ...existing, text }).then(refresh);
+            }}
           />
         )}
         {isPlan && !question.plan && (
@@ -403,7 +433,13 @@ export function QuestionPanel({
           />
           <button
             type="button"
-            onClick={() => onPlanDecision('keep-planning', planNote)}
+            onClick={() => {
+              // Stamp the stack as having left before answering: the panel
+              // shows "sent" from the same record, and this is the moment it
+              // becomes true whichever door the reader used.
+              if (comments.length > 0) void api.markPlanReviewSent(sessionId, question.toolUseId).then(refresh);
+              onPlanDecision('keep-planning', planNote);
+            }}
             disabled={busy}
             title={
               comments.length > 0
