@@ -5,6 +5,15 @@ import type { RevisionCommentRecord } from '@claude-history/shared';
  */
 
 /**
+ * Which file of the review is open in the column. Beside `file`, `agent` and
+ * `msg` — and the BASE branch is deliberately not a parameter: it is the
+ * panel's choice, worked out from the repository and from the review already
+ * under way, so a link carrying a stale branch name would open a comparison
+ * nobody asked for.
+ */
+export const REV_FILE_PARAM = 'revfile';
+
+/**
  * The key for one comparison: the two branch NAMES, hashed.
  *
  * `planKeyOf`'s hash, and the same reasoning about what belongs in a path

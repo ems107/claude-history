@@ -33,6 +33,7 @@ export type PanelKey =
   | 'tokens'
   | 'plan'
   | 'files'
+  | 'revision'
   | 'changed'
   | 'sent'
   | 'mentioned'
@@ -87,6 +88,9 @@ export function useInspector({
   projectFolder,
   fileComments,
   fileUnsent,
+  isRepo,
+  revisionComments,
+  revisionUnsent,
   changed,
   sent,
   mentionCandidates,
@@ -125,6 +129,15 @@ export function useInspector({
   fileComments: number;
   /** Those of them that have not been copied yet: what the badge counts. */
   fileUnsent: number;
+  /**
+   * Whether that folder is a git REPOSITORY, or null while the answer is in
+   * flight. A different question from `projectFolder` and asked of git rather
+   * than of the disk — a folder can be perfectly readable and have no branch
+   * to review.
+   */
+  isRepo: boolean | null;
+  revisionComments: number;
+  revisionUnsent: number;
   changed: number;
   sent: number;
   /** How many paths were named at all: whether the panel exists is a transcript fact. */
@@ -286,6 +299,21 @@ export function useInspector({
             hint: "The folder this session ran in, and the remarks you left on files of it — to copy into the terminal running it",
           }
         : null,
+      // Next to Files for the same reason Files sits next to Plan: both are
+      // ways of saying something BACK about the project, where everything
+      // below reads the transcript and reports what happened. It needs a
+      // repository, and a review left on one that has since gone keeps its
+      // door open, as everywhere else.
+      isRepo || revisionComments > 0
+        ? {
+            key: 'revision',
+            short: 'Revision',
+            title: 'Revision',
+            count: revisionUnsent || null,
+            alert: 0,
+            hint: 'What this session’s branch introduced against a base you choose, and the remarks you left on that diff — to copy into the terminal running it',
+          }
+        : null,
       // The words are the feature and they are not interchangeable: one lists
       // what the session CHANGED, one what it HANDED OVER, one what it only
       // TALKED about, and none of the three is another's superset.
@@ -385,6 +413,9 @@ export function useInspector({
     projectFolder,
     fileComments,
     fileUnsent,
+    isRepo,
+    revisionComments,
+    revisionUnsent,
     changed,
     sent,
     mentionCandidates,

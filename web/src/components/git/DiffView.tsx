@@ -77,7 +77,15 @@ export interface HunkActions {
   reaching?: boolean;
 }
 
-const lineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
+/**
+ * How one row of a diff is named, inside one file.
+ *
+ * Exported because a second feature now names rows too: the Revision panel
+ * marks the ones a remark was left on, and a second spelling of this string
+ * would be a mark that silently lands on nothing.
+ */
+export const diffLineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
+const lineKey = diffLineKey;
 
 /**
  * The line on the other side of the same edit, or null when there is none.
@@ -121,11 +129,14 @@ function Hunk({
   index,
   actions,
   onExpand,
+  marked,
 }: {
   hunk: GitHunk;
   index: number;
   actions?: HunkActions;
   onExpand?: () => void;
+  /** Rows somebody has left a remark on, by `diffLineKey`. */
+  marked?: ReadonlySet<string>;
 }) {
   const mobile = useIsMobile();
   // Which lines pair up as one edit, and therefore what to mark inside them.
@@ -206,7 +217,13 @@ function Hunk({
             title={pickable ? 'Click to pick this line; shift-click to reach from the last one' : undefined}
             className={`flex font-mono text-[11px] leading-[18px] ${TONE[line.kind]} ${
               pickable ? 'cursor-pointer max-md:min-h-11 max-md:items-center' : ''
-            } ${isPicked ? 'outline outline-1 -outline-offset-1 outline-[var(--accent)]' : ''}`}
+            } ${isPicked ? 'outline outline-1 -outline-offset-1 outline-[var(--accent)]' : ''} ${
+              // Amber, like every note in this app, and a LEFT edge rather than
+              // a fill: the row already carries a colour that says what kind of
+              // change it is, and painting over that would trade a fact for an
+              // annotation.
+              marked?.has(lineKey(index, i)) ? 'border-l-2 border-amber-400' : ''
+            }`}
           >
             {/* A checkbox column only where there is something to pick, so the
                 gutters stay put and an unchanged line reads as unpickable.
@@ -287,10 +304,13 @@ export function FileDiffBody({
   file,
   actions,
   onExpand,
+  marked,
 }: {
   file: GitFileDiff;
   actions?: HunkActions;
   onExpand?: () => void;
+  /** Rows somebody has left a remark on, by `diffLineKey`. */
+  marked?: ReadonlySet<string>;
 }) {
   return (
     /**
@@ -322,7 +342,9 @@ export function FileDiffBody({
           No textual changes — a mode change or a rename with identical content.
         </p>
       ) : (
-        file.hunks.map((hunk, i) => <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} />)
+        file.hunks.map((hunk, i) => (
+          <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} marked={marked} />
+        ))
       )}
       </div>
     </div>

@@ -55,6 +55,9 @@ import { SubagentContext, type SubagentContextValue } from '../components/viewer
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
 import { FilesPanel } from '../components/viewer/FilesPanel.tsx';
 import { PlanPanel } from '../components/viewer/PlanPanel.tsx';
+import { RevisionDiffColumn } from '../components/viewer/RevisionDiffColumn.tsx';
+import { RevisionPanel } from '../components/viewer/RevisionPanel.tsx';
+import { REV_FILE_PARAM } from '../lib/revision.ts';
 import { collectPlans } from '../lib/plans.ts';
 import { ScratchpadPanel } from '../components/viewer/ScratchpadPanel.tsx';
 import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
@@ -253,10 +256,19 @@ export function SessionViewPage() {
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
+  /**
+   * One file of a branch review, open in the column.
+   *
+   * Read FIRST of the three, and the precedence below is the rule "one column
+   * beside the session, never two" written down rather than trusted: every
+   * opener already clears the other two parameters, and this is what keeps a
+   * link somebody pasted with two of them from drawing two columns.
+   */
+  const revFileParam = searchParams.get(REV_FILE_PARAM);
   /** Read here rather than beside `fileRef`, because the drawer below defers to it. */
-  const fileParam = searchParams.get(FILE_PARAM);
+  const fileParam = revFileParam ? null : searchParams.get(FILE_PARAM);
   /** `null` while a file is open — one column beside the session, never two (see `fileRef`). */
-  const agentId = fileParam ? null : searchParams.get('agent');
+  const agentId = revFileParam || fileParam ? null : searchParams.get('agent');
   /**
    * The subagent list, open from the URL rather than from state: the ⑂ badge in
    * the session list opens a session straight onto it, and the link can be
@@ -295,6 +307,7 @@ export function SessionViewPage() {
           // One column beside the session, never two: see `fileRef` below for
           // the rule and what it costs.
           sp.delete(FILE_PARAM);
+          sp.delete(REV_FILE_PARAM);
           // Anchors INSIDE the drawer, and always rewritten together: one left
           // over from a previous jump would point into another agent's
           // transcript, where it resolves to nothing at all.
@@ -401,6 +414,39 @@ export function SessionViewPage() {
     );
   }, [setSearchParams]);
 
+  /**
+   * One file of the branch review, in the column. The base branch is NOT in
+   * the URL: it is the panel's choice, and the panel works it out from the
+   * repository and from the review already under way — a link carrying a stale
+   * branch name would open on a comparison nobody asked for.
+   */
+  const openRevisionFile = useCallback(
+    (path: string) =>
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          sp.set(REV_FILE_PARAM, path);
+          sp.delete(FILE_PARAM);
+          sp.delete('agent');
+          sp.delete(AGENT_TOOL_PARAM);
+          sp.delete(AGENT_MSG_PARAM);
+          return sp;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
+  const closeRevisionFile = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete(REV_FILE_PARAM);
+        return sp;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   const projectPath = session?.summary.projectPath ?? '';
   const fileRefs = useMemo<FileRefContextValue>(
     () => ({
@@ -415,11 +461,12 @@ export function SessionViewPage() {
           (prev) => {
             const sp = new URLSearchParams(prev);
             sp.set(FILE_PARAM, formatFileRef(ref));
-            // The other column goes, with the anchors that only mean anything
-            // inside it — one column beside the session, never two.
+            // The other columns go, with the anchors that only mean anything
+            // inside one of them — one column beside the session, never two.
             sp.delete('agent');
             sp.delete(AGENT_TOOL_PARAM);
             sp.delete(AGENT_MSG_PARAM);
+            sp.delete(REV_FILE_PARAM);
             return sp;
           },
           { replace: true },
@@ -781,6 +828,37 @@ export function SessionViewPage() {
   /** What has NOT left yet — the badge's rule, as with the plans. */
   const fileUnsent = fileReview.data?.copiedAt ? 0 : fileComments;
   /**
+   * Which branch the review is against — held HERE because two things need to
+   * agree about it: the panel, which chooses it, and the column beside the
+   * session, which draws one file of that comparison. It deliberately stays
+   * out of the URL; see `REV_FILE_PARAM`.
+   *
+   * `null` until the panel has worked one out, which it does from the
+   * repository and from the review already under way.
+   */
+  const [revisionBase, setRevisionBase] = useState<string | null>(null);
+  /**
+   * Whether that folder is a git repository, and the remarks left on branch
+   * comparisons of it. Asked here for the rail's reason — whether the panel
+   * exists at all — and it is the cheapest of the three questions git can be
+   * asked: one `rev-parse` and one `for-each-ref`.
+   */
+  const revisionInfo = useQuery({
+    queryKey: ['revisionInfo', id],
+    queryFn: () => api.revisionInfo(id),
+    staleTime: 30_000,
+  });
+  const revisionReviews = useQuery({
+    queryKey: ['revisionReviews', id],
+    queryFn: () => api.revisionReviews(id),
+    staleTime: 30_000,
+  });
+  const revisionComments = (revisionReviews.data ?? []).reduce((n, r) => n + r.comments.length, 0);
+  const revisionUnsent = (revisionReviews.data ?? []).reduce(
+    (n, r) => n + (r.copiedAt ? 0 : r.comments.length),
+    0,
+  );
+  /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
    * For a CHIP on the row and not to hide it. Dropping a mention because another
@@ -873,6 +951,9 @@ export function SessionViewPage() {
     projectFolder: filesRoot.data ? filesRoot.data.exists && filesRoot.data.isDirectory : null,
     fileComments,
     fileUnsent,
+    isRepo: revisionInfo.data ? revisionInfo.data.isRepo : null,
+    revisionComments,
+    revisionUnsent,
     changed: session?.fileChanges.length ?? 0,
     sent: sessionFiles.total,
     mentionCandidates: mentionCandidates.length,
@@ -904,7 +985,7 @@ export function SessionViewPage() {
   const sideLayout = useSideLayout({
     mobile,
     inspector: inspector.open === null ? null : inspector.width,
-    column: agentId || fileRef ? column.width : null,
+    column: agentId || fileRef || revFileParam ? column.width : null,
     // Whichever seam is under the hand wins, and the other gives way to its
     // floor — the pane you are dragging is the one you mean. At rest it is the
     // column's, which is the thing just opened to be looked at.
@@ -1307,6 +1388,16 @@ export function SessionViewPage() {
         );
       case 'files':
         return <FilesPanel sessionId={id} root={filesRoot.data ?? null} />;
+      case 'revision':
+        return (
+          <RevisionPanel
+            sessionId={id}
+            base={revisionBase}
+            onBase={setRevisionBase}
+            openPath={revFileParam}
+            onOpenFile={openRevisionFile}
+          />
+        );
       case 'changed':
         return <FileChangesPanel fileChanges={session.fileChanges} />;
       case 'sent':
@@ -1676,6 +1767,20 @@ export function SessionViewPage() {
                 jumpNonce={jumpNonce}
                 running={agentRunning}
                 onClose={closeAgent}
+              />
+            </SideColumn>
+          )}
+          {revFileParam && (
+            <SideColumn kind="revision" mobile={mobile} width={sideLayout.column} onResizeStart={startColumnResize}>
+              <RevisionDiffColumn
+                // Keyed on the file AND the base: switching either starts a
+                // fresh panel rather than scrolling the previous diff's state
+                // onto a new body. The COLUMN is not keyed, so the width holds.
+                key={`${revFileParam}:${revisionBase ?? ''}`}
+                sessionId={id}
+                base={revisionBase}
+                path={revFileParam}
+                onClose={closeRevisionFile}
               />
             </SideColumn>
           )}
