@@ -18,6 +18,21 @@ export interface RevisionBranchOption {
 }
 
 /**
+ * Is there a branch here to review at all
+ * (`GET /api/sessions/:id/revision/repo`)?
+ *
+ * Its own endpoint, and a deliberately tiny one, because the RAIL asks it: the
+ * page has to know whether the panel exists before anybody opens it, and it
+ * asks once per session view. Two spawns — the same probe discovery makes —
+ * against `revision/info`'s branch listing and its origin guess, which on a
+ * repository with thirty branches is thirty-odd more. Those belong to the
+ * panel, which is mounted only when it is opened.
+ */
+export interface RevisionRepoCheck {
+  isRepo: boolean;
+}
+
+/**
  * What the panel needs before it can compare anything
  * (`GET /api/sessions/:id/revision/info`).
  *

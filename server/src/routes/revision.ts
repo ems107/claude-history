@@ -2,6 +2,7 @@ import type {
   RevisionBranchOption,
   RevisionCommentRecord,
   RevisionDiffResponse,
+  RevisionRepoCheck,
   RevisionRepoInfo,
   RevisionReviewsResponse,
   RevisionReviewUpdateResponse,
@@ -143,6 +144,24 @@ const NOTHING: RevisionRepoInfo = {
 };
 
 export function registerRevisionRoutes(app: FastifyInstance, ctx: AppContext): void {
+  /**
+   * Is there a branch here to review — and nothing else.
+   *
+   * The rail asks this, once per session view, to decide whether the panel
+   * exists at all. It is its own route rather than a field of `info` because
+   * of what `info` COSTS: a branch listing and, when there is no review to
+   * resume, one `git merge-base` per branch. On a repository with thirty
+   * branches that is thirty-odd process spawns — on Windows, where a spawn is
+   * the expensive part — for a panel most readers will not open. Two spawns
+   * against thirty is the whole reason these are two routes.
+   */
+  app.get<{ Params: { id: string } }>('/api/sessions/:id/revision/repo', async (request, reply) => {
+    if (!isSameOrigin(request)) return reply.code(403).send({ error: 'Cross-origin request refused' });
+    const resolved = await resolveSessionRepo(ctx, request.params.id);
+    if (!resolved.ok && !resolved.notRepo) return reply.code(resolved.code).send({ error: resolved.error });
+    return { isRepo: resolved.ok } satisfies RevisionRepoCheck;
+  });
+
   /**
    * The branches, and what the dropdown should open on.
    *

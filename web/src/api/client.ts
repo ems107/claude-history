@@ -35,6 +35,7 @@ import type { McpLogsResponse,
   PromptsResponse,
   ReadMarksResponse,
   RevisionDiffResponse,
+  RevisionRepoCheck,
   RevisionRepoInfo,
   RevisionReviewsResponse,
   RevisionReviewUpdateResponse,
@@ -366,6 +367,13 @@ export const api = {
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
+  /**
+   * Whether this session ran in a git repository — two spawns, and what the
+   * RAIL asks once per session view. Everything else about the comparison
+   * belongs to `revisionInfo`, which is asked only when the panel opens; see
+   * the route for what that costs on a repository with many branches.
+   */
+  revisionIsRepo: (id: string) => getJson<RevisionRepoCheck>(`/api/sessions/${id}/revision/repo`),
   /**
    * The branches of the repository this session ran in, and what the base
    * dropdown should open on. Deliberately not `getJson`: "This session did not

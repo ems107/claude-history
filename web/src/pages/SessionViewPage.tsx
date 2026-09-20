@@ -840,12 +840,19 @@ export function SessionViewPage() {
   /**
    * Whether that folder is a git repository, and the remarks left on branch
    * comparisons of it. Asked here for the rail's reason — whether the panel
-   * exists at all — and it is the cheapest of the three questions git can be
-   * asked: one `rev-parse` and one `for-each-ref`.
+   * exists at all.
+   *
+   * **The CHEAP question, and that matters.** The panel's own `revisionInfo`
+   * lists every branch and, when there is no review to resume, runs one
+   * `git merge-base` per branch: on this repository, thirty-odd process
+   * spawns. Asking that here would mean every session view of a repository
+   * paid for a panel most readers never open — so the rail asks only "is there
+   * a branch here", which is two spawns, and the rest happens when the panel
+   * is mounted.
    */
-  const revisionInfo = useQuery({
-    queryKey: ['revisionInfo', id],
-    queryFn: () => api.revisionInfo(id),
+  const revisionRepo = useQuery({
+    queryKey: ['revisionRepo', id],
+    queryFn: () => api.revisionIsRepo(id),
     staleTime: 30_000,
   });
   const revisionReviews = useQuery({
@@ -951,7 +958,7 @@ export function SessionViewPage() {
     projectFolder: filesRoot.data ? filesRoot.data.exists && filesRoot.data.isDirectory : null,
     fileComments,
     fileUnsent,
-    isRepo: revisionInfo.data ? revisionInfo.data.isRepo : null,
+    isRepo: revisionRepo.data ? revisionRepo.data.isRepo : null,
     revisionComments,
     revisionUnsent,
     changed: session?.fileChanges.length ?? 0,
