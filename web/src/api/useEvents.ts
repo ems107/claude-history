@@ -153,6 +153,19 @@ export function useEvents(): void {
             void queryClient.invalidateQueries({ queryKey: ['chat', id] });
             void queryClient.invalidateQueries({ queryKey: ['terminal', id] });
           }
+          /**
+           * The plan file, on the whole prefix and NOT by id — this is the one
+           * event that fires on a busy/waiting flip, and a flip carries no ids
+           * at all.
+           *
+           * That flip is exactly when a plan appears: a CLI in a terminal
+           * writes `~/.claude/plans/<slug>.md` and then goes `waiting` on its
+           * own dialog, without persisting the `ExitPlanMode` line, so this
+           * event is the only news that the panel has something to show. The
+           * query it refetches is only mounted on the session being looked at,
+           * and reading that file is a kilobyte off the disk.
+           */
+          void queryClient.invalidateQueries({ queryKey: ['planFile'] });
           break;
         case 'index-progress':
           void queryClient.invalidateQueries({ queryKey: ['meta'] });

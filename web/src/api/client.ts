@@ -23,7 +23,7 @@ import type { McpLogsResponse,
   LogsResponse,
   MetaResponse,
   NotificationsResponse,
-  PlanDraftResponse,
+  PlanFileResponse,
   PlanReviewsResponse,
   PlanReviewUpdateResponse,
   PlansResponse,
@@ -273,7 +273,7 @@ export const api = {
    */
   planReviews: (id: string) => getJson<PlanReviewsResponse>(`/api/sessions/${id}/plan-reviews`),
   /** The plan Claude is still writing, before it has submitted anything. */
-  planDraft: (id: string) => getJson<PlanDraftResponse>(`/api/sessions/${id}/plan-draft`),
+  planFile: (id: string) => getJson<PlanFileResponse>(`/api/sessions/${id}/plan-file`),
   /** Write a remark, or replace the one already under that id. */
   savePlanComment: async (
     id: string,

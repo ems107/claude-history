@@ -1,5 +1,7 @@
 import {
   askingFor,
+  LIVE_BUSY,
+  LIVE_WAITING,
   MAX_STAT_PATHS,
   messageTally,
   type ChatPermissionMode,
@@ -714,12 +716,24 @@ export function SessionViewPage() {
    * the only thing that says it is writing one. Same query key the panel reads,
    * so the two share one request.
    */
-  const planDraft = useQuery({
-    queryKey: ['planDraft', id],
-    queryFn: () => api.planDraft(id),
-    staleTime: 15_000,
+  /**
+   * The plan file, asked for HERE rather than only inside the panel, because
+   * whether the panel exists at all depends on it — and polled while the CLI is
+   * alive for the same reason.
+   *
+   * A terminal writes this file and then blocks on its own dialog without
+   * persisting the `ExitPlanMode` line, so at the one moment the panel is
+   * wanted the transcript says nothing and the only news comes from the disk.
+   * Asking once on mount is how the rail button failed to appear at all: the
+   * page had been open since before there was a plan.
+   */
+  const planFile = useQuery({
+    queryKey: ['planFile', id],
+    queryFn: () => api.planFile(id),
+    staleTime: 5_000,
+    refetchInterval: live.data?.some((l) => l.sessionId === id) ? 5_000 : false,
   });
-  const planCount = plans.length + (planDraft.data?.plan?.trim() ? 1 : 0);
+  const planCount = plans.length + (planFile.data?.plan?.trim() ? 1 : 0);
   /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
@@ -1006,19 +1020,17 @@ export function SessionViewPage() {
   const [now, setNow] = useState(() => Date.now());
   const sessionAlive = liveInfo !== null;
   /**
-   * Which plan is on screen right now — in EITHER door.
+   * What the CLI is doing, for the Plan panel — and the only thing that tells a
+   * plan being WRITTEN from one being put in front of you.
    *
-   * A plan with no result is one nobody has answered, and `plans` is newest
-   * first, so the first such one is it. The liveness test is what makes that
-   * true rather than merely recorded: the two pending plans in this corpus
-   * belong to sessions abandoned at the dialog months ago.
-   *
-   * Deliberately NOT read off the composer's pending question, which would be
-   * the obvious source and is the wrong one: an embedded terminal draws the
-   * CLI's own dialog inside the pseudo-terminal and exposes nothing to read, so
-   * that test would answer "nothing in play" for the mode this app ships with.
+   * There is nothing finer available: `waitingFor` is the CLI's own word and
+   * reads `"permission prompt"` for every dialog it has no name for, plan
+   * approval included. In plan mode there is little else it can be asking about
+   * — the plan file is the only thing Claude may edit — and the cost of being
+   * wrong is offering to comment on a plan a moment early.
    */
-  const planInPlay = sessionAlive ? (plans.find((p) => p.status === 'pending')?.toolUseId ?? null) : null;
+  const liveStatus: 'busy' | 'waiting' | null =
+    liveInfo?.status === LIVE_BUSY ? 'busy' : liveInfo?.status === LIVE_WAITING ? 'waiting' : null;
   /**
    * Whether the stack can be SENT rather than copied, which needs a question
    * this app is actually holding open — only ever the composer.
@@ -1233,9 +1245,9 @@ export function SessionViewPage() {
           <PlanPanel
             sessionId={id}
             plans={plans}
-            pendingPlanId={planInPlay}
+            composerPlan={chat.data?.question?.plan ?? null}
+            liveStatus={liveStatus}
             canSend={canSendPlan}
-            sendBlockedWhy={chat.data?.blockedReason ?? null}
             onSend={async (note) => {
               await api.chatAnswer(id, {}, { decision: 'keep-planning', note });
               await queryClient.invalidateQueries({ queryKey: ['chat', id] });

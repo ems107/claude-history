@@ -701,14 +701,15 @@ export interface PlanReviewUpdateResponse {
 }
 
 /**
- * The plan Claude is still writing, before it has submitted anything.
+ * The plan as `~/.claude/plans/<slug>.md` holds it.
  *
- * Read through `resolvePlan`, so this is the FILE's text rather than a
- * transcript line — which is exactly what makes it the one plan the panel shows
- * without letting anybody comment on it: Claude rewrites it as it works, and
- * the session's next plan overwrites it.
+ * Not a lesser copy: while a terminal has the approval dialog up this is the
+ * ONLY place the plan exists, because the CLI does not persist its
+ * `ExitPlanMode` line until that dialog is answered. It is the same bytes that
+ * later land in `input.plan`, which is what lets remarks written now survive
+ * the plan becoming history.
  */
-export interface PlanDraftResponse {
+export interface PlanFileResponse {
   plan: string | null;
   filePath: string | null;
 }

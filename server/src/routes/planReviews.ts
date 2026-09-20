@@ -1,6 +1,6 @@
 import type {
   PlanCommentRecord,
-  PlanDraftResponse,
+  PlanFileResponse,
   PlanReviewsResponse,
   PlanReviewUpdateResponse,
 } from '@claude-history/shared';
@@ -11,10 +11,11 @@ import { UUID_RE } from '../core/scanner.ts';
 import { isSameOrigin } from '../util/sameOrigin.ts';
 
 /**
- * A plan's key is the `ExitPlanMode` call's `toolUseId` — `toolu_` and 24
- * characters today, but the shape is Anthropic's and has moved before, so this
- * bounds it rather than describing it. It travels in a URL path, so what
- * matters is that it holds nothing a path segment should not.
+ * A plan's key is a hash of its TEXT, minted by the web's `planKeyOf` — not the
+ * `ExitPlanMode` call's id, because while a terminal holds the approval dialog
+ * that call has not been written to the transcript yet and the plan exists only
+ * as a file. The server never mints one; it only has to refuse anything a path
+ * segment should not carry.
  */
 const PLAN_KEY_RE = /^[A-Za-z0-9_-]{1,120}$/;
 
@@ -58,8 +59,8 @@ function readComment(id: string, body: unknown): PlanCommentRecord | string {
 }
 
 export function registerPlanReviewRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Every stack this session has. Reads userdata only — no parse, which is the
-  // whole point of keying on the call's id rather than on the plan's text.
+  // Every stack this session has. Reads userdata only, and no parse: the key
+  // is a hash the browser already holds, so nothing here has to find the plan.
   app.get<{ Params: { id: string } }>('/api/sessions/:id/plan-reviews', async (request, reply) => {
     if (!isSameOrigin(request)) return reply.code(403).send({ error: 'Cross-origin request refused' });
     const { id } = request.params;
@@ -68,21 +69,24 @@ export function registerPlanReviewRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   /**
-   * The plan Claude is still writing, before it has submitted anything.
+   * The plan as the FILE holds it, which for a session driven by a terminal is
+   * the only place it exists while the approval dialog is up.
    *
-   * `resolvePlan` prefers a plan handed to it in a call's input and falls back
-   * to `~/.claude/plans/<slug>.md`; there is no call here, so the file is what
-   * comes back — which is why the panel shows this one and never lets anybody
-   * comment on it.
+   * The CLI does not persist the `ExitPlanMode` line until that dialog is
+   * answered — measured on a live session with the prompt on screen, zero of
+   * them in 94 transcript lines — and it writes this file seconds before going
+   * `waiting`. So this is not a lesser copy of the plan: it is the plan, and
+   * it is the same bytes that later land in `input.plan` (40 of 40 archived
+   * plans here hash identically to the file still on disk).
    */
-  app.get<{ Params: { id: string } }>('/api/sessions/:id/plan-draft', async (request, reply) => {
+  app.get<{ Params: { id: string } }>('/api/sessions/:id/plan-file', async (request, reply) => {
     if (!isSameOrigin(request)) return reply.code(403).send({ error: 'Cross-origin request refused' });
     const { id } = request.params;
     if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
     const summary = ctx.index.get(id);
     if (!summary) return reply.code(404).send({ error: 'Session not found' });
     const { plan, planFilePath } = await resolvePlan(ctx.config.plansDir, summary.slug, null);
-    return { plan, filePath: planFilePath } satisfies PlanDraftResponse;
+    return { plan, filePath: planFilePath } satisfies PlanFileResponse;
   });
 
   app.put<{ Params: { id: string; planKey: string; commentId: string }; Body: unknown }>(

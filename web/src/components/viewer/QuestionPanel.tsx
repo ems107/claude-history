@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { api } from '../../api/client.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { Markdown } from './Markdown.tsx';
-import { commentsFeedback } from '../../lib/plans.ts';
+import { commentsFeedback, planKeyOf } from '../../lib/plans.ts';
 import { type PlanComment, PlanReview } from './PlanReview.tsx';
 import { Sketch } from './Sketch.tsx';
 
@@ -67,9 +67,14 @@ export function QuestionPanel({
    *
    * It was a `useState` for as long as this dialog was the only way in, and
    * that cost exactly what it sounds like: a refresh mid-review emptied it.
-   * Now both doors key on `question.toolUseId`, so the two cannot disagree and
-   * a review survives everything except deleting it.
+   * Now both doors key on the plan's own TEXT (`planKeyOf`), so the two cannot
+   * disagree and a review survives everything except deleting it.
+   *
+   * The text rather than the call's id, because the panel has to key the same
+   * stack from the plan FILE — where a plan lives while a terminal holds the
+   * dialog and no `tool_use` line exists yet.
    */
+  const planKey = question.plan ? planKeyOf(question.plan.trim()) : question.toolUseId;
   const queryClient = useQueryClient();
   const reviews = useQuery({
     queryKey: ['planReviews', sessionId],
@@ -77,7 +82,7 @@ export function QuestionPanel({
     enabled: isPlan,
     staleTime: 30_000,
   });
-  const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === question.toolUseId)?.comments ?? [];
+  const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === planKey)?.comments ?? [];
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['planReviews', sessionId] });
 
   useEffect(() => {
@@ -375,14 +380,14 @@ export function QuestionPanel({
             plan={question.plan}
             comments={comments}
             onAdd={(c) => {
-              void api.savePlanComment(sessionId, question.toolUseId, { ...c, id: crypto.randomUUID() }).then(refresh);
+              void api.savePlanComment(sessionId, planKey, { ...c, id: crypto.randomUUID() }).then(refresh);
             }}
             onRemove={(id) => {
-              void api.removePlanComment(sessionId, question.toolUseId, id).then(refresh);
+              void api.removePlanComment(sessionId, planKey, id).then(refresh);
             }}
             onEdit={(id, text) => {
               const existing = comments.find((c) => c.id === id);
-              if (existing) void api.savePlanComment(sessionId, question.toolUseId, { ...existing, text }).then(refresh);
+              if (existing) void api.savePlanComment(sessionId, planKey, { ...existing, text }).then(refresh);
             }}
           />
         )}
@@ -437,7 +442,7 @@ export function QuestionPanel({
               // Stamp the stack as having left before answering: the panel
               // shows "sent" from the same record, and this is the moment it
               // becomes true whichever door the reader used.
-              if (comments.length > 0) void api.markPlanReviewSent(sessionId, question.toolUseId).then(refresh);
+              if (comments.length > 0) void api.markPlanReviewSent(sessionId, planKey).then(refresh);
               onPlanDecision('keep-planning', planNote);
             }}
             disabled={busy}

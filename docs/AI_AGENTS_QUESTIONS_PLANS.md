@@ -17,7 +17,7 @@ Line-level format is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) (task notificatio
 - **An agent's transcript is refreshed by the `agents` list of `sessions-changed`** — its own query key, which nothing else on the page reaches.
 - **An agent OUTLIVES the turn that launched it**, so `running` may never be read off the session being busy: it is a report that has not come back, a CLI still alive, and a recent write.
 - **A plan's verdict is the TYPE of `toolUseResult`**, not its wording.
-- **A submitted plan cannot drift** — `ExitPlanMode` is the call that SUBMITS it, and transcript lines are append-only — so remarks on one need no copy of the text. The DRAFT in the plan file is the one that is rewritten, and it is never commented on.
+- **A terminal does not write the `ExitPlanMode` line until the dialog is ANSWERED** — so while the plan is on screen it exists only as `~/.claude/plans/<slug>.md`. Remarks are keyed on the plan's TEXT for that reason, never on the call's id.
 - **The `plans/<slug>.md` file is a working copy that gets overwritten** — the transcript is the archive.
 
 ## Subagents
@@ -164,31 +164,52 @@ refresh emptied it. It now lives in `userdata.json` as `PlanReviewRecord`, keyed
 `<sessionId>:<toolUseId>`, and both doors read it — the composer's dialog and
 the rail's `Plan` panel — so the two cannot disagree.
 
-**The record keeps no copy of the plan, and that is the interesting part.** A
-star keeps its text because a transcript can be swept; a plan review does not
-need to, because `ExitPlanMode` is the call that SUBMITS the plan. Its line —
-`input.plan` and all — is written the instant the dialog appears, and the
-verdict lands later as that call's result, so the text these offsets index is
-frozen from the moment there is anything to comment on. 119 of 119 calls in this
-corpus carry the plan inline; a session pending right now (`d29ebc13`) is a file
-of 41 lines whose 41st is the call and where there is no 42nd.
+**A plan lives in two places and the panel must not care which.** It is in the
+transcript once its `ExitPlanMode` call has been answered, and in
+`~/.claude/plans/<slug>.md` from the moment Claude writes it.
 
-**The one plan that is rewritten is the draft**, `~/.claude/plans/<slug>.md` —
-Claude rewrites it as it works and the session's next plan overwrites it (119
-archived plans against 83 files). It is listed to READ and never to comment on,
-which is what keeps the no-copy rule true, and it is hidden whenever it matches
-a plan already submitted.
+**The trap is that a terminal writes the line LAST.** Measured on a live session
+with the approval prompt on screen: **zero** `ExitPlanMode` tool calls in its 94
+transcript lines, and the plan file written four seconds before the CLI went
+`waiting`. The corpus cannot show this — every archived plan was answered, which
+is exactly why it has a line — and the composer cannot either, because the SDK
+writes the line at submission. Built on the call's id, the panel had nothing to
+show at the only moment it was wanted. (The CLI is not even consistent: in one
+session the first plan's line appeared only after the answer and the second
+appeared while its dialog was still up.)
+
+**So a row is keyed on the plan's TEXT** (`planKeyOf`, FNV-1a with the length in
+front, trimming INSIDE — the file ends with a newline `input.plan` does not, and
+trimming at one call site only drew 906 against 907 as two rows). The file and
+the transcript are the same bytes — 40 of 40 archived plans hash identically to
+the file still on disk — so the two collapse into one row the moment they agree,
+and remarks written while the dialog was up are still there when the plan
+becomes history. Verified end to end: a stack filed against the file showed `2 ✎`
+against the archived plan afterwards, with nothing migrated.
+
+**The record still keeps no copy of the plan**, because it cannot drift under a
+reader: a submitted plan is frozen in an append-only line, and the file is
+rewritten only while Claude is WRITING it. That state is visible (`busy`) and
+the panel shows the plan there and refuses to let anybody comment on it; while
+the dialog is up the CLI is blocked. A stack whose plan has gone anyway is
+listed at the foot of the panel rather than dropped — the remark carries its own
+quote, so it is still readable.
 
 - **A rejection does not mutate a plan, it adds one.** Claude submits again with
   a new `toolUseId`, so the new plan arrives with an empty stack and the old
   one's remarks stay beside the plan they were about. Nothing has to be cleared.
-- **`ChatQuestion.toolUseId`** exists for this: the SDK hands `canUseTool` a
-  `toolUseID` and this code used to keep only `suggestions`, leaving `askedAt`
-  as the only thing telling two pending questions apart.
-- **Which plan is "in play" is NOT read off the composer's question** — that
-  would answer "none" for the mode this app ships with, since an embedded
-  terminal draws the CLI's own dialog inside the pseudo-terminal. It is the
-  newest plan with no result while the CLI is still alive.
+- **`ChatQuestion.toolUseId`** is carried anyway (the SDK hands `canUseTool` a
+  `toolUseID` and this code used to keep only `suggestions`), as the fallback
+  for a question whose plan text never arrived.
+- **Which plan is on screen is NOT read off the composer's question** — that
+  would answer "none" for the mode this app ships with. It is the composer's
+  plan when there is one, and otherwise the plan file while the CLI is
+  `waiting`. There is nothing finer: `waitingFor` is the CLI's own word and
+  reads `"permission prompt"` for every dialog it has no name for.
+- **The plan file is refetched on `live-changed`**, which is the only event that
+  fires on a busy/waiting flip — and that flip is when a plan appears. Polling
+  alone was not enough: TanStack pauses `refetchInterval` while the tab is
+  hidden, so a window left in the background never saw the plan at all.
 - **Only a refusal can carry remarks**, so the panel's exits are *send* (the
   composer is holding the question — `chatAnswer` with `keep-planning`) and
   *copy* (anything else, pasted into the CLI's own box). Approving with remarks

@@ -98,9 +98,53 @@ export function parsePlan(block: ToolBlockType): ParsedPlan | null {
   };
 }
 
+/**
+ * What a stack of remarks is filed under: the plan's own TEXT, hashed.
+ *
+ * ## Why not the `ExitPlanMode` call's id
+ *
+ * Because while the dialog is on screen there is no call to point at. A CLI in
+ * a terminal — the mode this app ships with — does not persist the `tool_use`
+ * line until the dialog is ANSWERED: measured on a live session with the
+ * approval prompt up, `ExitPlanMode` appeared 0 times in its 94 transcript
+ * lines. The only thing that exists meanwhile is `~/.claude/plans/<slug>.md`,
+ * written four seconds before the CLI went `waiting`. Keying on the call's id
+ * meant the one moment worth commenting on was the one moment with no key.
+ *
+ * The text spans both: the file and the `input.plan` that later lands in the
+ * transcript are the same bytes — 40 of 40 archived plans here hash identically
+ * to the file still on disk. So remarks written against the file ARE the
+ * remarks on the plan once it becomes history, with no migration and nothing to
+ * reconcile, and the two stop being two rows the moment they agree.
+ *
+ * FNV-1a over the text with its length in front. Not a cryptographic hash and
+ * it does not need to be: this distinguishes a handful of plans inside one
+ * session, and `crypto.subtle` is async, which would make every render that
+ * wants a key a promise.
+ *
+ * **The trim is inside on purpose.** The file ends with a newline the call's
+ * `input.plan` does not, and trimming at one call site and not the other drew
+ * the same plan as two rows — 906 characters against 907 — with the remarks
+ * stranded on whichever half was keyed first. Normalising here is the one place
+ * that cannot be got wrong twice.
+ */
+export function planKeyOf(raw: string): string {
+  const text = raw.trim();
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ (c + i), 0x85ebca6b) >>> 0;
+  }
+  return `${text.length.toString(36)}-${h1.toString(16).padStart(8, '0')}${h2.toString(16).padStart(8, '0')}`;
+}
+
 /** One plan of a session, as the Plan panel lists it. */
 export interface SessionPlan extends ParsedPlan {
-  /** The `ExitPlanMode` call — what a stack of remarks is keyed on. */
+  /** What its remarks are filed under — see `planKeyOf`. */
+  key: string;
+  /** The `ExitPlanMode` call, for the jump into the conversation. */
   toolUseId: string;
   /** The assistant message that made the call, for the jump into the conversation. */
   uuid: string;
@@ -124,7 +168,16 @@ export function collectPlans(turns: { items: { uuid: string; blocks: ContentBloc
         if (block.kind !== 'tool') continue;
         const parsed = parsePlan(block);
         if (!parsed) continue;
-        out.push({ ...parsed, toolUseId: block.toolUseId, uuid: item.uuid, askedAt: block.timestamp });
+        out.push({
+          ...parsed,
+          // A plan whose text was never recorded cannot be keyed on it; the
+          // call's id is the honest fallback, and such a plan has nothing to
+          // comment on anyway.
+          key: parsed.text ? planKeyOf(parsed.text) : block.toolUseId,
+          toolUseId: block.toolUseId,
+          uuid: item.uuid,
+          askedAt: block.timestamp,
+        });
       }
     }
   }

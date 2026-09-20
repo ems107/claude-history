@@ -377,27 +377,38 @@ export interface PlanCommentRecord {
  * The remarks somebody left on ONE plan — the fourth kind of local override,
  * after renames, pins and stars, and the second that keeps content.
  *
+ * ## The key is the plan's TEXT, and that is the load-bearing decision
+ *
+ * `ExitPlanMode` is the call that SUBMITS a plan — but **a CLI in a terminal
+ * does not persist that line until the dialog is ANSWERED**. Measured on a live
+ * session with the approval prompt on screen: zero `ExitPlanMode` tool calls in
+ * its 94 transcript lines, while `~/.claude/plans/<slug>.md` had been written
+ * four seconds earlier. The one moment worth commenting on is the one moment
+ * the call's id does not exist, so keying on it put the feature exactly where
+ * it could not be used.
+ *
+ * The TEXT spans both places. The file and the `input.plan` that later lands in
+ * the transcript are the same bytes — 40 of 40 archived plans here hash
+ * identically to the file still on disk — so a stack filed while the dialog was
+ * up IS the stack on that plan once it becomes history, with nothing to migrate
+ * and nothing to reconcile. A rejection still starts a clean stack on its own,
+ * because Claude submits different text rather than editing the old call.
+ *
+ * (The CLI is not consistent about WHEN it flushes that line: in one measured
+ * session the first plan's call appeared only after it was answered and the
+ * second appeared while its dialog was still up. Nothing here depends on
+ * which, which is the point of hashing the text.)
+ *
  * ## Why no copy of the plan, when a star keeps one
  *
- * Because it cannot drift. `ExitPlanMode` is the call that SUBMITS a plan, not
- * what follows approving one: the line carrying `input.plan` is written the
- * instant the dialog appears, and the verdict lands later as that call's
- * result. Transcript lines are append-only, so the text these offsets point
- * into is frozen from the moment there is anything to comment on — verified
- * over the whole corpus, where 119 of 119 calls carry the plan inline.
- *
- * The one plan that DOES get rewritten is the draft in
- * `~/.claude/plans/<slug>.md`, which Claude rewrites as it works and which the
- * session's next plan overwrites. That one is shown and never commented on, so
- * no record here can be left pointing at text that moved.
- *
- * `planKey` is the `toolUseId` of the call, which is why a rejection starts a
- * clean stack on its own: Claude submits AGAIN, with a new id, beside the old
- * one rather than editing it.
+ * Because it cannot drift under a reader. A submitted plan is frozen in an
+ * append-only line, and the file is rewritten only while Claude is WRITING it
+ * — a state the panel can see (`busy`) and where it refuses to let anybody
+ * comment. While the dialog is up the CLI is blocked and the bytes cannot move.
  */
 export interface PlanReviewRecord {
   sessionId: string;
-  /** The `ExitPlanMode` call these remarks are about. */
+  /** Which plan: a hash of its text, minted by the web's `planKeyOf`. */
   planKey: string;
   comments: PlanCommentRecord[];
   updatedAt: string;
