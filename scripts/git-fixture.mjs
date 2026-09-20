@@ -278,6 +278,11 @@ function buildStacked(dir) {
   init(dir);
   write(dir, 'README.md', '# stacked\n');
   write(dir, 'main.txt', 'main line 1\n');
+  // A long file the branch edits in two places far apart, so its diff has TWO
+  // hunks with unchanged lines between them. Nothing else on this bench does:
+  // every other change here is one hunk, and a selection that runs from one
+  // hunk into the next is a case that can only be tested where two exist.
+  write(dir, 'wide.txt', Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n') + '\n');
   commit(dir, 'Initial commit');
   for (let i = 2; i <= 4; i++) {
     write(dir, 'main.txt', `main line ${i}\n`);
@@ -301,6 +306,15 @@ function buildStacked(dir) {
   git(dir, ['checkout', '-q', '-b', 'feature/stacked']);
   write(dir, 'feature.txt', 'the feature, first pass\nthe feature, second pass\n');
   commit(dir, 'feature: second pass');
+  // The two-hunk edit: line 3 and line 35 of a 40-line file, far enough apart
+  // that -U3 cannot join them.
+  {
+    const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`);
+    lines[2] = 'line 3 — changed near the top';
+    lines[34] = 'line 35 — changed near the bottom';
+    write(dir, 'wide.txt', lines.join('\n') + '\n');
+    commit(dir, 'feature: two edits, far apart');
+  }
   write(dir, 'extra.txt', 'a file only this branch has\n');
   commit(dir, 'feature: one more file');
   // Left checked out on the branch being reviewed, which is where a session

@@ -81,6 +81,7 @@ export function SelectionCommentLayer({
   readOnly = false,
   className,
   placeholder = 'What should change here?',
+  canComment,
   onAdd,
   children,
 }: {
@@ -98,6 +99,18 @@ export function SelectionCommentLayer({
   /** Classes for the box itself, where it has to be a particular sort of box. */
   className?: string;
   placeholder?: string;
+  /**
+   * Whether this passage can be commented on at all — asked BEFORE the button
+   * is offered, which is the only place it can be asked without costing
+   * somebody their writing.
+   *
+   * A diff is the caller that needs it: a selection across two hunks is two
+   * edits and cannot be quoted as one fragment. Without this the button
+   * appeared anyway, the note was typed, and the refusal happened at save —
+   * silently, with the draft cleared, which is the one outcome a panel holding
+   * somebody's writing may not have.
+   */
+  canComment?: (range: Range) => boolean;
   onAdd: (selection: SelectionResult) => void;
   children: ReactNode;
 }) {
@@ -153,7 +166,7 @@ export function SelectionCommentLayer({
       sel.addRange(range);
     }
     const quote = range.toString().trim();
-    if (!quote) {
+    if (!quote || (canComment && !canComment(range))) {
       setPending(null);
       return;
     }

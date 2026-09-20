@@ -31,6 +31,22 @@ function rowOf(node: Node): HTMLElement | null {
   return el?.closest<HTMLElement>('[data-line-index]') ?? null;
 }
 
+/**
+ * Which hunk a node is in, whether or not it is in a row.
+ *
+ * The `@@` header carries the index as well, which is what makes a drag that
+ * BEGINS on one answerable at all: without it a selection starting on hunk 0's
+ * header and ending inside hunk 1 was indistinguishable from one that stayed
+ * in hunk 1 — and it was filed as the latter, quoting a hunk the reader had
+ * not started in.
+ */
+function hunkOf(node: Node): number | null {
+  const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  const at = el?.closest<HTMLElement>('[data-hunk-index]')?.dataset.hunkIndex;
+  const n = Number(at);
+  return at !== undefined && Number.isFinite(n) ? n : null;
+}
+
 function fileOf(node: Node): HTMLElement | null {
   const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
   return el?.closest<HTMLElement>('[data-file-path]') ?? null;
@@ -56,16 +72,21 @@ export function locateSelection(range: Range): DiffLocation | null {
   const path = startFile.dataset.filePath;
   if (!path) return null;
 
+  // Two hunks is two edits, and a remark claiming both would carry two
+  // fragments and point at neither. Asked of the HUNK and not of the rows,
+  // because an end of the selection that landed on a `@@` header still belongs
+  // to a hunk and still has to agree with the other end.
+  const hunk = hunkOf(range.startContainer);
+  if (hunk === null || hunk !== hunkOf(range.endContainer)) return null;
+
   const startRow = rowOf(range.startContainer);
   const endRow = rowOf(range.endContainer);
-  const inGrid = startRow ?? endRow;
-  if (!inGrid) return null;
-  // Two hunks is two edits, and a remark claiming both would carry two
-  // fragments and point at neither.
-  if (startRow && endRow && startRow.dataset.hunkIndex !== endRow.dataset.hunkIndex) return null;
-  const hunk = Number(inGrid.dataset.hunkIndex);
-  if (!Number.isFinite(hunk)) return null;
-
+  // Neither end in the grid is a header on its own, or the fold above it:
+  // nothing anybody is pointing at.
+  if (!startRow && !endRow) return null;
+  // A drag that began on the header means "from the top of this hunk"; one
+  // that ENDED on the next header stops at the last row it actually covered,
+  // which is the end of this hunk.
   const a = startRow ? Number(startRow.dataset.lineIndex) : 0;
   const b = endRow ? Number(endRow.dataset.lineIndex) : Number(startRow?.dataset.lineIndex);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return null;

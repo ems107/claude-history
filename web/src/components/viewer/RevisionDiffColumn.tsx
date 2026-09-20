@@ -158,11 +158,14 @@ export function RevisionDiffColumn({
           <SelectionCommentLayer
             boxRef={box}
             placeholder="What should change here?"
+            // Asked before the button appears, so a selection that cannot be
+            // quoted as one fragment — across two hunks, or in the sentence
+            // that stands in for a binary file — never gets as far as somebody
+            // typing a note into it and losing it.
+            canComment={(range) => locateSelection(range)?.path === path}
             onAdd={({ range, quote, text }) => {
               const at = locateSelection(range);
-              // Refused rather than guessed: a selection across two hunks has
-              // no single fragment to quote, and the button is not offered for
-              // one — this is the belt to that braces.
+              // The belt to that braces, and unreachable through the button.
               if (!at || at.path !== path || !comparisonKey || !current || !base) return;
               const hunk = file.hunks[at.hunkIndex];
               if (!hunk) return;

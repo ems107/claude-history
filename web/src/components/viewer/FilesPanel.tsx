@@ -80,7 +80,13 @@ export function FilesPanel({ sessionId, root }: { sessionId: string; root: FileT
   }, [comments]);
 
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  /**
+   * Whether the basket has left, read from the RECORD rather than remembered
+   * here: adding a remark clears `copiedAt` on the server, and a button still
+   * reading `✔ copied` beside a rail badge that has started counting again is
+   * the panel disagreeing with itself.
+   */
+  const copied = !!copiedAt;
 
   const copy = async () => {
     if (comments.length === 0) return;
@@ -94,7 +100,6 @@ export function FilesPanel({ sessionId, root }: { sessionId: string; root: FileT
       failed(err);
       return;
     }
-    setCopied(true);
     await markCopied.mutateAsync();
   };
 

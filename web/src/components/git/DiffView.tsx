@@ -169,7 +169,11 @@ function Hunk({
             ⋮ {hunk.gapBefore} unchanged line{hunk.gapBefore === 1 ? '' : 's'}
           </div>
         ))}
-      <div className="flex items-center gap-2 bg-[var(--bg-raised)] px-2 py-0.5">
+      {/* The header carries the hunk's index too, and it is not decoration: a
+          drag that BEGINS here has no row to be traced to, and without this
+          there is nothing to say which hunk it began in — so a selection
+          running on into the next one could not be told from one that stayed. */}
+      <div data-hunk-index={index} className="flex items-center gap-2 bg-[var(--bg-raised)] px-2 py-0.5">
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-sky-300/70">{hunk.header}</span>
         {actions && (
           <span className="flex shrink-0 items-center gap-1">

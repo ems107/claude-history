@@ -40,7 +40,6 @@ export function RevisionPanel({
 }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   // Never a cached answer on mount: what is on screen when this opens has to
   // be what the repository says now, not what it said the last time it was
@@ -129,6 +128,18 @@ export function RevisionPanel({
   }, [comments]);
 
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  /**
+   * Whether this basket has left, read from the RECORD rather than remembered
+   * here.
+   *
+   * It was local state, and that made the panel contradict itself: adding a
+   * remark clears `copiedAt` on the server — a basket somebody has added to
+   * has not been put in front of Claude — so the timestamp vanished and the
+   * rail started counting again while the button still read `✔ copied`. One
+   * source, and switching the base shows that comparison's own answer for
+   * free.
+   */
+  const copied = !!review?.copiedAt;
 
   const copy = async () => {
     if (!current || !base || comments.length === 0) return;
@@ -139,7 +150,6 @@ export function RevisionPanel({
       failed(err);
       return;
     }
-    setCopied(true);
     await markCopied.mutateAsync();
   };
 
@@ -169,10 +179,7 @@ export function RevisionPanel({
         <span className="text-[11px] text-[var(--text-dim)]">against</span>
         <select
           value={base ?? ''}
-          onChange={(e) => {
-            onBase(e.target.value || null);
-            setCopied(false);
-          }}
+          onChange={(e) => onBase(e.target.value || null)}
           className="min-h-11 min-w-0 flex-1 rounded border border-[var(--border)] bg-[var(--bg)] px-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent-dim)] md:min-h-0 md:py-1"
         >
           <option value="">choose a branch…</option>
