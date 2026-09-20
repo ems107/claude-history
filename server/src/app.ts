@@ -13,6 +13,7 @@ import { registerAutoReloadRoutes } from './routes/autoReload.ts';
 import { registerBrandRoutes } from './routes/brand.ts';
 import { registerChatRoutes } from './routes/chat.ts';
 import { registerEventRoutes } from './routes/events.ts';
+import { registerFileReviewRoutes } from './routes/fileReviews.ts';
 import { registerFileRoutes } from './routes/files.ts';
 import { registerFirewallRoutes } from './routes/firewall.ts';
 import { registerGitRoutes } from './routes/git.ts';
@@ -170,6 +171,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerPromptRoutes(app, ctx);
   registerPlanRoutes(app, ctx);
   registerPlanReviewRoutes(app, ctx);
+  registerFileReviewRoutes(app, ctx);
   registerStarRoutes(app, ctx);
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
