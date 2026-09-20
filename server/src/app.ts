@@ -29,6 +29,7 @@ import { registerPromptRoutes } from './routes/prompts.ts';
 import { registerReadMarkRoutes } from './routes/readMarks.ts';
 import { registerResumeRoutes } from './routes/resume.ts';
 import { registerRetentionRoutes } from './routes/retention.ts';
+import { registerRevisionRoutes } from './routes/revision.ts';
 import { registerSearchRoutes } from './routes/search.ts';
 import { registerSettingsRoutes } from './routes/settings.ts';
 import { registerSessionRoutes } from './routes/sessions.ts';
@@ -172,6 +173,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerPlanRoutes(app, ctx);
   registerPlanReviewRoutes(app, ctx);
   registerFileReviewRoutes(app, ctx);
+  registerRevisionRoutes(app, ctx);
   registerStarRoutes(app, ctx);
   registerPriceRoutes(app, ctx);
   registerResumeRoutes(app, ctx);
