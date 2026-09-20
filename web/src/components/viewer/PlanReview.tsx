@@ -47,6 +47,8 @@ const CURRENT_NAME = 'plan-comment-current';
 const TOUCH_SETTLE_MS = 180;
 /** How long after the last `selectionchange` the drag counts as over. */
 const DRAG_SETTLE_MS = 300;
+/** The *Comment* button's touch height (`min-h-11`), for the room it needs. */
+const BUTTON_H = 44;
 
 /**
  * What a comment is ABOUT, in words rather than in furniture.
@@ -218,16 +220,30 @@ export function PlanReview({
     const off = offsetsOf(root, range);
     const rect = range.getBoundingClientRect();
     const wrap = root.getBoundingClientRect();
-    // Above on touch, because Android's selection handles sit directly under
-    // the end of the range and would take the tap meant for this button. With
-    // a mouse it goes below, as it always has, unless the window has no room.
-    const above = touch || window.innerHeight - rect.bottom < 160;
+    /**
+     * BELOW the passage, on touch as on a mouse — and above only where the
+     * window has no room for it.
+     *
+     * It went above on touch for one draft, reasoning that Android parks its
+     * selection handles under the end of the range. The handles are there, but
+     * what actually lands on top of a selection is the system's own
+     * copy/paste/share bar, which is what this button was hiding behind.
+     *
+     * The handles are still real, so a touch placement clears them: they hang
+     * about 24dp below the line, and 4px of gap put the button under one of
+     * them.
+     */
+    const gap = touch ? 30 : 4;
+    // The room it actually needs, not a round number: a 160px threshold sent
+    // the button back above the selection with 92px free below it — plenty for
+    // a 44px control — which is the very placement this is here to avoid.
+    const above = window.innerHeight - rect.bottom < gap + BUTTON_H + 8;
     setPending({
       quote,
       heading: headingOf(range.startContainer),
       start: off?.start ?? -1,
       end: off?.end ?? -1,
-      top: above ? rect.top - wrap.top - 4 : rect.bottom - wrap.top + 4,
+      top: above ? rect.top - wrap.top - gap : rect.bottom - wrap.top + gap,
       left: Math.max(0, rect.left - wrap.left),
       above,
       wrap: wrap.width,
