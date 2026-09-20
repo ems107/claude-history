@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dirEntry } from '../util/launcher.ts';
 import { redact, runGit } from '../util/git.ts';
+import { pool } from '../util/pool.ts';
 import { normalizeProjectKey } from './projects.ts';
 
 /**
@@ -187,21 +188,6 @@ async function remoteOf(dir: string): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-/** Run `work` over `items`, `limit` at a time. Fifty repos serially is a second of nothing. */
-async function pool<T, R>(items: T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (;;) {
-      const i = next++;
-      if (i >= items.length) return;
-      results[i] = await work(items[i]);
-    }
-  });
-  await Promise.all(runners);
-  return results;
 }
 
 export interface DiscoverInput {
