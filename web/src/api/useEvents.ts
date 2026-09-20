@@ -205,6 +205,13 @@ export function useEvents(): void {
         case 'stars-changed':
           void queryClient.invalidateQueries({ queryKey: ['stars'] });
           break;
+        // The remarks on a plan, and only those — same rule as the stars and
+        // the same reason. Keyed on the session so a window reading another one
+        // refetches nothing; this is what carries a stack written on the
+        // desktop to the phone reading the same session.
+        case 'plan-reviews-changed':
+          void queryClient.invalidateQueries({ queryKey: ['planReviews', event.sessionId] });
+          break;
         /**
          * Settings saved in ANOTHER window. Nothing else would ever refetch
          * them here: the usage widget in the header keeps `['settings']` mounted

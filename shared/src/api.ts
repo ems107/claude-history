@@ -4,6 +4,7 @@ import type { GitFetchMode, GitMergeMode, GitPullMode, GitPushMode } from './git
 import type {
   LiveInfo,
   PlanRecord,
+  PlanReviewRecord,
   ProjectGroup,
   ProjectInfo,
   SessionDetail,
@@ -682,6 +683,34 @@ export interface StarUpdateResponse {
    * a removal happened that did not. The app always sends the canonical uuid.
    */
   removed: boolean;
+}
+
+/** Every plan of one session that somebody has left remarks on. */
+export type PlanReviewsResponse = PlanReviewRecord[];
+
+export interface PlanReviewUpdateResponse {
+  ok: boolean;
+  /** The stack as stored, or null once the last remark on it was dropped. */
+  review: PlanReviewRecord | null;
+  /**
+   * Whether anything was actually dropped. Idempotent for the star's reason: a
+   * second DELETE of the same remark — two tabs, or a retry — is not an error
+   * and must not claim a removal that did not happen.
+   */
+  removed: boolean;
+}
+
+/**
+ * The plan Claude is still writing, before it has submitted anything.
+ *
+ * Read through `resolvePlan`, so this is the FILE's text rather than a
+ * transcript line — which is exactly what makes it the one plan the panel shows
+ * without letting anybody comment on it: Claude rewrites it as it works, and
+ * the session's next plan overwrites it.
+ */
+export interface PlanDraftResponse {
+  plan: string | null;
+  filePath: string | null;
 }
 
 export interface ResumeResponse {
@@ -2316,6 +2345,14 @@ export type ServerEvent =
    * nothing in it.
    */
   | { type: 'stars-changed' }
+  /**
+   * A remark on a plan was written, edited or dropped — or a stack was sent.
+   * Its own event for the star's reason, and it is what makes the feature work
+   * across devices at all: a stack written on the desktop has to appear on the
+   * phone reading the same session, and re-parsing the transcript to learn that
+   * would be the one cost this panel cannot pay while somebody types into it.
+   */
+  | { type: 'plan-reviews-changed'; sessionId: string }
   /**
    * Settings were saved. Its own event because a window has no other way to
    * hear about a save it did not make: `['settings']` is mounted for the life of

@@ -17,6 +17,15 @@ export interface UserdataCounts {
   titleOverrides: number;
   pins: number;
   stars: number;
+  /**
+   * Remarks left on plans, counted one by one rather than by the stack they
+   * sit in: losing one stack of nine is the loss this guard exists for, and
+   * counting stacks would call it no change at all.
+   *
+   * A `state.json` written before this key existed reads `undefined`, and
+   * `undefined > 0` is false, so an older file cannot raise a false `pre-loss`.
+   */
+  planComments: number;
   /** 0 or 1: the remote-access credentials are one record or none. */
   auth: number;
   /**
@@ -142,7 +151,14 @@ export class UserdataBackups {
    * updated on every write, because `saveUserdata()` is called AFTER the index
    * has already mutated itself — by then the only record of "before" is here.
    */
-  private lastCounts: UserdataCounts = { titleOverrides: 0, pins: 0, stars: 0, auth: 0, projectGroups: 0 };
+  private lastCounts: UserdataCounts = {
+    titleOverrides: 0,
+    pins: 0,
+    stars: 0,
+    planComments: 0,
+    auth: 0,
+    projectGroups: 0,
+  };
   /** Day of the newest copy, so the common path costs no disk at all. */
   private newestDay: string | null = null;
   /** Summaries by `<name>:<size>`; a stored copy never changes once written. */

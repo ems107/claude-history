@@ -349,6 +349,62 @@ export interface StarredMessage {
   project: string;
 }
 
+/**
+ * One remark filed against a passage of a plan, as `userdata.json` keeps it.
+ *
+ * The web's own `PlanComment` is this without the clocks — the shape the
+ * composer has always held in memory — and the two must stay assignable, which
+ * is why the fields are named identically rather than tidied on the way in.
+ *
+ * `quote` is the ANCHOR and `start`/`end` only paint it: a selection crossing
+ * two blocks reads back with newlines the rendered text does not have, so
+ * neither can be recovered from the other. `-1` is a selection whose ends were
+ * not both in text nodes — the remark stands, it just goes unpainted.
+ */
+export interface PlanCommentRecord {
+  id: string;
+  quote: string;
+  /** The nearest heading above the passage — what tells two similar quotes apart. */
+  heading: string;
+  text: string;
+  start: number;
+  end: number;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/**
+ * The remarks somebody left on ONE plan — the fourth kind of local override,
+ * after renames, pins and stars, and the second that keeps content.
+ *
+ * ## Why no copy of the plan, when a star keeps one
+ *
+ * Because it cannot drift. `ExitPlanMode` is the call that SUBMITS a plan, not
+ * what follows approving one: the line carrying `input.plan` is written the
+ * instant the dialog appears, and the verdict lands later as that call's
+ * result. Transcript lines are append-only, so the text these offsets point
+ * into is frozen from the moment there is anything to comment on — verified
+ * over the whole corpus, where 119 of 119 calls carry the plan inline.
+ *
+ * The one plan that DOES get rewritten is the draft in
+ * `~/.claude/plans/<slug>.md`, which Claude rewrites as it works and which the
+ * session's next plan overwrites. That one is shown and never commented on, so
+ * no record here can be left pointing at text that moved.
+ *
+ * `planKey` is the `toolUseId` of the call, which is why a rejection starts a
+ * clean stack on its own: Claude submits AGAIN, with a new id, beside the old
+ * one rather than editing it.
+ */
+export interface PlanReviewRecord {
+  sessionId: string;
+  /** The `ExitPlanMode` call these remarks are about. */
+  planKey: string;
+  comments: PlanCommentRecord[];
+  updatedAt: string;
+  /** When the stack left, by either exit. Null while it is still unsent. */
+  sentAt: string | null;
+}
+
 export interface ProjectInfo {
   key: string; // normalized path
   path: string; // display path

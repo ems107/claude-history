@@ -4,6 +4,8 @@ import type {
   ToneChoice,
   IndexState,
   LiveSessionEntry,
+  PlanCommentRecord,
+  PlanReviewRecord,
   PriceTable,
   ProjectInfo,
   SessionEnrichment,
@@ -62,6 +64,17 @@ const log = createLogger('index');
 /** A star belongs to one message of one transcript, and nothing else identifies it. */
 function starKey(sessionId: string, uuid: string): string {
   return `${sessionId}:${uuid}`;
+}
+
+/**
+ * A stack of remarks belongs to one plan of one session.
+ *
+ * The plan half is the `ExitPlanMode` call's `toolUseId`, which is what gives a
+ * rejection a clean stack for free: Claude submits again under a new id rather
+ * than editing the old call.
+ */
+function planReviewKey(sessionId: string, planKey: string): string {
+  return `${sessionId}:${planKey}`;
 }
 
 /**
@@ -231,6 +244,12 @@ export class SessionIndex {
    * about one message without walking the list.
    */
   private stars = new Map<string, StarredMessage>();
+  /**
+   * Remarks left on plans, keyed `<sessionId>:<toolUseId>` — stored in
+   * userdata.json. A Map for the star's reason: the panel asks about one plan
+   * at a time and must not walk the list to find it.
+   */
+  private planReviews = new Map<string, PlanReviewRecord>();
   /** Custom model price table — null means "use defaults". */
   private prices: PriceTable | null = null;
   /** User settings — stored in userdata.json alongside renames and pins. */
@@ -274,6 +293,7 @@ export class SessionIndex {
       titleOverrides?: Record<string, string>;
       pins?: string[];
       stars?: StarredMessage[];
+      planReviews?: PlanReviewRecord[];
       prices?: PriceTable;
       settings?: Partial<AppSettings>;
       auth?: AuthConfig;
@@ -609,6 +629,10 @@ export class SessionIndex {
       titleOverrides: Object.keys(this.titleOverrides).length,
       pins: this.pins.size,
       stars: this.stars.size,
+      // Counted in REMARKS rather than in stacks: losing one stack of nine is
+      // the loss worth taking a copy over, and a count of stacks would call
+      // that no change at all.
+      planComments: [...this.planReviews.values()].reduce((n, r) => n + r.comments.length, 0),
       // Counted like the rest so a write that drops the credentials leaves a
       // copy behind. Losing them locks every remote device out until someone
       // walks to the machine — recoverable, but only from a backup.
@@ -630,6 +654,7 @@ export class SessionIndex {
     titleOverrides?: Record<string, string>;
     pins?: string[];
     stars?: StarredMessage[];
+    planReviews?: PlanReviewRecord[];
     prices?: PriceTable;
     settings?: Partial<AppSettings>;
     auth?: AuthConfig;
@@ -647,6 +672,20 @@ export class SessionIndex {
       (userdata?.stars ?? [])
         .filter((s) => typeof s?.sessionId === 'string' && typeof s.uuid === 'string')
         .map((s) => [starKey(s.sessionId, s.uuid), s]),
+    );
+    // Same filter as the stars, for the same reason, plus one of its own: a
+    // stack with no remarks left in it is nothing to keep, and a record with a
+    // broken `comments` would make the panel walk undefined.
+    this.planReviews = new Map(
+      (userdata?.planReviews ?? [])
+        .filter(
+          (r) =>
+            typeof r?.sessionId === 'string' &&
+            typeof r.planKey === 'string' &&
+            Array.isArray(r.comments) &&
+            r.comments.length > 0,
+        )
+        .map((r) => [planReviewKey(r.sessionId, r.planKey), r]),
     );
     this.prices = userdata?.prices ?? null;
     // Every field or it is not credentials at all: a half-written record here
@@ -732,6 +771,7 @@ export class SessionIndex {
       titleOverrides: this.titleOverrides,
       pins: [...this.pins],
       stars: [...this.stars.values()],
+      planReviews: [...this.planReviews.values()],
       settings: this.settings,
       gitRepos: this.gitRepos,
       gitScanRoots: this.gitScanRoots,
@@ -964,6 +1004,95 @@ export class SessionIndex {
     await this.saveUserdata();
     this.events.emit('stars-changed');
     return true;
+  }
+
+  /** Every plan of one session that has remarks on it. */
+  listPlanReviews(sessionId: string): PlanReviewRecord[] {
+    return [...this.planReviews.values()].filter((r) => r.sessionId === sessionId);
+  }
+
+  getPlanReview(sessionId: string, planKey: string): PlanReviewRecord | undefined {
+    return this.planReviews.get(planReviewKey(sessionId, planKey));
+  }
+
+  /**
+   * Write a remark, or replace the one already under that id.
+   *
+   * `createdAt` survives an edit and `editedAt` records it, because the two
+   * answer different questions and the panel prints the second only when it
+   * differs. **`sentAt` is cleared**: the mark means "this stack, as it stands,
+   * has left", and a stack somebody has since added to has not.
+   */
+  async setPlanComment(sessionId: string, planKey: string, comment: PlanCommentRecord): Promise<PlanReviewRecord> {
+    const key = planReviewKey(sessionId, planKey);
+    const current = this.planReviews.get(key);
+    const at = new Date().toISOString();
+    const existing = current?.comments.find((c) => c.id === comment.id);
+    const stored: PlanCommentRecord = existing
+      ? { ...comment, createdAt: existing.createdAt, editedAt: at }
+      : { ...comment, createdAt: at, editedAt: null };
+    const comments = existing
+      ? current!.comments.map((c) => (c.id === comment.id ? stored : c))
+      : [...(current?.comments ?? []), stored];
+    const next: PlanReviewRecord = { sessionId, planKey, comments, updatedAt: at, sentAt: null };
+    this.planReviews.set(key, next);
+    await this.saveUserdata();
+    this.events.emit('plan-reviews-changed', sessionId);
+    return next;
+  }
+
+  /**
+   * Drop one remark, and the whole stack with it once it was the last.
+   *
+   * An empty record is nothing to keep and `applyUserdata` would drop it on the
+   * next read anyway, so it goes now rather than leaving the panel a stack with
+   * no remarks in it.
+   */
+  async removePlanComment(
+    sessionId: string,
+    planKey: string,
+    commentId: string,
+  ): Promise<{ removed: boolean; review: PlanReviewRecord | null }> {
+    const key = planReviewKey(sessionId, planKey);
+    const current = this.planReviews.get(key);
+    if (!current?.comments.some((c) => c.id === commentId)) return { removed: false, review: current ?? null };
+    const comments = current.comments.filter((c) => c.id !== commentId);
+    let review: PlanReviewRecord | null = null;
+    if (comments.length === 0) this.planReviews.delete(key);
+    else {
+      review = { ...current, comments, updatedAt: new Date().toISOString() };
+      this.planReviews.set(key, review);
+    }
+    await this.saveUserdata();
+    this.events.emit('plan-reviews-changed', sessionId);
+    return { removed: true, review };
+  }
+
+  /** The *clear all* button: the stack goes, in one write and one event. */
+  async clearPlanReview(sessionId: string, planKey: string): Promise<boolean> {
+    if (!this.planReviews.delete(planReviewKey(sessionId, planKey))) return false;
+    await this.saveUserdata();
+    this.events.emit('plan-reviews-changed', sessionId);
+    return true;
+  }
+
+  /**
+   * Stamp a stack as having left, by either exit.
+   *
+   * Copying counts as sending on purpose: what the mark is for is telling you
+   * whether these remarks have already been put in front of Claude, and a
+   * paste into a terminal does exactly that — the transcript will record it,
+   * but this app cannot see that happen.
+   */
+  async markPlanReviewSent(sessionId: string, planKey: string): Promise<PlanReviewRecord | null> {
+    const key = planReviewKey(sessionId, planKey);
+    const current = this.planReviews.get(key);
+    if (!current) return null;
+    const next: PlanReviewRecord = { ...current, sentAt: new Date().toISOString() };
+    this.planReviews.set(key, next);
+    await this.saveUserdata();
+    this.events.emit('plan-reviews-changed', sessionId);
+    return next;
   }
 
   /**
