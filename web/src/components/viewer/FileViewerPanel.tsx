@@ -1,11 +1,16 @@
-import { useQuery } from '@tanstack/react-query';
+import type { FileCommentRecord } from '@claude-history/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import hljs from 'highlight.js/lib/common';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
-import { type FileRef, isImagePath, languageForPath, refBasename } from '../../lib/fileRefs.ts';
+import { offsetsOf } from '../../lib/anchors.ts';
+import { lineAt, resolveFileAnchor } from '../../lib/fileAnchors.ts';
+import { type FileRef, isImagePath, languageForPath, refBasename, relativeToProject } from '../../lib/fileRefs.ts';
 import { formatBytes, formatDateTime } from '../../lib/format.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
+import { newId } from '../../lib/ids.ts';
+import { SelectionCommentLayer, useCommentHighlights } from './SelectionCommentLayer.tsx';
 import { ZoomableImage } from './ZoomableImage.tsx';
 
 /**
@@ -32,6 +37,13 @@ const overlayBtn = `${btn} bg-[var(--bg-raised)] shadow-lg`;
 
 /** Which of the three copy buttons is flashing. */
 type CopyKind = 'path' | 'text' | 'range';
+
+/** Registered under their own names — `CSS.highlights` is the page's, not a component's. */
+const HIGHLIGHT_NAME = 'file-comment';
+const CURRENT_NAME = 'file-comment-current';
+
+/** One empty array for every file with no remarks — see where it is read. */
+const NO_COMMENTS: FileCommentRecord[] = [];
 
 /**
  * The file a link in the conversation points at.
@@ -108,6 +120,57 @@ export function FileViewerPanel({
 
   const target = data?.text && fileRef.line && fileRef.line <= lines.length ? fileRef.line : null;
   const targetEnd = target ? Math.min(fileRef.endLine ?? target, lines.length) : null;
+
+  /**
+   * Remarks, and the half of the feature that lives here: this panel ADDS one
+   * and PAINTS the rest. Editing, removing and copying are the Files panel's,
+   * so that the list of what you have said exists in exactly one place.
+   *
+   * It follows from the panel rather than from the tree that the file was
+   * opened from: this viewer is reached from a path chip in a tool call, from a
+   * plan's file link, from the scratchpad. All of those become commentable, and
+   * that is the point rather than a side effect — the remark is about the file,
+   * not about how you got to it.
+   */
+  const queryClient = useQueryClient();
+  const relPath = data?.exists && !data.isDirectory ? relativeToProject(data.path, projectPath) : null;
+  const review = useQuery({
+    queryKey: ['fileReview', sessionId],
+    queryFn: () => api.fileReview(sessionId),
+    staleTime: 30_000,
+  });
+  // `NO_COMMENTS` and a memo rather than `?? []`: a fresh array every render
+  // re-runs the painting effect for a file that has no remarks at all.
+  const fileComments = useMemo(
+    () => (relPath ? (review.data?.comments.filter((c) => c.path === relPath) ?? NO_COMMENTS) : NO_COMMENTS),
+    [review.data, relPath],
+  );
+  const codeBox = useRef<HTMLDivElement>(null);
+  /**
+   * A remark is somebody's writing, so losing one has to be LOUD — the rule
+   * the plan panel already follows. Here there is no list to put the error
+   * above, so it goes in the toolbar, where the other thing that can fail
+   * (opening the file) already reports.
+   */
+  const [commentError, setCommentError] = useState('');
+  const write = useMutation({
+    mutationFn: (comment: Parameters<typeof api.saveFileComment>[1]) => api.saveFileComment(sessionId, comment),
+    onSuccess: () => {
+      setCommentError('');
+      return queryClient.invalidateQueries({ queryKey: ['fileReview', sessionId] });
+    },
+    onError: (err: unknown) => setCommentError(err instanceof Error ? err.message : String(err)),
+  });
+  const unanchored = useCommentHighlights(codeBox, {
+    comments: fileComments,
+    // Nothing here is "the one being read": the list those are picked from is
+    // in the panel, on the other side of the session.
+    current: null,
+    content: data?.text,
+    name: HIGHLIGHT_NAME,
+    currentName: CURRENT_NAME,
+    resolve: resolveFileAnchor,
+  });
 
   useEffect(() => setImageFailed(false), [refPath, data?.modifiedAt]);
 
@@ -282,6 +345,16 @@ export function FileViewerPanel({
           {copyLabel('path', '📋 Copy path')}
         </button>
         {openError && <span className="text-xs text-red-400">{openError}</span>}
+        {commentError && <span className="text-xs text-red-400">Comment not saved — {commentError}</span>}
+        {/* What this panel says about remarks, because the list of them is in
+            the Files panel and a reader looking at the code has no other way to
+            know one is there. Silent when there are none, which is most files. */}
+        {fileComments.length > 0 && (
+          <span className="ml-auto shrink-0 text-[11px] text-amber-300/80" title="Shown in the Files panel, where they can be edited, removed and copied">
+            {fileComments.length} comment{fileComments.length === 1 ? '' : 's'}
+            {unanchored.length > 0 ? ` · ${unanchored.length} no longer in this file` : ''}
+          </span>
+        )}
       </div>
 
       {data?.truncated && (
@@ -394,31 +467,66 @@ export function FileViewerPanel({
                     style={{ top: (target - 1) * LINE_H, height: LINE_H * ((targetEnd ?? target) - target + 1) }}
                   />
                 )}
-                {/* whitespace-pre, never pre-wrap: one wrapped line puts the gutter
-                    and the stripe out of step with every line below it. */}
-                <pre className="relative m-0 bg-transparent p-0 pl-3 whitespace-pre" style={{ lineHeight: `${LINE_H}px` }}>
-                  {html ? (
-                    // Markup produced by hljs from text we read, not from
-                    // anything a transcript wrote — hljs escapes its input.
-                    //
-                    // These are STYLES and not classes because `github-dark.css`
-                    // loads after Tailwind and `.hljs` wins every tie. Its
-                    // background covered the target stripe; its `padding: 1em`
-                    // then pushed the text 12 px below its own line number and
-                    // the stripe, so the highlight sat two thirds of a line off —
-                    // and only in files that got highlighted at all, which is
-                    // what made it look intermittent. Its `overflow-x: auto`
-                    // would make this a second scroll container inside the one
-                    // that already scrolls.
-                    <code
-                      className="hljs"
-                      style={{ background: 'transparent', padding: 0, overflow: 'visible' }}
-                      dangerouslySetInnerHTML={{ __html: html }}
-                    />
-                  ) : (
-                    <code className="bg-transparent p-0">{data.text}</code>
-                  )}
-                </pre>
+                {/* The code, and only the code, is what a remark can be made
+                    about: the layer's box is what offsets are counted in, and
+                    the gutter beside it — a SIBLING, deliberately — would put
+                    every one of them out by however many digits precede it.
+                    The stripe stays outside too, though it carries no text; it
+                    is positioned against the box above, which is unchanged. */}
+                <SelectionCommentLayer
+                  boxRef={codeBox}
+                  placeholder="What should change here?"
+                  onAdd={({ range, root, quote, text }) => {
+                    const text_ = data.text;
+                    if (!relPath || !text_) return;
+                    const off = offsetsOf(root, range);
+                    const start = off?.start ?? -1;
+                    const end = off?.end ?? -1;
+                    const line = start >= 0 ? lineAt(text_, start) : 1;
+                    write.mutate({
+                      id: newId(),
+                      path: relPath,
+                      quote,
+                      line,
+                      // The last character INSIDE the selection, not the one
+                      // after it: a drag that ends on a line break would
+                      // otherwise claim the line below, which it never touched.
+                      endLine: end > start ? lineAt(text_, end - 1) : line,
+                      text,
+                      start,
+                      end,
+                    });
+                  }}
+                >
+                  {/* whitespace-pre, never pre-wrap: one wrapped line puts the gutter
+                      and the stripe out of step with every line below it. */}
+                  <pre
+                    className="relative m-0 bg-transparent p-0 pl-3 whitespace-pre"
+                    style={{ lineHeight: `${LINE_H}px` }}
+                  >
+                    {html ? (
+                      // Markup produced by hljs from text we read, not from
+                      // anything a transcript wrote — hljs escapes its input.
+                      //
+                      // These are STYLES and not classes because `github-dark.css`
+                      // loads after Tailwind and `.hljs` wins every tie. Its
+                      // background covered the target stripe; its `padding: 1em`
+                      // then pushed the text 12 px below its own line number and
+                      // the stripe, so the highlight sat two thirds of a line off —
+                      // and only in files that got highlighted at all, which is
+                      // what made it look intermittent. Its `overflow-x: auto`
+                      // would make this a second scroll container inside the one
+                      // that already scrolls.
+                      <code
+                        className="hljs"
+                        style={{ background: 'transparent', padding: 0, overflow: 'visible' }}
+                        dangerouslySetInnerHTML={{ __html: html }}
+                      />
+                    ) : (
+                      <code className="bg-transparent p-0">{data.text}</code>
+                    )}
+                  </pre>
+                </SelectionCommentLayer>
               </div>
             </div>
           </div>
