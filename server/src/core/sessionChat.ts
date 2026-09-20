@@ -852,7 +852,8 @@ export class SessionChatService implements TranscriptWriter {
           log.info(`the claude process for ${sessionId} is pid ${String(p.pid)}`);
           return child as unknown as ReturnType<NonNullable<Parameters<typeof query>[0]['options']>['spawnClaudeCodeProcess'] & object>;
         },
-        canUseTool: (toolName, input, opts) => this.onCanUseTool(sessionId, toolName, input, opts.suggestions),
+        canUseTool: (toolName, input, opts) =>
+          this.onCanUseTool(sessionId, toolName, input, opts.suggestions, opts.toolUseID),
         stderr: (data: string) => {
           const text = data.trim();
           if (text) log.warn(`${sessionId} wrote to stderr: ${text.slice(0, 300)}`);
@@ -988,6 +989,13 @@ export class SessionChatService implements TranscriptWriter {
     input: Record<string, unknown>,
     /** What the CLI itself proposes on approval — preferred over anything built here. */
     suggestions: PermissionUpdate[] | undefined,
+    /**
+     * The call's own id. Carried because a plan's remarks are keyed on it: the
+     * panel and this dialog have to agree on WHICH plan is being commented on,
+     * and until this was threaded through, the only thing identifying a pending
+     * question was its clock.
+     */
+    toolUseId: string,
   ): Promise<PermissionResult> {
     const p = this.procs.get(sessionId);
     if (!p) return { behavior: 'deny' as const, message: 'The session is gone.' };
@@ -996,6 +1004,7 @@ export class SessionChatService implements TranscriptWriter {
     const plan = toolName === 'ExitPlanMode' ? await this.planFor(sessionId, input) : null;
     const question: ChatQuestion = {
       toolName,
+      toolUseId,
       questions,
       input: questions ? undefined : input,
       askedAt: new Date().toISOString(),

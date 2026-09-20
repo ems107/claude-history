@@ -349,6 +349,73 @@ export interface StarredMessage {
   project: string;
 }
 
+/**
+ * One remark filed against a passage of a plan, as `userdata.json` keeps it.
+ *
+ * The web's own `PlanComment` is this without the clocks — the shape the
+ * composer has always held in memory — and the two must stay assignable, which
+ * is why the fields are named identically rather than tidied on the way in.
+ *
+ * `quote` is the ANCHOR and `start`/`end` only paint it: a selection crossing
+ * two blocks reads back with newlines the rendered text does not have, so
+ * neither can be recovered from the other. `-1` is a selection whose ends were
+ * not both in text nodes — the remark stands, it just goes unpainted.
+ */
+export interface PlanCommentRecord {
+  id: string;
+  quote: string;
+  /** The nearest heading above the passage — what tells two similar quotes apart. */
+  heading: string;
+  text: string;
+  start: number;
+  end: number;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/**
+ * The remarks somebody left on ONE plan — the fourth kind of local override,
+ * after renames, pins and stars, and the second that keeps content.
+ *
+ * ## The key is the plan's TEXT, and that is the load-bearing decision
+ *
+ * `ExitPlanMode` is the call that SUBMITS a plan — but **a CLI in a terminal
+ * does not persist that line until the dialog is ANSWERED**. Measured on a live
+ * session with the approval prompt on screen: zero `ExitPlanMode` tool calls in
+ * its 94 transcript lines, while `~/.claude/plans/<slug>.md` had been written
+ * four seconds earlier. The one moment worth commenting on is the one moment
+ * the call's id does not exist, so keying on it put the feature exactly where
+ * it could not be used.
+ *
+ * The TEXT spans both places. The file and the `input.plan` that later lands in
+ * the transcript are the same bytes — 40 of 40 archived plans here hash
+ * identically to the file still on disk — so a stack filed while the dialog was
+ * up IS the stack on that plan once it becomes history, with nothing to migrate
+ * and nothing to reconcile. A rejection still starts a clean stack on its own,
+ * because Claude submits different text rather than editing the old call.
+ *
+ * (The CLI is not consistent about WHEN it flushes that line: in one measured
+ * session the first plan's call appeared only after it was answered and the
+ * second appeared while its dialog was still up. Nothing here depends on
+ * which, which is the point of hashing the text.)
+ *
+ * ## Why no copy of the plan, when a star keeps one
+ *
+ * Because it cannot drift under a reader. A submitted plan is frozen in an
+ * append-only line, and the file is rewritten only while Claude is WRITING it
+ * — a state the panel can see (`busy`) and where it refuses to let anybody
+ * comment. While the dialog is up the CLI is blocked and the bytes cannot move.
+ */
+export interface PlanReviewRecord {
+  sessionId: string;
+  /** Which plan: a hash of its text, minted by the web's `planKeyOf`. */
+  planKey: string;
+  comments: PlanCommentRecord[];
+  updatedAt: string;
+  /** When the stack left, by either exit. Null while it is still unsent. */
+  sentAt: string | null;
+}
+
 export interface ProjectInfo {
   key: string; // normalized path
   path: string; // display path

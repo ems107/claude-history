@@ -1,5 +1,7 @@
 import {
   askingFor,
+  LIVE_BUSY,
+  LIVE_WAITING,
   MAX_STAT_PATHS,
   messageTally,
   type ChatPermissionMode,
@@ -51,6 +53,8 @@ import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
+import { PlanPanel } from '../components/viewer/PlanPanel.tsx';
+import { collectPlans } from '../lib/plans.ts';
 import { ScratchpadPanel } from '../components/viewer/ScratchpadPanel.tsx';
 import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
@@ -689,6 +693,54 @@ export function SessionViewPage() {
     staleTime: 30_000,
   });
   /**
+   * The plans, off the turns the page already holds — no request, because the
+   * text is in `['session', id]` for the conversation to draw.
+   */
+  const plans = useMemo(() => (session ? collectPlans(session.turns) : []), [session]);
+  /**
+   * The remarks left on them. Eager for the `mentioned` panel's reason: the
+   * number belongs on the rail button before anything is opened, and a stack
+   * left unfinished is precisely what a reader needs telling about.
+   */
+  const planReviews = useQuery({
+    queryKey: ['planReviews', id],
+    queryFn: () => api.planReviews(id),
+    enabled: plans.length > 0,
+    staleTime: 30_000,
+  });
+  const planComments = (planReviews.data ?? []).reduce((n, r) => n + r.comments.length, 0);
+  /**
+   * The plan Claude has not submitted yet. Asked for here rather than inside
+   * the panel because whether the panel EXISTS depends on it: a session that is
+   * still planning has no `ExitPlanMode` line anywhere, and the file on disk is
+   * the only thing that says it is writing one. Same query key the panel reads,
+   * so the two share one request.
+   */
+  /**
+   * The plan file, asked for HERE rather than only inside the panel, because
+   * whether the panel exists at all depends on it — and polled while the CLI is
+   * alive for the same reason.
+   *
+   * A terminal writes this file and then blocks on its own dialog without
+   * persisting the `ExitPlanMode` line, so at the one moment the panel is
+   * wanted the transcript says nothing and the only news comes from the disk.
+   * Asking once on mount is how the rail button failed to appear at all: the
+   * page had been open since before there was a plan.
+   */
+  const planFile = useQuery({
+    queryKey: ['planFile', id],
+    queryFn: () => api.planFile(id),
+    staleTime: 5_000,
+    refetchInterval: live.data?.some((l) => l.sessionId === id) ? 5_000 : false,
+  });
+  /**
+   * Whether the panel exists at all. The remarks count too, and not as a
+   * nicety: a stack whose plan has gone — commented on while Claude was
+   * rewriting it — is still somebody's writing, and without this there would be
+   * no door left to read it through, let alone discard it.
+   */
+  const planCount = plans.length + (planFile.data?.plan?.trim() ? 1 : 0) + (planComments > 0 ? 1 : 0);
+  /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
    * For a CHIP on the row and not to hide it. Dropping a mention because another
@@ -776,6 +828,8 @@ export function SessionViewPage() {
    * Escape unwind just below.
    */
   const inspector = useInspector({
+    planCount,
+    planComments,
     changed: session?.fileChanges.length ?? 0,
     sent: sessionFiles.total,
     mentionCandidates: mentionCandidates.length,
@@ -971,6 +1025,24 @@ export function SessionViewPage() {
    */
   const [now, setNow] = useState(() => Date.now());
   const sessionAlive = liveInfo !== null;
+  /**
+   * What the CLI is doing, for the Plan panel — and the only thing that tells a
+   * plan being WRITTEN from one being put in front of you.
+   *
+   * There is nothing finer available: `waitingFor` is the CLI's own word and
+   * reads `"permission prompt"` for every dialog it has no name for, plan
+   * approval included. In plan mode there is little else it can be asking about
+   * — the plan file is the only thing Claude may edit — and the cost of being
+   * wrong is offering to comment on a plan a moment early.
+   */
+  const liveStatus: 'busy' | 'waiting' | null =
+    liveInfo?.status === LIVE_BUSY ? 'busy' : liveInfo?.status === LIVE_WAITING ? 'waiting' : null;
+  /**
+   * Whether the stack can be SENT rather than copied, which needs a question
+   * this app is actually holding open — only ever the composer.
+   */
+  const canSendPlan =
+    chat.data?.state === 'asking' && chat.data.question?.toolName === 'ExitPlanMode' && !chat.data.blockedReason;
   // Only where an answer could still change: an agent that has already reported
   // back is settled, and a session with nothing outstanding needs no clock at all.
   const mayHaveRunning =
@@ -1174,6 +1246,22 @@ export function SessionViewPage() {
     switch (inspector.open) {
       case 'tokens':
         return <TokenPanel summary={session.summary} turns={session.turns} />;
+      case 'plan':
+        return (
+          <PlanPanel
+            sessionId={id}
+            plans={plans}
+            planFile={planFile.data ?? null}
+            composerPlan={chat.data?.question?.plan ?? null}
+            liveStatus={liveStatus}
+            canSend={canSendPlan}
+            onSend={async (note) => {
+              await api.chatAnswer(id, {}, { decision: 'keep-planning', note });
+              await queryClient.invalidateQueries({ queryKey: ['chat', id] });
+            }}
+            onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
+          />
+        );
       case 'changed':
         return <FileChangesPanel fileChanges={session.fileChanges} />;
       case 'sent':

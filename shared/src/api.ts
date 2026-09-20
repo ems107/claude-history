@@ -4,6 +4,7 @@ import type { GitFetchMode, GitMergeMode, GitPullMode, GitPushMode } from './git
 import type {
   LiveInfo,
   PlanRecord,
+  PlanReviewRecord,
   ProjectGroup,
   ProjectInfo,
   SessionDetail,
@@ -682,6 +683,35 @@ export interface StarUpdateResponse {
    * a removal happened that did not. The app always sends the canonical uuid.
    */
   removed: boolean;
+}
+
+/** Every plan of one session that somebody has left remarks on. */
+export type PlanReviewsResponse = PlanReviewRecord[];
+
+export interface PlanReviewUpdateResponse {
+  ok: boolean;
+  /** The stack as stored, or null once the last remark on it was dropped. */
+  review: PlanReviewRecord | null;
+  /**
+   * Whether anything was actually dropped. Idempotent for the star's reason: a
+   * second DELETE of the same remark — two tabs, or a retry — is not an error
+   * and must not claim a removal that did not happen.
+   */
+  removed: boolean;
+}
+
+/**
+ * The plan as `~/.claude/plans/<slug>.md` holds it.
+ *
+ * Not a lesser copy: while a terminal has the approval dialog up this is the
+ * ONLY place the plan exists, because the CLI does not persist its
+ * `ExitPlanMode` line until that dialog is answered. It is the same bytes that
+ * later land in `input.plan`, which is what lets remarks written now survive
+ * the plan becoming history.
+ */
+export interface PlanFileResponse {
+  plan: string | null;
+  filePath: string | null;
 }
 
 export interface ResumeResponse {
@@ -1462,6 +1492,15 @@ export interface ChatQuestionItem {
  */
 export interface ChatQuestion {
   toolName: string;
+  /**
+   * The call's own id, from the SDK's `toolUseID`.
+   *
+   * What it is for is agreement: remarks on a plan are stored under the
+   * `ExitPlanMode` call they are about, so the dialog and the Plan panel have
+   * to name the same plan or they end up holding two stacks. Before this the
+   * only thing identifying a pending question was `askedAt`.
+   */
+  toolUseId: string;
   questions: ChatQuestionItem[] | null;
   /** The tool's own input, when this is a permission rather than a question. */
   input?: unknown;
@@ -2316,6 +2355,14 @@ export type ServerEvent =
    * nothing in it.
    */
   | { type: 'stars-changed' }
+  /**
+   * A remark on a plan was written, edited or dropped — or a stack was sent.
+   * Its own event for the star's reason, and it is what makes the feature work
+   * across devices at all: a stack written on the desktop has to appear on the
+   * phone reading the same session, and re-parsing the transcript to learn that
+   * would be the one cost this panel cannot pay while somebody types into it.
+   */
+  | { type: 'plan-reviews-changed'; sessionId: string }
   /**
    * Settings were saved. Its own event because a window has no other way to
    * hear about a save it did not make: `['settings']` is mounted for the life of

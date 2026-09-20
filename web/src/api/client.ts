@@ -23,6 +23,9 @@ import type { McpLogsResponse,
   LogsResponse,
   MetaResponse,
   NotificationsResponse,
+  PlanFileResponse,
+  PlanReviewsResponse,
+  PlanReviewUpdateResponse,
   PlansResponse,
   PriceTable,
   ProjectsResponse,
@@ -261,6 +264,50 @@ export const api = {
       body: JSON.stringify({ starred }),
     });
     const body = (await res.json().catch(() => ({}))) as StarUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /**
+   * The remarks left on this session's plans. Costs no parse: a stack is keyed
+   * on the `ExitPlanMode` call's id, so the store answers out of userdata alone.
+   */
+  planReviews: (id: string) => getJson<PlanReviewsResponse>(`/api/sessions/${id}/plan-reviews`),
+  /** The plan Claude is still writing, before it has submitted anything. */
+  planFile: (id: string) => getJson<PlanFileResponse>(`/api/sessions/${id}/plan-file`),
+  /** Write a remark, or replace the one already under that id. */
+  savePlanComment: async (
+    id: string,
+    planKey: string,
+    comment: { id: string; quote: string; heading: string; text: string; start: number; end: number },
+  ) => {
+    const res = await fetch(`/api/sessions/${id}/plan-reviews/${planKey}/comments/${comment.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment),
+    });
+    const body = (await res.json().catch(() => ({}))) as PlanReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  removePlanComment: async (id: string, planKey: string, commentId: string) => {
+    const res = await fetch(`/api/sessions/${id}/plan-reviews/${planKey}/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+    const body = (await res.json().catch(() => ({}))) as PlanReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** Clear all — one request, so N remarks cannot race each other's writes. */
+  clearPlanReview: async (id: string, planKey: string) => {
+    const res = await fetch(`/api/sessions/${id}/plan-reviews/${planKey}`, { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as PlanReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** The stack left, by either exit — sent to Claude, or copied for a terminal. */
+  markPlanReviewSent: async (id: string, planKey: string) => {
+    const res = await fetch(`/api/sessions/${id}/plan-reviews/${planKey}/sent`, { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as PlanReviewUpdateResponse & { error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },

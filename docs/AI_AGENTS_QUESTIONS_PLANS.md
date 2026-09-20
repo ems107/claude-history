@@ -1,6 +1,6 @@
 # Subagents, offloaded output, questions and plans
 
-**Load this when:** you touch subagent parsing or the ⑂ panel, `AskUserQuestion` answers, plan mode, or the `tool-results/` files — `parser.ts`, `lib/subagents.ts`, `AnsweredQuestion.tsx`, `PlanCard`, `lib/plans.ts`, `routes/subagents.ts`, `routes/plans.ts`, and the composer half in [AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md).
+**Load this when:** you touch subagent parsing or the ⑂ panel, `AskUserQuestion` answers, plan mode, or the `tool-results/` files — `parser.ts`, `lib/subagents.ts`, `AnsweredQuestion.tsx`, `PlanCard`, `PlanPanel`, `PlanReview`, `lib/plans.ts`, `lib/planAnchors.ts`, `routes/subagents.ts`, `routes/plans.ts`, `routes/planReviews.ts`, and the composer half in [AI_RUNNING_CLAUDE.md](AI_RUNNING_CLAUDE.md).
 
 Line-level format is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) (task notifications especially); their cost in [AI_COST_AND_CONTEXT.md](AI_COST_AND_CONTEXT.md); how the panel draws all this in [AI_VIEWER.md](AI_VIEWER.md).
 
@@ -17,6 +17,7 @@ Line-level format is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) (task notificatio
 - **An agent's transcript is refreshed by the `agents` list of `sessions-changed`** — its own query key, which nothing else on the page reaches.
 - **An agent OUTLIVES the turn that launched it**, so `running` may never be read off the session being busy: it is a report that has not come back, a CLI still alive, and a recent write.
 - **A plan's verdict is the TYPE of `toolUseResult`**, not its wording.
+- **A terminal does not write the `ExitPlanMode` line until the dialog is ANSWERED** — so while the plan is on screen it exists only as `~/.claude/plans/<slug>.md`. Remarks are keyed on the plan's TEXT for that reason, never on the call's id.
 - **The `plans/<slug>.md` file is a working copy that gets overwritten** — the transcript is the archive.
 
 ## Subagents
@@ -147,6 +148,93 @@ Read out of the installed `anthropic.claude-code` extension and the CLI binary, 
 **They leave as prose either way**: `[Re: "<selectedText>"] <comment>` joined by newlines, into `userFeedback` on approval and behind `Comments on the plan:` in the rejection message. On the rejection side that reaches the transcript; **on the approval side it goes nowhere** — the approval tool_result is a fixed template ("User has approved your plan. You can now start coding…"), and `userComments` does not appear in the CLI binary at all.
 
 **The one thing the CLI really does read back from an approval is the PLAN ITSELF.** `ExitPlanMode`'s call takes `plan` from its input; when it is there the CLI writes it to `plans/<slug>.md` and sets `planWasEdited`, and the tool_result echoes it under `## Approved Plan (edited by user)` instead of `## Approved Plan` — the schema calls that "the user edited the plan (CCR web UI or Ctrl+G)". **Nothing on this machine has ever done it**: 0 of the 33 archived calls carry `planWasEdited`, and every plan submitted from this app so far was sent back rather than approved, so this is read from the binary and not yet from a transcript.
+
+### Reviewing a plan here: the panel and the store
+
+**The reviewer is `PlanReview` and it is older than the panel.** Select a passage
+and a *Comment* button appears; the remark is filed against the quote and the
+nearest heading above it, never a line number — the same anchor the IDE panel
+picks, for the same reason. Passages are painted through the CSS Custom
+Highlight API under names of this feature's own (`plan-comment`,
+`plan-comment-current`), so the find bar's passes cannot delete the set.
+
+**What was added is memory and reach.** The stack lived in `QuestionPanel`'s
+`useState`, which meant it existed only while the composer held a dialog and a
+refresh emptied it. It now lives in `userdata.json` as `PlanReviewRecord`, keyed
+`<sessionId>:<toolUseId>`, and both doors read it — the composer's dialog and
+the rail's `Plan` panel — so the two cannot disagree.
+
+**A plan lives in two places and the panel must not care which.** It is in the
+transcript once its `ExitPlanMode` call has been answered, and in
+`~/.claude/plans/<slug>.md` from the moment Claude writes it.
+
+**The trap is that a terminal writes the line LAST.** Measured on a live session
+with the approval prompt on screen: **zero** `ExitPlanMode` tool calls in its 94
+transcript lines, and the plan file written four seconds before the CLI went
+`waiting`. The corpus cannot show this — every archived plan was answered, which
+is exactly why it has a line — and the composer cannot either, because the SDK
+writes the line at submission. Built on the call's id, the panel had nothing to
+show at the only moment it was wanted. (The CLI is not even consistent: in one
+session the first plan's line appeared only after the answer and the second
+appeared while its dialog was still up.)
+
+**So a row is keyed on the plan's TEXT** (`planKeyOf`, FNV-1a with the length in
+front, trimming INSIDE — the file ends with a newline `input.plan` does not, and
+trimming at one call site only drew 906 against 907 as two rows). The file and
+the transcript are the same bytes — 40 of 40 archived plans hash identically to
+the file still on disk — so the two collapse into one row the moment they agree,
+and remarks written while the dialog was up are still there when the plan
+becomes history. Verified end to end: a stack filed against the file showed `2 ✎`
+against the archived plan afterwards, with nothing migrated.
+
+**The record still keeps no copy of the plan**, because it cannot drift under a
+reader: a submitted plan is frozen in an append-only line, and the file is
+rewritten only while Claude is WRITING it. That state is visible (`busy`) and
+the panel shows the plan there and refuses to let anybody comment on it; while
+the dialog is up the CLI is blocked. A stack whose plan has gone anyway is
+listed at the foot of the panel rather than dropped — the remark carries its own
+quote, so it is still readable.
+
+- **A rejection does not mutate a plan, it adds one.** Claude submits again with
+  a new `toolUseId`, so the new plan arrives with an empty stack and the old
+  one's remarks stay beside the plan they were about. Nothing has to be cleared.
+- **`ChatQuestion.toolUseId`** is carried anyway (the SDK hands `canUseTool` a
+  `toolUseID` and this code used to keep only `suggestions`), as the fallback
+  for a question whose plan text never arrived.
+- **Which plan is on screen is NOT read off the composer's question** — that
+  would answer "none" for the mode this app ships with. It is the composer's
+  plan when there is one, and otherwise the plan file while the CLI is
+  `waiting`. There is nothing finer: `waitingFor` is the CLI's own word and
+  reads `"permission prompt"` for every dialog it has no name for.
+- **The plan file is refetched on `live-changed`**, which is the only event that
+  fires on a busy/waiting flip — and that flip is when a plan appears. Polling
+  alone was not enough: TanStack pauses `refetchInterval` while the tab is
+  hidden, so a window left in the background never saw the plan at all.
+- **Only a refusal can carry remarks**, so the panel's exits are *send* (the
+  composer is holding the question — `chatAnswer` with `keep-planning`) and
+  *copy* (anything else, pasted into the CLI's own box). Approving with remarks
+  pending is refused rather than allowed to drop them.
+- **`commentsFeedback` lives beside `parsePlanFeedback`** in `web/src/lib/plans.ts`
+  — writer and reader of the same wire format, one home, and checkable without a
+  browser.
+- **The reader may not cut on a newline, because the newlines do not survive.**
+  A stack pasted into the CLI's own box goes through a pseudo-terminal, where a
+  pasted line break arrives as **``** — measured on a real refusal:
+  `"Comments on the plan:[Re: …] saludo_y_hora[Re: …] el fichero de readme"`.
+  Cutting on `
+` found one entry, so the card said *1 comment* and printed the
+  second's raw `[Re: "…"]` inside the first's text. Carriage returns are
+  normalised and the split stays on the LINE — cutting at every marker fixes the
+  same thing and eats a remark that merely quotes the format. Claude itself was
+  unaffected: the `` version was acted on correctly, both remarks included.
+- **The offsets get a safety net, not a subsystem** (`web/src/lib/planAnchors.ts`).
+  A submitted plan cannot drift, but the offsets index the RENDERED markdown,
+  which is this app's output: so the quote is verified rather than trusted, and a
+  passage that cannot be found is listed and marked instead of painted over the
+  wrong sentence.
+- **Its event is `plan-reviews-changed`, carrying the session id**, and it never
+  invalidates `['session', id]` — the star's rule, and what lets a stack written
+  on the desktop appear on the phone mid-review.
 
 A plan is also the one piece of tool input that IS indexed — see [AI_SEARCH.md](AI_SEARCH.md).
 

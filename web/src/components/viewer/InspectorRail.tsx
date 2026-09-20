@@ -28,6 +28,18 @@ export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> =
       <path d="M13 13V9.5" />
     </svg>
   ),
+  // A checklist with its first line ticked: what was proposed, and the one
+  // thing that happened to it. Not a document outline — that is every panel.
+  plan: () => (
+    <svg {...base}>
+      <path d="m2.5 4.1 1.4 1.4 2.4-2.6" />
+      <path d="M8.8 4.3h4.7" />
+      <path d="M2.8 8h3" />
+      <path d="M8.8 8h4.7" />
+      <path d="M2.8 11.8h3" />
+      <path d="M8.8 11.8h4.7" />
+    </svg>
+  ),
   changed: () => (
     <svg {...base}>
       <path d="M11.1 2.6a1.6 1.6 0 0 1 2.3 2.3L5.7 12.5l-3.1.8.8-3.1Z" />
