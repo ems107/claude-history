@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileRefChip } from './FileRefLink.tsx';
 import { Markdown } from './Markdown.tsx';
-import { type PlanComment, PlanReview, commentsFeedback } from './PlanReview.tsx';
+import { commentsFeedback } from '../../lib/plans.ts';
+import { type PlanComment, PlanReview } from './PlanReview.tsx';
 import { Sketch } from './Sketch.tsx';
 
 /**

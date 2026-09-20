@@ -346,6 +346,14 @@ body {
   color: var(--text);
 }
 
+/* The one the reader is standing on, as `find-current` is to `find-match`: a
+   stack of nine passages is unreadable if they all look the same, and picking a
+   comment out of the list has to say which sentence it was about. */
+::highlight(plan-comment-current) {
+  background-color: color-mix(in srgb, #f59e0b 70%, transparent);
+  color: #fff;
+}
+
 /* The message or tool call the reader has selected — by clicking it, or by
    following a link that landed on it. It is not the find bar's: the bar reads
    it, and the ring is there whether anything is searching or not.

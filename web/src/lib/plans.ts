@@ -97,3 +97,62 @@ export function parsePlan(block: ToolBlockType): ParsedPlan | null {
     feedback: outcome?.feedback ?? null,
   };
 }
+
+/** One plan of a session, as the Plan panel lists it. */
+export interface SessionPlan extends ParsedPlan {
+  /** The `ExitPlanMode` call — what a stack of remarks is keyed on. */
+  toolUseId: string;
+  /** The assistant message that made the call, for the jump into the conversation. */
+  uuid: string;
+  /** When Claude submitted it. */
+  askedAt: string | null;
+}
+
+/**
+ * Every plan this session submitted, newest first.
+ *
+ * Read off the turns the page already holds rather than asked for: the text is
+ * in `['session', id]` because the conversation draws it, so the panel costs no
+ * request at all. A session can submit several — 21 of the 82 here did, one of
+ * them seven times — which is the whole reason the panel needs a list.
+ */
+export function collectPlans(turns: { items: { uuid: string; blocks: ContentBlock[] }[] }[]): SessionPlan[] {
+  const out: SessionPlan[] = [];
+  for (const turn of turns) {
+    for (const item of turn.items) {
+      for (const block of item.blocks) {
+        if (block.kind !== 'tool') continue;
+        const parsed = parsePlan(block);
+        if (!parsed) continue;
+        out.push({ ...parsed, toolUseId: block.toolUseId, uuid: item.uuid, askedAt: block.timestamp });
+      }
+    }
+  }
+  return out.reverse();
+}
+
+/** How much of a quote is repeated back to Claude before it is cut. */
+export const QUOTE_MAX = 240;
+
+/**
+ * The comments as the sentence Claude is given, in Claude Code's own shape —
+ * the inverse of `parsePlanFeedback` above, and its neighbour on purpose.
+ *
+ * It goes out as the *keep planning* message, which is the one channel that is
+ * certainly read: it lands in the transcript as `userFeedback` and the plan card
+ * then prints it back under "the user said". The approval side has no field for
+ * it at all, which is why remarks travel only with a refusal.
+ *
+ * Nothing at either end PARSES this shape — not the CLI, not the model — so it
+ * is a convention rather than a protocol, and it reads the same whether this
+ * app sent it or somebody pasted it into a terminal by hand.
+ */
+export function commentsFeedback(comments: { quote: string; heading: string; text: string }[]): string {
+  if (comments.length === 0) return '';
+  const lines = comments.map((c) => {
+    const quote = c.quote.length > QUOTE_MAX ? `${c.quote.slice(0, QUOTE_MAX)}…` : c.quote;
+    const where = c.heading ? ` · under "${c.heading}"` : '';
+    return `[Re: "${quote}"${where}] ${c.text}`;
+  });
+  return `Comments on the plan:\n${lines.join('\n')}`;
+}

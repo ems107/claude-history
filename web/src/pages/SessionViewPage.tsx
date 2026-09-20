@@ -51,6 +51,8 @@ import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
+import { PlanPanel } from '../components/viewer/PlanPanel.tsx';
+import { collectPlans } from '../lib/plans.ts';
 import { ScratchpadPanel } from '../components/viewer/ScratchpadPanel.tsx';
 import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
 import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
@@ -689,6 +691,36 @@ export function SessionViewPage() {
     staleTime: 30_000,
   });
   /**
+   * The plans, off the turns the page already holds — no request, because the
+   * text is in `['session', id]` for the conversation to draw.
+   */
+  const plans = useMemo(() => (session ? collectPlans(session.turns) : []), [session]);
+  /**
+   * The remarks left on them. Eager for the `mentioned` panel's reason: the
+   * number belongs on the rail button before anything is opened, and a stack
+   * left unfinished is precisely what a reader needs telling about.
+   */
+  const planReviews = useQuery({
+    queryKey: ['planReviews', id],
+    queryFn: () => api.planReviews(id),
+    enabled: plans.length > 0,
+    staleTime: 30_000,
+  });
+  const planComments = (planReviews.data ?? []).reduce((n, r) => n + r.comments.length, 0);
+  /**
+   * The plan Claude has not submitted yet. Asked for here rather than inside
+   * the panel because whether the panel EXISTS depends on it: a session that is
+   * still planning has no `ExitPlanMode` line anywhere, and the file on disk is
+   * the only thing that says it is writing one. Same query key the panel reads,
+   * so the two share one request.
+   */
+  const planDraft = useQuery({
+    queryKey: ['planDraft', id],
+    queryFn: () => api.planDraft(id),
+    staleTime: 15_000,
+  });
+  const planCount = plans.length + (planDraft.data?.plan?.trim() ? 1 : 0);
+  /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
    * For a CHIP on the row and not to hide it. Dropping a mention because another
@@ -776,6 +808,8 @@ export function SessionViewPage() {
    * Escape unwind just below.
    */
   const inspector = useInspector({
+    planCount,
+    planComments,
     changed: session?.fileChanges.length ?? 0,
     sent: sessionFiles.total,
     mentionCandidates: mentionCandidates.length,
@@ -971,6 +1005,26 @@ export function SessionViewPage() {
    */
   const [now, setNow] = useState(() => Date.now());
   const sessionAlive = liveInfo !== null;
+  /**
+   * Which plan is on screen right now — in EITHER door.
+   *
+   * A plan with no result is one nobody has answered, and `plans` is newest
+   * first, so the first such one is it. The liveness test is what makes that
+   * true rather than merely recorded: the two pending plans in this corpus
+   * belong to sessions abandoned at the dialog months ago.
+   *
+   * Deliberately NOT read off the composer's pending question, which would be
+   * the obvious source and is the wrong one: an embedded terminal draws the
+   * CLI's own dialog inside the pseudo-terminal and exposes nothing to read, so
+   * that test would answer "nothing in play" for the mode this app ships with.
+   */
+  const planInPlay = sessionAlive ? (plans.find((p) => p.status === 'pending')?.toolUseId ?? null) : null;
+  /**
+   * Whether the stack can be SENT rather than copied, which needs a question
+   * this app is actually holding open — only ever the composer.
+   */
+  const canSendPlan =
+    chat.data?.state === 'asking' && chat.data.question?.toolName === 'ExitPlanMode' && !chat.data.blockedReason;
   // Only where an answer could still change: an agent that has already reported
   // back is settled, and a session with nothing outstanding needs no clock at all.
   const mayHaveRunning =
@@ -1174,6 +1228,21 @@ export function SessionViewPage() {
     switch (inspector.open) {
       case 'tokens':
         return <TokenPanel summary={session.summary} turns={session.turns} />;
+      case 'plan':
+        return (
+          <PlanPanel
+            sessionId={id}
+            plans={plans}
+            pendingPlanId={planInPlay}
+            canSend={canSendPlan}
+            sendBlockedWhy={chat.data?.blockedReason ?? null}
+            onSend={async (note) => {
+              await api.chatAnswer(id, {}, { decision: 'keep-planning', note });
+              await queryClient.invalidateQueries({ queryKey: ['chat', id] });
+            }}
+            onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
+          />
+        );
       case 'changed':
         return <FileChangesPanel fileChanges={session.fileChanges} />;
       case 'sent':

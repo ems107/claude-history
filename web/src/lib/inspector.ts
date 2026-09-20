@@ -29,7 +29,16 @@ import { INSPECTOR_MAX, INSPECTOR_MIN, trackPointer } from './sideColumns.ts';
 const WIDTH_KEY = 'inspectorWidth';
 const INSPECTOR_DEFAULT = 400;
 
-export type PanelKey = 'tokens' | 'changed' | 'sent' | 'mentioned' | 'scratchpad' | 'agents' | 'mcp' | 'lineage';
+export type PanelKey =
+  | 'tokens'
+  | 'plan'
+  | 'changed'
+  | 'sent'
+  | 'mentioned'
+  | 'scratchpad'
+  | 'agents'
+  | 'mcp'
+  | 'lineage';
 
 export interface PanelItem {
   key: PanelKey;
@@ -72,6 +81,8 @@ function readWidth(): number {
 }
 
 export function useInspector({
+  planCount,
+  planComments,
   changed,
   sent,
   mentionCandidates,
@@ -82,6 +93,14 @@ export function useInspector({
   hasLineage,
   agents,
 }: {
+  /**
+   * How many plans this session submitted, plus the draft it has not submitted
+   * yet. Whether the item exists at all, and a transcript fact except for that
+   * last one — which is a file on disk and can appear while you are looking.
+   */
+  planCount: number;
+  /** Remarks left on them, which is the number worth carrying on the button. */
+  planComments: number;
   changed: number;
   sent: number;
   /** How many paths were named at all: whether the panel exists is a transcript fact. */
@@ -206,6 +225,23 @@ export function useInspector({
         alert: 0,
         hint: 'What this session spent, per model, and how its context grew',
       },
+      // Before the file panels on purpose: a plan is what the session DECIDED,
+      // and the three below it are what it then touched. `count` is the remarks
+      // rather than the plans, because the plans are why the button is there
+      // and the remarks are the thing you might have left unfinished.
+      planCount > 0
+        ? {
+            key: 'plan',
+            short: 'Plan',
+            title: 'Plans',
+            count: planComments || null,
+            // Nothing here can be WRONG: a remark whose passage cannot be found
+            // is marked inside the panel, and with the plan frozen in an
+            // append-only transcript that cannot happen in the first place.
+            alert: 0,
+            hint: 'The plans this session submitted, and the remarks you left on each — to send back, or to copy into the terminal holding it',
+          }
+        : null,
       // The words are the feature and they are not interchangeable: one lists
       // what the session CHANGED, one what it HANDED OVER, one what it only
       // TALKED about, and none of the three is another's superset.
@@ -299,7 +335,18 @@ export function useInspector({
         : null,
     ];
     return all.filter((p): p is PanelItem => p !== null);
-  }, [changed, sent, mentionCandidates, mentionCount, scratchpadCount, agentCount, mcp, hasLineage]);
+  }, [
+    planCount,
+    planComments,
+    changed,
+    sent,
+    mentionCandidates,
+    mentionCount,
+    scratchpadCount,
+    agentCount,
+    mcp,
+    hasLineage,
+  ]);
 
   return useMemo(
     // A panel that stopped existing cannot stay open: a session whose last
