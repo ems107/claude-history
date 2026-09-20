@@ -13,12 +13,17 @@ const base = {
 };
 
 /**
- * Eight shapes that have to be told apart at 16 px, so each one says what its
+ * Nine shapes that have to be told apart at 16 px, so each one says what its
  * panel is ABOUT rather than what kind of thing it is: three bars for the
- * ledger, a pencil for what was edited, an arrow leaving a tray for what was
- * handed over, a link for a path merely named, an open folder for the
- * workspace it wrote in, a fork for the agents, a plug for what was plugged in,
- * a graph for the lineage. Same stroke and same grid as `components/icons.tsx`.
+ * ledger, a checklist for the plan, a tree of files for the project it ran in,
+ * a pencil for what was edited, an arrow leaving a tray for what was handed
+ * over, a link for a path merely named, an open folder for the workspace it
+ * wrote in, a fork for the agents, a plug for what was plugged in, a graph for
+ * the lineage. Same stroke and same grid as `components/icons.tsx`.
+ *
+ * Two of them are folders and they must not be confused: `scratchpad` is an
+ * open one, the workspace the session wrote into, and `files` is a TREE —
+ * branches with leaves, because that panel is something you walk.
  */
 export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> = {
   tokens: () => (
@@ -38,6 +43,18 @@ export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> =
       <path d="M8.8 8h4.7" />
       <path d="M2.8 11.8h3" />
       <path d="M8.8 11.8h4.7" />
+    </svg>
+  ),
+  // A tree: a trunk down the left with two branches off it, each ending in a
+  // leaf. Not a folder — the scratchpad already has one, and at 16 px two
+  // folders are one shape.
+  files: () => (
+    <svg {...base}>
+      <path d="M3.5 2.5v9.5" />
+      <path d="M3.5 5.5h3.2" />
+      <path d="M3.5 9.5h3.2" />
+      <rect x="7.2" y="3.9" width="5.6" height="3.2" rx="0.8" />
+      <rect x="7.2" y="7.9" width="5.6" height="3.2" rx="0.8" />
     </svg>
   ),
   changed: () => (

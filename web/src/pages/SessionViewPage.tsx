@@ -53,6 +53,7 @@ import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
+import { FilesPanel } from '../components/viewer/FilesPanel.tsx';
 import { PlanPanel } from '../components/viewer/PlanPanel.tsx';
 import { collectPlans } from '../lib/plans.ts';
 import { ScratchpadPanel } from '../components/viewer/ScratchpadPanel.tsx';
@@ -751,6 +752,35 @@ export function SessionViewPage() {
    */
   const planCount = plans.length + (planFile.data?.plan?.trim() ? 1 : 0) + (planComments > 0 ? 1 : 0);
   /**
+   * The project's own folder, read here rather than inside the Files panel
+   * because whether that panel EXISTS depends on the answer — the scratchpad's
+   * reason exactly, and one cheap `readdir` per session view.
+   *
+   * It is a real question with a real NO: a project can be moved or deleted,
+   * and a session whose transcript never recorded a cwd has no path at all —
+   * `projectPath` falls back to the encoded directory name, which is a folder
+   * nowhere. The same query key the tree's own root uses, so the two share one
+   * request.
+   */
+  const filesRoot = useQuery({
+    queryKey: ['fileTree', id, ''],
+    queryFn: () => api.fileTree(id, ''),
+    staleTime: 30_000,
+  });
+  /**
+   * The remarks left on files of it. Eager for the plan stack's reason: the
+   * number belongs on the rail button before anything is opened, and a basket
+   * left uncopied is precisely what a reader needs telling about.
+   */
+  const fileReview = useQuery({
+    queryKey: ['fileReview', id],
+    queryFn: () => api.fileReview(id),
+    staleTime: 30_000,
+  });
+  const fileComments = fileReview.data?.comments.length ?? 0;
+  /** What has NOT left yet — the badge's rule, as with the plans. */
+  const fileUnsent = fileReview.data?.copiedAt ? 0 : fileComments;
+  /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
    * For a CHIP on the row and not to hide it. Dropping a mention because another
@@ -840,6 +870,9 @@ export function SessionViewPage() {
   const inspector = useInspector({
     planCount,
     planUnsent,
+    projectFolder: filesRoot.data ? filesRoot.data.exists && filesRoot.data.isDirectory : null,
+    fileComments,
+    fileUnsent,
     changed: session?.fileChanges.length ?? 0,
     sent: sessionFiles.total,
     mentionCandidates: mentionCandidates.length,
@@ -1272,6 +1305,8 @@ export function SessionViewPage() {
             onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
           />
         );
+      case 'files':
+        return <FilesPanel sessionId={id} root={filesRoot.data ?? null} />;
       case 'changed':
         return <FileChangesPanel fileChanges={session.fileChanges} />;
       case 'sent':

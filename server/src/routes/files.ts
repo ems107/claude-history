@@ -617,13 +617,20 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
           // scratchpad walk follows, and `isDirectory()` on a Dirent is already
           // false for a link because it reflects `lstat`.
           const isDirectory = d.isDirectory() && !d.isSymbolicLink();
-          if (isDirectory) return { name: d.name, isDirectory: true, sizeBytes: null, modifiedAt: null };
+          const full = path.join(dir, d.name);
+          if (isDirectory) return { path: full, name: d.name, isDirectory: true, sizeBytes: null, modifiedAt: null };
           try {
-            const s = await fsp.lstat(path.join(dir, d.name));
-            return { name: d.name, isDirectory: false, sizeBytes: s.size, modifiedAt: new Date(s.mtimeMs).toISOString() };
+            const s = await fsp.lstat(full);
+            return {
+              path: full,
+              name: d.name,
+              isDirectory: false,
+              sizeBytes: s.size,
+              modifiedAt: new Date(s.mtimeMs).toISOString(),
+            };
           } catch {
             // The row stays: something IS there, we just cannot measure it.
-            return { name: d.name, isDirectory: false, sizeBytes: null, modifiedAt: null };
+            return { path: full, name: d.name, isDirectory: false, sizeBytes: null, modifiedAt: null };
           }
         }),
       );

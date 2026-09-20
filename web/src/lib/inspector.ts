@@ -32,6 +32,7 @@ const INSPECTOR_DEFAULT = 400;
 export type PanelKey =
   | 'tokens'
   | 'plan'
+  | 'files'
   | 'changed'
   | 'sent'
   | 'mentioned'
@@ -83,6 +84,9 @@ function readWidth(): number {
 export function useInspector({
   planCount,
   planUnsent,
+  projectFolder,
+  fileComments,
+  fileUnsent,
   changed,
   sent,
   mentionCandidates,
@@ -107,6 +111,20 @@ export function useInspector({
    * saying anything.
    */
   planUnsent: number;
+  /**
+   * Whether the folder this session ran in can actually be read, or null while
+   * the answer is still in flight.
+   *
+   * It is a question only the disk can answer, and one that is genuinely often
+   * NO: a project can be moved or deleted, and a session whose transcript never
+   * recorded a cwd has no real path at all — `projectPath` falls back to the
+   * lossy encoded directory name, which is a folder nowhere.
+   */
+  projectFolder: boolean | null;
+  /** Remarks on files of that project — the second reason the item can exist. */
+  fileComments: number;
+  /** Those of them that have not been copied yet: what the badge counts. */
+  fileUnsent: number;
   changed: number;
   sent: number;
   /** How many paths were named at all: whether the panel exists is a transcript fact. */
@@ -248,6 +266,26 @@ export function useInspector({
             hint: 'The plans this session submitted, and the remarks you left on each — to send back, or to copy into the terminal holding it',
           }
         : null,
+      // Beside the plan rather than with the three file panels below, because
+      // it is not one of them: those three read the TRANSCRIPT and say what the
+      // session did, and this one reads the project and is a way to say
+      // something back. It exists where there is a folder to browse — or where
+      // remarks were left on one that has since gone, which is the plan item's
+      // own clause and for the same reason: somebody's writing must not lose
+      // the only door to it.
+      projectFolder || fileComments > 0
+        ? {
+            key: 'files',
+            short: 'Files',
+            title: 'Files',
+            count: fileUnsent || null,
+            // A remark whose passage cannot be found any more is marked in the
+            // panel, and it is not WRONG — it is frozen prose that still says
+            // which file and which lines it was about.
+            alert: 0,
+            hint: "The folder this session ran in, and the remarks you left on files of it — to copy into the terminal running it",
+          }
+        : null,
       // The words are the feature and they are not interchangeable: one lists
       // what the session CHANGED, one what it HANDED OVER, one what it only
       // TALKED about, and none of the three is another's superset.
@@ -344,6 +382,9 @@ export function useInspector({
   }, [
     planCount,
     planUnsent,
+    projectFolder,
+    fileComments,
+    fileUnsent,
     changed,
     sent,
     mentionCandidates,

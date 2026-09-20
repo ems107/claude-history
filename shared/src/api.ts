@@ -733,7 +733,18 @@ export interface FileReviewUpdateResponse {
 
 /** One thing in a directory of the session's project. */
 export interface FileTreeEntry {
-  /** The name alone. The path is what the caller already walked to get here. */
+  /**
+   * Absolute, and built on the server rather than joined in the browser.
+   *
+   * `ScratchpadEntry` carries one for the same reason: it is what a row hands
+   * to the file column, and a reference that round-trips through the URL has to
+   * survive `parseFileRef` at the other end. A bare `LICENSE` does not — no
+   * separator and no known extension is not a file reference, by a rule that is
+   * right for a path written in prose — so a tree that sent names would open
+   * nothing at all for every extensionless file in a project root.
+   */
+  path: string;
+  /** The name alone, which is what the row draws: the rest of it is the indent. */
   name: string;
   isDirectory: boolean;
   /** Files only; null for a directory, and for one that could not be measured. */
