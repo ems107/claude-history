@@ -225,6 +225,12 @@ export function useEvents(): void {
         case 'plan-reviews-changed':
           void queryClient.invalidateQueries({ queryKey: ['planReviews', event.sessionId] });
           break;
+        // The remarks on this session's files, and only those — the same rule
+        // again, and it is what carries a remark written in one window to the
+        // panel listing it in another.
+        case 'file-reviews-changed':
+          void queryClient.invalidateQueries({ queryKey: ['fileReview', event.sessionId] });
+          break;
         /**
          * Settings saved in ANOTHER window. Nothing else would ever refetch
          * them here: the usage widget in the header keeps `['settings']` mounted

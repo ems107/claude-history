@@ -14,8 +14,11 @@ import type { McpLogsResponse,
   FileOpenRequest,
   FileOpenResponse,
   FileReadResponse,
+  FileReviewResponse,
+  FileReviewUpdateResponse,
   FileStatsRequest,
   FileStatsResponse,
+  FileTreeResponse,
   FirewallStatusResponse,
   LineageResponse,
   LiveResponse,
@@ -308,6 +311,54 @@ export const api = {
   markPlanReviewSent: async (id: string, planKey: string) => {
     const res = await fetch(`/api/sessions/${id}/plan-reviews/${planKey}/sent`, { method: 'POST' });
     const body = (await res.json().catch(() => ({}))) as PlanReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /**
+   * The remarks left on files of this session's project — one basket or none,
+   * where the plans answer with a list.
+   */
+  fileReview: (id: string) => getJson<FileReviewResponse>(`/api/sessions/${id}/file-comments`),
+  /** Write a remark on a file, or replace the one already under that id. */
+  saveFileComment: async (
+    id: string,
+    comment: {
+      id: string;
+      path: string;
+      quote: string;
+      line: number;
+      endLine: number;
+      text: string;
+      start: number;
+      end: number;
+    },
+  ) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments/${comment.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment),
+    });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  removeFileComment: async (id: string, commentId: string) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments/${commentId}`, { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** Clear all — one request, so N remarks cannot race each other's writes. */
+  clearFileReview: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments`, { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** The basket left the only way it can: onto the clipboard. */
+  markFileReviewCopied: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments/copied`, { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
@@ -690,6 +741,16 @@ export const api = {
    */
   scratchpad: (sessionId: string) =>
     getJson<ScratchpadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/scratchpad`),
+  /**
+   * ONE level of the project's folder tree, for the Files panel. A path per
+   * expansion rather than a walk per panel — the opposite trade from the
+   * scratchpad above, and the route says why: this folder is somebody's
+   * project, not a temp directory of ours.
+   */
+  fileTree: (sessionId: string, dirPath: string) =>
+    getJson<FileTreeResponse>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/files/tree?path=${encodeURIComponent(dirPath)}`,
+    ),
   fileOpen: async (req: FileOpenRequest) => {
     const res = await fetch('/api/files/open', {
       method: 'POST',
