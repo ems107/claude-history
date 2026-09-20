@@ -6,6 +6,7 @@ import { copyPlain } from '../../lib/clipboard.ts';
 import { newId } from '../../lib/ids.ts';
 import { formatTokens } from '../../lib/cost.ts';
 import { commentsFeedback, planKeyOf, planTitle, type SessionPlan } from '../../lib/plans.ts';
+import { FileRefChip } from './FileRefLink.tsx';
 import { PlanCommentRef, PlanReview, type PlanComment } from './PlanReview.tsx';
 
 const STATUS: Record<SessionPlan['status'], { label: string; tone: string }> = {
@@ -300,16 +301,26 @@ export function PlanPanel({
                   ↓ in the conversation
                 </button>
               )}
-              {sentAt && <span className="text-[var(--text-dim)]">sent {when(sentAt)}</span>}
-              {comments.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => clear.mutate(current!)}
-                  className="ml-auto rounded border border-[var(--border)] px-2 py-0.5 text-[var(--text-dim)] md:hover:bg-[var(--bg-hover)] md:hover:text-[var(--text)]"
-                >
-                  Clear all
-                </button>
+              {/**
+                 * The plan file, and ONLY on the row that is actually in it.
+                 *
+                 * `~/.claude/plans/<slug>.md` is named after the SESSION, so
+                 * every plan a session submits overwrites the last one's file:
+                 * 119 archived plans in this corpus against 83 files. The older
+                 * rows are not files at all — they live in the transcript, in
+                 * their own `ExitPlanMode` call — so offering a path for them
+                 * would be offering a path to somebody else's text. The keys
+                 * already answer it: the file's hash equals exactly one row's.
+                 */}
+              {file.data?.filePath && row.key === fileKey && (
+                <FileRefChip path={file.data.filePath} title={`Open the plan file — ${file.data.filePath}`} />
               )}
+              {file.data?.filePath && row.key !== fileKey && (
+                <span className="text-[var(--text-dim)]" title={file.data.filePath}>
+                  in the transcript — the plan file now holds a later plan
+                </span>
+              )}
+              {sentAt && <span className="text-[var(--text-dim)]">sent {when(sentAt)}</span>}
             </div>
             {error && (
               <div className="mb-2 rounded border border-red-500/40 bg-red-500/5 px-2 py-1 text-[11px] text-red-400">
@@ -332,6 +343,7 @@ export function PlanPanel({
                 const existing = comments.find((c) => c.id === id);
                 if (existing) write.mutate({ ...existing, text });
               }}
+              onClearAll={current ? () => clear.mutate(current) : undefined}
             />
             {comments.length > 0 && (
               <div className="mt-3 border-t border-[var(--border)] pt-2">

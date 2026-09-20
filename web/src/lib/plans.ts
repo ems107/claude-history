@@ -40,18 +40,34 @@ const COMMENTS_MARKER = 'Comments on the plan:';
  * <comment>` per remark. Splitting them again is presentation only: the wire
  * format is what the model reads and is not changed for the sake of the card.
  *
- * Entries are cut at a line STARTING a new `[Re: "`, never at every newline: a
- * comment is a textarea and may hold several lines. Anything that does not parse
- * leaves the whole feedback as a plain note, which is the truthful fallback for
- * a plan refused from a terminal or by another client.
+ * Entries are cut at each `[Re: "`, never at every newline: a comment is a
+ * textarea and may hold several lines. Anything that does not parse leaves the
+ * whole feedback as a plain note, which is the truthful fallback for a plan
+ * refused from a terminal or by another client.
+ *
+ * ## Why the cut cannot rely on a newline
+ *
+ * Because the newlines do not survive the journey. A stack pasted into the
+ * CLI's own *Tell Claude what to change* box goes through a pseudo-terminal,
+ * where a pasted line break arrives as **`\r`** — measured on a real refusal
+ * here: `"Comments on the plan:\r[Re: …] saludo_y_hora\r[Re: …] el fichero de
+ * readme"`. Cutting on `\n` found one entry, so the card said *1 comment* and
+ * printed the second one's raw `[Re: "…"]` inside the first one's text.
+ *
+ * So carriage returns are normalised first and the split is on the marker
+ * itself, which also survives a client that joins them with nothing at all.
+ * The cost is a remark whose own text contains `[Re: "` — it would be cut in
+ * two — and that is the better failure: it still shows everything somebody
+ * wrote, where the newline rule hid a whole comment.
  */
-export function parsePlanFeedback(feedback: string): PlanFeedback {
+export function parsePlanFeedback(raw: string): PlanFeedback {
+  const feedback = raw.replace(/\r\n?/g, '\n');
   const at = feedback.lastIndexOf(COMMENTS_MARKER);
   if (at < 0) return { note: feedback.trim() || null, comments: [] };
   const note = feedback.slice(0, at).trim();
   const body = feedback.slice(at + COMMENTS_MARKER.length).trim();
   const comments: PlanFeedbackComment[] = [];
-  for (const entry of body.split(/\n(?=\[Re: ")/)) {
+  for (const entry of body.split(/(?=\[Re: ")/).filter((e) => e.trim())) {
     const m = /^\[Re: "([\s\S]*?)"(?: · under "([\s\S]*?)")?\]\s*([\s\S]*)$/.exec(entry.trim());
     if (!m) return { note: feedback.trim() || null, comments: [] };
     comments.push({ quote: m[1], heading: m[2] ?? null, text: m[3].trim() });

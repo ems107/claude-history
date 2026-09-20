@@ -217,6 +217,14 @@ quote, so it is still readable.
 - **`commentsFeedback` lives beside `parsePlanFeedback`** in `web/src/lib/plans.ts`
   — writer and reader of the same wire format, one home, and checkable without a
   browser.
+- **The reader may not cut on a newline, because the newlines do not survive.**
+  A stack pasted into the CLI's own box goes through a pseudo-terminal, where a
+  pasted line break arrives as **``** — measured on a real refusal:
+  `"Comments on the plan:[Re: …] saludo_y_hora[Re: …] el fichero de readme"`.
+  Cutting on `
+` found one entry, so the card said *1 comment* and printed the
+  second's raw `[Re: "…"]` inside the first's text. Carriage returns are
+  normalised and the split is on the marker itself.
 - **The offsets get a safety net, not a subsystem** (`web/src/lib/planAnchors.ts`).
   A submitted plan cannot drift, but the offsets index the RENDERED markdown,
   which is this app's output: so the quote is verified rather than trusted, and a

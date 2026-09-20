@@ -148,6 +148,7 @@ export function PlanReview({
   onAdd,
   onRemove,
   onEdit,
+  onClearAll,
   readOnly = false,
 }: {
   plan: string;
@@ -156,6 +157,8 @@ export function PlanReview({
   onRemove: (id: string) => void;
   /** Absent where a comment cannot be changed after the fact. */
   onEdit?: (id: string, text: string) => void;
+  /** Empties the stack. Drawn with the list, which is the only place it is about. */
+  onClearAll?: () => void;
   readOnly?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -167,6 +170,16 @@ export function PlanReview({
   /** Which comments could not be found in this rendering — listed, not painted. */
   const [unanchored, setUnanchored] = useState<string[]>([]);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  /**
+   * What the reader is pointing with, remembered because `selectionchange`
+   * does not say.
+   *
+   * It defaulted to touch there, and with a mouse that showed: `pointerup`
+   * placed the button 4px under the selection and the settle pass moved it to
+   * the touch gap a fraction of a second later, so it visibly jumped. The two
+   * passes have to agree, and only the pointer event knows.
+   */
+  const touching = useRef(false);
 
   // Paint every commented passage, and repaint after a remount: going full
   // screen builds these nodes again, and the ranges of the old ones point at
@@ -275,7 +288,7 @@ export function PlanReview({
       if (!root || !sel || sel.rangeCount === 0) return;
       if (!root.contains(sel.getRangeAt(0).commonAncestorContainer)) return;
       clearTimeout(timer);
-      timer = setTimeout(() => read(true), DRAG_SETTLE_MS);
+      timer = setTimeout(() => read(touching.current), DRAG_SETTLE_MS);
     };
     document.addEventListener('selectionchange', onSelectionChange);
     return () => {
@@ -305,6 +318,7 @@ export function PlanReview({
       <div
         ref={box}
         onPointerUp={(e) => {
+          touching.current = e.pointerType !== 'mouse';
           if (e.pointerType === 'mouse') read(false);
           // A touch settles a frame or two later; the `selectionchange`
           // listener above covers the drag that may follow.
@@ -383,8 +397,19 @@ export function PlanReview({
           there are while the decision is being taken. */}
       {comments.length > 0 && (
         <div className="mt-3 border-t border-[var(--border)] pt-2">
-          <div className="mb-1 text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
-            {comments.length} comment{comments.length === 1 ? '' : 's'} on this plan
+          <div className="mb-1 flex items-center gap-2">
+            <span className="text-[10px] font-semibold tracking-wider text-[var(--accent)] uppercase">
+              {comments.length} comment{comments.length === 1 ? '' : 's'} on this plan
+            </span>
+            {onClearAll && (
+              <button
+                type="button"
+                onClick={onClearAll}
+                className="ml-auto rounded border border-[var(--border)] px-2 py-0.5 text-[10px] text-[var(--text-dim)] md:hover:bg-[var(--bg-hover)] md:hover:text-[var(--text)]"
+              >
+                Clear all
+              </button>
+            )}
           </div>
           <div className="space-y-1">
             {comments.map((c, i) => (
