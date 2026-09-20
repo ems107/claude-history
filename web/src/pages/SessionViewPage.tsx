@@ -733,7 +733,13 @@ export function SessionViewPage() {
     staleTime: 5_000,
     refetchInterval: live.data?.some((l) => l.sessionId === id) ? 5_000 : false,
   });
-  const planCount = plans.length + (planFile.data?.plan?.trim() ? 1 : 0);
+  /**
+   * Whether the panel exists at all. The remarks count too, and not as a
+   * nicety: a stack whose plan has gone — commented on while Claude was
+   * rewriting it — is still somebody's writing, and without this there would be
+   * no door left to read it through, let alone discard it.
+   */
+  const planCount = plans.length + (planFile.data?.plan?.trim() ? 1 : 0) + (planComments > 0 ? 1 : 0);
   /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
@@ -1245,6 +1251,7 @@ export function SessionViewPage() {
           <PlanPanel
             sessionId={id}
             plans={plans}
+            planFile={planFile.data ?? null}
             composerPlan={chat.data?.question?.plan ?? null}
             liveStatus={liveStatus}
             canSend={canSendPlan}

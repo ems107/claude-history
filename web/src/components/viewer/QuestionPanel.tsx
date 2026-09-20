@@ -34,6 +34,9 @@ import { Sketch } from './Sketch.tsx';
  */
 const footerBtn = (cls: string) => `${cls} max-md:w-full max-md:py-3 max-md:text-sm`;
 
+/** See where it is read: a stable identity for "this plan has no remarks". */
+const NO_COMMENTS: PlanComment[] = [];
+
 export function QuestionPanel({
   sessionId,
   question,
@@ -83,7 +86,9 @@ export function QuestionPanel({
     enabled: isPlan,
     staleTime: 30_000,
   });
-  const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === planKey)?.comments ?? [];
+  // One shared empty array, not `?? []`: a fresh one every render re-ran
+  // `PlanReview`'s painting effect for a plan nobody has commented on.
+  const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === planKey)?.comments ?? NO_COMMENTS;
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['planReviews', sessionId] });
   /**
    * A write that failed has to SAY so. Silent is how a `crypto.randomUUID()` in
@@ -109,6 +114,7 @@ export function QuestionPanel({
     setFocused({});
     setActive(0);
     setFull(false);
+    setRemarkError(null);
     // The remarks are NOT reset here any more: they are keyed on the plan's own
     // id, so a new question already reads a different (empty) stack — and
     // clearing them would now delete a stack rather than forget one.

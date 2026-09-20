@@ -12,8 +12,16 @@
  * model read while the offsets are what the browser paints.
  */
 
-/** Every text node under `root`, in document order — the string the offsets index. */
-export function textNodesIn(root: HTMLElement): Text[] {
+/**
+ * Every text node under `root`, in document order — the string the offsets index.
+ *
+ * **Not `highlight.ts`'s function of the same name**, which rejects any subtree
+ * marked `data-chrome` so the find bar never counts a button's label as a hit.
+ * This one may not skip anything: these offsets are positions in the plan's
+ * whole rendered text, and a walker that left parts out would put every anchor
+ * after the gap in the wrong place.
+ */
+function textNodesIn(root: HTMLElement): Text[] {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const out: Text[] = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n as Text);
@@ -21,7 +29,7 @@ export function textNodesIn(root: HTMLElement): Text[] {
 }
 
 /** That string itself — what a quote is searched for in. */
-export function renderedText(root: HTMLElement): string {
+function renderedText(root: HTMLElement): string {
   let out = '';
   for (const node of textNodesIn(root)) out += node.data;
   return out;
@@ -46,7 +54,7 @@ export function offsetsOf(root: HTMLElement, range: Range): { start: number; end
  * second one is a fresh set of nodes. A `Range` cannot survive that; two
  * numbers can.
  */
-export function rangeOf(root: HTMLElement, start: number, end: number): Range | null {
+function rangeOf(root: HTMLElement, start: number, end: number): Range | null {
   const range = document.createRange();
   let pos = 0;
   let opened = false;

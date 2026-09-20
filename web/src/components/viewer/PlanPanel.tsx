@@ -1,4 +1,4 @@
-import type { PlanCommentRecord } from '@claude-history/shared';
+import type { PlanCommentRecord, PlanFileResponse } from '@claude-history/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client.ts';
@@ -16,6 +16,9 @@ const STATUS: Record<SessionPlan['status'], { label: string; tone: string }> = {
   rejected: { label: '✖ not approved', tone: 'text-amber-400' },
   pending: { label: 'awaiting an answer', tone: 'text-[var(--text-dim)]' },
 };
+
+/** One empty array for every plan with no remarks — see where it is read. */
+const NO_COMMENTS: PlanComment[] = [];
 
 function when(iso: string | null): string {
   if (!iso) return '';
@@ -78,6 +81,7 @@ interface Row {
 export function PlanPanel({
   sessionId,
   plans,
+  planFile,
   composerPlan,
   liveStatus,
   canSend,
@@ -86,6 +90,12 @@ export function PlanPanel({
 }: {
   sessionId: string;
   plans: SessionPlan[];
+  /**
+   * The plan file, fetched by the PAGE — which is also what decides whether
+   * this panel exists at all, so a second copy of that query here would be the
+   * same fact configured twice.
+   */
+  planFile: PlanFileResponse | null;
   /** The plan this app's composer is holding open, when it is holding one. */
   composerPlan: string | null;
   /** What the CLI is doing, when one is alive: `busy`, `waiting`, or null. */
@@ -100,21 +110,7 @@ export function PlanPanel({
     queryFn: () => api.planReviews(sessionId),
     staleTime: 30_000,
   });
-  /**
-   * The plan file. Polled while the CLI is alive, because in a terminal this is
-   * the ONLY place the plan on screen exists: the `tool_use` line is not
-   * persisted until the dialog is answered (0 of them in a 94-line transcript
-   * with the prompt up), so without this the panel has nothing to show at the
-   * one moment it is wanted.
-   */
-  const file = useQuery({
-    queryKey: ['planFile', sessionId],
-    queryFn: () => api.planFile(sessionId),
-    staleTime: 5_000,
-    refetchInterval: liveStatus ? 5_000 : false,
-  });
-
-  const fileText = file.data?.plan?.trim() ?? '';
+  const fileText = planFile?.plan?.trim() ?? '';
   const fileKey = fileText ? planKeyOf(fileText) : null;
   /** What the dialog on screen is about, in either door. */
   const inPlayKey = composerPlan ? planKeyOf(composerPlan.trim()) : liveStatus === 'waiting' ? fileKey : null;
@@ -162,7 +158,9 @@ export function PlanPanel({
   const current = selected && rows.some((r) => r.key === selected) ? selected : (inPlayKey ?? rows[0]?.key ?? null);
   const row = rows.find((r) => r.key === current) ?? null;
 
-  const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === current)?.comments ?? [];
+  // `NO_COMMENTS` rather than `?? []`: a fresh array every render re-ran the
+  // painting effect in `PlanReview` for a plan that has no remarks at all.
+  const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === current)?.comments ?? NO_COMMENTS;
   const sentAt = reviews.data?.find((r) => r.planKey === current)?.sentAt ?? null;
   const counts = useMemo(() => {
     const out = new Map<string, number>();
@@ -254,7 +252,7 @@ export function PlanPanel({
     }
   };
 
-  if (rows.length === 0) {
+  if (rows.length === 0 && orphans.length === 0) {
     return <div className="px-4 py-3 text-sm text-[var(--text-dim)]">This session has not planned anything.</div>;
   }
 
@@ -286,7 +284,10 @@ export function PlanPanel({
         ))}
       </div>
 
-      <div className="mt-3 border-t border-[var(--border)] pt-3">
+      {/* Nothing but orphans is a real state: every plan of the session has
+          gone and only the writing about them is left. Drawing the "not
+          recorded" line there would answer a question nobody asked. */}
+      <div className={rows.length === 0 ? 'hidden' : 'mt-3 border-t border-[var(--border)] pt-3'}>
         {!row || !row.text ? (
           <div className="text-sm text-[var(--text-dim)]">
             The plan itself was not recorded in this transcript, so there is nothing to comment on.
@@ -310,7 +311,7 @@ export function PlanPanel({
                 {error}
               </div>
             )}
-            <WherePlanLives filePath={file.data?.filePath ?? null} onDisk={row.key === fileKey} />
+            <WherePlanLives filePath={planFile?.filePath ?? null} onDisk={row.key === fileKey} />
             {row.unsettled && (
               <div className="mb-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)]">
                 Claude is still writing this one, so it will change under you — it becomes commentable the moment it is
