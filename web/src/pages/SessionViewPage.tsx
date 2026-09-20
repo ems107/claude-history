@@ -1007,7 +1007,7 @@ export function SessionViewPage() {
   const navigate = useNavigate();
 
   /**
-   * Android's Back, on the four things Escape unwinds.
+   * Android's Back, on the five things Escape unwinds.
    *
    * One registration each rather than one chain, because on a phone these are
    * sheets stacked over the conversation and Back means "close the one on top"
@@ -1018,6 +1018,7 @@ export function SessionViewPage() {
    */
   useBackDismiss(!!fileRef, closeFile);
   useBackDismiss(!!agentId, closeAgent);
+  useBackDismiss(!!revFileParam, closeRevisionFile);
   useBackDismiss(inspector.open !== null, inspector.close);
   useBackDismiss(finder.isOpen, finder.close);
 
@@ -1031,10 +1032,11 @@ export function SessionViewPage() {
       // focus; this is the one that stays true when it moves.)
       if (isFromTerminal(e.target)) return;
       // Outermost first: the column beside the session, then the rail's panel
-      // inside it, then the page. Two of these four branches can no longer both
-      // be true — a file and a subagent transcript are one slot — so the order
-      // between them is only what it costs to read; the order that matters is
-      // that a column closes before the panel it was opened from.
+      // inside it, then the page. The first three branches can no longer be
+      // true together — a file, a subagent transcript and one file of a branch
+      // review are one slot — so the order between them is only what it costs
+      // to read; the order that matters is that a column closes before the
+      // panel it was opened from.
       //
       // The inspector is one branch for every panel, which is what makes this
       // list honest: only the subagent list was ever in it, because putting one
@@ -1047,13 +1049,25 @@ export function SessionViewPage() {
       // reading, with the bar still open behind you.
       if (fileRef) closeFile();
       else if (agentId) closeAgent();
+      else if (revFileParam) closeRevisionFile();
       else if (inspector.open !== null) inspector.close();
       else if (finder.isOpen) finder.close();
       else navigate(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [fileRef, closeFile, agentId, closeAgent, inspector, finder.isOpen, finder.close, navigate]);
+  }, [
+    fileRef,
+    closeFile,
+    agentId,
+    closeAgent,
+    revFileParam,
+    closeRevisionFile,
+    inspector,
+    finder.isOpen,
+    finder.close,
+    navigate,
+  ]);
 
   const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const items = (session?.turns ?? []).flatMap((t) => t.items);
