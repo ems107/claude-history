@@ -45,9 +45,10 @@ function fileOf(node: Node): HTMLElement | null {
  * remark that claimed to be about both would have to carry two fragments and
  * point at neither. Every review tool draws the same line.
  *
- * A selection that starts on a hunk's header row belongs to no row of it, so it
- * is pulled down to the first: pointing at `@@ -10,6 +10,8 @@` means pointing
- * at what follows it.
+ * A drag that BEGINS on a hunk's `@@` header started on no row at all, and it
+ * means "from the top of this hunk" — so it is read as row 0 rather than
+ * collapsed onto wherever it ended. One end has to be in the grid; a selection
+ * with neither in it (a header alone, the fold above it) is not a fragment.
  */
 export function locateSelection(range: Range): DiffLocation | null {
   const startFile = fileOf(range.startContainer);
@@ -57,17 +58,16 @@ export function locateSelection(range: Range): DiffLocation | null {
 
   const startRow = rowOf(range.startContainer);
   const endRow = rowOf(range.endContainer);
-  // Both ends have to be IN the grid. A selection that begins on the hunk
-  // header has no start row, and the honest repair is to take the whole of the
-  // end row's hunk rather than to guess how far down the reader meant.
-  const anchor = startRow ?? endRow;
-  const focus = endRow ?? startRow;
-  if (!anchor || !focus) return null;
-  const hunk = Number(anchor.dataset.hunkIndex);
-  if (!Number.isFinite(hunk) || anchor.dataset.hunkIndex !== focus.dataset.hunkIndex) return null;
+  const inGrid = startRow ?? endRow;
+  if (!inGrid) return null;
+  // Two hunks is two edits, and a remark claiming both would carry two
+  // fragments and point at neither.
+  if (startRow && endRow && startRow.dataset.hunkIndex !== endRow.dataset.hunkIndex) return null;
+  const hunk = Number(inGrid.dataset.hunkIndex);
+  if (!Number.isFinite(hunk)) return null;
 
-  const a = Number(anchor.dataset.lineIndex);
-  const b = Number(focus.dataset.lineIndex);
+  const a = startRow ? Number(startRow.dataset.lineIndex) : 0;
+  const b = endRow ? Number(endRow.dataset.lineIndex) : Number(startRow?.dataset.lineIndex);
   if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
   return { path, hunkIndex: hunk, startRow: Math.min(a, b), endRow: Math.max(a, b) };
 }
