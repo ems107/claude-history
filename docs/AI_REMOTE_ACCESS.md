@@ -176,9 +176,13 @@ That broke `/api/files/read` the first time the file panel was opened from anoth
 
 What that costs, honestly: on a plain-HTTP origin the two file GETs are guarded by the `Origin` check alone. A cross-origin `fetch` still carries it and is still refused, but **an `<img>` sends no `Origin`**, so a foreign page open in a browser that holds a session here could point one at `/api/files/image` and learn from `onload` whether a path exists. It cannot read the pixels — a cross-origin image taints the canvas. It is a narrow leak, it predates remote access (any page could already do this against `127.0.0.1`), and **the fix for it is HTTPS**, not more header checks.
 
-### The clipboard
+### What a plain-HTTP origin takes away
 
 **`navigator.clipboard` is `[SecureContext]`, and a secure context is HTTPS or localhost — nothing else.** Served from `http://192.168.x.x` the object is `undefined`, not merely restricted, so every copy button throws a `TypeError`. `web/src/lib/clipboard.ts` falls back to the `copy` event plus `execCommand`, which is deprecated but not gated, and **keeps the HTML+text pair** so copying with formatting still pastes into Word and Jira. Nothing in this app reads the clipboard; that half of the API is what got the whole namespace put behind secure contexts.
+
+**`crypto.randomUUID()` is the same gate, and it bites in a quieter place.** `[SecureContext]` too, so on a LAN address it is `undefined` and calling it throws. Where a clipboard failure at least happens at a button whose whole job is visible, an id minted inside an event handler fails as **nothing at all**: the click is swallowed, the form stays on screen with the text still in it, and no message appears anywhere. That is exactly how it was found — a *Comment* button that did not add a comment, from a LAN address, while the same click worked on `127.0.0.1`. `web/src/lib/ids.ts` mints ids without it; `lib/tabs.ts` and `ProjectsArea`'s `newGroupId` already dodged it by hand.
+
+**And a write that fails has to SAY so.** Both doors of the plan reviewer now report the error where the control is, because "the button does nothing" is indistinguishable from every other bug there could be.
 
 Everything else survives plain HTTP: `localStorage`, SSE (`/api/events` has a 25 s heartbeat, which is also what keeps a NAT from dropping the connection), images, and the `.md` export, whose attachments are data URIs and need no path on the viewer's machine.
 

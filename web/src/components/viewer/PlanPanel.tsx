@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
+import { newId } from '../../lib/ids.ts';
 import { formatTokens } from '../../lib/cost.ts';
 import { commentsFeedback, planKeyOf, planTitle, type SessionPlan } from '../../lib/plans.ts';
 import { PlanCommentRef, PlanReview, type PlanComment } from './PlanReview.tsx';
@@ -175,27 +176,41 @@ export function PlanPanel({
   const orphans = (reviews.data ?? []).filter((r) => !rows.some((x) => x.key === r.planKey));
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['planReviews', sessionId] });
+  /**
+   * Every write says what went wrong, because the alternative is what this
+   * panel shipped with: a *Comment* button that answered a click with nothing
+   * at all. A remark is somebody's writing — losing one has to be LOUD.
+   */
+  const [error, setError] = useState<string | null>(null);
+  const failed = (err: unknown) => setError(err instanceof Error ? err.message : String(err));
+  const ok = () => {
+    setError(null);
+    return refresh();
+  };
   const write = useMutation({
     mutationFn: (comment: Omit<PlanCommentRecord, 'createdAt' | 'editedAt'>) =>
       api.savePlanComment(sessionId, current ?? '', comment),
-    onSuccess: refresh,
+    onSuccess: ok,
+    onError: failed,
   });
   const drop = useMutation({
     mutationFn: (id: string) => api.removePlanComment(sessionId, current ?? '', id),
-    onSuccess: refresh,
+    onSuccess: ok,
+    onError: failed,
   });
   const clear = useMutation({
     mutationFn: (key: string) => api.clearPlanReview(sessionId, key),
-    onSuccess: refresh,
+    onSuccess: ok,
+    onError: failed,
   });
   const markSent = useMutation({
     mutationFn: () => api.markPlanReviewSent(sessionId, current ?? ''),
-    onSuccess: refresh,
+    onSuccess: ok,
+    onError: failed,
   });
 
   const [note, setNote] = useState('');
   const [copied, setCopied] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
   // One string, one channel: the transcript keeps the note and the remarks glued
   // together exactly as Claude was given them.
   const outgoing = [note.trim(), commentsFeedback(comments)].filter(Boolean).join('\n\n');
@@ -205,19 +220,19 @@ export function PlanPanel({
   useEffect(() => {
     setNote('');
     setCopied(false);
-    setSendError(null);
+    setError(null);
   }, [current]);
 
   const copy = async () => {
     if (!outgoing) return;
-    setSendError(null);
+    setError(null);
     try {
       await copyPlain(outgoing);
     } catch (err) {
       // A browser that refuses the clipboard must say so rather than tick: the
       // whole exit is "the text is now on your clipboard", and a silent ✔ over
       // an empty clipboard is the one failure that wastes the reader's work.
-      setSendError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err));
       return;
     }
     setCopied(true);
@@ -226,13 +241,13 @@ export function PlanPanel({
 
   const send = async () => {
     if (!outgoing) return;
-    setSendError(null);
+    setError(null);
     try {
       await onSend(outgoing);
       await markSent.mutateAsync();
       setNote('');
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -296,6 +311,11 @@ export function PlanPanel({
                 </button>
               )}
             </div>
+            {error && (
+              <div className="mb-2 rounded border border-red-500/40 bg-red-500/5 px-2 py-1 text-[11px] text-red-400">
+                {error}
+              </div>
+            )}
             {row.unsettled && (
               <div className="mb-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)]">
                 Claude is still writing this one, so it will change under you — it becomes commentable the moment it is
@@ -306,7 +326,7 @@ export function PlanPanel({
               plan={row.text}
               comments={comments}
               readOnly={row.unsettled}
-              onAdd={(c) => write.mutate({ ...c, id: crypto.randomUUID() })}
+              onAdd={(c) => write.mutate({ ...c, id: newId() })}
               onRemove={(id) => drop.mutate(id)}
               onEdit={(id, text) => {
                 const existing = comments.find((c) => c.id === id);
@@ -352,7 +372,6 @@ export function PlanPanel({
                       ? 'Paste it into the CLI’s “Tell Claude what to change” box.'
                       : 'Copy it to use it wherever you like.'}
                 </div>
-                {sendError && <div className="mt-1 text-[11px] text-red-400">{sendError}</div>}
               </div>
             )}
           </>

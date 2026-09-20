@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { api } from '../../api/client.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { Markdown } from './Markdown.tsx';
+import { newId } from '../../lib/ids.ts';
 import { commentsFeedback, planKeyOf } from '../../lib/plans.ts';
 import { type PlanComment, PlanReview } from './PlanReview.tsx';
 import { Sketch } from './Sketch.tsx';
@@ -84,6 +85,17 @@ export function QuestionPanel({
   });
   const comments: PlanComment[] = reviews.data?.find((r) => r.planKey === planKey)?.comments ?? [];
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['planReviews', sessionId] });
+  /**
+   * A write that failed has to SAY so. Silent is how a `crypto.randomUUID()` in
+   * an event handler — undefined outside a secure context — turned the
+   * *Comment* button into a control that answered a click with nothing at all.
+   */
+  const [remarkError, setRemarkError] = useState<string | null>(null);
+  const saved = () => {
+    setRemarkError(null);
+    void refresh();
+  };
+  const failed = (err: unknown) => setRemarkError(err instanceof Error ? err.message : String(err));
 
   useEffect(() => {
     setNote('');
@@ -375,19 +387,24 @@ export function QuestionPanel({
             markdown it is. Escaped inside a <pre> — which is what every
             other permission gets — it was unreadable at exactly the moment
             it had to be read. */}
+        {isPlan && remarkError && (
+          <div className="mb-2 rounded border border-red-500/40 bg-red-500/5 px-2 py-1 text-[11px] text-red-400">
+            {remarkError}
+          </div>
+        )}
         {isPlan && question.plan && (
           <PlanReview
             plan={question.plan}
             comments={comments}
             onAdd={(c) => {
-              void api.savePlanComment(sessionId, planKey, { ...c, id: crypto.randomUUID() }).then(refresh);
+              void api.savePlanComment(sessionId, planKey, { ...c, id: newId() }).then(saved, failed);
             }}
             onRemove={(id) => {
-              void api.removePlanComment(sessionId, planKey, id).then(refresh);
+              void api.removePlanComment(sessionId, planKey, id).then(saved, failed);
             }}
             onEdit={(id, text) => {
               const existing = comments.find((c) => c.id === id);
-              if (existing) void api.savePlanComment(sessionId, planKey, { ...existing, text }).then(refresh);
+              if (existing) void api.savePlanComment(sessionId, planKey, { ...existing, text }).then(saved, failed);
             }}
           />
         )}
