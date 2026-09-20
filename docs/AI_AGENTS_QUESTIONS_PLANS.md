@@ -224,7 +224,9 @@ quote, so it is still readable.
   Cutting on `
 ` found one entry, so the card said *1 comment* and printed the
   second's raw `[Re: "…"]` inside the first's text. Carriage returns are
-  normalised and the split is on the marker itself.
+  normalised and the split stays on the LINE — cutting at every marker fixes the
+  same thing and eats a remark that merely quotes the format. Claude itself was
+  unaffected: the `` version was acted on correctly, both remarks included.
 - **The offsets get a safety net, not a subsystem** (`web/src/lib/planAnchors.ts`).
   A submitted plan cannot drift, but the offsets index the RENDERED markdown,
   which is this app's output: so the quote is verified rather than trusted, and a
