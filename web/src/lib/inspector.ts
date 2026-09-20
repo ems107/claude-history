@@ -82,7 +82,7 @@ function readWidth(): number {
 
 export function useInspector({
   planCount,
-  planComments,
+  planUnsent,
   changed,
   sent,
   mentionCandidates,
@@ -99,8 +99,14 @@ export function useInspector({
    * last one — which is a file on disk and can appear while you are looking.
    */
   planCount: number;
-  /** Remarks left on them, which is the number worth carrying on the button. */
-  planComments: number;
+  /**
+   * Remarks that have NOT been sent yet — the number worth carrying, because it
+   * is the one that can still be acted on. Counting every remark ever written
+   * made the badge a running total: a plan refused three weeks ago went on
+   * adding its two for ever, and a button that always says something stops
+   * saying anything.
+   */
+  planUnsent: number;
   changed: number;
   sent: number;
   /** How many paths were named at all: whether the panel exists is a transcript fact. */
@@ -234,7 +240,7 @@ export function useInspector({
             key: 'plan',
             short: 'Plan',
             title: 'Plans',
-            count: planComments || null,
+            count: planUnsent || null,
             // Nothing here can be WRONG: a remark whose passage cannot be found
             // is marked inside the panel, and with the plan frozen in an
             // append-only transcript that cannot happen in the first place.
@@ -337,7 +343,7 @@ export function useInspector({
     return all.filter((p): p is PanelItem => p !== null);
   }, [
     planCount,
-    planComments,
+    planUnsent,
     changed,
     sent,
     mentionCandidates,

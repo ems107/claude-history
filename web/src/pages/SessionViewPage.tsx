@@ -710,6 +710,16 @@ export function SessionViewPage() {
   });
   const planComments = (planReviews.data ?? []).reduce((n, r) => n + r.comments.length, 0);
   /**
+   * Remarks that have NOT left yet — what the rail button counts.
+   *
+   * Every remark ever written was the first thing it counted, which made the
+   * number a running total: a plan refused three weeks ago went on adding its
+   * two for ever, and a button that always says something stops meaning
+   * anything. A stack that has been sent is finished business; the badge is for
+   * what is still in your hands.
+   */
+  const planUnsent = (planReviews.data ?? []).reduce((n, r) => n + (r.sentAt ? 0 : r.comments.length), 0);
+  /**
    * The plan Claude has not submitted yet. Asked for here rather than inside
    * the panel because whether the panel EXISTS depends on it: a session that is
    * still planning has no `ExitPlanMode` line anywhere, and the file on disk is
@@ -829,7 +839,7 @@ export function SessionViewPage() {
    */
   const inspector = useInspector({
     planCount,
-    planComments,
+    planUnsent,
     changed: session?.fileChanges.length ?? 0,
     sent: sessionFiles.total,
     mentionCandidates: mentionCandidates.length,

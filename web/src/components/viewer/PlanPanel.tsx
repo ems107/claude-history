@@ -311,7 +311,11 @@ export function PlanPanel({
                 {error}
               </div>
             )}
-            <WherePlanLives filePath={planFile?.filePath ?? null} onDisk={row.key === fileKey} />
+            <WherePlanLives
+              filePath={planFile?.filePath ?? null}
+              onDisk={row.key === fileKey}
+              fileHasPlan={fileText !== ''}
+            />
             {row.unsettled && (
               <div className="mb-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)]">
                 Claude is still writing this one, so it will change under you — it becomes commentable the moment it is
@@ -419,18 +423,30 @@ export function PlanPanel({
  * live in the transcript, inside their own `ExitPlanMode` call — and offering
  * them this path would be offering the path to a later plan's text.
  *
+* Nothing here may describe what the file CONTAINS unless it was read: saying
+ * "a later plan" over a file that has been swept is inventing its contents.
+ *
  * The path is drawn WHOLE and wrapped rather than shortened to a chip. It is
  * the answer to "where is this thing", and a chip that says `📄` answers none
  * of it; in a 320px column the way to show 70 characters is to let them wrap.
  */
-function WherePlanLives({ filePath, onDisk }: { filePath: string | null; onDisk: boolean }) {
+function WherePlanLives({
+  filePath,
+  onDisk,
+  fileHasPlan,
+}: {
+  filePath: string | null;
+  onDisk: boolean;
+  /** Whether that file could be READ — a path proves nothing on its own. */
+  fileHasPlan: boolean;
+}) {
   const ctx = useFileRefs();
   const fileRef = filePath ? parseFileRef(filePath) : null;
   if (!filePath) return null;
   return (
     <div className="mb-2 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5">
       <div className="text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
-        {onDisk ? 'the plan file' : 'not on disk'}
+        {onDisk ? 'the plan file' : 'in the transcript'}
       </div>
       {onDisk && ctx && fileRef ? (
         <FileLink
@@ -443,8 +459,20 @@ function WherePlanLives({ filePath, onDisk }: { filePath: string | null; onDisk:
         </FileLink>
       ) : (
         <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">
-          This plan is in the transcript only. The session keeps one plan file and{' '}
-          <span className="font-mono break-all text-[var(--text-dim)]">{filePath}</span> now holds a later plan.
+          {fileHasPlan ? (
+            <>
+              This plan is not in a file. The session keeps one, and{' '}
+              <span className="font-mono break-all">{filePath}</span> currently holds a different plan.
+            </>
+          ) : (
+            // Claiming it "holds a later plan" when nothing could be read from
+            // it would be inventing its contents — `~/.claude` has an expiry
+            // date and the plans go with it.
+            <>
+              This plan is not in a file. The session&apos;s plan file —{' '}
+              <span className="font-mono break-all">{filePath}</span> — could not be read.
+            </>
+          )}
         </div>
       )}
     </div>
