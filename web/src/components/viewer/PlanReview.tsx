@@ -229,10 +229,25 @@ export function PlanReview({
       setPending(null);
       return;
     }
-    // Put the grown selection back on screen: what is highlighted has to be
-    // what gets quoted, or the button appears to comment on something else.
-    sel.removeAllRanges();
-    sel.addRange(range);
+    /**
+     * Put the grown selection back on screen — **with a mouse only**.
+     *
+     * What is highlighted should be what gets quoted, and replacing the range
+     * is how that is done. On a touch device it is also how the selection gets
+     * DESTROYED: Android draws its own handles and its copy/share bar against
+     * the range the user made, and swapping that range out from under it
+     * dismisses both. Reported from the phone as not being able to select more
+     * than one word — the settle pass was pulling the handles away a third of a
+     * second after every adjustment, so there was no way to drag them.
+     *
+     * The snap still happens; it just stops being written back. The quote and
+     * the offsets are the grown ones, and what stays on screen is the reader's
+     * own selection — which on Android is already word-wise anyway.
+     */
+    if (!touch) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
     const quote = range.toString().trim();
     if (!quote) {
       setPending(null);
