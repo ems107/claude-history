@@ -30,13 +30,32 @@ export interface GitStoredPath {
   addedAt: string;
 }
 
-/** A repository resolved on disk. The server-side shape; `toApi` trims it for the wire. */
-export interface ResolvedRepo {
-  /** normalizeProjectKey(topLevel) — the identity, and the map key. */
-  key: string;
-  /** sha1 of the key. The ONLY thing that travels in a URL or a request body. */
-  id: string;
+/**
+ * The least a git command needs: where to run it, and under what name.
+ *
+ * `ResolvedRepo` satisfies it structurally, so every caller in the GIT tab is
+ * unaffected — what it buys is the OTHER caller. The Revision panel works on
+ * the folder a session ran in, which is a path the index already holds and
+ * which may never have been added to the GIT tab at all. Asking it to
+ * fabricate a `ResolvedRepo` would mean inventing a `gitDir`, an `origins` set
+ * and a `remoteKey` for a repository nothing is going to look up — so the
+ * functions it shares take this instead, and the fields it would have had to
+ * invent are the ones it must not be trusted about.
+ *
+ * `key` is not decoration: it is what `withRepoLock` queues on and what the
+ * command panel attributes a row to. Composed with `normalizeProjectKey` of
+ * the work tree's top level, exactly as discovery does, so a repo reached both
+ * ways is one repo to the lock rather than two.
+ */
+export interface GitRepoHandle {
   path: string;
+  key: string;
+}
+
+/** A repository resolved on disk. The server-side shape; `toApi` trims it for the wire. */
+export interface ResolvedRepo extends GitRepoHandle {
+  /** sha1 of `key`. The ONLY thing that travels in a URL or a request body. */
+  id: string;
   name: string;
   gitDir: string;
   bare: boolean;
@@ -121,8 +140,16 @@ export function scanRootForRepos(root: string, limit = GIT_SCAN_MAX_REPOS): stri
   return found;
 }
 
-/** What git says about a folder. Null when it is not a work tree at all. */
-async function probe(dir: string): Promise<{
+/**
+ * What git says about a folder. Null when it is not a work tree at all.
+ *
+ * Exported for the Revision panel, which asks it the same two questions
+ * discovery does — is this a repository, and where does its work tree actually
+ * start — about a folder that came from a session's cwd rather than from a
+ * list somebody curated. Resolving to the TOP LEVEL is what makes a session
+ * running in a subdirectory of a repo still be that repo.
+ */
+export async function probe(dir: string): Promise<{
   top: string;
   gitDir: string;
   bare: boolean;
