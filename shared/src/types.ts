@@ -416,6 +416,68 @@ export interface PlanReviewRecord {
   sentAt: string | null;
 }
 
+/**
+ * One remark filed against a passage of a FILE in the session's project.
+ *
+ * `PlanCommentRecord` with two differences, and both say what a file is that a
+ * plan is not. It carries its own `path`, because the basket holds every file
+ * of a session rather than one; and it carries the LINE the passage starts on,
+ * because that is how a file is pointed at — `[L42-L45]` is what the copied
+ * prose says, where a plan would name the heading above it.
+ *
+ * **Nothing here is ever re-anchored.** A plan is frozen in an append-only
+ * transcript line, so `resolveAnchor` can re-find a moved passage by its words
+ * and be right. A file on disk really does change, and a quote re-found in a
+ * rewritten file would be a passage nobody pointed at — so `start`/`end` are
+ * trusted or the passage simply goes unpainted, and the remark is frozen prose
+ * either way, exactly as it was written.
+ *
+ * The offsets are character positions in the FILE's own text: the viewer's code
+ * column renders either hljs's markup, which adds no characters, or the text
+ * itself, and the line-number gutter is its sibling rather than inside it.
+ */
+export interface FileCommentRecord {
+  id: string;
+  /**
+   * Relative to the session's project path, with forward slashes, when the file
+   * is inside it; absolute when it is not. It is both what groups the basket
+   * and what the copied prose prints — which is the same string Claude Code
+   * would use for a file of its own project.
+   */
+  path: string;
+  quote: string;
+  /** 1-based, counted once when the remark was made. */
+  line: number;
+  /** The last line the passage touches; the same as `line` for one line. */
+  endLine: number;
+  text: string;
+  start: number;
+  end: number;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/**
+ * Every remark left on any file of ONE session — the whole basket.
+ *
+ * One record per session and not one per file, which is the difference from
+ * `PlanReviewRecord`: a session has several plans and each gets its own stack,
+ * but browsing a project is one activity. You read a file, say something about
+ * it, open the next, and what leaves at the end is the lot, in one paste,
+ * grouped by file. `FileCommentRecord.path` is what tells them apart inside it.
+ */
+export interface FileReviewRecord {
+  sessionId: string;
+  comments: FileCommentRecord[];
+  updatedAt: string;
+  /**
+   * When the basket was last copied, cleared again by any add or edit — the
+   * same promise `PlanReviewRecord.sentAt` makes, under the name of what
+   * actually happens here: Files never sends anything, it is only ever copied.
+   */
+  copiedAt: string | null;
+}
+
 export interface ProjectInfo {
   key: string; // normalized path
   path: string; // display path
