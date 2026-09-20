@@ -34,6 +34,10 @@ import type { McpLogsResponse,
   ProjectsResponse,
   PromptsResponse,
   ReadMarksResponse,
+  RevisionDiffResponse,
+  RevisionRepoInfo,
+  RevisionReviewsResponse,
+  RevisionReviewUpdateResponse,
   RetentionResponse,
   ScratchpadResponse,
   SearchResponse,
@@ -359,6 +363,71 @@ export const api = {
   markFileReviewCopied: async (id: string) => {
     const res = await fetch(`/api/sessions/${id}/file-comments/copied`, { method: 'POST' });
     const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /**
+   * The branches of the repository this session ran in, and what the base
+   * dropdown should open on. Deliberately not `getJson`: "This session did not
+   * run in a git repository" is a sentence somebody reads.
+   */
+  revisionInfo: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision/info`);
+    const body = (await res.json().catch(() => ({}))) as RevisionRepoInfo & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** What the current branch introduced since it diverged from `base`. */
+  revisionDiff: async (id: string, base: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision/diff?base=${encodeURIComponent(base)}`);
+    const body = (await res.json().catch(() => ({}))) as RevisionDiffResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** Every comparison of this session somebody has left remarks on. */
+  revisionReviews: (id: string) => getJson<RevisionReviewsResponse>(`/api/sessions/${id}/revision-reviews`),
+  saveRevisionComment: async (
+    id: string,
+    comparisonKey: string,
+    comment: {
+      id: string;
+      currentBranch: string;
+      baseBranch: string;
+      path: string;
+      quote: string;
+      diffText: string;
+      line: number | null;
+      endLine: number | null;
+      side: 'old' | 'new' | null;
+      text: string;
+    },
+  ) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}/comments/${comment.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment),
+    });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  removeRevisionComment: async (id: string, comparisonKey: string, commentId: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  clearRevisionReview: async (id: string, comparisonKey: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}`, { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  markRevisionReviewCopied: async (id: string, comparisonKey: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}/copied`, { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },

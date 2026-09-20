@@ -231,6 +231,11 @@ export function useEvents(): void {
         case 'file-reviews-changed':
           void queryClient.invalidateQueries({ queryKey: ['fileReview', event.sessionId] });
           break;
+        // And the remarks on a branch comparison. Never the diff itself: that
+        // is a question about the repository, which nothing here answered.
+        case 'revision-reviews-changed':
+          void queryClient.invalidateQueries({ queryKey: ['revisionReviews', event.sessionId] });
+          break;
         /**
          * Settings saved in ANOTHER window. Nothing else would ever refetch
          * them here: the usage widget in the header keeps `['settings']` mounted
