@@ -478,6 +478,73 @@ export interface FileReviewRecord {
   copiedAt: string | null;
 }
 
+/**
+ * One remark filed against a fragment of a branch's diff.
+ *
+ * **`diffText` is the remark's context, copied at the moment it was written,
+ * and that is the whole design.** A file's remark can name a line because the
+ * file is a thing with lines; a diff's cannot, because the diff is not a thing
+ * at all — it is the answer to a question about two branches, and it changes
+ * completely the next time either of them moves. So the fragment travels WITH
+ * the note: the hunk header and its lines exactly as git wrote them, which is
+ * the one notation a model reading this cold cannot misunderstand.
+ *
+ * Nothing is ever re-anchored, for a reason even stronger than the file's: by
+ * the time these are read the branch has usually moved, and a line number from
+ * yesterday's diff points at nothing in particular in today's.
+ */
+export interface RevisionCommentRecord {
+  id: string;
+  /** The file, as the diff names it — already relative to the repository root. */
+  path: string;
+  /** What the reader selected, for the list on screen. */
+  quote: string;
+  /**
+   * The hunk, byte for byte as git wrote it: its `@@ -a,b +c,d @@` header and
+   * every line with its own ` `, `+` or `-` in front. Rebuilt from the parsed
+   * diff and never from the DOM — the viewer draws a removal with a typographic
+   * minus (U+2212), which is not what git writes and not what anybody reading
+   * this should be handed.
+   */
+  diffText: string;
+  /** The line the selection starts on, on whichever side it exists. */
+  line: number | null;
+  endLine: number | null;
+  /** Which side that number belongs to: the file before, or the file after. */
+  side: 'old' | 'new' | null;
+  text: string;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/**
+ * The remarks on ONE comparison — one branch against one base.
+ *
+ * **Keyed by the two branch NAMES and never by their shas**, which is what
+ * makes a review something you can come back to. A review of `feature/x`
+ * against `main` survives every commit added to either while it is under way;
+ * keyed by sha it would become a new empty basket on the first push, which is
+ * the exact moment somebody is most likely to still be reading.
+ *
+ * That is also the difference from the plan stacks, which key on the text they
+ * are about precisely BECAUSE it cannot move.
+ */
+export interface RevisionReviewRecord {
+  sessionId: string;
+  /**
+   * A hash of the two names, minted by the web's `revisionKeyOf` — a branch
+   * name can hold a `/`, which a path segment cannot carry, and the server
+   * never mints one: it only refuses what a segment must not hold.
+   */
+  comparisonKey: string;
+  currentBranch: string;
+  baseBranch: string;
+  comments: RevisionCommentRecord[];
+  updatedAt: string;
+  /** When it was last copied out. Cleared by any add or edit, as everywhere else. */
+  copiedAt: string | null;
+}
+
 export interface ProjectInfo {
   key: string; // normalized path
   path: string; // display path

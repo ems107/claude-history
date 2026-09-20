@@ -7,6 +7,7 @@ import type {
   PlanRecord,
   PlanReviewRecord,
   ProjectGroup,
+  RevisionReviewRecord,
   ProjectInfo,
   SessionDetail,
   SessionSummary,
@@ -776,6 +777,16 @@ export interface FileTreeResponse {
   entries: FileTreeEntry[];
   /** The level stopped at `MAX_TREE_ENTRIES`; there is more in this folder. */
   truncated: boolean;
+}
+
+/** Every comparison of this session that somebody has left remarks on. */
+export type RevisionReviewsResponse = RevisionReviewRecord[];
+
+export interface RevisionReviewUpdateResponse {
+  ok: boolean;
+  /** The basket as stored, or null once the last remark in it was dropped. */
+  review: RevisionReviewRecord | null;
+  removed: boolean;
 }
 
 /**
@@ -2446,6 +2457,8 @@ export type ServerEvent =
    * has to reach the phone reading the same session.
    */
   | { type: 'file-reviews-changed'; sessionId: string }
+  /** The same again for the remarks on a branch comparison, and for the same reasons. */
+  | { type: 'revision-reviews-changed'; sessionId: string }
   /**
    * Settings were saved. Its own event because a window has no other way to
    * hear about a save it did not make: `['settings']` is mounted for the life of
