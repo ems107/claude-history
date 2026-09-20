@@ -1,6 +1,6 @@
 import type { RevisionCommentRecord } from '@claude-history/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { revisionFeedback, revisionKeyOf } from '../../lib/revision.ts';
@@ -67,9 +67,22 @@ export function RevisionPanel({
   /**
    * The suggestion is adopted ONCE, and never taken back off the reader: it is
    * where the dropdown opens, not what it is pinned to.
+   *
+   * **The flag is what makes that true.** Without it the effect re-fired every
+   * time `base` went back to null — which is exactly what choosing the
+   * dropdown's own *choose a branch…* does, so that option snapped straight
+   * back to the guess and the panel read as arguing with you. Measured: pick
+   * the empty option, and a moment later the select says `feature/base` again.
+   *
+   * It lives in a ref rather than in the adopted value itself because `base`
+   * belongs to the page: closing the panel and opening it again keeps the
+   * comparison, and should not re-suggest over a choice already made.
    */
+  const adopted = useRef(false);
   useEffect(() => {
-    if (base === null && info.data?.suggestedBase) onBase(info.data.suggestedBase);
+    if (adopted.current || base !== null || !info.data?.suggestedBase) return;
+    adopted.current = true;
+    onBase(info.data.suggestedBase);
   }, [base, info.data?.suggestedBase, onBase]);
 
   const current = info.data?.currentBranch ?? null;
