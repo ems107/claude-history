@@ -49,6 +49,14 @@ const TOUCH_SETTLE_MS = 180;
 const DRAG_SETTLE_MS = 300;
 /** The *Comment* button's touch height (`min-h-11`), for the room it needs. */
 const BUTTON_H = 44;
+/**
+ * How far under the passage the button sits on touch.
+ *
+ * Android's two selection handles hang below the line, so this cannot be the
+ * mouse's 4px — but it was 30 first, and that read as a button floating loose
+ * rather than one attached to the words it is about.
+ */
+const TOUCH_GAP = 12;
 
 /**
  * What a comment is ABOUT, in words rather than in furniture.
@@ -104,8 +112,8 @@ interface Pending {
   top: number;
   left: number;
   /**
-   * Above the passage rather than below it. The default on touch, because
-   * Android parks its selection handles exactly where the button would go.
+   * Above the passage rather than below it — only where the window has no room
+   * underneath, because above is where Android draws its own copy/share bar.
    */
   above: boolean;
   /** The wrapper's width, so the layer can be clamped inside it. */
@@ -129,10 +137,10 @@ function clampLeft(pending: Pending, width: number): number {
  * The passages are painted through the CSS Custom Highlight API, never with
  * `<mark>` nodes: the markdown belongs to React ([AI_VIEWER.md]).
  *
- * `readOnly` is the draft's mode. A plan Claude has not submitted yet lives in
- * a file it keeps rewriting, so a remark filed against it would be a remark
- * pointing at text that has since moved — it is shown, and it is not
- * commentable.
+ * `readOnly` is for a plan Claude is still WRITING: that text is about to be
+ * rewritten, so a remark filed against it would point at a passage that has
+ * moved. It is shown, and it is not commentable. A plan being put in front of
+ * you is not that state — the CLI is blocked on its own dialog.
  */
 export function PlanReview({
   plan,
@@ -229,11 +237,11 @@ export function PlanReview({
      * what actually lands on top of a selection is the system's own
      * copy/paste/share bar, which is what this button was hiding behind.
      *
-     * The handles are still real, so a touch placement clears them: they hang
-     * about 24dp below the line, and 4px of gap put the button under one of
-     * them.
+     * The handles are still real, so a touch placement leaves `TOUCH_GAP`
+     * rather than the mouse's 4px — enough that they do not take the tap,
+     * close enough that the button still reads as belonging to the passage.
      */
-    const gap = touch ? 30 : 4;
+    const gap = touch ? TOUCH_GAP : 4;
     // The room it actually needs, not a round number: a 160px threshold sent
     // the button back above the selection with 92px free below it — plenty for
     // a 44px control — which is the very placement this is here to avoid.
