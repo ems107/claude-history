@@ -147,6 +147,15 @@ arriving, now true of a panel opening too.
   stops existing cannot stay open (`useInspector` re-checks on every render), or
   a session whose last agent row went away with a re-parse would leave the
   inspector holding a title with nothing under it.
+- **Nine panels, and `Plan` sits second** — right after `Tokens` and before the
+  three file ones, because a plan is what the session DECIDED and those are what
+  it then touched. Its count is the remarks left on its plans rather than the
+  plans themselves: the plans are why the button is there, the remarks are what
+  you might have left unfinished. Adding a panel is four edits — the `PanelKey`
+  union, the `useInspector` argument and item, the icon in `PANEL_ICONS` (an
+  exhaustive `Record`, so TypeScript asks for it), and the `case` in
+  `SessionViewPage`'s body switch, whose `default: return null` means a missing
+  one fails silently. The phone needs none of them ([AI_MOBILE.md](AI_MOBILE.md)).
 - **A rail button can say that something in it is WRONG**, and `MCP` is the only
   one that ever does: `PanelItem.alert` is drawn as an amber `⚠ N` in the
   button's top-right corner, so a server that never connected is legible without
