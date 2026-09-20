@@ -10,6 +10,7 @@ import {
   GIT_STATUS_MAX_ENTRIES,
   isValidRefName,
   isValidSha,
+  type GitBranch,
   type GitBranchesResponse,
   type GitCommandLogEntry,
   type GitCommandLogResponse,
@@ -24,6 +25,7 @@ import {
   type GitOp,
   type GitOverview,
   type GitRemote,
+  type GitRemoteBranch,
   type GitRepo,
   type GitRepoRoot,
   type GitStash,
@@ -72,9 +74,11 @@ import {
   discoverRepos,
   repoIdOf,
   toApiRepo,
+  type GitRepoHandle,
   type GitStoredPath,
   type ResolvedRepo,
 } from './gitRepos.ts';
+import { pool } from '../util/pool.ts';
 import type { SessionIndex } from './index.ts';
 import type { GitUndoStore } from './gitUndo.ts';
 import { createLogger, localIso } from './logger.ts';
@@ -97,6 +101,19 @@ const DISCOVERY_TTL_MS = 10 * 60 * 1000;
 
 /** Manually remembered paths. A list, not a database. */
 const MAX_STORED_PATHS = 100;
+
+/**
+ * How many branches the origin guess will weigh, most recently moved first.
+ *
+ * Each one costs a `git merge-base`, and on Windows the spawn is the expensive
+ * part. A hundred is the same order as `MAX_STORED_PATHS` and far past any
+ * repository where the answer is in doubt; what a cap drops is the branches
+ * nobody has touched in months, which are the least likely to be the one you
+ * cut from ten minutes ago.
+ */
+const ORIGIN_HEURISTIC_MAX_CANDIDATES = 100;
+/** Discovery's figure, for the same kind of work: many short spawns. */
+const ORIGIN_HEURISTIC_CONCURRENCY = 8;
 
 /**
  * How long our own writes are ignored by the `.git` watcher. Without it every
@@ -865,7 +882,7 @@ export class GitService {
     return null;
   }
 
-  async branches(repo: ResolvedRepo, signal?: AbortSignal): Promise<GitBranchesResponse> {
+  async branches(repo: GitRepoHandle, signal?: AbortSignal): Promise<GitBranchesResponse> {
     return this.withRepoLock(repo.key, 'read', async () => {
       const [localRes, remoteRes, worktreeRes] = await Promise.all([
         runGit({
@@ -912,6 +929,160 @@ export class GitService {
       const current = local.find((b) => b.current) ?? null;
       return { current: current?.name ?? null, detached: !current, local, remote };
     });
+  }
+
+  /**
+   * The commit a ref names.
+   *
+   * `assertRef` runs the very same command and throws the answer away, because
+   * what it wants is existence and what it returns is the ref it was given.
+   * This wants the value, and it is not a nicety: `diff` in `range` mode
+   * refuses anything that is not a hex sha, deliberately, so a branch name has
+   * to become one somewhere and this is where.
+   */
+  async resolveSha(repo: GitRepoHandle, ref: string, signal?: AbortSignal): Promise<string> {
+    if (!isValidRefName(ref)) throw new GitBadInput('That is not a valid ref name.');
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'resolve-ref',
+      args: ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`, '--'],
+    });
+    if (!res.ok) throw new GitBadInput(`There is no ref called ${ref}.`);
+    const sha = res.stdout.trim();
+    // Belt to the braces of the one caller's precondition: what comes back here
+    // is what gets handed to `diff`, which will refuse it anyway — but refusing
+    // it as "that is not a commit id" three calls later says nothing useful.
+    if (!isValidSha(sha)) throw new GitFailed(res);
+    return sha;
+  }
+
+  /**
+   * The best common ancestor of two commit-ish, or null when they have none.
+   *
+   * Null is an ANSWER and not a failure, which is why this expects the exit
+   * code rather than throwing on it: two branches with no shared history is a
+   * real shape for a repository to be in — an orphan branch, a `gh-pages`, two
+   * projects that grew into one folder — and the panel above says so in words
+   * instead of showing an error.
+   *
+   * It is also the whole of how a PR-shaped diff is built without touching
+   * `diff` itself: `base..head` from the merge-base is what `base...head`
+   * means, so the two-dot range that method already knows how to run becomes
+   * "what this branch introduced" the moment the base it is given is this.
+   */
+  async mergeBase(repo: GitRepoHandle, a: string, b: string, signal?: AbortSignal): Promise<string | null> {
+    if (!isValidRefName(a) || !isValidRefName(b)) throw new GitBadInput('That is not a valid ref name.');
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'merge-base',
+      // No `--`: merge-base takes no pathspec, and `isValidRefName` has already
+      // refused anything git could read as a flag.
+      args: ['merge-base', a, b],
+      // "No common ancestor" exits 1, and that is not news — the same reason
+      // `remoteOf` expects a failure from a repository with no origin.
+      expectFailure: true,
+    });
+    if (!res.ok) return null;
+    const sha = res.stdout.trim();
+    return isValidSha(sha) ? sha : null;
+  }
+
+  /**
+   * The branch the remote calls its default — `origin/HEAD`, as a plain name.
+   *
+   * Null where nothing has set it, which is common and not a fault: the ref is
+   * written by a clone and by `git remote set-head`, so a repository created
+   * locally has never had one. The caller falls back to looking for `main` or
+   * `master` among the branches it already has.
+   */
+  async defaultRemoteBranch(repo: GitRepoHandle, signal?: AbortSignal): Promise<string | null> {
+    const res = await runGit({
+      cwd: repo.path,
+      repoKey: repo.key,
+      readOnly: true,
+      signal,
+      label: 'default-branch',
+      args: ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'],
+      expectFailure: true,
+    });
+    if (!res.ok) return null;
+    return res.stdout.trim().replace(/^origin\//, '') || null;
+  }
+
+  /**
+   * A guess at which branch the current one was cut from.
+   *
+   * **git does not record this.** A branch is a pointer and nothing on it says
+   * where it came from; the reflog knows, for as long as it is kept, and only
+   * on the machine the branch was made on. So this is a heuristic, and it is
+   * the one the branch-parent tools all land on: the branch you cut FROM is
+   * usually the one whose merge-base with you is the most RECENT commit,
+   * because that is the tip you were standing on when you cut.
+   *
+   * It is wrong sometimes — a branch merged back from and then left alone can
+   * out-date the one you actually forked from — which is why it only ever
+   * preselects a dropdown somebody can change, and why it runs at all only
+   * when there is no review of this branch already open to reopen instead.
+   *
+   * Cost: one `merge-base` per candidate, plus one date lookup per DISTINCT
+   * answer, eight at a time. On Windows a spawn is the expensive part, which is
+   * what the cap is about — candidates are ordered by how recently they moved,
+   * so what a cap drops is the branches least likely to be the answer.
+   */
+  async guessOriginBranch(
+    repo: GitRepoHandle,
+    current: string,
+    local: GitBranch[],
+    remote: GitRemoteBranch[],
+    signal?: AbortSignal,
+  ): Promise<string | null> {
+    const candidates = [
+      ...local.filter((b) => b.name !== current).map((b) => ({ ref: b.name, at: b.lastCommitAt })),
+      ...remote.map((b) => ({ ref: `${b.remote}/${b.name}`, at: b.lastCommitAt })),
+    ]
+      .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
+      .slice(0, ORIGIN_HEURISTIC_MAX_CANDIDATES);
+    if (candidates.length === 0) return null;
+
+    const bases = await pool(candidates, ORIGIN_HEURISTIC_CONCURRENCY, (c) =>
+      this.mergeBase(repo, current, c.ref, signal),
+    );
+    // Dated once per distinct ancestor: half a dozen branches cut from the same
+    // commit are one question, not six.
+    const shas = [...new Set(bases.filter((s): s is string => s !== null))];
+    const dated = await pool(shas, ORIGIN_HEURISTIC_CONCURRENCY, async (sha) => {
+      const res = await runGit({
+        cwd: repo.path,
+        repoKey: repo.key,
+        readOnly: true,
+        signal,
+        label: 'merge-base-date',
+        args: ['show', '-s', '--format=%cI', sha],
+        expectFailure: true,
+      });
+      return res.ok ? Date.parse(res.stdout.trim()) : NaN;
+    });
+    const whenOf = new Map(shas.map((sha, i) => [sha, dated[i]]));
+
+    let bestRef: string | null = null;
+    let bestAt = -Infinity;
+    for (let i = 0; i < candidates.length; i++) {
+      const sha = bases[i];
+      const at = sha === null ? undefined : whenOf.get(sha);
+      // A tie keeps the EARLIER candidate, which is the more recently moved
+      // branch: several cut from one commit is exactly the case where the tie
+      // happens, and recency is the only signal left to break it with.
+      if (at === undefined || !Number.isFinite(at) || at <= bestAt) continue;
+      bestAt = at;
+      bestRef = candidates[i].ref;
+    }
+    return bestRef;
   }
 
   /**
@@ -1064,7 +1235,7 @@ export class GitService {
    * never has to be able to rebuild something git will accept.
    */
   async diff(
-    repo: ResolvedRepo,
+    repo: GitRepoHandle,
     opts: { mode: GitDiffMode; sha?: string | null; base?: string | null; path?: string | null; context?: number },
     signal?: AbortSignal,
   ): Promise<GitDiffResponse> {
