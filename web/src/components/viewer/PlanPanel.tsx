@@ -6,7 +6,9 @@ import { copyPlain } from '../../lib/clipboard.ts';
 import { newId } from '../../lib/ids.ts';
 import { formatTokens } from '../../lib/cost.ts';
 import { commentsFeedback, planKeyOf, planTitle, type SessionPlan } from '../../lib/plans.ts';
-import { FileRefChip } from './FileRefLink.tsx';
+import { parseFileRef } from '../../lib/fileRefs.ts';
+import { useFileRefs } from './FileRefContext.ts';
+import { FileLink } from './FileRefLink.tsx';
 import { PlanCommentRef, PlanReview, type PlanComment } from './PlanReview.tsx';
 
 const STATUS: Record<SessionPlan['status'], { label: string; tone: string }> = {
@@ -301,25 +303,6 @@ export function PlanPanel({
                   ↓ in the conversation
                 </button>
               )}
-              {/**
-                 * The plan file, and ONLY on the row that is actually in it.
-                 *
-                 * `~/.claude/plans/<slug>.md` is named after the SESSION, so
-                 * every plan a session submits overwrites the last one's file:
-                 * 119 archived plans in this corpus against 83 files. The older
-                 * rows are not files at all — they live in the transcript, in
-                 * their own `ExitPlanMode` call — so offering a path for them
-                 * would be offering a path to somebody else's text. The keys
-                 * already answer it: the file's hash equals exactly one row's.
-                 */}
-              {file.data?.filePath && row.key === fileKey && (
-                <FileRefChip path={file.data.filePath} title={`Open the plan file — ${file.data.filePath}`} />
-              )}
-              {file.data?.filePath && row.key !== fileKey && (
-                <span className="text-[var(--text-dim)]" title={file.data.filePath}>
-                  in the transcript — the plan file now holds a later plan
-                </span>
-              )}
               {sentAt && <span className="text-[var(--text-dim)]">sent {when(sentAt)}</span>}
             </div>
             {error && (
@@ -327,6 +310,7 @@ export function PlanPanel({
                 {error}
               </div>
             )}
+            <WherePlanLives filePath={file.data?.filePath ?? null} onDisk={row.key === fileKey} />
             {row.unsettled && (
               <div className="mb-2 rounded border border-dashed border-[var(--border)] px-2 py-1 text-[11px] text-[var(--text-dim)]">
                 Claude is still writing this one, so it will change under you — it becomes commentable the moment it is
@@ -418,6 +402,48 @@ export function PlanPanel({
               ))}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Where this plan physically is — a question the panel has to answer honestly,
+ * because only one of its rows has a file at all.
+ *
+ * `~/.claude/plans/<slug>.md` is named after the SESSION, not the plan, so each
+ * plan a session submits overwrites the last one's file: 119 archived plans in
+ * this corpus against 83 files on disk. The rest are not files anywhere — they
+ * live in the transcript, inside their own `ExitPlanMode` call — and offering
+ * them this path would be offering the path to a later plan's text.
+ *
+ * The path is drawn WHOLE and wrapped rather than shortened to a chip. It is
+ * the answer to "where is this thing", and a chip that says `📄` answers none
+ * of it; in a 320px column the way to show 70 characters is to let them wrap.
+ */
+function WherePlanLives({ filePath, onDisk }: { filePath: string | null; onDisk: boolean }) {
+  const ctx = useFileRefs();
+  const fileRef = filePath ? parseFileRef(filePath) : null;
+  if (!filePath) return null;
+  return (
+    <div className="mb-2 rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5">
+      <div className="text-[10px] font-semibold tracking-wider text-[var(--text-dim)] uppercase">
+        {onDisk ? 'the plan file' : 'not on disk'}
+      </div>
+      {onDisk && ctx && fileRef ? (
+        <FileLink
+          ctx={ctx}
+          fileRef={fileRef}
+          className="mt-0.5 block cursor-pointer font-mono text-[11px] break-all text-amber-300/90 underline decoration-amber-300/30 underline-offset-2 hover:decoration-amber-300"
+          title={`Open ${filePath}`}
+        >
+          {filePath}
+        </FileLink>
+      ) : (
+        <div className="mt-0.5 text-[11px] text-[var(--text-dim)]">
+          This plan is in the transcript only. The session keeps one plan file and{' '}
+          <span className="font-mono break-all text-[var(--text-dim)]">{filePath}</span> now holds a later plan.
         </div>
       )}
     </div>
