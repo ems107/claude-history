@@ -4,12 +4,15 @@ import path from 'node:path';
 import {
   MAX_SCRATCHPAD_ENTRIES,
   MAX_STAT_PATHS,
+  MAX_TREE_ENTRIES,
   type FileOpenRequest,
   type FileOpenResponse,
   type FileReadResponse,
   type FileStatEntry,
   type FileStatsRequest,
   type FileStatsResponse,
+  type FileTreeEntry,
+  type FileTreeResponse,
   type ScratchpadEntry,
   type ScratchpadResponse,
 } from '@claude-history/shared';
@@ -533,4 +536,106 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
     },
   );
 
+  /**
+   * ONE LEVEL of the session's project folder, for the tree in the Files panel.
+   *
+   * The scratchpad above walks its whole folder because that one is ours — a
+   * temp directory this app's own sessions filled, and small. This is
+   * somebody's project, which holds `node_modules`: a recursive listing of it
+   * would be a filesystem scanner with a friendly name, and the cap would be
+   * spent on the deep end of a tree nobody asked to see. So the client asks for
+   * one directory and expands under demand, which is also what makes the first
+   * paint instant however large the project is.
+   *
+   * The path comes from the request and is resolved against the index's own
+   * `projectPath`, exactly as `resolveRef` does for a file — the difference is
+   * that an EMPTY path is legal here and means the project root, which a file
+   * reference can never mean.
+   *
+   * A GET, so it carries its own `isSameOrigin`: the hook in `app.ts` guards
+   * only the methods that change state, and a listing of any folder the user
+   * can read has no business answering a page that is not ours.
+   */
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    '/api/sessions/:id/files/tree',
+    async (request, reply): Promise<FileTreeResponse | void> => {
+      if (!isSameOrigin(request)) {
+        log.warn('refused a cross-origin tree listing', { session: request.params.id });
+        return reply.code(403).send({ error: 'Cross-origin requests are not allowed.' });
+      }
+      const id = request.params.id;
+      if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid session id' });
+      const summary = ctx.index.get(id);
+      if (!summary) return reply.code(404).send({ error: 'Session not found' });
+
+      const raw = request.query.path ?? '';
+      if (raw.includes('\0')) return reply.code(400).send({ error: 'Invalid path' });
+      const expanded = /^~[\\/]/.test(raw) ? path.join(os.homedir(), raw.slice(2)) : raw;
+      const dir = raw.trim() ? path.resolve(summary.projectPath, expanded) : summary.projectPath;
+
+      const nothing = (exists: boolean, isDirectory: boolean): FileTreeResponse => ({
+        path: dir,
+        exists,
+        isDirectory,
+        entries: [],
+        truncated: false,
+      });
+
+      let stat;
+      try {
+        stat = await fsp.stat(dir);
+      } catch {
+        // Ordinary, and in two ways at once: a project folder that has been
+        // moved or deleted, and a session whose transcript never recorded a
+        // cwd — that one's `projectPath` is the lossy encoded directory name,
+        // which is not a path anywhere. Both are states the panel draws.
+        log.debug(`no folder to list: ${dir}`);
+        return nothing(false, false);
+      }
+      if (!stat.isDirectory()) return nothing(true, false);
+
+      let dirents;
+      try {
+        dirents = await fsp.readdir(dir, { withFileTypes: true });
+      } catch (err) {
+        log.warn(`could not list ${dir}: ${String(err)}`);
+        return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+      }
+      // Folders first, then by name — what a file manager does, and the same
+      // order the scratchpad walk sorts by.
+      dirents.sort((a, b) => {
+        const da = a.isDirectory() ? 0 : 1;
+        const db = b.isDirectory() ? 0 : 1;
+        if (da !== db) return da - db;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
+      const truncated = dirents.length > MAX_TREE_ENTRIES;
+      const entries = await Promise.all(
+        dirents.slice(0, MAX_TREE_ENTRIES).map(async (d): Promise<FileTreeEntry> => {
+          // A junction or a symlink is listed as a FILE and never as a folder,
+          // so the tree cannot be walked round a cycle — the same rule the
+          // scratchpad walk follows, and `isDirectory()` on a Dirent is already
+          // false for a link because it reflects `lstat`.
+          const isDirectory = d.isDirectory() && !d.isSymbolicLink();
+          const full = path.join(dir, d.name);
+          if (isDirectory) return { path: full, name: d.name, isDirectory: true, sizeBytes: null, modifiedAt: null };
+          try {
+            const s = await fsp.lstat(full);
+            return {
+              path: full,
+              name: d.name,
+              isDirectory: false,
+              sizeBytes: s.size,
+              modifiedAt: new Date(s.mtimeMs).toISOString(),
+            };
+          } catch {
+            // The row stays: something IS there, we just cannot measure it.
+            return { path: full, name: d.name, isDirectory: false, sizeBytes: null, modifiedAt: null };
+          }
+        }),
+      );
+      log.debug(`listed ${String(entries.length)} entr${entries.length === 1 ? 'y' : 'ies'} in ${dir}${truncated ? ' (capped)' : ''}`);
+      return { path: dir, exists: true, isDirectory: true, entries, truncated };
+    },
+  );
 }

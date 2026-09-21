@@ -416,6 +416,135 @@ export interface PlanReviewRecord {
   sentAt: string | null;
 }
 
+/**
+ * One remark filed against a passage of a FILE in the session's project.
+ *
+ * `PlanCommentRecord` with two differences, and both say what a file is that a
+ * plan is not. It carries its own `path`, because the basket holds every file
+ * of a session rather than one; and it carries the LINE the passage starts on,
+ * because that is how a file is pointed at — `[L42-L45]` is what the copied
+ * prose says, where a plan would name the heading above it.
+ *
+ * **Nothing here is ever re-anchored.** A plan is frozen in an append-only
+ * transcript line, so `resolveAnchor` can re-find a moved passage by its words
+ * and be right. A file on disk really does change, and a quote re-found in a
+ * rewritten file would be a passage nobody pointed at — so `start`/`end` are
+ * trusted or the passage simply goes unpainted, and the remark is frozen prose
+ * either way, exactly as it was written.
+ *
+ * The offsets are character positions in the FILE's own text: the viewer's code
+ * column renders either hljs's markup, which adds no characters, or the text
+ * itself, and the line-number gutter is its sibling rather than inside it.
+ */
+export interface FileCommentRecord {
+  id: string;
+  /**
+   * Relative to the session's project path, with forward slashes, when the file
+   * is inside it; absolute when it is not. It is both what groups the basket
+   * and what the copied prose prints — which is the same string Claude Code
+   * would use for a file of its own project.
+   */
+  path: string;
+  quote: string;
+  /** 1-based, counted once when the remark was made. */
+  line: number;
+  /** The last line the passage touches; the same as `line` for one line. */
+  endLine: number;
+  text: string;
+  start: number;
+  end: number;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/**
+ * Every remark left on any file of ONE session — the whole basket.
+ *
+ * One record per session and not one per file, which is the difference from
+ * `PlanReviewRecord`: a session has several plans and each gets its own stack,
+ * but browsing a project is one activity. You read a file, say something about
+ * it, open the next, and what leaves at the end is the lot, in one paste,
+ * grouped by file. `FileCommentRecord.path` is what tells them apart inside it.
+ */
+export interface FileReviewRecord {
+  sessionId: string;
+  comments: FileCommentRecord[];
+  updatedAt: string;
+  /**
+   * When the basket was last copied, cleared again by any add or edit — the
+   * same promise `PlanReviewRecord.sentAt` makes, under the name of what
+   * actually happens here: Files never sends anything, it is only ever copied.
+   */
+  copiedAt: string | null;
+}
+
+/**
+ * One remark filed against a fragment of a branch's diff.
+ *
+ * **`diffText` is the remark's context, copied at the moment it was written,
+ * and that is the whole design.** A file's remark can name a line because the
+ * file is a thing with lines; a diff's cannot, because the diff is not a thing
+ * at all — it is the answer to a question about two branches, and it changes
+ * completely the next time either of them moves. So the fragment travels WITH
+ * the note: the hunk header and its lines exactly as git wrote them, which is
+ * the one notation a model reading this cold cannot misunderstand.
+ *
+ * Nothing is ever re-anchored, for a reason even stronger than the file's: by
+ * the time these are read the branch has usually moved, and a line number from
+ * yesterday's diff points at nothing in particular in today's.
+ */
+export interface RevisionCommentRecord {
+  id: string;
+  /** The file, as the diff names it — already relative to the repository root. */
+  path: string;
+  /** What the reader selected, for the list on screen. */
+  quote: string;
+  /**
+   * The hunk, byte for byte as git wrote it: its `@@ -a,b +c,d @@` header and
+   * every line with its own ` `, `+` or `-` in front. Rebuilt from the parsed
+   * diff and never from the DOM — the viewer draws a removal with a typographic
+   * minus (U+2212), which is not what git writes and not what anybody reading
+   * this should be handed.
+   */
+  diffText: string;
+  /** The line the selection starts on, on whichever side it exists. */
+  line: number | null;
+  endLine: number | null;
+  /** Which side that number belongs to: the file before, or the file after. */
+  side: 'old' | 'new' | null;
+  text: string;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/**
+ * The remarks on ONE comparison — one branch against one base.
+ *
+ * **Keyed by the two branch NAMES and never by their shas**, which is what
+ * makes a review something you can come back to. A review of `feature/x`
+ * against `main` survives every commit added to either while it is under way;
+ * keyed by sha it would become a new empty basket on the first push, which is
+ * the exact moment somebody is most likely to still be reading.
+ *
+ * That is also the difference from the plan stacks, which key on the text they
+ * are about precisely BECAUSE it cannot move.
+ */
+export interface RevisionReviewRecord {
+  sessionId: string;
+  /**
+   * A hash of the two names, minted by the web's `revisionKeyOf` — a branch
+   * name can hold a `/`, which a path segment cannot carry, and the server
+   * never mints one: it only refuses what a segment must not hold.
+   */
+  comparisonKey: string;
+  currentBranch: string;
+  baseBranch: string;
+  comments: RevisionCommentRecord[];
+  updatedAt: string;
+  /** When it was last copied out. Cleared by any add or edit, as everywhere else. */
+  copiedAt: string | null;
+}
+
 export interface ProjectInfo {
   key: string; // normalized path
   path: string; // display path

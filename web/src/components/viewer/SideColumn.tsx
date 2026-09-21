@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 
 /**
- * A column beside the session — the file viewer, a subagent's transcript.
+ * A column beside the session — the file viewer, a subagent's transcript, one
+ * file of a branch review.
  *
  * `Inspector` under another name, and deliberately not the same component: that
  * one owns its panel's title bar, because its panels are interchangeable
@@ -28,7 +29,7 @@ export function SideColumn({
   children,
 }: {
   /** The measurement hook, like `data-inspector` and `data-inspector-rail`. */
-  kind: 'file' | 'agent';
+  kind: 'file' | 'agent' | 'revision';
   /** Draw it over the conversation rather than beside it. */
   mobile: boolean;
   /** What is DRAWN, which the layout may have squeezed below what was remembered. */

@@ -24,6 +24,12 @@
 //                      2 stashes
 //   repos/forky        6 unmerged branches off ONE old commit — the shape that
 //                      broke the graph's lanes, and that nothing else here has
+//   repos/stacked      a branch cut from a BRANCH, with main moving on after the
+//                      fork: the shape the Revision panel's origin guess exists
+//                      for, and the one where a wrong guess is visibly wrong
+//   data/projects      synthetic transcripts whose cwd is one of these repos, so
+//                      Revision — which starts from a session, not from a path —
+//                      has something to open on. Pass data/ as --data-root.
 //   repos/conflict     two branches that collide on the same lines
 //   repos/odd-names    foo[1].txt, accents, spaces, 400 files to stage at once
 //   repos/big          ~5,000 commits and 60 branches (graph performance)
@@ -249,6 +255,70 @@ function buildForky(dir) {
     }
   }
   git(dir, ['checkout', '-q', 'main']);
+  return dir;
+}
+
+/**
+ * A branch cut from a branch — the shape the origin guess exists for, and the
+ * one nothing else here has.
+ *
+ * `forky` cannot test it: its six topics all hang off ONE commit, so every
+ * candidate ties and the answer is whichever moved last. Here the answer is
+ * knowable and is NOT `main`: `feature/stacked` was cut from `feature/base`
+ * after main had already moved on, so the merge-base with `feature/base` is
+ * recent and the one with `main` is older. A guess that answers `main` is
+ * wrong in a way a check can see.
+ *
+ * It is also the repository the diff is read on, so it carries a file changed
+ * on BOTH sides of the fork: `main.txt` moves on main after the branch, and a
+ * two-dot diff against `main` would show that movement while a PR-shaped one
+ * against the merge-base must not.
+ */
+function buildStacked(dir) {
+  init(dir);
+  write(dir, 'README.md', '# stacked\n');
+  write(dir, 'main.txt', 'main line 1\n');
+  // A long file the branch edits in two places far apart, so its diff has TWO
+  // hunks with unchanged lines between them. Nothing else on this bench does:
+  // every other change here is one hunk, and a selection that runs from one
+  // hunk into the next is a case that can only be tested where two exist.
+  write(dir, 'wide.txt', Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n') + '\n');
+  commit(dir, 'Initial commit');
+  for (let i = 2; i <= 4; i++) {
+    write(dir, 'main.txt', `main line ${i}\n`);
+    commit(dir, `main: line ${i}`);
+  }
+  // The fork point of the first branch.
+  git(dir, ['checkout', '-q', '-b', 'feature/base']);
+  write(dir, 'feature.txt', 'the feature, first pass\n');
+  commit(dir, 'feature: first pass');
+
+  // main moves on AFTERWARDS. This is what a two-dot diff would drag in and a
+  // merge-base one must not.
+  git(dir, ['checkout', '-q', 'main']);
+  for (let i = 5; i <= 7; i++) {
+    write(dir, 'main.txt', `main line ${i}\n`);
+    commit(dir, `main: line ${i} (after the fork)`);
+  }
+
+  // And the branch that was cut from the branch.
+  git(dir, ['checkout', '-q', 'feature/base']);
+  git(dir, ['checkout', '-q', '-b', 'feature/stacked']);
+  write(dir, 'feature.txt', 'the feature, first pass\nthe feature, second pass\n');
+  commit(dir, 'feature: second pass');
+  // The two-hunk edit: line 3 and line 35 of a 40-line file, far enough apart
+  // that -U3 cannot join them.
+  {
+    const lines = Array.from({ length: 40 }, (_, i) => `line ${i + 1}`);
+    lines[2] = 'line 3 — changed near the top';
+    lines[34] = 'line 35 — changed near the bottom';
+    write(dir, 'wide.txt', lines.join('\n') + '\n');
+    commit(dir, 'feature: two edits, far apart');
+  }
+  write(dir, 'extra.txt', 'a file only this branch has\n');
+  commit(dir, 'feature: one more file');
+  // Left checked out on the branch being reviewed, which is where a session
+  // working on it would be.
   return dir;
 }
 
@@ -489,6 +559,71 @@ server.listen(Number(arg('port', 0)), '127.0.0.1', () => {
  * it does not answer ENOENT — Git for Windows' own wrapper would not run once
  * moved away from its installation.
  */
+/**
+ * Transcripts, so a fixture repository can be reached the way the Revision
+ * panel reaches one: from a SESSION.
+ *
+ * The GIT tab never needed this — it finds repositories by path, from a list
+ * somebody curated. Revision starts from the folder a session ran in, so
+ * without a session there is nothing to open the panel on at all. Two JSONL
+ * lines are enough: the scanner wants a uuid-named `.jsonl` under
+ * `projects/<anything>/`, and the project path is read from a message's own
+ * `cwd` rather than from the folder name.
+ *
+ * Written under the bench's own data root, which is what the second instance
+ * is started with — `~/.claude` is never touched.
+ */
+function buildSessions(dataRoot, repos) {
+  const dir = path.join(dataRoot, 'projects', 'fixture');
+  fs.mkdirSync(dir, { recursive: true });
+  const at = (offset) => new Date((BASE_EPOCH + offset) * 1000).toISOString();
+  // Fixed uuids, so a check can name the same session twice.
+  const ids = {
+    stacked: '5faaaaaa-0000-4000-8000-000000000001',
+    branchy: '5fbbbbbb-0000-4000-8000-000000000002',
+    forky: '5fcccccc-0000-4000-8000-000000000003',
+    // A session whose folder is NOT a repository: the state the panel has to
+    // draw rather than one it works in.
+    scan: '5fdddddd-0000-4000-8000-000000000004',
+  };
+  const out = {};
+  for (const [name, cwd] of Object.entries(repos)) {
+    const id = ids[name];
+    if (!id) continue;
+    const first = `${id.slice(0, 8)}-1111-4000-8000-000000000001`;
+    const lines = [
+      {
+        type: 'user',
+        uuid: first,
+        parentUuid: null,
+        sessionId: id,
+        cwd,
+        version: '2.1.0',
+        timestamp: at(0),
+        message: { role: 'user', content: `Review what this branch changed in ${path.basename(cwd)}.` },
+      },
+      {
+        type: 'assistant',
+        uuid: `${id.slice(0, 8)}-2222-4000-8000-000000000002`,
+        parentUuid: first,
+        sessionId: id,
+        cwd,
+        timestamp: at(60),
+        message: {
+          id: `msg_fixture_${name}`,
+          role: 'assistant',
+          model: 'claude-sonnet-5',
+          content: [{ type: 'text', text: 'Nothing ran here: this transcript exists so the panel has a session.' }],
+          usage: { input_tokens: 10, output_tokens: 10, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        },
+      },
+    ];
+    fs.writeFileSync(path.join(dir, `${id}.jsonl`), `${lines.map((l) => JSON.stringify(l)).join('\n')}\n`);
+    out[name] = { id, cwd };
+  }
+  return out;
+}
+
 function buildAccentedExe(dir) {
   const binDir = path.join(dir, 'bin-ñ');
   fs.mkdirSync(binDir, { recursive: true });
@@ -528,6 +663,9 @@ const branchy = buildBranchy(path.join(reposDir, 'branchy'), remoteDir);
 log('repos/forky');
 const forky = buildForky(path.join(reposDir, 'forky'));
 
+log('repos/stacked');
+const stacked = buildStacked(path.join(reposDir, 'stacked'));
+
 log('repos/conflict');
 const conflict = buildConflict(path.join(reposDir, 'conflict'));
 
@@ -552,6 +690,15 @@ const accentedExe = buildAccentedExe(ROOT);
 log('serve-401.mjs');
 const authServer = writeAuthServer(ROOT);
 
+log('data/projects — transcripts, so Revision has sessions to open on');
+const dataRoot = path.join(ROOT, 'data');
+const sessions = buildSessions(dataRoot, {
+  stacked,
+  branchy,
+  forky,
+  scan: path.join(scanDir, 'plain-folder'),
+});
+
 const bigCommits = Number(git(big, ['rev-list', '--count', '--all']).stdout.trim());
 const bigRefs = git(big, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/tags'])
   .stdout.trim()
@@ -563,14 +710,19 @@ const summary = {
   remote: remoteDir,
   worker,
   authServer,
-  repos: { linear, branchy, forky, conflict, oddNames, big, withSub },
+  repos: { linear, branchy, forky, stacked, conflict, oddNames, big, withSub },
   scanRoot: scanDir,
   accentedExe,
+  dataRoot,
+  sessions,
   big: { commits: bigCommits, refs: bigRefs },
   expected: {
     scanFinds: ['alpha', 'clone-a', 'clone-b', 'nested/gamma'],
     scanSkips: ['node_modules/sneaky', 'nested/deep/omega', 'plain-folder'],
     siblings: ['clone-a', 'clone-b'],
+    // What the origin guess must answer on `stacked`, and the reason that repo
+    // exists: `feature/stacked` was cut from `feature/base`, not from `main`.
+    originGuess: { repo: 'stacked', current: 'feature/stacked', answer: 'feature/base' },
   },
 };
 
@@ -584,5 +736,7 @@ if (JSON_OUT) {
   console.log(`[git-fixture]   remote: ${remoteDir}`);
   console.log(`[git-fixture]   worker: ${worker} (push from here to move the remote)`);
   console.log(`[git-fixture]   auth:   node ${authServer} --delay-ms 0`);
+  console.log(`[git-fixture]   data:   ${dataRoot} (pass as --data-root; ${Object.keys(sessions).length} sessions)`);
+  console.log(`[git-fixture]   review: session ${sessions.stacked?.id} is on feature/stacked, cut from feature/base`);
   console.log('[git-fixture] Nothing here points outside this folder. Never verify against a real repo.');
 }

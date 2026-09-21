@@ -14,8 +14,11 @@ import type { McpLogsResponse,
   FileOpenRequest,
   FileOpenResponse,
   FileReadResponse,
+  FileReviewResponse,
+  FileReviewUpdateResponse,
   FileStatsRequest,
   FileStatsResponse,
+  FileTreeResponse,
   FirewallStatusResponse,
   LineageResponse,
   LiveResponse,
@@ -31,6 +34,11 @@ import type { McpLogsResponse,
   ProjectsResponse,
   PromptsResponse,
   ReadMarksResponse,
+  RevisionDiffResponse,
+  RevisionRepoCheck,
+  RevisionRepoInfo,
+  RevisionReviewsResponse,
+  RevisionReviewUpdateResponse,
   RetentionResponse,
   ScratchpadResponse,
   SearchResponse,
@@ -308,6 +316,126 @@ export const api = {
   markPlanReviewSent: async (id: string, planKey: string) => {
     const res = await fetch(`/api/sessions/${id}/plan-reviews/${planKey}/sent`, { method: 'POST' });
     const body = (await res.json().catch(() => ({}))) as PlanReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /**
+   * The remarks left on files of this session's project — one basket or none,
+   * where the plans answer with a list.
+   */
+  fileReview: (id: string) => getJson<FileReviewResponse>(`/api/sessions/${id}/file-comments`),
+  /** Write a remark on a file, or replace the one already under that id. */
+  saveFileComment: async (
+    id: string,
+    comment: {
+      id: string;
+      path: string;
+      quote: string;
+      line: number;
+      endLine: number;
+      text: string;
+      start: number;
+      end: number;
+    },
+  ) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments/${comment.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment),
+    });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  removeFileComment: async (id: string, commentId: string) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments/${commentId}`, { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** Clear all — one request, so N remarks cannot race each other's writes. */
+  clearFileReview: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments`, { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** The basket left the only way it can: onto the clipboard. */
+  markFileReviewCopied: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/file-comments/copied`, { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as FileReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /**
+   * Whether this session ran in a git repository — two spawns, and what the
+   * RAIL asks once per session view. Everything else about the comparison
+   * belongs to `revisionInfo`, which is asked only when the panel opens; see
+   * the route for what that costs on a repository with many branches.
+   */
+  revisionIsRepo: (id: string) => getJson<RevisionRepoCheck>(`/api/sessions/${id}/revision/repo`),
+  /**
+   * The branches of the repository this session ran in, and what the base
+   * dropdown should open on. Deliberately not `getJson`: "This session did not
+   * run in a git repository" is a sentence somebody reads.
+   */
+  revisionInfo: async (id: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision/info`);
+    const body = (await res.json().catch(() => ({}))) as RevisionRepoInfo & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** What the current branch introduced since it diverged from `base`. */
+  revisionDiff: async (id: string, base: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision/diff?base=${encodeURIComponent(base)}`);
+    const body = (await res.json().catch(() => ({}))) as RevisionDiffResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  /** Every comparison of this session somebody has left remarks on. */
+  revisionReviews: (id: string) => getJson<RevisionReviewsResponse>(`/api/sessions/${id}/revision-reviews`),
+  saveRevisionComment: async (
+    id: string,
+    comparisonKey: string,
+    comment: {
+      id: string;
+      currentBranch: string;
+      baseBranch: string;
+      path: string;
+      quote: string;
+      diffText: string;
+      line: number | null;
+      endLine: number | null;
+      side: 'old' | 'new' | null;
+      text: string;
+    },
+  ) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}/comments/${comment.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(comment),
+    });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  removeRevisionComment: async (id: string, comparisonKey: string, commentId: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  clearRevisionReview: async (id: string, comparisonKey: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}`, { method: 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  markRevisionReviewCopied: async (id: string, comparisonKey: string) => {
+    const res = await fetch(`/api/sessions/${id}/revision-reviews/${comparisonKey}/copied`, { method: 'POST' });
+    const body = (await res.json().catch(() => ({}))) as RevisionReviewUpdateResponse & { error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },
@@ -690,6 +818,16 @@ export const api = {
    */
   scratchpad: (sessionId: string) =>
     getJson<ScratchpadResponse>(`/api/sessions/${encodeURIComponent(sessionId)}/scratchpad`),
+  /**
+   * ONE level of the project's folder tree, for the Files panel. A path per
+   * expansion rather than a walk per panel — the opposite trade from the
+   * scratchpad above, and the route says why: this folder is somebody's
+   * project, not a temp directory of ours.
+   */
+  fileTree: (sessionId: string, dirPath: string) =>
+    getJson<FileTreeResponse>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/files/tree?path=${encodeURIComponent(dirPath)}`,
+    ),
   fileOpen: async (req: FileOpenRequest) => {
     const res = await fetch('/api/files/open', {
       method: 'POST',

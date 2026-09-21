@@ -53,7 +53,11 @@ import { SessionTerminal } from '../components/viewer/SessionTerminal.tsx';
 import { StarContext, type StarContextValue } from '../components/viewer/StarContext.ts';
 import { SubagentContext, type SubagentContextValue } from '../components/viewer/SubagentContext.ts';
 import { SubagentDrawer } from '../components/viewer/SubagentDrawer.tsx';
+import { FilesPanel } from '../components/viewer/FilesPanel.tsx';
 import { PlanPanel } from '../components/viewer/PlanPanel.tsx';
+import { RevisionDiffColumn } from '../components/viewer/RevisionDiffColumn.tsx';
+import { RevisionPanel } from '../components/viewer/RevisionPanel.tsx';
+import { REV_FILE_PARAM } from '../lib/revision.ts';
 import { collectPlans } from '../lib/plans.ts';
 import { ScratchpadPanel } from '../components/viewer/ScratchpadPanel.tsx';
 import { SubagentsPanel } from '../components/viewer/SubagentsPanel.tsx';
@@ -252,10 +256,19 @@ export function SessionViewPage() {
 
   const msg = searchParams.get('msg');
   const tool = searchParams.get(TOOL_PARAM);
+  /**
+   * One file of a branch review, open in the column.
+   *
+   * Read FIRST of the three, and the precedence below is the rule "one column
+   * beside the session, never two" written down rather than trusted: every
+   * opener already clears the other two parameters, and this is what keeps a
+   * link somebody pasted with two of them from drawing two columns.
+   */
+  const revFileParam = searchParams.get(REV_FILE_PARAM);
   /** Read here rather than beside `fileRef`, because the drawer below defers to it. */
-  const fileParam = searchParams.get(FILE_PARAM);
+  const fileParam = revFileParam ? null : searchParams.get(FILE_PARAM);
   /** `null` while a file is open — one column beside the session, never two (see `fileRef`). */
-  const agentId = fileParam ? null : searchParams.get('agent');
+  const agentId = revFileParam || fileParam ? null : searchParams.get('agent');
   /**
    * The subagent list, open from the URL rather than from state: the ⑂ badge in
    * the session list opens a session straight onto it, and the link can be
@@ -294,6 +307,7 @@ export function SessionViewPage() {
           // One column beside the session, never two: see `fileRef` below for
           // the rule and what it costs.
           sp.delete(FILE_PARAM);
+          sp.delete(REV_FILE_PARAM);
           // Anchors INSIDE the drawer, and always rewritten together: one left
           // over from a previous jump would point into another agent's
           // transcript, where it resolves to nothing at all.
@@ -400,6 +414,39 @@ export function SessionViewPage() {
     );
   }, [setSearchParams]);
 
+  /**
+   * One file of the branch review, in the column. The base branch is NOT in
+   * the URL: it is the panel's choice, and the panel works it out from the
+   * repository and from the review already under way — a link carrying a stale
+   * branch name would open on a comparison nobody asked for.
+   */
+  const openRevisionFile = useCallback(
+    (path: string) =>
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          sp.set(REV_FILE_PARAM, path);
+          sp.delete(FILE_PARAM);
+          sp.delete('agent');
+          sp.delete(AGENT_TOOL_PARAM);
+          sp.delete(AGENT_MSG_PARAM);
+          return sp;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
+  const closeRevisionFile = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete(REV_FILE_PARAM);
+        return sp;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
   const projectPath = session?.summary.projectPath ?? '';
   const fileRefs = useMemo<FileRefContextValue>(
     () => ({
@@ -414,11 +461,12 @@ export function SessionViewPage() {
           (prev) => {
             const sp = new URLSearchParams(prev);
             sp.set(FILE_PARAM, formatFileRef(ref));
-            // The other column goes, with the anchors that only mean anything
-            // inside it — one column beside the session, never two.
+            // The other columns go, with the anchors that only mean anything
+            // inside one of them — one column beside the session, never two.
             sp.delete('agent');
             sp.delete(AGENT_TOOL_PARAM);
             sp.delete(AGENT_MSG_PARAM);
+            sp.delete(REV_FILE_PARAM);
             return sp;
           },
           { replace: true },
@@ -751,6 +799,73 @@ export function SessionViewPage() {
    */
   const planCount = plans.length + (planFile.data?.plan?.trim() ? 1 : 0) + (planComments > 0 ? 1 : 0);
   /**
+   * The project's own folder, read here rather than inside the Files panel
+   * because whether that panel EXISTS depends on the answer — the scratchpad's
+   * reason exactly, and one cheap `readdir` per session view.
+   *
+   * It is a real question with a real NO: a project can be moved or deleted,
+   * and a session whose transcript never recorded a cwd has no path at all —
+   * `projectPath` falls back to the encoded directory name, which is a folder
+   * nowhere. The same query key the tree's own root uses, so the two share one
+   * request.
+   */
+  const filesRoot = useQuery({
+    queryKey: ['fileTree', id, ''],
+    queryFn: () => api.fileTree(id, ''),
+    staleTime: 30_000,
+  });
+  /**
+   * The remarks left on files of it. Eager for the plan stack's reason: the
+   * number belongs on the rail button before anything is opened, and a basket
+   * left uncopied is precisely what a reader needs telling about.
+   */
+  const fileReview = useQuery({
+    queryKey: ['fileReview', id],
+    queryFn: () => api.fileReview(id),
+    staleTime: 30_000,
+  });
+  const fileComments = fileReview.data?.comments.length ?? 0;
+  /** What has NOT left yet — the badge's rule, as with the plans. */
+  const fileUnsent = fileReview.data?.copiedAt ? 0 : fileComments;
+  /**
+   * Which branch the review is against — held HERE because two things need to
+   * agree about it: the panel, which chooses it, and the column beside the
+   * session, which draws one file of that comparison. It deliberately stays
+   * out of the URL; see `REV_FILE_PARAM`.
+   *
+   * `null` until the panel has worked one out, which it does from the
+   * repository and from the review already under way.
+   */
+  const [revisionBase, setRevisionBase] = useState<string | null>(null);
+  /**
+   * Whether that folder is a git repository, and the remarks left on branch
+   * comparisons of it. Asked here for the rail's reason — whether the panel
+   * exists at all.
+   *
+   * **The CHEAP question, and that matters.** The panel's own `revisionInfo`
+   * lists every branch and, when there is no review to resume, runs one
+   * `git merge-base` per branch: on this repository, thirty-odd process
+   * spawns. Asking that here would mean every session view of a repository
+   * paid for a panel most readers never open — so the rail asks only "is there
+   * a branch here", which is two spawns, and the rest happens when the panel
+   * is mounted.
+   */
+  const revisionRepo = useQuery({
+    queryKey: ['revisionRepo', id],
+    queryFn: () => api.revisionIsRepo(id),
+    staleTime: 30_000,
+  });
+  const revisionReviews = useQuery({
+    queryKey: ['revisionReviews', id],
+    queryFn: () => api.revisionReviews(id),
+    staleTime: 30_000,
+  });
+  const revisionComments = (revisionReviews.data ?? []).reduce((n, r) => n + r.comments.length, 0);
+  const revisionUnsent = (revisionReviews.data ?? []).reduce(
+    (n, r) => n + (r.copiedAt ? 0 : r.comments.length),
+    0,
+  );
+  /**
    * What the other two panels hold — absolute and normalised, one lookup each.
    *
    * For a CHIP on the row and not to hide it. Dropping a mention because another
@@ -840,6 +955,12 @@ export function SessionViewPage() {
   const inspector = useInspector({
     planCount,
     planUnsent,
+    projectFolder: filesRoot.data ? filesRoot.data.exists && filesRoot.data.isDirectory : null,
+    fileComments,
+    fileUnsent,
+    isRepo: revisionRepo.data ? revisionRepo.data.isRepo : null,
+    revisionComments,
+    revisionUnsent,
     changed: session?.fileChanges.length ?? 0,
     sent: sessionFiles.total,
     mentionCandidates: mentionCandidates.length,
@@ -871,7 +992,7 @@ export function SessionViewPage() {
   const sideLayout = useSideLayout({
     mobile,
     inspector: inspector.open === null ? null : inspector.width,
-    column: agentId || fileRef ? column.width : null,
+    column: agentId || fileRef || revFileParam ? column.width : null,
     // Whichever seam is under the hand wins, and the other gives way to its
     // floor — the pane you are dragging is the one you mean. At rest it is the
     // column's, which is the thing just opened to be looked at.
@@ -886,7 +1007,7 @@ export function SessionViewPage() {
   const navigate = useNavigate();
 
   /**
-   * Android's Back, on the four things Escape unwinds.
+   * Android's Back, on the five things Escape unwinds.
    *
    * One registration each rather than one chain, because on a phone these are
    * sheets stacked over the conversation and Back means "close the one on top"
@@ -897,6 +1018,7 @@ export function SessionViewPage() {
    */
   useBackDismiss(!!fileRef, closeFile);
   useBackDismiss(!!agentId, closeAgent);
+  useBackDismiss(!!revFileParam, closeRevisionFile);
   useBackDismiss(inspector.open !== null, inspector.close);
   useBackDismiss(finder.isOpen, finder.close);
 
@@ -910,10 +1032,11 @@ export function SessionViewPage() {
       // focus; this is the one that stays true when it moves.)
       if (isFromTerminal(e.target)) return;
       // Outermost first: the column beside the session, then the rail's panel
-      // inside it, then the page. Two of these four branches can no longer both
-      // be true — a file and a subagent transcript are one slot — so the order
-      // between them is only what it costs to read; the order that matters is
-      // that a column closes before the panel it was opened from.
+      // inside it, then the page. The first three branches can no longer be
+      // true together — a file, a subagent transcript and one file of a branch
+      // review are one slot — so the order between them is only what it costs
+      // to read; the order that matters is that a column closes before the
+      // panel it was opened from.
       //
       // The inspector is one branch for every panel, which is what makes this
       // list honest: only the subagent list was ever in it, because putting one
@@ -926,13 +1049,25 @@ export function SessionViewPage() {
       // reading, with the bar still open behind you.
       if (fileRef) closeFile();
       else if (agentId) closeAgent();
+      else if (revFileParam) closeRevisionFile();
       else if (inspector.open !== null) inspector.close();
       else if (finder.isOpen) finder.close();
       else navigate(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [fileRef, closeFile, agentId, closeAgent, inspector, finder.isOpen, finder.close, navigate]);
+  }, [
+    fileRef,
+    closeFile,
+    agentId,
+    closeAgent,
+    revFileParam,
+    closeRevisionFile,
+    inspector,
+    finder.isOpen,
+    finder.close,
+    navigate,
+  ]);
 
   const { messageCount, thinkingCount, toolCount, compactionCount } = useMemo(() => {
     const items = (session?.turns ?? []).flatMap((t) => t.items);
@@ -1270,6 +1405,18 @@ export function SessionViewPage() {
               await queryClient.invalidateQueries({ queryKey: ['chat', id] });
             }}
             onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
+          />
+        );
+      case 'files':
+        return <FilesPanel sessionId={id} root={filesRoot.data ?? null} />;
+      case 'revision':
+        return (
+          <RevisionPanel
+            sessionId={id}
+            base={revisionBase}
+            onBase={setRevisionBase}
+            openPath={revFileParam}
+            onOpenFile={openRevisionFile}
           />
         );
       case 'changed':
@@ -1641,6 +1788,20 @@ export function SessionViewPage() {
                 jumpNonce={jumpNonce}
                 running={agentRunning}
                 onClose={closeAgent}
+              />
+            </SideColumn>
+          )}
+          {revFileParam && (
+            <SideColumn kind="revision" mobile={mobile} width={sideLayout.column} onResizeStart={startColumnResize}>
+              <RevisionDiffColumn
+                // Keyed on the file AND the base: switching either starts a
+                // fresh panel rather than scrolling the previous diff's state
+                // onto a new body. The COLUMN is not keyed, so the width holds.
+                key={`${revFileParam}:${revisionBase ?? ''}`}
+                sessionId={id}
+                base={revisionBase}
+                path={revFileParam}
+                onClose={closeRevisionFile}
               />
             </SideColumn>
           )}

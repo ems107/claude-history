@@ -53,6 +53,8 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     const onTerminal = (id: string) => send({ type: 'terminal-changed', id });
     const onStars = () => send({ type: 'stars-changed' });
     const onPlanReviews = (sessionId: string) => send({ type: 'plan-reviews-changed', sessionId });
+    const onFileReviews = (sessionId: string) => send({ type: 'file-reviews-changed', sessionId });
+    const onRevisionReviews = (sessionId: string) => send({ type: 'revision-reviews-changed', sessionId });
     // The settings themselves are NOT carried: every event here announces, and
     // the browser asks. `/api/settings` is a local read and answers in ~3 ms.
     const onSettings = () => send({ type: 'settings-changed' });
@@ -74,6 +76,8 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
     ctx.index.events.on('index-progress', onProgress);
     ctx.index.events.on('stars-changed', onStars);
     ctx.index.events.on('plan-reviews-changed', onPlanReviews);
+    ctx.index.events.on('file-reviews-changed', onFileReviews);
+    ctx.index.events.on('revision-reviews-changed', onRevisionReviews);
     ctx.index.events.on('settings-changed', onSettings);
     ctx.index.events.on('prices-changed', onPrices);
     ctx.updates.events.on('update-status', onUpdateStatus);
@@ -100,6 +104,8 @@ export function registerEventRoutes(app: FastifyInstance, ctx: AppContext): void
       ctx.index.events.off('index-progress', onProgress);
       ctx.index.events.off('stars-changed', onStars);
       ctx.index.events.off('plan-reviews-changed', onPlanReviews);
+      ctx.index.events.off('file-reviews-changed', onFileReviews);
+      ctx.index.events.off('revision-reviews-changed', onRevisionReviews);
       ctx.index.events.off('settings-changed', onSettings);
       ctx.index.events.off('prices-changed', onPrices);
       ctx.updates.events.off('update-status', onUpdateStatus);

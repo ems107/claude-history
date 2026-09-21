@@ -236,6 +236,31 @@ export function normalisePath(path: string): string {
   return path.replaceAll('\\', '/').toLowerCase();
 }
 
+/**
+ * A path as Claude Code itself would name it: relative to the session's launch
+ * cwd when it is inside that folder, absolute when it is not.
+ *
+ * The one home for the question "which file is this, for the purposes of a
+ * remark", and it has to be asked of the path the SERVER resolved rather than
+ * of the reference that was clicked: the same file reached through
+ * `src/foo.ts`, `./src/foo.ts` and `C:\…\src\foo.ts` is one file with one
+ * basket entry, and only the resolved form makes those three agree.
+ *
+ * Compared through `normalisePath` — slashes folded and case ignored, because
+ * Windows is the only filesystem here — but the string it RETURNS keeps the
+ * original spelling, because that one is read by a person and by Claude.
+ */
+export function relativeToProject(absolutePath: string, projectPath: string): string {
+  const forward = absolutePath.replaceAll('\\', '/');
+  const base = normalisePath(projectPath).replace(/\/+$/, '');
+  if (!base) return forward;
+  const norm = normalisePath(absolutePath);
+  // The project folder itself, which is not a file anybody comments on — but a
+  // name is better than an empty string if it ever gets here.
+  if (norm === base) return refBasename(absolutePath);
+  return norm.startsWith(`${base}/`) ? forward.slice(base.length + 1) : forward;
+}
+
 /** Last segment, `/` and `\` alike — these paths mix both. */
 export function refBasename(path: string): string {
   const parts = path.split(/[\\/]/);

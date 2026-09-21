@@ -77,7 +77,15 @@ export interface HunkActions {
   reaching?: boolean;
 }
 
-const lineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
+/**
+ * How one row of a diff is named, inside one file.
+ *
+ * Exported because a second feature now names rows too: the Revision panel
+ * marks the ones a remark was left on, and a second spelling of this string
+ * would be a mark that silently lands on nothing.
+ */
+export const diffLineKey = (hunkIndex: number, lineIndex: number): string => `${hunkIndex}:${lineIndex}`;
+const lineKey = diffLineKey;
 
 /**
  * The line on the other side of the same edit, or null when there is none.
@@ -121,11 +129,14 @@ function Hunk({
   index,
   actions,
   onExpand,
+  marked,
 }: {
   hunk: GitHunk;
   index: number;
   actions?: HunkActions;
   onExpand?: () => void;
+  /** Rows somebody has left a remark on, by `diffLineKey`. */
+  marked?: ReadonlySet<string>;
 }) {
   const mobile = useIsMobile();
   // Which lines pair up as one edit, and therefore what to mark inside them.
@@ -158,7 +169,11 @@ function Hunk({
             ⋮ {hunk.gapBefore} unchanged line{hunk.gapBefore === 1 ? '' : 's'}
           </div>
         ))}
-      <div className="flex items-center gap-2 bg-[var(--bg-raised)] px-2 py-0.5">
+      {/* The header carries the hunk's index too, and it is not decoration: a
+          drag that BEGINS here has no row to be traced to, and without this
+          there is nothing to say which hunk it began in — so a selection
+          running on into the next one could not be told from one that stayed. */}
+      <div data-hunk-index={index} className="flex items-center gap-2 bg-[var(--bg-raised)] px-2 py-0.5">
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-sky-300/70">{hunk.header}</span>
         {actions && (
           <span className="flex shrink-0 items-center gap-1">
@@ -194,12 +209,25 @@ function Hunk({
           <div
             key={i}
             data-line={changed ? lineKey(index, i) : undefined}
+            // Where this row IS, for a reader selecting text across it. On
+            // every row and not only the changed ones, because a remark can
+            // start on a line of context — and unlike `data-line` this says
+            // nothing about picking, which is why it is a second pair of
+            // attributes rather than a widening of that one.
+            data-hunk-index={index}
+            data-line-index={i}
             data-picked={isPicked ? '1' : undefined}
             onClick={pickable ? (e) => actions?.onPick?.(index, i, e.shiftKey || !!actions.reaching) : undefined}
             title={pickable ? 'Click to pick this line; shift-click to reach from the last one' : undefined}
             className={`flex font-mono text-[11px] leading-[18px] ${TONE[line.kind]} ${
               pickable ? 'cursor-pointer max-md:min-h-11 max-md:items-center' : ''
-            } ${isPicked ? 'outline outline-1 -outline-offset-1 outline-[var(--accent)]' : ''}`}
+            } ${isPicked ? 'outline outline-1 -outline-offset-1 outline-[var(--accent)]' : ''} ${
+              // Amber, like every note in this app, and a LEFT edge rather than
+              // a fill: the row already carries a colour that says what kind of
+              // change it is, and painting over that would trade a fact for an
+              // annotation.
+              marked?.has(lineKey(index, i)) ? 'border-l-2 border-amber-400' : ''
+            }`}
           >
             {/* A checkbox column only where there is something to pick, so the
                 gutters stay put and an unchanged line reads as unpickable.
@@ -233,10 +261,22 @@ function Hunk({
             )}
             <span className="w-4 shrink-0 text-center opacity-60 select-none">{SIGN[line.kind]}</span>
             {/* `select-text` is what makes a drag over the code a text selection
-                rather than a pick — which is right on a desktop and wrong on a
-                phone, where the same gesture is how you scroll a wide diff and
-                a stale selection then swallows the next tap. */}
-            <span className={`min-w-0 flex-1 pr-4 whitespace-pre ${mobile ? 'select-none' : 'select-text'}`}>
+                rather than a pick.
+
+                On a phone that used to be off outright, and the reason was
+                never the scrolling: it is that a stale selection swallows the
+                next TAP, and on a phone a tap is how a line gets picked for
+                staging. Which makes it a rule about PICKING rather than about
+                touch — so it now asks whether there is anything to pick. A
+                read-only diff (a commit's, and the Revision panel's) has
+                nothing for a selection to get in the way of, and being able to
+                select a passage there is the whole of how a remark is made on
+                a phone at all. */}
+            <span
+              className={`min-w-0 flex-1 pr-4 whitespace-pre ${
+                mobile && actions?.onPick ? 'select-none' : 'select-text'
+              }`}
+            >
               {spans
                 ? spans.map((span, k) =>
                     span.hit ? (
@@ -268,10 +308,13 @@ export function FileDiffBody({
   file,
   actions,
   onExpand,
+  marked,
 }: {
   file: GitFileDiff;
   actions?: HunkActions;
   onExpand?: () => void;
+  /** Rows somebody has left a remark on, by `diffLineKey`. */
+  marked?: ReadonlySet<string>;
 }) {
   return (
     /**
@@ -286,7 +329,10 @@ export function FileDiffBody({
      * the pane, gives every row the same width and the colour reaches the end
      * of the longest line in the file.
      */
-    <div className="overflow-x-auto">
+    // `data-file-path` is what a selection is traced back to: a remark on a
+    // diff has to name the file it is about, and the hunks below carry only
+    // their own index.
+    <div data-file-path={file.path} className="overflow-x-auto">
       <div className="w-max min-w-full">
       {file.binary ? (
         <p className="px-2 py-2 text-[11px] text-[var(--text-dim)]">Binary file — no text to compare.</p>
@@ -300,7 +346,9 @@ export function FileDiffBody({
           No textual changes — a mode change or a rename with identical content.
         </p>
       ) : (
-        file.hunks.map((hunk, i) => <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} />)
+        file.hunks.map((hunk, i) => (
+          <Hunk key={i} hunk={hunk} index={i} actions={actions} onExpand={onExpand} marked={marked} />
+        ))
       )}
       </div>
     </div>

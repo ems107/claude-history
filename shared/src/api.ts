@@ -2,11 +2,13 @@
 
 import type { GitFetchMode, GitMergeMode, GitPullMode, GitPushMode } from './git.ts';
 import type {
+  FileReviewRecord,
   LiveInfo,
   PlanRecord,
   PlanReviewRecord,
   ProjectGroup,
   ProjectInfo,
+  RevisionReviewRecord,
   SessionDetail,
   SessionSummary,
   StarredMessage,
@@ -713,6 +715,90 @@ export interface PlanFileResponse {
   plan: string | null;
   filePath: string | null;
 }
+
+/**
+ * The remarks left on files in one session (`GET /api/sessions/:id/file-comments`).
+ *
+ * One basket or none, where the plans answer with a list: a session browses one
+ * project, and every remark in it carries the file it is about.
+ */
+export type FileReviewResponse = FileReviewRecord | null;
+
+export interface FileReviewUpdateResponse {
+  ok: boolean;
+  /** The basket as stored, or null once the last remark in it was dropped. */
+  review: FileReviewRecord | null;
+  /** Whether anything was actually dropped — idempotent, for the star's reason. */
+  removed: boolean;
+}
+
+/** One thing in a directory of the session's project. */
+export interface FileTreeEntry {
+  /**
+   * Absolute, and built on the server rather than joined in the browser.
+   *
+   * `ScratchpadEntry` carries one for the same reason: it is what a row hands
+   * to the file column, and a reference that round-trips through the URL has to
+   * survive `parseFileRef` at the other end. A bare `LICENSE` does not — no
+   * separator and no known extension is not a file reference, by a rule that is
+   * right for a path written in prose — so a tree that sent names would open
+   * nothing at all for every extensionless file in a project root.
+   */
+  path: string;
+  /** The name alone, which is what the row draws: the rest of it is the indent. */
+  name: string;
+  isDirectory: boolean;
+  /** Files only; null for a directory, and for one that could not be measured. */
+  sizeBytes: number | null;
+  /** ISO-8601. Files only. */
+  modifiedAt: string | null;
+}
+
+/**
+ * ONE LEVEL of the project's folder tree (`GET /api/sessions/:id/files/tree`).
+ *
+ * Deliberately not the scratchpad's flat recursive walk. That one enumerates a
+ * temp folder this app's own sessions filled; this is somebody's project, and a
+ * project holds `node_modules` — a recursive listing of it is a filesystem
+ * scanner with a friendly name. The client asks for one directory and expands
+ * under demand, which is what a file explorer does and what keeps the cost
+ * proportional to what is actually being looked at.
+ *
+ * "Not there" and "not a directory" are 200s the panel draws: a session whose
+ * project folder has been moved or deleted is ordinary, and so is a session
+ * with no real path at all — one whose transcript never recorded a cwd resolves
+ * to the lossy encoded directory name, which is not a path anywhere.
+ */
+export interface FileTreeResponse {
+  /** The directory that was listed, absolute and resolved. */
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  entries: FileTreeEntry[];
+  /** The level stopped at `MAX_TREE_ENTRIES`; there is more in this folder. */
+  truncated: boolean;
+}
+
+/** Every comparison of this session that somebody has left remarks on. */
+export type RevisionReviewsResponse = RevisionReviewRecord[];
+
+export interface RevisionReviewUpdateResponse {
+  ok: boolean;
+  /** The basket as stored, or null once the last remark in it was dropped. */
+  review: RevisionReviewRecord | null;
+  removed: boolean;
+}
+
+/**
+ * How many entries one LEVEL of the tree will list.
+ *
+ * Generous where `MAX_SCRATCHPAD_ENTRIES` is careful, and it can afford to be:
+ * that cap covers a whole recursive walk, this one covers a single directory
+ * somebody has just clicked on. A folder with more than five thousand things
+ * directly inside it is a folder no tree makes readable anyway, and the answer
+ * says `truncated` rather than pretending otherwise.
+ */
+export const MAX_TREE_ENTRIES = 5000;
 
 export interface ResumeResponse {
   ok: boolean;
@@ -2363,6 +2449,16 @@ export type ServerEvent =
    * would be the one cost this panel cannot pay while somebody types into it.
    */
   | { type: 'plan-reviews-changed'; sessionId: string }
+  /**
+   * A remark on a file of this session's project was written, edited, dropped,
+   * or the basket copied. Its own event beside `plan-reviews-changed`, for
+   * exactly the same reasons: the transcript did not change, so nothing may
+   * invalidate `['session', id]` over it, and a remark written on the desktop
+   * has to reach the phone reading the same session.
+   */
+  | { type: 'file-reviews-changed'; sessionId: string }
+  /** The same again for the remarks on a branch comparison, and for the same reasons. */
+  | { type: 'revision-reviews-changed'; sessionId: string }
   /**
    * Settings were saved. Its own event because a window has no other way to
    * hear about a save it did not make: `['settings']` is mounted for the life of

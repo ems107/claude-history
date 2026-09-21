@@ -2,12 +2,16 @@ import { EventEmitter } from 'node:events';
 import type {
   AppSettings,
   ToneChoice,
+  FileCommentRecord,
+  FileReviewRecord,
   IndexState,
   LiveSessionEntry,
   PlanCommentRecord,
   PlanReviewRecord,
   PriceTable,
   ProjectInfo,
+  RevisionCommentRecord,
+  RevisionReviewRecord,
   SessionEnrichment,
   SessionSummary,
   StarredMessage,
@@ -75,6 +79,17 @@ function starKey(sessionId: string, uuid: string): string {
  */
 function planReviewKey(sessionId: string, planKey: string): string {
   return `${sessionId}:${planKey}`;
+}
+
+/**
+ * A basket of diff remarks belongs to one COMPARISON of one session.
+ *
+ * `comparisonKey` is a hash of the two branch names, minted in the browser — a
+ * name can hold a `/`, which cannot travel in a path segment, and hashing it is
+ * also what keeps the URL from carrying anything a reader has to escape.
+ */
+function revisionReviewKey(sessionId: string, comparisonKey: string): string {
+  return `${sessionId}:${comparisonKey}`;
 }
 
 /**
@@ -250,6 +265,19 @@ export class SessionIndex {
    * at a time and must not walk the list to find it.
    */
   private planReviews = new Map<string, PlanReviewRecord>();
+  /**
+   * Remarks left on files of a session's project, keyed by the session ALONE —
+   * stored in userdata.json. One basket per session rather than one per file,
+   * which is what makes browsing a project one activity and one paste: the file
+   * each remark is about travels inside it.
+   */
+  private fileReviews = new Map<string, FileReviewRecord>();
+  /**
+   * Remarks on a branch comparison, keyed `<sessionId>:<comparisonKey>` —
+   * stored in userdata.json. One basket per pair of branches, so switching the
+   * base and switching back finds the review you left rather than an empty one.
+   */
+  private revisionReviews = new Map<string, RevisionReviewRecord>();
   /** Custom model price table — null means "use defaults". */
   private prices: PriceTable | null = null;
   /** User settings — stored in userdata.json alongside renames and pins. */
@@ -294,6 +322,8 @@ export class SessionIndex {
       pins?: string[];
       stars?: StarredMessage[];
       planReviews?: PlanReviewRecord[];
+      fileReviews?: FileReviewRecord[];
+      revisionReviews?: RevisionReviewRecord[];
       prices?: PriceTable;
       settings?: Partial<AppSettings>;
       auth?: AuthConfig;
@@ -633,6 +663,12 @@ export class SessionIndex {
       // the loss worth taking a copy over, and a count of stacks would call
       // that no change at all.
       planComments: [...this.planReviews.values()].reduce((n, r) => n + r.comments.length, 0),
+      // Counted the same way and for the same reason — one basket holds every
+      // file of a session, so counting baskets would call losing nine remarks
+      // across four files no change at all.
+      fileComments: [...this.fileReviews.values()].reduce((n, r) => n + r.comments.length, 0),
+      /** And the same again for the remarks on a branch comparison. */
+      revisionComments: [...this.revisionReviews.values()].reduce((n, r) => n + r.comments.length, 0),
       // Counted like the rest so a write that drops the credentials leaves a
       // copy behind. Losing them locks every remote device out until someone
       // walks to the machine — recoverable, but only from a backup.
@@ -655,6 +691,8 @@ export class SessionIndex {
     pins?: string[];
     stars?: StarredMessage[];
     planReviews?: PlanReviewRecord[];
+    fileReviews?: FileReviewRecord[];
+    revisionReviews?: RevisionReviewRecord[];
     prices?: PriceTable;
     settings?: Partial<AppSettings>;
     auth?: AuthConfig;
@@ -686,6 +724,28 @@ export class SessionIndex {
             r.comments.length > 0,
         )
         .map((r) => [planReviewKey(r.sessionId, r.planKey), r]),
+    );
+    // Same filters as the stacks above, minus the key: a basket IS its session.
+    this.fileReviews = new Map(
+      (userdata?.fileReviews ?? [])
+        .filter(
+          (r) => typeof r?.sessionId === 'string' && Array.isArray(r.comments) && r.comments.length > 0,
+        )
+        .map((r) => [r.sessionId, r]),
+    );
+    // And the same again, keyed on the comparison the remarks are about.
+    this.revisionReviews = new Map(
+      (userdata?.revisionReviews ?? [])
+        .filter(
+          (r) =>
+            typeof r?.sessionId === 'string' &&
+            typeof r.comparisonKey === 'string' &&
+            typeof r.currentBranch === 'string' &&
+            typeof r.baseBranch === 'string' &&
+            Array.isArray(r.comments) &&
+            r.comments.length > 0,
+        )
+        .map((r) => [revisionReviewKey(r.sessionId, r.comparisonKey), r]),
     );
     this.prices = userdata?.prices ?? null;
     // Every field or it is not credentials at all: a half-written record here
@@ -772,6 +832,8 @@ export class SessionIndex {
       pins: [...this.pins],
       stars: [...this.stars.values()],
       planReviews: [...this.planReviews.values()],
+      fileReviews: [...this.fileReviews.values()],
+      revisionReviews: [...this.revisionReviews.values()],
       settings: this.settings,
       gitRepos: this.gitRepos,
       gitScanRoots: this.gitScanRoots,
@@ -1092,6 +1154,168 @@ export class SessionIndex {
     this.planReviews.set(key, next);
     await this.saveUserdata();
     this.events.emit('plan-reviews-changed', sessionId);
+    return next;
+  }
+
+  /**
+   * The remarks left on files of one session's project, or none yet.
+   *
+   * One basket rather than the plans' list, which is the whole difference
+   * between the two features: a session has several plans and each gets its own
+   * stack, but it browses ONE project, and what leaves at the end is everything
+   * said about it.
+   */
+  getFileReview(sessionId: string): FileReviewRecord | undefined {
+    return this.fileReviews.get(sessionId);
+  }
+
+  /** Write a remark on a file, or replace the one already under that id. */
+  async setFileComment(sessionId: string, comment: FileCommentRecord): Promise<FileReviewRecord> {
+    const current = this.fileReviews.get(sessionId);
+    const at = new Date().toISOString();
+    const existing = current?.comments.find((c) => c.id === comment.id);
+    // `createdAt` survives an edit and `editedAt` records it — the plan stack's
+    // rule, for the same reason: the two answer different questions.
+    const stored: FileCommentRecord = existing
+      ? { ...comment, createdAt: existing.createdAt, editedAt: at }
+      : { ...comment, createdAt: at, editedAt: null };
+    const comments = existing
+      ? current!.comments.map((c) => (c.id === comment.id ? stored : c))
+      : [...(current?.comments ?? []), stored];
+    // `copiedAt` cleared: the mark means "this basket, as it stands, has been
+    // put in front of Claude", and one somebody has since added to has not.
+    const next: FileReviewRecord = { sessionId, comments, updatedAt: at, copiedAt: null };
+    this.fileReviews.set(sessionId, next);
+    await this.saveUserdata();
+    this.events.emit('file-reviews-changed', sessionId);
+    return next;
+  }
+
+  /** Drop one remark, and the whole basket with it once it was the last. */
+  async removeFileComment(
+    sessionId: string,
+    commentId: string,
+  ): Promise<{ removed: boolean; review: FileReviewRecord | null }> {
+    const current = this.fileReviews.get(sessionId);
+    if (!current?.comments.some((c) => c.id === commentId)) return { removed: false, review: current ?? null };
+    const comments = current.comments.filter((c) => c.id !== commentId);
+    let review: FileReviewRecord | null = null;
+    if (comments.length === 0) this.fileReviews.delete(sessionId);
+    else {
+      review = { ...current, comments, updatedAt: new Date().toISOString() };
+      this.fileReviews.set(sessionId, review);
+    }
+    await this.saveUserdata();
+    this.events.emit('file-reviews-changed', sessionId);
+    return { removed: true, review };
+  }
+
+  /** The *clear all* button: the basket goes, in one write and one event. */
+  async clearFileReview(sessionId: string): Promise<boolean> {
+    if (!this.fileReviews.delete(sessionId)) return false;
+    await this.saveUserdata();
+    this.events.emit('file-reviews-changed', sessionId);
+    return true;
+  }
+
+  /**
+   * Stamp the basket as having left.
+   *
+   * Only one exit exists here, and it is the copy: nothing in this app can hand
+   * a file remark to Claude itself, the way a plan's stack rides a refusal. The
+   * paste is what puts it in front of him, and this is the record that it
+   * happened — which is what the rail's badge counts down.
+   */
+  async markFileReviewCopied(sessionId: string): Promise<FileReviewRecord | null> {
+    const current = this.fileReviews.get(sessionId);
+    if (!current) return null;
+    const next: FileReviewRecord = { ...current, copiedAt: new Date().toISOString() };
+    this.fileReviews.set(sessionId, next);
+    await this.saveUserdata();
+    this.events.emit('file-reviews-changed', sessionId);
+    return next;
+  }
+
+  /**
+   * Every branch comparison of one session that has remarks on it.
+   *
+   * Read by the panel, and also by `revision/info` to decide what the base
+   * dropdown opens on — a review already under way beats any guess about where
+   * the branch came from.
+   */
+  listRevisionReviews(sessionId: string): RevisionReviewRecord[] {
+    return [...this.revisionReviews.values()].filter((r) => r.sessionId === sessionId);
+  }
+
+  /** Write a remark on a diff, or replace the one already under that id. */
+  async setRevisionComment(
+    sessionId: string,
+    comparisonKey: string,
+    branches: { currentBranch: string; baseBranch: string },
+    comment: RevisionCommentRecord,
+  ): Promise<RevisionReviewRecord> {
+    const key = revisionReviewKey(sessionId, comparisonKey);
+    const current = this.revisionReviews.get(key);
+    const at = new Date().toISOString();
+    const existing = current?.comments.find((c) => c.id === comment.id);
+    const stored: RevisionCommentRecord = existing
+      ? { ...comment, createdAt: existing.createdAt, editedAt: at }
+      : { ...comment, createdAt: at, editedAt: null };
+    const comments = existing
+      ? current!.comments.map((c) => (c.id === comment.id ? stored : c))
+      : [...(current?.comments ?? []), stored];
+    const next: RevisionReviewRecord = {
+      sessionId,
+      comparisonKey,
+      // The names come from the body every time rather than being kept from the
+      // first write: they are what the copied prose is headed with, and the
+      // client is the only thing that knows which comparison is on screen.
+      ...branches,
+      comments,
+      updatedAt: at,
+      copiedAt: null,
+    };
+    this.revisionReviews.set(key, next);
+    await this.saveUserdata();
+    this.events.emit('revision-reviews-changed', sessionId);
+    return next;
+  }
+
+  async removeRevisionComment(
+    sessionId: string,
+    comparisonKey: string,
+    commentId: string,
+  ): Promise<{ removed: boolean; review: RevisionReviewRecord | null }> {
+    const key = revisionReviewKey(sessionId, comparisonKey);
+    const current = this.revisionReviews.get(key);
+    if (!current?.comments.some((c) => c.id === commentId)) return { removed: false, review: current ?? null };
+    const comments = current.comments.filter((c) => c.id !== commentId);
+    let review: RevisionReviewRecord | null = null;
+    if (comments.length === 0) this.revisionReviews.delete(key);
+    else {
+      review = { ...current, comments, updatedAt: new Date().toISOString() };
+      this.revisionReviews.set(key, review);
+    }
+    await this.saveUserdata();
+    this.events.emit('revision-reviews-changed', sessionId);
+    return { removed: true, review };
+  }
+
+  async clearRevisionReview(sessionId: string, comparisonKey: string): Promise<boolean> {
+    if (!this.revisionReviews.delete(revisionReviewKey(sessionId, comparisonKey))) return false;
+    await this.saveUserdata();
+    this.events.emit('revision-reviews-changed', sessionId);
+    return true;
+  }
+
+  async markRevisionReviewCopied(sessionId: string, comparisonKey: string): Promise<RevisionReviewRecord | null> {
+    const key = revisionReviewKey(sessionId, comparisonKey);
+    const current = this.revisionReviews.get(key);
+    if (!current) return null;
+    const next: RevisionReviewRecord = { ...current, copiedAt: new Date().toISOString() };
+    this.revisionReviews.set(key, next);
+    await this.saveUserdata();
+    this.events.emit('revision-reviews-changed', sessionId);
     return next;
   }
 

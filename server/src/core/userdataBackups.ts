@@ -26,6 +26,17 @@ export interface UserdataCounts {
    * `undefined > 0` is false, so an older file cannot raise a false `pre-loss`.
    */
   planComments: number;
+  /**
+   * Remarks left on files of a project, counted one by one for the reason
+   * above. One basket holds every file of a session, so counting baskets would
+   * call losing nine remarks across four files no change at all.
+   *
+   * A `state.json` written before this key existed reads `undefined`, and
+   * `undefined > 0` is false, so an older file cannot raise a false `pre-loss`.
+   */
+  fileComments: number;
+  /** Remarks on a branch comparison, counted the same way and for the same reason. */
+  revisionComments: number;
   /** 0 or 1: the remote-access credentials are one record or none. */
   auth: number;
   /**
@@ -156,6 +167,8 @@ export class UserdataBackups {
     pins: 0,
     stars: 0,
     planComments: 0,
+    fileComments: 0,
+    revisionComments: 0,
     auth: 0,
     projectGroups: 0,
   };

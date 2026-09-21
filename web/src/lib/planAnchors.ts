@@ -1,77 +1,16 @@
-/**
- * Where a remark on a plan actually points, in the rendered markdown.
- *
- * The maths lives here rather than in the panel because two things now need it
- * — the reviewer that makes an anchor and the panel that repaints one written
- * days ago — and because it is the half that can be reasoned about without a
- * component around it.
- *
- * A remark carries BOTH a quote and a pair of offsets, and neither can be
- * recovered from the other: a selection crossing two blocks reads back with
- * newlines the rendered text does not have, so the quote is what a human and a
- * model read while the offsets are what the browser paints.
- */
+import { rangeOf, renderedText } from './anchors.ts';
 
 /**
- * Every text node under `root`, in document order — the string the offsets index.
+ * Where a remark on a PLAN actually points, in the rendered markdown.
  *
- * **Not `highlight.ts`'s function of the same name**, which rejects any subtree
- * marked `data-chrome` so the find bar never counts a button's label as a hit.
- * This one may not skip anything: these offsets are positions in the plan's
- * whole rendered text, and a walker that left parts out would put every anchor
- * after the gap in the wrong place.
+ * The arithmetic underneath it — a selection to two offsets and back — moved to
+ * [anchors.ts](anchors.ts) when the file viewer grew remarks of its own. What
+ * stays here is the half that knows it is looking at markdown: the heading a
+ * passage sits under, and the recovery that uses it to tell two identical
+ * quotes apart.
  */
-function textNodesIn(root: HTMLElement): Text[] {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const out: Text[] = [];
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) out.push(n as Text);
-  return out;
-}
 
-/** That string itself — what a quote is searched for in. */
-function renderedText(root: HTMLElement): string {
-  let out = '';
-  for (const node of textNodesIn(root)) out += node.data;
-  return out;
-}
-
-/** Where a selection falls in that string, or null if either end is not text. */
-export function offsetsOf(root: HTMLElement, range: Range): { start: number; end: number } | null {
-  let pos = 0;
-  let start = -1;
-  let end = -1;
-  for (const node of textNodesIn(root)) {
-    if (node === range.startContainer) start = pos + range.startOffset;
-    if (node === range.endContainer) end = pos + range.endOffset;
-    pos += node.data.length;
-  }
-  return start >= 0 && end > start ? { start, end } : null;
-}
-
-/**
- * The inverse, and the reason the offsets are stored at all: the reviewer is
- * rendered more than once — in a panel and, full screen, in a portal — and the
- * second one is a fresh set of nodes. A `Range` cannot survive that; two
- * numbers can.
- */
-function rangeOf(root: HTMLElement, start: number, end: number): Range | null {
-  const range = document.createRange();
-  let pos = 0;
-  let opened = false;
-  for (const node of textNodesIn(root)) {
-    const len = node.data.length;
-    if (!opened && start <= pos + len) {
-      range.setStart(node, Math.max(0, start - pos));
-      opened = true;
-    }
-    if (opened && end <= pos + len) {
-      range.setEnd(node, Math.max(0, end - pos));
-      return range;
-    }
-    pos += len;
-  }
-  return null;
-}
+export { offsetsOf, snapToWords } from './anchors.ts';
 
 /**
  * The heading a passage sits under: the nearest `h1`-`h6` before it, walking
@@ -88,35 +27,6 @@ export function headingOf(node: Node): string {
     }
   }
   return '';
-}
-
-/**
- * The selection grown out to whole words.
- *
- * A drag ends where the mouse came up, so a real reader's selection routinely
- * starts and finishes mid-word — `d porque, según CLAUDE.md d` was a live one.
- * As a quote that is both ugly to read and a worse anchor: it is the text
- * Claude is asked to find in its own plan. Only the two ends are touched, and
- * only while both sides of them are word characters, so a selection that
- * already lands on a boundary is left exactly where it was.
- */
-export function snapToWords(range: Range): Range {
-  const word = /[\p{L}\p{N}_]/u;
-  const snapped = range.cloneRange();
-  const { startContainer, endContainer } = snapped;
-  if (startContainer.nodeType === Node.TEXT_NODE) {
-    const data = (startContainer as Text).data;
-    let at = snapped.startOffset;
-    while (at > 0 && word.test(data[at - 1] ?? '') && word.test(data[at] ?? '')) at--;
-    snapped.setStart(startContainer, at);
-  }
-  if (endContainer.nodeType === Node.TEXT_NODE) {
-    const data = (endContainer as Text).data;
-    let at = snapped.endOffset;
-    while (at < data.length && word.test(data[at] ?? '') && word.test(data[at - 1] ?? '')) at++;
-    snapped.setEnd(endContainer, at);
-  }
-  return snapped;
 }
 
 /** What a remark needs for its passage to be found again. */
@@ -145,6 +55,11 @@ export interface Anchored {
  * moved is re-found by its own words instead of painted over the wrong
  * sentence. A remark that cannot be found at all is **listed and not painted**:
  * it is still what somebody wrote, and it still says which passage it meant.
+ *
+ * **A remark on a FILE gets none of this** (`fileAnchors.ts`), and deliberately:
+ * a file on disk really does change, so a quote re-found in a rewritten file
+ * would be a passage nobody pointed at. There the offsets are trusted or the
+ * passage goes unpainted, and the remark is frozen prose either way.
  */
 export function resolveAnchor(root: HTMLElement, comment: Anchored): Range | null {
   if (comment.start < 0 || comment.end <= comment.start) return null;
