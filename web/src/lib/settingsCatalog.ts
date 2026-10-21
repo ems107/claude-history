@@ -497,6 +497,12 @@ export const ENTRIES: Entry[] = [
     label: 'How many sessions may run at once',
     keywords: 'cap limit concurrent processes active',
   },
+  {
+    id: 'act-elevated-terminals',
+    group: 'chat',
+    label: 'Administrator terminals',
+    keywords: 'admin administrator elevated elevation uac sudo runas privileges shield',
+  },
 
   // Remote access
   {

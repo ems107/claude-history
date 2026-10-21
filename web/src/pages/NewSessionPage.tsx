@@ -181,6 +181,23 @@ export function NewSessionPage() {
   const terminalMode = chatEnabled && settings.data?.settings.chatMode === 'terminal';
   /** A terminal was started on this draft — the terminal-mode equivalent of a first prompt. */
   const [terminalStarted, setTerminalStarted] = useState(false);
+  /**
+   * Start that terminal with administrator rights.
+   *
+   * Asked here because a row click starts the session at once, so there is no
+   * later moment to ask it in. **Never remembered**, unlike the typed folder and
+   * the model: elevation is a decision about this piece of work, and a box that
+   * came back ticked would hand the next, unrelated session administrator
+   * rights nobody asked for. Offered only while the task is set up — a box that
+   * can only fail is not a choice.
+   */
+  const [elevated, setElevated] = useState(false);
+  const elevation = useQuery({
+    queryKey: ['elevated-terminals'],
+    queryFn: api.elevatedTerminals,
+    enabled: terminalMode,
+  });
+  const canElevate = terminalMode && elevation.data?.state === 'on';
   const view = useViewPrefs();
   const browse = useLocalOnly('pickFolder');
   // The field beside it is the way in from a phone, and it is untouched.
@@ -518,6 +535,17 @@ export function NewSessionPage() {
                     Claude Code runs in a folder, and everything it reads or writes is relative to that folder. Pick
                     one and the session starts there.
                   </p>
+                  {canElevate && (
+                    <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-amber-300">
+                      <input
+                        type="checkbox"
+                        checked={elevated}
+                        onChange={(e) => setElevated(e.target.checked)}
+                        className="accent-amber-500"
+                      />
+                      🛡 Start the terminal as administrator
+                    </label>
+                  )}
                   <div>
                     <input
                       autoFocus
@@ -674,6 +702,7 @@ export function NewSessionPage() {
                     // been answered — so the terminal comes up running and
                     // focused rather than behind a button repeating it.
                     autoStart
+                    autoStartElevated={canElevate && elevated}
                     onStarted={() => setTerminalStarted(true)}
                   />
                 ) : (

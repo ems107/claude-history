@@ -37,7 +37,7 @@ A compiled `.node` binary is not JavaScript, so the embedded terminal's pseudo-c
 ├── install.json                               <- marker; the updater detects installed mode by it
 ├── update.log
 ├── current  -> junction -> versions\vX.Y.Z    <- the scheduled task points THROUGH this
-└── versions\vX.Y.Z\{node\node.exe, server.cjs, node_modules\, web\, start-hidden.vbs, update-helper.ps1}
+└── versions\vX.Y.Z\{node\node.exe, server.cjs, elevated-host.cjs, node_modules\, web\, start-hidden.vbs, run-hidden.vbs, update-helper.ps1}
 ```
 
 `install.ps1` **relocates** the app to `%LOCALAPPDATA%\Programs\claude-history` (overridable with `-InstallTo`), so the user can extract the zip anywhere and delete it afterwards. `-Portable` skips the managed install entirely and just runs the server in the console — no task, no shortcut, no `install.json`, so the updater reports `installed: false` and refuses to apply. A **dev instance is not an install either** and is detected the same way: `detectInstall()` resolves from the running entry path, so a source run can never find — let alone swap — the release's `current` junction, whatever port it is on. **`Program Files` is deliberately NOT supported**: self-update writes into the install folder and would need elevation on every update.
@@ -57,6 +57,7 @@ A compiled `.node` binary is not JavaScript, so the embedded terminal's pseudo-c
   It used to point at `node\node.exe,0`, which is why every install before 1.19.2 wore Node's logo in the Start Menu — including, for one release, the one that had just been given an icon of its own.
 - **Ending the task only kills the wscript wrapper, not node** (the process tree is NOT terminated, verified). The server therefore runs with `--exit-with-parent`: it watches `process.ppid` every 3 s and exits when the parent dies. **Never remove that flag** from `start-hidden.vbs`.
 - **Port 7433 is released a few seconds AFTER the task ends** (that watchdog polls every 3 s). Anything that restarts the app must wait for the port to be free, then verify `/api/meta` reports the expected **version** — never just that something answers `/api/health`, because the outgoing instance answers too and makes a failed start look successful. That bug made installs silently die minutes later.
+- **A second task exists only once the user asks for it**: `claude-history-elevated`, `RunLevel Highest`, registered from Settings behind a UAC prompt for administrator terminals ([Running Claude](AI_RUNNING_CLAUDE.md#an-elevated-terminal-the-same-cli-with-administrator-rights)). Its action is `wscript.exe //B <root>\current\run-hidden.vbs <root>\current\node\node.exe <root>\current\elevated-host.cjs --data-dir …` — **through `current`** like the main task, so an update moves it with no prompt; aimed at a version folder it would start the old host after every update. `elevated-host.cjs` is a bundle of its own (package.mjs step 1b), carrying the host and its wire and never the server, because it runs elevated. The installer never registers it; `uninstall.ps1` tries to remove it and, refused without elevation, prints the command instead.
 - Junctions (`New-Item -ItemType Junction`) need no admin; deleting one via `(Get-Item).Delete()` removes the reparse point only. The helper swaps `current` only after the old server pid is dead.
 
 ### Installer scripts

@@ -11,6 +11,7 @@ import type { McpLogsResponse,
   ChatPlanDecision,
   ChatSendRequest,
   ChatStatusResponse,
+  ElevatedTerminalsStatus,
   FileOpenRequest,
   FileOpenResponse,
   FileReadResponse,
@@ -169,6 +170,14 @@ export const api = {
   setFirewallRule: async (allow: boolean) => {
     const res = await fetch('/api/firewall', { method: allow ? 'POST' : 'DELETE' });
     const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+    if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+    return body;
+  },
+  elevatedTerminals: () => getJson<ElevatedTerminalsStatus>('/api/elevated-terminals'),
+  /** Register (true) or remove (false) the task behind administrator terminals. Raises a UAC prompt. */
+  setElevatedTerminals: async (on: boolean) => {
+    const res = await fetch('/api/elevated-terminals', { method: on ? 'POST' : 'DELETE' });
+    const body = (await res.json().catch(() => ({}))) as ElevatedTerminalsStatus & { error?: string };
     if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
     return body;
   },

@@ -1,6 +1,6 @@
 # Running Claude: usage, auto-reload, the composer and the embedded terminal
 
-**Load this when:** you touch `core/usage.ts`, `core/autoReload.ts`, `core/sessionChat.ts`, `core/sessionTerminal.ts`, `core/writerGuard.ts`, the usage widget, the auto-reload panel, the composer or the terminal — i.e. anything that talks to Anthropic or spawns a `claude` process.
+**Load this when:** you touch `core/usage.ts`, `core/autoReload.ts`, `core/sessionChat.ts`, `core/sessionTerminal.ts`, `core/elevatedHost.ts`, `elevated/`, `core/writerGuard.ts`, the usage widget, the auto-reload panel, the composer or the terminal — i.e. anything that talks to Anthropic or spawns a `claude` process.
 
 ## The line between reading and running
 
@@ -23,6 +23,7 @@ The app has two halves and they are not the same kind of thing. **Everything tha
 - **A new session's id is minted here, and which of `sessionId` / `resume` applies is asked of the disk**, never remembered in a flag.
 - **A typed folder is the one path that comes from the request**, and it is validated rather than trusted.
 - **The embedded terminal runs `claude.exe` with no shell around it** — that is what keeps the pid guard honest and a remote browser no more powerful than the composer already makes it.
+- **An elevated terminal is the same terminal with a different parent**: `claude.exe` inside the elevated host, which runs that command line and nothing else and dies with the server's connection. Off until it is turned on, and turning it on is the only UAC prompt the feature ever shows.
 - **The pseudo-console is OURS and pinned**, like the Node runtime a release carries: `useConptyDll: true`, never the one the machine's Windows build happens to have.
 - **A pseudo-terminal belongs to the server, not to the tab.** Closing a browser detaches; it never kills anything.
 - **Except a session that never became a conversation, which nobody may leave running for ever** — one minute after the last browser leaves, in both doors, because there is no transcript, no cache and no page in the app that can reach it.
@@ -453,10 +454,38 @@ The slot at the foot of the conversation is shared with the composer, and everyt
 - **The keys belong to the CLI.** `isFromTerminal` asks the DOM, and the find bar's Ctrl+F and the page's Escape both stand aside for anything born inside `[data-terminal]`. Asked of the DOM rather than tracked in state, because xterm moves focus between its helper textarea and its own elements as it pleases, and a boolean beside that would be wrong exactly when it mattered.
 - **Ctrl+V pastes, and the way to make it paste is to do nothing.** xterm maps every Ctrl+letter to its control code — `\x16` here — and that mapping carries `cancel: true`, so xterm calls `preventDefault` and the browser's own paste command never runs. Its `paste` listener was there the whole time, bracketed-paste and all; nothing was reaching it. Returning false from the custom handler makes `_keyDown` bail before that `cancel`, the browser pastes into the helper textarea, and the listener does the rest. Worth knowing: this is the NATIVE paste command, not `navigator.clipboard`, so it keeps working from another machine over plain HTTP, where that API does not exist ([Remote access](AI_REMOTE_ACCESS.md)).
 
+### An elevated terminal: the same CLI, with administrator rights
+
+`🛡 as administrator` beside the start bar's button — and a checkbox on `/new`, never remembered — starts `claude.exe` elevated. **The server is not elevated and must not become so**: the release is a scheduled task with `RunLevel Limited`, the token is an administrator's filtered one (Medium), and everything else it spawns — the composer, git, the auto-reload, the windows it opens — is right to stay there. So elevation is per terminal, and three facts decide how it is done:
+
+- **An elevated process cannot be the child of our pseudo-console.** The ConPTY is the server's, at the server's level, and `taskkill` from Medium to a High process answers *Access is denied* — we could neither start it nor end it.
+- **A UAC prompt at the moment of use rules out a remote browser**, which was the requirement: the dialog appears on this machine's desktop. Windows' own `sudo` prompts every time too, and is off by default.
+- **A scheduled task registered with `RunLevel Highest` is the one way Windows hands out a full token with no prompt.** Registering it needs one UAC approval; after that the user can `schtasks /run` it unelevated and Windows starts it elevated.
+
+So `core/elevatedHost.ts` owns a task per instance (`util/elevatedTask.ts`, named by port like the firewall rule), registered from *Settings → Claude* behind the one prompt, and an **elevated host** (`server/src/elevated/host.ts`) that the task starts on the first elevated terminal:
+
+- **The host connects OUT, and nothing listens on its side.** The server opens a loopback listener on a port the OS picks, writes `{port, token}` to `<data folder>\elevated\handoff.json`, runs the task and waits. The host reads the file, deletes it, connects and presents the token; any other connection is closed on its first line, and the listener stops listening once the host is in. The task's arguments are fixed at registration, which is why a file is the handoff at all.
+- **It runs one command line**: `claude.exe` with `--resume <uuid>` or `--session-id <uuid>` (`isAllowedSpawn`, checked on the host, where the rights are). No shell, for the reason a terminal has none — the elevated channel is a CLI and not a way to run anything else as administrator.
+- **It dies with the connection.** The socket closing — the server stopped, restarted, killed outright — makes the host `taskkill /T /F` every tree it started and exit, so nothing elevated outlives the server that asked for it. With no terminal left it exits on its own after a minute. The server does no killing of its own on that side: `terminate()` is a message.
+- **Same account or nothing.** Approving the prompt with another administrator's credentials would register the task for THAT account, whose CLI would read and write another `~/.claude`, where `--resume` finds nothing. The hello carries the user and the home folder, and a mismatch is refused with the sentence that says how to fix it; so is a host that came up without a High token (`HighestAvailable` on a standard account).
+- **`Interactive`, not S4U**, so the elevated CLI has the user's Credential Manager and network credentials like the ordinary one — and a `wscript` wrapper (`installer/run-hidden.vbs`), because a console program a task starts in the session opens a console window.
+- **The environment is ours, sent over the wire.** A process the task starts gets a fresh logon's environment, not this server's, so `terminalEnv()` is computed here and travels in the `spawn` message — the elevated CLI sees exactly what an ordinary terminal's would.
+
+**`sessionTerminal.ts` did not learn a second kind of terminal.** It holds a `TerminalChild` — node-pty's `IPty` wrapped (`localChild`), or an `ElevatedChild` whose every call is a line on the socket — and the scrollback, the mode scanner, the replay, the sweep and the guard are one code path for both. Two things had to change to make that true:
+
+- **Starting is asynchronous now**, so a session being started through the host counts as held (`starting`, in `holds()`) for the second or two that takes. An ordinary spawn is synchronous and never had a gap between the check and the process; this one does, and the composer or a second press would walk through it.
+- **Output can arrive before anybody listens.** The host's `spawned` and its first `data` lines can share one socket chunk, dispatched in one synchronous loop, while `open()` only reaches `onData` a microtask after `spawn()` resolves — so `ElevatedChild` buffers what arrives early. Those lines are the CLI's opening declarations (`?9001h`, `?2004h`, `?1049h`): losing them is Shift+Enter submitting and a paste arriving unbracketed, intermittently.
+
+The guard needed nothing new: the host reports the real pid of `claude.exe`, which is what it registers in `~/.claude/sessions`, and `pidAlive` already reads `EPERM` — what a Medium process gets asking about a High one — as alive.
+
+**The task's state is cached, and read when it can have changed**: at startup, on turning it on or off, whenever Settings or `/new` asks (`GET /api/elevated-terminals` reads afresh), and when a start through it fails — a task deleted in Task Scheduler is found on the first attempt to use it. Not on the terminal status, which every open session polls; a `schtasks` per poll would be paid for by everyone who never switched this on. The task is `stale` when it exists but would start something else (a checkout that moved, a portable copy unpacked elsewhere) — a release points through `<root>\current\`, so an update never makes it stale.
+
+**What it costs, said plainly in the panel**: with it on, anybody who can sign in to the app can run Claude with administrator rights on this machine, and so can any program already running as the user — it is UAC switched off for whatever goes through this app. That is the feature as asked for, which is why it is off by default, turned on and off only at the machine, and named on the title bar of every terminal it starts. The start bar offers the shield only where it can work: a dead button on every session for a feature most people never turn on would be a second thing on a bar that says one.
+
 ### The native dependency
 
 `@lydell/node-pty` — prebuilt, N-API, never node-gyp — is the first native dependency this project has, and the only reason a release carries a `node_modules` at all ([Distribution](AI_DISTRIBUTION.md)). It is imported **dynamically and caught**: a binary that will not load is a broken feature, not a server that refuses to start, and the reason has to come back through `blockedReason`, which stays the one string the endpoint and the button both read.
 
 ## Verify
 
-[AI_TESTING.md](AI_TESTING.md) — checks 8 (auto-reload), 19 (the composer, and the rules for testing it safely), 23 (plan mode round trip), 24 (answers written back), 37 (starting a session from the app), 38 (the embedded terminal, end to end), 55 (a session that never became a conversation, in both doors).
+[AI_TESTING.md](AI_TESTING.md) — checks 8 (auto-reload), 19 (the composer, and the rules for testing it safely), 23 (plan mode round trip), 24 (answers written back), 37 (starting a session from the app), 38 (the embedded terminal, end to end), 55 (a session that never became a conversation, in both doors), 71 (an elevated terminal).

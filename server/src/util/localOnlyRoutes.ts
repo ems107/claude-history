@@ -36,6 +36,8 @@ const RULES: Rule[] = [
   { method: 'POST', test: (p) => p === '/api/firewall', action: 'firewall' },
   { method: 'DELETE', test: (p) => p === '/api/firewall', action: 'firewall' },
   { method: 'DELETE', test: (p) => p === '/api/firewall/blocks', action: 'firewall' },
+  { method: 'POST', test: (p) => p === '/api/elevated-terminals', action: 'elevatedTerminals' },
+  { method: 'DELETE', test: (p) => p === '/api/elevated-terminals', action: 'elevatedTerminals' },
 ];
 
 /**

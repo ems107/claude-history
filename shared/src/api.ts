@@ -1839,11 +1839,47 @@ export interface TerminalStatus {
    * ONE string for the endpoint and the button, exactly like `sendBlockedReason`.
    */
   blockedReason: string | null;
+  /** The CLI inside runs with administrator rights, through the elevated host. */
+  elevated: boolean;
+  /**
+   * Why an ELEVATED one cannot be started: `blockedReason` if there is one, and
+   * otherwise what is missing for elevation alone — the task not set up, or set
+   * up for another copy of the app. Null when it can.
+   */
+  elevatedBlockedReason: string | null;
 }
 
 export interface TerminalStartRequest {
   cols: number;
   rows: number;
+  /** Start `claude.exe` with administrator rights, through the elevated host. */
+  elevated?: boolean;
+}
+
+/**
+ * Whether elevated terminals can be started, which is whether THIS copy of the
+ * app has its scheduled task (`util/elevatedTask.ts`).
+ *
+ * - `off`: no task — the default, and what turning it off leaves.
+ * - `on`: the task exists, runs elevated and points at this copy.
+ * - `stale`: a task by our name exists but would start something else — a
+ *   checkout that moved, a portable copy unpacked elsewhere. Turning it on
+ *   again re-registers it.
+ * - `unavailable`: it could not be looked at, or this copy cannot run the host
+ *   at all. `detail` says which.
+ */
+export type ElevatedTaskState = 'off' | 'on' | 'stale' | 'unavailable';
+
+export interface ElevatedTerminalsStatus {
+  state: ElevatedTaskState;
+  /** The scheduled task's name, so the panel can say what to look for in Task Scheduler. */
+  taskName: string;
+  /** What is wrong, for `stale` and `unavailable`. */
+  detail: string | null;
+  /** The elevated host is running and connected to this server right now. */
+  hostRunning: boolean;
+  /** How many elevated terminals have a live CLI in them. */
+  terminals: number;
 }
 
 /**

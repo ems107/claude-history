@@ -35,7 +35,8 @@ export type LocalOnlyAction =
   | 'restartServer'
   | 'uninstall'
   | 'credentials'
-  | 'firewall';
+  | 'firewall'
+  | 'elevatedTerminals';
 
 /**
  * What almost all of them say, and the shape the rest follow: the REASON this
@@ -70,4 +71,8 @@ export const LOCAL_ONLY_ACTIONS: Record<LocalOnlyAction, string> = {
     'Not available over remote access — a restart can come back listening on that machine only, with no way back in.',
   credentials: 'Not available over remote access — the username and password can only be changed on the machine itself.',
   firewall: 'Not available over remote access — Windows asks for administrator approval on the machine itself.',
+  // Turning them on and off, that is — starting one is open to a remote
+  // browser, because once the task exists nothing asks.
+  elevatedTerminals:
+    'Not available over remote access — Windows asks for administrator approval on the machine itself. Once they are on, administrator terminals can be started from anywhere.',
 };

@@ -42,8 +42,11 @@ export function registerTerminalRoutes(app: FastifyInstance, ctx: AppContext): v
       if (missing(id)) return reply.code(404).send({ error: 'Session not found' });
       const cols = Number(request.body?.cols ?? TERMINAL_MIN_COLS);
       const rows = Number(request.body?.rows ?? TERMINAL_MIN_ROWS);
+      // Not local-only, deliberately: the task is what made elevation silent,
+      // and a start that raises no dialog has no desktop it needs to be at.
+      const elevated = request.body?.elevated === true;
       try {
-        ctx.terminals.open(id, cols, rows);
+        await ctx.terminals.open(id, cols, rows, elevated);
         return { ok: true };
       } catch (err) {
         // 409 like the composer's: every refusal here is a state of the machine
