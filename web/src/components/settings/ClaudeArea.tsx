@@ -13,6 +13,7 @@ import { useActiveSessions } from '../../api/useActiveSessions.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { actionClass } from '../controlClass.ts';
 import { AutoReloadStatus } from './AutoReloadStatus.tsx';
+import { ElevatedTerminalsPanel } from './ElevatedTerminalsPanel.tsx';
 import { useSettingsPage } from './context.ts';
 import {
   Explain,
@@ -276,6 +277,7 @@ export function ClaudeArea() {
           }
           note="Both doors counted together. Lowering it never closes anything; it refuses the next one to ask."
         />
+        <ElevatedTerminalsPanel disabled={!s.chatEnabled || s.chatMode !== 'terminal'} />
 
         <Explain label="What is not set here, and what locks while Claude is running">
           <p>

@@ -11,9 +11,11 @@
 //   versions/v<version>/
 //     node/node.exe                               <- embedded Node runtime
 //     server.cjs                                  <- esbuild bundle of the server
+//     elevated-host.cjs                           <- the administrator terminals' host
 //     node_modules/@lydell/node-pty*              <- the ONE native dependency
 //     web/                                        <- built frontend (web/dist)
-//     start-hidden.vbs, update-helper.ps1         <- per-version runtime scripts
+//     start-hidden.vbs, run-hidden.vbs,
+//     update-helper.ps1                           <- per-version runtime scripts
 //
 // Also writes dist/checksums.txt (sha256sum format) — the in-app updater
 // verifies downloads against the copy attached to the GitHub release.
@@ -79,6 +81,22 @@ await build({
   // of ours runs. Hand it the equivalent for this file.
   banner: { js: "const __sdkFileUrl = require('url').pathToFileURL(__filename).href;" },
   define: { __APP_VERSION__: JSON.stringify(version), 'import.meta.url': '__sdkFileUrl' },
+  sourcemap: false,
+  logLevel: 'warning',
+});
+
+// 1b. The elevated host, as a bundle of its own. It is what the scheduled task
+// behind administrator terminals starts, with administrator rights, so it
+// carries nothing but itself and the wire it speaks — never the server. Beside
+// server.cjs, so node-pty resolves the same way for both.
+await build({
+  entryPoints: [path.join(rootDir, 'server', 'src', 'elevated', 'host.ts')],
+  bundle: true,
+  platform: 'node',
+  target: 'node24',
+  format: 'cjs',
+  outfile: path.join(verDir, 'elevated-host.cjs'),
+  external: ['@lydell/node-pty'],
   sourcemap: false,
   logLevel: 'warning',
 });
@@ -171,7 +189,15 @@ const rootScripts = ['install.ps1', 'uninstall.ps1', 'launch.vbs'];
 // The installer scripts also ship inside the version folder: the in-app
 // updater only extracts versions/, so update-helper.ps1 refreshes the root
 // copies from there — otherwise they would stay frozen at install time.
-const versionScripts = ['start-hidden.vbs', 'update-helper.ps1', 'install.ps1', 'uninstall.ps1', 'launch.vbs'];
+const versionScripts = [
+  'start-hidden.vbs',
+  // What the elevated host's task runs, through `current\` like the server's.
+  'run-hidden.vbs',
+  'update-helper.ps1',
+  'install.ps1',
+  'uninstall.ps1',
+  'launch.vbs',
+];
 for (const [files, target] of [
   [rootScripts, stageDir],
   [versionScripts, verDir],

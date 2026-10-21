@@ -14,6 +14,7 @@ import {
 } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import { cleanEnv, findClaudeCli } from '../util/launcher.ts';
+import type { ElevatedHost, TerminalChild } from './elevatedHost.ts';
 import type { SessionIndex } from './index.ts';
 import { pidAlive } from './live.ts';
 import { createLogger } from './logger.ts';
@@ -124,7 +125,9 @@ interface TerminalProcess {
   sessionId: string;
   cwd: string;
   /** Null once the CLI has exited. The entry itself stays: its screen is the diagnosis. */
-  pty: IPty | null;
+  pty: TerminalChild | null;
+  /** The CLI runs inside the elevated host rather than in a pseudo-console of ours. */
+  elevated: boolean;
   /** Bounded ring of raw UTF-8 output, oldest first. */
   buffer: Buffer[];
   bufferBytes: number;
@@ -184,6 +187,15 @@ export class SessionTerminalService implements TranscriptWriter {
   readonly events = new EventEmitter();
 
   private readonly procs = new Map<string, TerminalProcess>();
+  /**
+   * Sessions whose elevated CLI has been asked for and has not answered yet.
+   *
+   * An ordinary spawn is synchronous, so there was never a moment between the
+   * check and the process. Going through the host takes a second or two, and in
+   * that second this session must already count as held — or the composer, or
+   * a second press of the button, would walk straight through the gap.
+   */
+  private readonly starting = new Set<string>();
 
   /**
    * The native module, or why it could not be loaded.
@@ -201,6 +213,7 @@ export class SessionTerminalService implements TranscriptWriter {
     private readonly index: SessionIndex,
     private readonly chat: SessionChatService,
     private readonly settings: () => AppSettings,
+    private readonly elevatedHost: ElevatedHost,
   ) {
     // One listener per SSE client, same as the index's and the chat's emitters.
     this.events.setMaxListeners(100);
@@ -223,7 +236,7 @@ export class SessionTerminalService implements TranscriptWriter {
   // ---- TranscriptWriter ----
 
   holds(sessionId: string): boolean {
-    return this.running(sessionId);
+    return this.running(sessionId) || this.starting.has(sessionId);
   }
 
   /**
@@ -283,6 +296,14 @@ export class SessionTerminalService implements TranscriptWriter {
     return null;
   }
 
+  /**
+   * The same question for a terminal with administrator rights: everything
+   * above, and then whatever the elevated host is missing.
+   */
+  elevatedBlockedReason(sessionId: string): string | null {
+    return this.blockedReason(sessionId) ?? this.elevatedHost.blockedReason();
+  }
+
   status(sessionId: string): TerminalStatus {
     const p = this.procs.get(sessionId);
     return {
@@ -294,24 +315,25 @@ export class SessionTerminalService implements TranscriptWriter {
       exit: p?.exit ?? null,
       cwd: p?.cwd ?? this.chat.cwdOf(sessionId),
       blockedReason: this.blockedReason(sessionId),
+      elevated: p?.elevated ?? false,
+      elevatedBlockedReason: this.elevatedBlockedReason(sessionId),
     };
   }
 
   /**
-   * Spawns `claude` inside a pseudo-terminal. Throws the blocked reason, so the
-   * route can answer 409 with the same sentence the button would have shown.
+   * Spawns `claude` inside a pseudo-terminal — ours, or the elevated host's when
+   * `elevated` is asked for. Throws the blocked reason, so the route can answer
+   * 409 with the same sentence the button would have shown.
    */
-  open(sessionId: string, cols: number, rows: number): void {
-    const blocked = this.blockedReason(sessionId);
+  async open(sessionId: string, cols: number, rows: number, elevated = false): Promise<void> {
+    const blocked = elevated ? this.elevatedBlockedReason(sessionId) : this.blockedReason(sessionId);
     if (blocked) throw new Error(blocked);
     if (this.running(sessionId)) return; // already up; the socket just attaches
+    if (this.starting.has(sessionId)) throw new Error('This terminal is already starting.');
     const pty = this.pty;
     const cli = findClaudeCli();
     const cwd = this.chat.cwdOf(sessionId);
     if (!pty || !cli || !cwd) throw new Error('The Claude Code CLI could not be found.');
-
-    // A terminal holding a dead process's last screen is replaced, not reused.
-    this.procs.delete(sessionId);
 
     // Nothing to resume means the session is being born, and the id goes TO the
     // CLI instead of coming back from it — the same question the composer asks,
@@ -354,20 +376,39 @@ export class SessionTerminalService implements TranscriptWriter {
      * cover one that loads and then misbehaves, and the log line is there to say
      * which one answered. See [AI_RUNNING_CLAUDE.md].
      */
-    let child: IPty;
+    let child: TerminalChild;
     let host = 'the bundled pseudo-console';
-    try {
-      child = pty.spawn(cli, args, { ...spawnOptions, useConptyDll: true });
-    } catch (err) {
-      host = 'the pseudo-console this Windows provides';
-      log.warn(`the bundled pseudo-console could not be used for ${sessionId} — falling back`, err);
-      child = pty.spawn(cli, args, spawnOptions);
+    if (elevated) {
+      // The same options, run by the host: the environment is OURS, sent over
+      // the wire, because a process the task starts gets the environment of a
+      // fresh logon rather than this server's.
+      this.starting.add(sessionId);
+      try {
+        const { name: _name, ...options } = spawnOptions;
+        ({ child, host } = await this.elevatedHost.spawn(sessionId, cli, args, options));
+      } finally {
+        this.starting.delete(sessionId);
+      }
+      host = `${host}, elevated`;
+    } else {
+      try {
+        child = localChild(pty.spawn(cli, args, { ...spawnOptions, useConptyDll: true }));
+      } catch (err) {
+        host = 'the pseudo-console this Windows provides';
+        log.warn(`the bundled pseudo-console could not be used for ${sessionId} — falling back`, err);
+        child = localChild(pty.spawn(cli, args, spawnOptions));
+      }
     }
+
+    // A terminal holding a dead process's last screen is replaced, not reused —
+    // and only now, so a start that failed leaves that screen where it was.
+    this.procs.delete(sessionId);
 
     const p: TerminalProcess = {
       sessionId,
       cwd,
       pty: child,
+      elevated,
       buffer: [],
       bufferBytes: 0,
       startedAt: new Date(),
@@ -661,16 +702,8 @@ export class SessionTerminalService implements TranscriptWriter {
     const child = p.pty;
     if (!child) return;
     p.pty = null;
-    const pid = child.pid;
     log.info(`killing terminal for ${p.sessionId} (${why})`);
-    try {
-      child.kill();
-    } catch {
-      // Already gone.
-    }
-    // `claude` spawns children, and closing the pseudo-console does not
-    // reliably take them down with it.
-    if (pid > 0) spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+    child.terminate();
   }
 
   /** Same question, same answer, as `sessionChat.transcriptExists`. */
@@ -683,6 +716,34 @@ export class SessionTerminalService implements TranscriptWriter {
       return false; // no ~/.claude/projects at all
     }
   }
+}
+
+/** A pseudo-console of our own, seen as the `TerminalChild` the service holds. */
+function localChild(pty: IPty): TerminalChild {
+  return {
+    get pid() {
+      return pty.pid;
+    },
+    write: (data) => pty.write(data),
+    resize: (cols, rows) => pty.resize(cols, rows),
+    onData: (listener) => {
+      pty.onData(listener);
+    },
+    onExit: (listener) => {
+      pty.onExit(({ exitCode }) => listener({ exitCode }));
+    },
+    terminate: () => {
+      const pid = pty.pid;
+      try {
+        pty.kill();
+      } catch {
+        // Already gone.
+      }
+      // `claude` spawns children, and closing the pseudo-console does not
+      // reliably take them down with it.
+      if (pid > 0) spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+    },
+  };
 }
 
 /**

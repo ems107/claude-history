@@ -15,6 +15,7 @@ import { registerChatRoutes } from './routes/chat.ts';
 import { registerEventRoutes } from './routes/events.ts';
 import { registerFileReviewRoutes } from './routes/fileReviews.ts';
 import { registerFileRoutes } from './routes/files.ts';
+import { registerElevatedTerminalRoutes } from './routes/elevatedTerminals.ts';
 import { registerFirewallRoutes } from './routes/firewall.ts';
 import { registerGitRoutes } from './routes/git.ts';
 import { registerLogRoutes } from './routes/logs.ts';
@@ -179,6 +180,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerResumeRoutes(app, ctx);
   registerChatRoutes(app, ctx);
   registerTerminalRoutes(app, ctx);
+  registerElevatedTerminalRoutes(app, ctx);
   registerUpdateRoutes(app, ctx);
   registerSettingsRoutes(app, ctx);
   registerFirewallRoutes(app, ctx);

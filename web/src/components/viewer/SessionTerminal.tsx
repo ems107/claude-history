@@ -417,6 +417,16 @@ export function SessionTerminal({
    */
   autoStart,
   /**
+   * With `autoStart`, start it with administrator rights.
+   *
+   * `/new`'s checkbox, read once at the start like `autoStart` itself. If
+   * elevation is not available the start bar is left on screen with both
+   * buttons rather than starting an ordinary terminal instead: somebody who
+   * asked for an administrator CLI and silently got the other kind would find
+   * out from an "Access is denied" half way through the work.
+   */
+  autoStartElevated,
+  /**
    * Take the keys on MOUNT, not only after a start of this component's own.
    *
    * One caller, and it is the handover: `/new` navigates to `/session/<id>` as
@@ -449,6 +459,7 @@ export function SessionTerminal({
   columnWidth?: string;
   onStarted?: () => void;
   autoStart?: boolean;
+  autoStartElevated?: boolean;
   autoFocus?: boolean;
   onLayout?: (layout: { full: boolean; open: boolean; height: number; rightGap: number }) => void;
 }) {
@@ -618,6 +629,10 @@ export function SessionTerminal({
   const open = status.data?.open ?? false;
   const running = status.data?.running ?? false;
   const blocked = status.data?.blockedReason ?? null;
+  /** Null when the shield can be pressed; `blocked` is part of it. */
+  const elevatedBlocked = status.data?.elevatedBlockedReason ?? null;
+  /** The terminal on screen (or the dead one kept for its screen) runs elevated. */
+  const elevated = status.data?.elevated ?? false;
   const exit = status.data?.exit ?? null;
   const cwd = status.data?.cwd ?? null;
 
@@ -1351,14 +1366,14 @@ export function SessionTerminal({
   }, [mobile, full, minimised, confirmClose, pinned, collapseIfOutside]);
 
   const start = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (elevated: boolean) => {
       // The size the CLI is born into decides its layout, and the panel is
       // already on screen at its real height — so measure first and start with
       // the answer, rather than starting at a default and resizing after.
       const term = termRef.current;
       const cols = term?.cols ?? 100;
       const rows = term?.rows ?? 24;
-      return api.terminalStart(sessionId, { cols, rows });
+      return api.terminalStart(sessionId, { cols, rows, elevated });
     },
     onSuccess: () => {
       setError(null);
@@ -1393,8 +1408,13 @@ export function SessionTerminal({
     if (!autoStart || !status.data || open || blocked) return;
     if (autoStarted.current === sessionId) return;
     autoStarted.current = sessionId;
-    start.mutate();
-  }, [autoStart, status.data, open, blocked, sessionId, start]);
+    // Asked for elevated and cannot have it: say so, and start nothing.
+    if (autoStartElevated && elevatedBlocked) {
+      setError(elevatedBlocked);
+      return;
+    }
+    start.mutate(autoStartElevated === true);
+  }, [autoStart, autoStartElevated, status.data, open, blocked, elevatedBlocked, sessionId, start]);
 
   const close = useMutation({
     mutationFn: () => api.terminalStop(sessionId),
@@ -1599,6 +1619,9 @@ export function SessionTerminal({
         <span className="shrink-0">
           {running ? 'claude' : exit ? `claude exited (code ${exit.code ?? 'killed'})` : 'claude'}
         </span>
+        {/* Said on the bar, where it is seen while typing, and in words: a
+            colour alone would be a state you have to have been told about. */}
+        {elevated && <span className="shrink-0 rounded bg-amber-500/15 px-1 text-amber-300">🛡 Administrator</span>}
         {/* The folder, with its middle taken out and — if it STILL does not fit
             — its front. Which end survives is the whole point: every session
             started from the app lives six segments down the same temp folder,
@@ -1613,8 +1636,9 @@ export function SessionTerminal({
           {!running && (
             <button
               type="button"
-              onClick={() => start.mutate()}
-              disabled={start.isPending || !!blocked}
+              // The same kind it was: a dead administrator CLI comes back as one.
+              onClick={() => start.mutate(elevated)}
+              disabled={start.isPending || !!(elevated ? elevatedBlocked : blocked)}
               className="rounded px-1.5 py-0.5 hover:bg-[var(--bg-hover)] hover:text-[var(--text)] disabled:opacity-40"
             >
               {start.isPending ? 'starting…' : '❯ start again'}
@@ -1895,12 +1919,27 @@ export function SessionTerminal({
         >
           <button
             type="button"
-            onClick={() => start.mutate()}
+            onClick={() => start.mutate(false)}
             disabled={start.isPending}
             className="rounded-lg border border-[var(--border)] px-2 py-1 text-[var(--text)] hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {start.isPending ? 'starting…' : '❯ Start an embedded terminal here'}
+            {start.isPending && start.variables === false ? 'starting…' : '❯ Start an embedded terminal here'}
           </button>
+          {/* Only where it can work. Administrator terminals are off until
+              somebody turns them on, and a dead shield on every start bar of
+              every session would be a second thing on a bar that says one —
+              for a feature most people will never switch on. Settings is where
+              its state is told. */}
+          {!elevatedBlocked && (
+            <button
+              type="button"
+              onClick={() => start.mutate(true)}
+              disabled={start.isPending}
+              className="rounded-lg border border-amber-500/50 px-2 py-1 text-amber-300 hover:border-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {start.isPending && start.variables === true ? 'starting…' : '🛡 as administrator'}
+            </button>
+          )}
         </div>
       )}
     </div>

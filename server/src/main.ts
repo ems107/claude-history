@@ -7,6 +7,7 @@ import { NotificationsService } from './core/notifications.ts';
 import { ReadMarksService } from './core/readMarks.ts';
 import { applyLogSettings, createLogger, initLogging, onShutdown } from './core/logger.ts';
 import { DeepSearchService } from './core/deepSearch.ts';
+import { ElevatedHost } from './core/elevatedHost.ts';
 import { GitService } from './core/gitService.ts';
 import { GitUndoStore } from './core/gitUndo.ts';
 import { SearchService } from './core/search.ts';
@@ -58,7 +59,8 @@ async function main(): Promise<void> {
   const usage = new UsageService(config.dataRoot, () => index.getSettings());
   const autoReload = new AutoReloadService(usage, () => index.getSettings());
   const chat = new SessionChatService(config, index, () => index.getSettings());
-  const terminals = new SessionTerminalService(config, index, chat, () => index.getSettings());
+  const elevated = new ElevatedHost(config, updates.install?.root ?? null);
+  const terminals = new SessionTerminalService(config, index, chat, () => index.getSettings(), elevated);
   // After both halves it watches, and started below once the index has been
   // built — it seeds itself from what is already running.
   const notifications = new NotificationsService(config, index, chat);
@@ -76,6 +78,7 @@ async function main(): Promise<void> {
     autoReload,
     chat,
     terminals,
+    elevated,
     notifications,
     readMarks,
     git,
@@ -92,10 +95,16 @@ async function main(): Promise<void> {
   // read already knows whether the feature works; a failure is recorded inside
   // and reported through `blockedReason`, never thrown.
   await terminals.start();
+  // One schtasks read, so the shield button knows from the first status read
+  // whether this copy has its task. Never throws: an unreadable task is a state.
+  await elevated.start();
   // The `claude` processes they own outlive this one unless something kills
   // them; the logger runs this on every exit path there is.
   onShutdown(() => chat.shutdown());
   onShutdown(() => terminals.shutdown());
+  // After the terminals: closing the host's socket is what makes it kill
+  // whatever is still running inside it.
+  onShutdown(() => elevated.shutdown());
   onShutdown(() => git.shutdown());
 
   const watcher = new Watcher(config, index);

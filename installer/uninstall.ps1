@@ -116,6 +116,23 @@ if ($wipeData -and (Test-Path $data)) {
 # One-shot updater task, if a previous update left it behind.
 try { Unregister-ScheduledTask -TaskName 'claude-history-update' -Confirm:$false -ErrorAction Stop } catch {}
 
+# The administrator terminals' task. It was registered elevated, so this
+# unelevated script may not be allowed to remove it - and a task that starts
+# a host which no longer exists does nothing, but it is still ours to clean up.
+$elevatedTaskName = 'claude-history-elevated'
+if (Get-ScheduledTask -TaskName $elevatedTaskName -ErrorAction SilentlyContinue) {
+  try {
+    Unregister-ScheduledTask -TaskName $elevatedTaskName -Confirm:$false -ErrorAction Stop
+    Write-Host "Scheduled task '$elevatedTaskName' removed."
+    Log "elevated task removed"
+  } catch {
+    Write-Host "Could not remove the scheduled task '$elevatedTaskName' without administrator rights."
+    Write-Host "Remove it from an elevated PowerShell with:"
+    Write-Host "  Unregister-ScheduledTask -TaskName '$elevatedTaskName' -Confirm:`$false"
+    Log "could not remove the elevated task: $($_.Exception.Message)"
+  }
+}
+
 # Remove the install folder. Only when running from a copy outside it (the
 # -Register path does exactly that), and only if it really looks like one.
 $runningFromRoot = $PSScriptRoot -and ($PSScriptRoot.TrimEnd('\').ToLower().StartsWith($Root.TrimEnd('\').ToLower()))
