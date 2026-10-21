@@ -1039,6 +1039,15 @@ groups is what check 43's `pre-loss` guard fires on.
   Wherever a project name repeats in the corpus (six `scratchpad`s here), those
   rows must draw the path, `truncate-start`, and no other row may.
 
+**71. An elevated terminal.** Check 38's rules apply — a throwaway session, never the one you are working in — and one more: **turning it on is a UAC prompt on this desktop, so the user approves it**; do it on the dev instance (task `claude-history-elevated (port 7434)`), never the release's.
+
+- **The task.** `GET /api/elevated-terminals` → `off`; *Turn on* in Settings → Claude, approve, → `on`, and `schtasks /query /tn "claude-history-elevated (port 7434)" /xml` shows `HighestAvailable` and `wscript.exe` with the dev checkout's paths. Delete it in Task Scheduler and reopen Settings: `off`, and the start bar's shield is gone.
+- **It is elevated, and the guard holds.** Start `🛡 as administrator`: the title bar says `🛡 Administrator`, and inside, `! whoami /groups | findstr Mandatory` says **High**. `GET /terminal` reports `elevated: true` and a pid that matches `~/.claude/sessions/<pid>.json`; check 38's three directions of the guard hold unchanged.
+- **The opening declarations survive.** Shift+Enter breaks the line and a two-line paste lands as `[Pasted text]` — the first bytes the CLI sends are the ones `ElevatedChild` buffers, and losing them fails exactly these two, intermittently.
+- **Nothing elevated outlives the server.** Close with × → the `claude.exe` goes. Start another, then `dev.ps1 -Stop`: the host's `node.exe` and its `claude.exe` are both gone within seconds (`Get-Process claude, node`, compared against the pids noted before) — the host kills its trees when the socket closes, however the server ended.
+- **From the phone**, signed in to the dev instance: the shield starts one with no prompt anywhere, and Settings draws the panel's state with no button.
+- `/new` with the box ticked comes up elevated; unticked, ordinary; reload `/new` and the box is unticked again.
+
 ## The phone
 
 Everything here is about a real device at 360×720 CSS pixels. An emulated narrow window catches the layout faults and none of the others — no soft keyboard, no system Back button, no `@media (hover: hover)` behaving as a phone's does. [AI_MOBILE.md](AI_MOBILE.md) holds the rules these check.

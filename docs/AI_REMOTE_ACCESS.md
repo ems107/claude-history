@@ -26,6 +26,8 @@ One line runs through all of it: **being at the machine is the root of trust.** 
 | Reading, searching, the composer, the embedded terminal | yes, no password | yes, after signing in |
 | Setting the username and password | yes, and no old password is asked for | **no** — 409 |
 | Explorer / VS Code / terminal / firewall | yes | **no** — 409 |
+| Turning administrator terminals on or off | yes, behind UAC | **no** — 409 |
+| Starting an administrator terminal, once they are on | yes | yes, after signing in |
 | Stopping the server, uninstalling | yes | **no** — 409 |
 | Applying an update | yes | **yes**, with a confirmation |
 
@@ -34,6 +36,8 @@ Applying an update is the one restart allowed from another machine: it puts itse
 **What a signed-in session can do is everything.** The composer runs Claude in the project's directory with tools auto-approved, and `routes/files.ts` reads any path a transcript names ([Architecture](AI_ARCHITECTURE.md#security-and-containment)). That is the intended design — the whole point is full access — but it is why the password is the only thing between the LAN and this machine, and why the switch is off by default.
 
 **The embedded terminal is allowed remotely, and it is `claude.exe` with no shell around it precisely so that it can be.** It runs the same CLI, in the same folder, as the same user, with the same tools auto-approved — so a signed-in browser gains nothing it did not already have through the composer. A shell underneath would have been strictly more than anything else this app offers, and that is the whole reason there is not one ([Running Claude](AI_RUNNING_CLAUDE.md)). "Resume in terminal" stays local-only for the reason everything on that list is: it opens a window on the server's own desktop, which is a different thing entirely.
+
+**An elevated terminal is the one thing that breaks that sentence, on purpose and only once it is turned on.** With *administrator terminals* on, a signed-in browser can start `claude.exe` with administrator rights and type into it, with no prompt anywhere — that is what the scheduled task behind it is for ([Running Claude](AI_RUNNING_CLAUDE.md#an-elevated-terminal-the-same-cli-with-administrator-rights)). It is still a CLI and never a shell, but the password now stands between the LAN and an administrator on this machine. Turning it on and off stays local-only (`elevatedTerminals`), for the firewall's reason: both raise a UAC prompt here. Starting one does not, so it is not refused remotely — which is the whole requirement it was built for.
 
 One detail of the socket belongs here rather than there: **the upgrade is a GET, so the same-origin question is asked in the route and not by the global hook**, which exempts GET on purpose because a plain-HTTP page sends neither header on an ordinary one. A browser always sends `Origin` on a WebSocket upgrade, so there its absence is meaningful and `isSameOrigin` gives the right answer.
 

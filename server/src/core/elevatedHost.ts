@@ -58,6 +58,18 @@ class ElevatedChild implements TerminalChild {
   private dataListener: ((data: string) => void) | null = null;
   private exitListener: ((e: { exitCode: number | null }) => void) | null = null;
   private exited = false;
+  /**
+   * What arrived before anybody was listening.
+   *
+   * Not a corner case: the host's `spawned` and its first `data` lines can
+   * share one socket chunk, and they are dispatched in one synchronous loop —
+   * so `spawn()` resolves, but the terminal service only gets to `onData` a
+   * microtask later, after those lines have been handed over. They are the
+   * CLI's opening declarations (`?9001h`, `?2004h`, `?1049h`), and losing them
+   * is Shift+Enter submitting and a paste arriving unbracketed.
+   */
+  private early: string[] = [];
+  private earlyExit: { exitCode: number | null } | null = null;
 
   constructor(
     private readonly id: string,
@@ -74,10 +86,15 @@ class ElevatedChild implements TerminalChild {
 
   onData(listener: (data: string) => void): void {
     this.dataListener = listener;
+    const early = this.early;
+    this.early = [];
+    for (const d of early) listener(d);
   }
 
   onExit(listener: (e: { exitCode: number | null }) => void): void {
     this.exitListener = listener;
+    if (this.earlyExit) listener(this.earlyExit);
+    this.earlyExit = null;
   }
 
   /** The host does the killing: from here, `taskkill` on a High process is refused. */
@@ -86,7 +103,8 @@ class ElevatedChild implements TerminalChild {
   }
 
   data(d: string): void {
-    this.dataListener?.(d);
+    if (this.dataListener) this.dataListener(d);
+    else this.early.push(d);
   }
 
   /** Once, whichever way it ended — the host saying so, or the host going away. */
@@ -94,7 +112,8 @@ class ElevatedChild implements TerminalChild {
     if (this.exited) return;
     this.exited = true;
     this.pid = 0;
-    this.exitListener?.({ exitCode: code });
+    if (this.exitListener) this.exitListener({ exitCode: code });
+    else this.earlyExit = { exitCode: code };
   }
 }
 
