@@ -17,7 +17,7 @@ This app reads a format nobody documents and runs a CLI that ships almost every 
 
 | Decision | Means |
 | --- | --- |
-| `implement` | the app will do something about it; the commit or branch is linked once it exists |
+| `implement` | the app will do something about it, and it stays under Open decisions until the commit that does it is linked here |
 | `tolerate` | nothing to support, but it must not break anything — and it was checked that it does not |
 | `not applicable` | it was a candidate, and it does not reach this app |
 | `pending` | it needs a decision or a measurement, and stays under Open decisions until it has one |
