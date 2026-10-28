@@ -11,7 +11,7 @@ A round never implements anything. It ends with entries written, decisions propo
 
 ## 1. Where we are, and where the round ends
 
-- **Start**: the first `## 2.1.X` heading of the register. That is the newest version reviewed; the round starts at the next published one.
+- **Start**: the first version heading of the register (`## X.Y.Z`). That is the newest version reviewed; the round starts at the next published one — which may be a new minor or major (`2.2.0`), so never assume the `2.1.` prefix.
 - **End**: the version installed on this machine (`claude --version`). The corpus only knows what has run here, so a version that is published but not installed cannot be reviewed whole. If the changelog has newer ones, say so and offer `claude update` before starting — the user's call.
 - Tell the user the range and how big it is (versions, bullets) before triaging.
 
@@ -19,10 +19,13 @@ A round never implements anything. It ends with entries written, decisions propo
 
 - **Source**: `~/.claude/cache/changelog.md`, the copy the CLI keeps for itself (read it, never write it). If it is missing or stops short of the end version, use `https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md`.
 - **Published versions** are exactly the `## X.Y.Z` headings in it; skipped numbers were never published and only get a mention in the Rounds row.
-- Cut the range into the scratchpad (one file per slice) instead of reading the 1 MB file in place:
+- Cut the range into the scratchpad (one file per slice) instead of reading the 1 MB file in place. Both ends are full versions and inclusive, compared part by part:
 
   ```bash
-  awk -v lo=268 -v hi=280 '/^## /{split($2,a,"."); keep=(a[1]==2 && a[2]==1 && a[3]>=lo && a[3]<=hi)} keep' ~/.claude/cache/changelog.md > <scratchpad>/slice.md
+  awk -v lo=2.1.313 -v hi=2.2.4 '
+    function key(v,  p) { split(v, p, "."); return sprintf("%05d%05d%05d", p[1], p[2], p[3]) }
+    /^## [0-9]/ { k = key($2); keep = (k >= key(lo) && k <= key(hi)) }
+    keep' ~/.claude/cache/changelog.md > <scratchpad>/slice.md
   ```
 
 ## 3. Triage
@@ -65,9 +68,9 @@ Propose a decision for every candidate, with its reason, grouped by area. Anythi
 
 ## 7. Write it down
 
-- One `## 2.1.X` section per published version in the range, **newest first, above the previous top**. A version with nothing in it still gets its heading and one line: how many bullets it had, and that none reaches this app.
+- One `## X.Y.Z` section per published version in the range, **newest first, above the previous top**. A version with nothing in it still gets its heading and one line: how many bullets it had, and that none reaches this app.
 - Item format and vocabulary as in the register. An item about something that keeps changing across versions lives in the version where it first appeared; later versions link back to it rather than restating it.
 - A fact discovered on the way — a new line type, a new field and what it means — goes to its area doc, and the item links there.
 - Every `pending` item and every `implement` not yet landed gets a link under Open decisions, in its group — *To fix*, *To build* or *To measure* — and every one this round settles leaves it.
 - One row in Rounds: date, range, installed version, unpublished numbers skipped, and any gap in the corpus (`corpus-shapes.mjs` prints the versions it has lines for).
-- Check that the published versions in the range and the new `## 2.1.X` headings match one to one, then commit.
+- Check that the published versions in the range and the new `## X.Y.Z` headings match one to one, then commit.

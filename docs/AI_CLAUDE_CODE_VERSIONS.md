@@ -6,7 +6,7 @@ This app reads a format nobody documents and runs a CLI that ships almost every 
 
 ## Invariants
 
-- **The first `## 2.1.X` below is the newest version reviewed.** There is no other marker: that heading is the answer to "up to where are we".
+- **The first version heading below (`## X.Y.Z`) is the newest version reviewed.** There is no other marker: that heading is the answer to "up to where are we". Nothing assumes the `2.1.` prefix — the next version may well be `2.2.0`.
 - **Every published version from the baseline up has an entry**, even if all it says is that nothing applies. A missing version means NOT REVIEWED, never "nothing there".
 - **Newest first.** A round adds its entries above the previous top, newest of the round first.
 - **An entry records a decision, never how something works.** The fact goes to its area doc (`AI_TRANSCRIPTS.md`, `AI_RUNNING_CLAUDE.md`, …) and the entry links to it — one home per fact.

@@ -194,7 +194,7 @@ Two things arrive in that envelope, and both were being lost. 144 `queued_comman
 
 **This line is the only record anywhere of which MCP servers a session had**, and until the MCP panel nothing read it: it fell out of the parser's attachment branch unexamined. `/mcp` in a terminal answers for the machine NOW; this answers for a session that ran in August, months later, with the error text of whatever was down that afternoon. **820 lines over 647 files; 445 of the 479 top-level sessions have at least one**, 299 of those with servers of their own and 22 ending with something that never connected.
 
-It is written at CLI startup — line index p50 **3**, max 22, so it is inside the summarizer's head-25 — and **again in full on every resume**, at the point in the file where work continued. Nothing is ever rewritten (one opt-in exception: `CLAUDE_CODE_TRANSCRIPT_LOCAL_GC`, below): `f3384d17` carries three (lines 5, 2230, 4701, 5th–7th August), each re-announcing all 70 tools.
+It is written at CLI startup — line index p50 **3**, max 22, so it is inside the summarizer's head-25 — and **again in full on every resume**, at the point in the file where work continued. Nothing is ever rewritten (one opt-in exception: `CLAUDE_CODE_TRANSCRIPT_LOCAL_GC`, under [Files and directories](#files-and-directories)): `f3384d17` carries three (lines 5, 2230, 4701, 5th–7th August), each re-announcing all 70 tools.
 
 | Field | What it is |
 | --- | --- |
