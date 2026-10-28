@@ -87,7 +87,9 @@ web/src/        React 19 + Vite + Tailwind v4, TanStack Query, SSE
                 terminal needs and an Android device turns out not to have
 installer/      what ships inside the release zip (pure ASCII, PowerShell 5.1)
 scripts/        package.mjs · release.mjs · git-fixture.mjs (the bench the GIT
-                tab is verified against — never a real repository)
+                tab is verified against — never a real repository) ·
+                corpus-shapes.mjs (which Claude Code version first wrote each
+                shape in the corpus — the on-disk half of a version review)
 ```
 
 ## Hard rules
