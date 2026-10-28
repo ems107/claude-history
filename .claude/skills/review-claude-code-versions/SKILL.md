@@ -1,6 +1,6 @@
 ---
 name: review-claude-code-versions
-description: Run a review round of the Claude Code versions released since the last one recorded in docs/AI_CLAUDE_CODE_VERSIONS.md — triage the changelog, diff the transcript corpus, propose a decision for everything that reaches claude-history, and record it. Use when the user asks what is new in Claude Code, says Claude Code has been updated, wants to resume or catch up the versions register, or suspects a CLI update broke something.
+description: Run a review round of the Claude Code versions released since the last one recorded in docs/AI_CLAUDE_CODE_VERSIONS.md — triage the changelog, diff the transcript corpus, find what could break claude-history AND what new it could build on, propose a decision for each, and record it. Use when the user asks what is new in Claude Code, says Claude Code has been updated, wants to resume or catch up the versions register, or suspects a CLI update broke something.
 ---
 
 # Reviewing new Claude Code versions
@@ -31,14 +31,14 @@ Every bullet gets one area, or none:
 
 - **reads** — anything that could change what is on disk in `~/.claude` or the other folders this app reads ([Transcripts](../../../docs/AI_TRANSCRIPTS.md)): line types, fields, content blocks, new tools or new tool input/output shapes; how sessions are stored, named, titled, forked, branched, resumed, compacted, rewound or swept; subagent and background-agent storage; `sessions/<pid>.json`; history; plans; settings and credential files; anything new that ends up written in a transcript.
 - **runs** — the CLI and the SDK this app spawns ([Running Claude](../../../docs/AI_RUNNING_CLAUDE.md)): flags, the Agent SDK, permission and plan modes, resume / session-id behaviour, the fullscreen renderer, terminal input and keyboard protocols, Windows-only behaviour, environment variables, usage limits and their API, auth, process lifecycle.
-- **shows** — a feature a transcript viewer would genuinely want to draw or support: a new tool, a new kind of content or session metadata, a new agent feature that leaves traces in transcripts.
-- **none** — everything else: CLI cosmetics, vim mode, the status line, MCP server management that touches neither its logs nor transcripts, plugins, Bedrock / Vertex / Foundry / Mantle, OpenTelemetry, gateways, managed settings, and fixes that reach none of the above.
+- **idea** — something new this app could build on. Ask it of every bullet that adds or changes a feature, and of every new field the corpus turns up: *what could claude-history draw, use or offer with this?* A datum worth drawing (how long Claude thought, how a call was approved), a cause worth naming (why context was re-cached, what made a session expensive), a new way in or out (open in Claude Desktop, a mod inside the CLI), a state worth telling apart (background sessions). The answer is a one-line proposal of what the app would do, not a restatement of the bullet.
+- **none** — everything else: CLI cosmetics, vim mode, the status line, MCP server management that touches neither its logs nor transcripts, Bedrock / Vertex / Foundry / Mantle, OpenTelemetry, gateways, managed settings, and fixes that reach none of the above.
 
-Be inclusive for `reads` and `runs` — a miss there is a silent breakage — and selective for `shows`.
+Be inclusive for `reads` and `runs` — a miss there is a silent breakage — and **generous with `idea`**: ideas are half of what a round is for, and the user decides which to keep. A first triage that only looks for what could break finds few of them, so after it **read every `Added` bullet of the range again with nothing but that question in mind** (`grep -E '^- (\[(SDK|Windows|Remote Control)\] )?Added'` on the slices) — the catch-up round found five more that way. An idea can come from a bullet that is `none` for maintenance: a plugin feature, a new slash command, a `/usage` warning.
 
 **Tagged bullets.** `[SDK]`, `[Windows]` and `[Remote Control]` are triaged like any other (the composer is the SDK, the app is Windows-only, Remote Control changes live session status). Every other surface tag (`[VSCode]`, `[JetBrains]`, `[IDE]`, `[Claude Tag]`, `[Cloud sessions]`, `[Claude Code on the web]`, `[Code Review]`, `[Desktop]`, …) is dismissed in bulk and only counted — **unless** the bullet mentions transcripts, session files, resume, history, session status, titles, `~/.claude` or local storage, because VS Code runs the same CLI and writes the same transcripts.
 
-**Small round** (a few hundred bullets): triage inline. **Large round**: split it by version ranges across parallel `general-purpose` subagents, each given its slice file, this section of this skill as the rubric, and an output file in the scratchpad. They return candidates **quoted verbatim** with their area and one line of why — never a decision; deciding is the round's job, with the user.
+**Small round** (a few hundred bullets): triage inline. **Large round**: split it by version ranges across parallel `general-purpose` subagents, each given its slice file, this section of this skill as the rubric, and an output file in the scratchpad. They return candidates **quoted verbatim** with their area and one line of why — or, for an `idea`, one line of what the app would do — never a decision; deciding is the round's job, with the user.
 
 ## 4. The corpus
 
@@ -51,6 +51,7 @@ Every shape it lists was written by no older version here. For each one:
 - Look it up in the area docs and in the parser (`server/src/core/parser.ts`), the summarizer and the deep scan (`server/src/core/deepSearch.ts`) — anything that walks `message.content` without checking the line's `type` will pick up a new line type that has one.
 - Open the example session it names on the dev instance (`http://127.0.0.1:7434/session/<id>`) and check it draws, counts and searches right.
 - Match it to the changelog bullet that explains it, if there is one. If none does, it is filed *(corpus)* under the version where it first appears.
+- Ask the `idea` question of it too: a new field is often the first sign of something the app could draw — `thinkingDurationMs`, `permissionDecision` and `requestedModel` were all found this way, with no bullet announcing them.
 
 "First seen" is not "introduced" — it depends on what was used here and on what retention has swept — so it places an entry; it does not prove one.
 
@@ -60,13 +61,13 @@ Only for what is still unclear: the official docs (the `claude-code-guide` subag
 
 ## 6. Decide with the user
 
-Propose a decision for every candidate, with its reason, grouped by area. Anything `tolerate` must have been checked — say against which session. **`implement` needs the user's explicit yes**; without it the item is `pending`. Breakages go first, and are said plainly.
+Propose a decision for every candidate, with its reason, grouped by area. Anything `tolerate` must have been checked — say against which session. **`implement` needs the user's explicit yes**; without it the item is `pending`. Breakages go first, and are said plainly; then the ideas, each with what the app would do and roughly what it costs, so the user can pick.
 
 ## 7. Write it down
 
 - One `## 2.1.X` section per published version in the range, **newest first, above the previous top**. A version with nothing in it still gets its heading and one line: how many bullets it had, and that none reaches this app.
 - Item format and vocabulary as in the register. An item about something that keeps changing across versions lives in the version where it first appeared; later versions link back to it rather than restating it.
 - A fact discovered on the way — a new line type, a new field and what it means — goes to its area doc, and the item links there.
-- Every `pending` item and every `implement` not yet landed gets a link under Open decisions; every one this round settles leaves it.
+- Every `pending` item and every `implement` not yet landed gets a link under Open decisions, in its group — *To fix*, *To build* or *To measure* — and every one this round settles leaves it.
 - One row in Rounds: date, range, installed version, unpublished numbers skipped, and any gap in the corpus (`corpus-shapes.mjs` prints the versions it has lines for).
 - Check that the published versions in the range and the new `## 2.1.X` headings match one to one, then commit.
