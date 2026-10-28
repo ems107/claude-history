@@ -164,7 +164,8 @@ the cost would grow with use. And a star **outlives its transcript**: everything
 in `~/.claude` expires ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md)), while the whole
 point of starring something is to keep it. Nothing can go stale meanwhile —
 transcript lines are append-only, so a message's text never changes once
-written.
+written (the one opt-in exception, a trim in place, is in
+[AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#files-and-directories)).
 
 - **The copy is bounded** (`STAR_TEXT_MAX`, 200,000 characters) and says when it
   was cut: this file is read whole at startup and rewritten in full on every pin,

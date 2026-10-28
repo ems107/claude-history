@@ -9,6 +9,7 @@ The detail lives in `docs/`, one document per area. **Load the ones that match w
 | [Transcripts](docs/AI_TRANSCRIPTS.md) | anything that reads `~/.claude`: the JSONL format, who wrote a line, the tree a `/rewind` leaves, forks, replays, live sessions, retention |
 | [Tokens, cost and context](docs/AI_COST_AND_CONTEXT.md) | counting tokens, pricing a message, cost/context pills, re-cached context, compaction |
 | [Subagents, questions and plans](docs/AI_AGENTS_QUESTIONS_PLANS.md) | the ⑂ panel, `AskUserQuestion`, plan mode, offloaded tool output |
+| [Claude Code versions](docs/AI_CLAUDE_CODE_VERSIONS.md) | Claude Code has shipped versions newer than the last one reviewed, or something broke after a CLI update — the register of what each version changed and what we decided |
 | [The viewer](docs/AI_VIEWER.md) | anything under `web/src/`: folding, deep links, highlighting, the find bar, file references, the working indicator, the project filter, the settings page |
 | [The phone](docs/AI_MOBILE.md) | anything that has to work at 360px: the breakpoint, the sheets, the Back button, touch sizes, the on-screen keyboard |
 | [Search](docs/AI_SEARCH.md) | the index, the deep scan, folding/matching, the paged match list |
@@ -86,7 +87,9 @@ web/src/        React 19 + Vite + Tailwind v4, TanStack Query, SSE
                 terminal needs and an Android device turns out not to have
 installer/      what ships inside the release zip (pure ASCII, PowerShell 5.1)
 scripts/        package.mjs · release.mjs · git-fixture.mjs (the bench the GIT
-                tab is verified against — never a real repository)
+                tab is verified against — never a real repository) ·
+                corpus-shapes.mjs (which Claude Code version first wrote each
+                shape in the corpus — the on-disk half of a version review)
 ```
 
 ## Hard rules
