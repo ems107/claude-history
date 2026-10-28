@@ -47,6 +47,10 @@ Paths are relative to the data root (`~/.claude` unless `--data-root` / `CLAUDE_
 
 Many sessions are throwaway stubs (≤16 lines, only slash commands, no title): flagged `isEmpty` and hidden by default.
 
+**A line ends at `\n` and nowhere else.** `JSON.stringify` leaves U+2028 and U+2029 raw inside strings, so a message holding one is written with the character in the line — and Node's `readline` breaks lines there too, leaving two halves that both fail to parse and a message that silently is not there. Claude Code fixed the same bug in its own reader (2.1.296, 2.1.300). Reproduced on `60e0dcc4`, whose line 726 is an assistant turn carrying one; what that does to this app is in [the versions register](AI_CLAUDE_CODE_VERSIONS.md#21296).
+
+**The file is append-only unless `CLAUDE_CODE_TRANSCRIPT_LOCAL_GC` is on.** That opt-in variable (normally set through managed settings) makes a NON-interactive session — `-p`, the SDK, so the composer too — trim its own transcript in place, and only when the trim frees at least 10% of it (2.1.296). Read out of the 2.1.312 bundle: it runs when the session is non-interactive, not remote, and the variable is exactly true. It is not set on this machine; if it ever is, a file can shrink under a reader.
+
 ## Line types
 
 **Message lines** (`user` / `assistant` / `system` / `attachment`) carry `uuid`, `parentUuid`, `timestamp` (ISO-8601 UTC), `cwd`, `sessionId`, `version`, `gitBranch`, `slug`, `promptId` (groups a turn), `isMeta` (filter for previews), `entrypoint` (`cli` / `claude-desktop` / `claude-vscode`), `sessionKind` (`"bg"` = background session). Assistant lines add `message.model`, `message.usage` and `effort`.
@@ -75,6 +79,8 @@ Seven exist in this corpus, and **only three ever carry `content`** — the rest
 - **It is the ONE `system` line a search can reach, and the one drawn in full** (`RECAP_ROLE` and `systemChars`, [AI_SEARCH.md](AI_SEARCH.md)). The 400-character cap the others live under is for markup — `local_command` reaches 2,456 — and a recap is prose; exempting it is what made its last sentence both visible and findable. Every other subtype stays invisible to the index and to the deep scan alike (the scan walks `message.content`, and a system line has none), so only the viewer's find bar sees those, and that remains a gap rather than a decision.
 
 **Sidecar lines** mostly have NO timestamp: `last-prompt`, `mode`, `permission-mode`, `bridge-session`, `queue-operation`, `file-history-snapshot` (line ~2; its `snapshot.timestamp` ≈ session start), `file-history-delta`, `pr-link` (`prNumber` / `prUrl` / `prRepository`), plus the title lines below. Every type is re-appended per turn — always dedupe (`pr-link` by `prUrl`).
+
+**Since CLI 2.1.300 the transcript also records every API request** — "so a transcript you choose to share can reproduce a request exactly", says the changelog. Three line types, first written here by 2.1.303: `api-request` (one per request: `id`, `querySource`, `params` — model, betas, effort — and a `shapeHash`), `api-request-shape` (the request's system prompt and tools, once per `shapeHash`) and `api-request-blob` (content-addressed by `hash`, a `message` with `role` and `content`). **The blobs carry `message.content`** with `text`, `tool_use` and `tool_result` blocks — copies of what the conversation already holds, sometimes in the form the API saw rather than the one the transcript drew — and no `uuid`. So anything that walks `message.content` without checking the line's `type` reads them as conversation ([the versions register](AI_CLAUDE_CODE_VERSIONS.md#21300) has what that broke). They are a few percent of the corpus by bytes, and a much larger share of a file written since.
 
 **There are no `type:"summary"` lines** (that was the pre-2.1 format). Titles are sidecars appended repeatedly over a session's life — `custom-title`, `ai-title`, `agent-name` — so always take the **last** occurrence. Precedence: `customTitle` → `aiTitle` → `agentName` → last `last-prompt`.`lastPrompt` (pre-truncated ~200 chars) → first non-`isMeta` user message with string content → session UUID.
 
@@ -188,7 +194,7 @@ Two things arrive in that envelope, and both were being lost. 144 `queued_comman
 
 **This line is the only record anywhere of which MCP servers a session had**, and until the MCP panel nothing read it: it fell out of the parser's attachment branch unexamined. `/mcp` in a terminal answers for the machine NOW; this answers for a session that ran in August, months later, with the error text of whatever was down that afternoon. **820 lines over 647 files; 445 of the 479 top-level sessions have at least one**, 299 of those with servers of their own and 22 ending with something that never connected.
 
-It is written at CLI startup — line index p50 **3**, max 22, so it is inside the summarizer's head-25 — and **again in full on every resume**, at the point in the file where work continued. Nothing is ever rewritten: `f3384d17` carries three (lines 5, 2230, 4701, 5th–7th August), each re-announcing all 70 tools.
+It is written at CLI startup — line index p50 **3**, max 22, so it is inside the summarizer's head-25 — and **again in full on every resume**, at the point in the file where work continued. Nothing is ever rewritten (one opt-in exception: `CLAUDE_CODE_TRANSCRIPT_LOCAL_GC`, below): `f3384d17` carries three (lines 5, 2230, 4701, 5th–7th August), each re-announcing all 70 tools.
 
 | Field | What it is |
 | --- | --- |
