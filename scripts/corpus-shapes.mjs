@@ -19,6 +19,7 @@
 //   key:<type>.<key>            a top-level key of a line of that type
 //   message:<type>.<key>        a key of that line's `message`
 //   usage:<key>                 a key of an assistant line's `message.usage`
+//   iteration:<type>            an entry of `message.usage.iterations`
 //
 // "First seen" is not "introduced". A shape shows up when something on this
 // machine first used it, and `cleanupPeriodDays` has swept the older
@@ -119,6 +120,11 @@ function survey(line, version, example) {
   for (const k of Object.keys(message)) add(`message:${type}.${k}`);
   if (type === 'assistant' && isRec(message.usage)) {
     for (const k of Object.keys(message.usage)) add(`usage:${k}`);
+    // Every iteration here is a plain `message` so far; anything else (an
+    // advisor's sub-call, say) is a request priced inside another one.
+    if (Array.isArray(message.usage.iterations)) {
+      for (const it of message.usage.iterations) if (isRec(it)) add(`iteration:${it.type ?? '(none)'}`);
+    }
   }
   if (!Array.isArray(message.content)) return;
   const role = typeof message.role === 'string' ? message.role : type;
