@@ -31,7 +31,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import readline from 'node:readline';
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
@@ -131,6 +130,19 @@ function survey(line, version, example) {
   }
 }
 
+// Split on "\n" alone. `readline` would also break a line at U+2028 and U+2029,
+// which Claude Code writes raw inside JSON strings, and both halves would then
+// fail to parse.
+async function* lines(file) {
+  let rest = '';
+  for await (const chunk of fs.createReadStream(file, { encoding: 'utf8' })) {
+    const parts = (rest + chunk).split('\n');
+    rest = parts.pop();
+    yield* parts;
+  }
+  if (rest) yield rest;
+}
+
 // A third of the lines carry no `version` — the sidecars (`ai-title`,
 // `last-prompt`, `mode`, …) — and those are where new line types tend to
 // appear. Each one is dated by the nearest versioned line in the same file: the
@@ -138,10 +150,9 @@ function survey(line, version, example) {
 // file with no versioned line at all are only counted.
 async function readFile(file) {
   const fallbackId = path.basename(file, '.jsonl');
-  const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
   let current = null;
   const pending = [];
-  for await (const text of rl) {
+  for await (const text of lines(file)) {
     if (!text.trim()) continue;
     let line;
     try {
