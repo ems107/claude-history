@@ -13,6 +13,7 @@ import { useActiveSessions } from '../../api/useActiveSessions.ts';
 import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { actionClass } from '../controlClass.ts';
 import { AutoReloadStatus } from './AutoReloadStatus.tsx';
+import { BashEditDiffPanel } from './BashEditDiffPanel.tsx';
 import { ElevatedTerminalsPanel } from './ElevatedTerminalsPanel.tsx';
 import { ThinkingSummariesPanel } from './ThinkingSummariesPanel.tsx';
 import { useSettingsPage } from './context.ts';
@@ -301,6 +302,10 @@ export function ClaudeArea() {
           panel's rule, in the area where it matters. */}
       <GroupCard id="claude-thinking">
         <ThinkingSummariesPanel />
+      </GroupCard>
+
+      <GroupCard id="claude-bash-diff">
+        <BashEditDiffPanel />
       </GroupCard>
     </>
   );

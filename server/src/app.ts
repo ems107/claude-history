@@ -38,6 +38,7 @@ import { registerStarRoutes } from './routes/stars.ts';
 import { registerRequestRoutes } from './routes/requests.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
 import { registerTerminalRoutes } from './routes/terminal.ts';
+import { registerBashEditDiffSettingRoutes } from './routes/bashEditDiffSetting.ts';
 import { registerThinkingSettingRoutes } from './routes/thinkingSetting.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
 import { registerUpdateRoutes } from './routes/updates.ts';
@@ -171,6 +172,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerSubagentRoutes(app, ctx);
   registerRequestRoutes(app, ctx);
   registerThinkingSettingRoutes(app, ctx);
+  registerBashEditDiffSettingRoutes(app, ctx);
   registerToolResultRoutes(app, ctx);
   registerFileRoutes(app, ctx);
   registerLiveRoutes(app, ctx);

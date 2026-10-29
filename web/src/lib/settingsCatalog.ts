@@ -233,6 +233,7 @@ export const GROUPS: Group[] = [
   { id: 'auto-reload', area: 'claude', title: 'The 5-hour window' },
   { id: 'chat', area: 'claude', title: 'Sending prompts from the app', short: 'Sending prompts' },
   { id: 'claude-thinking', area: 'claude', title: 'Claude’s reasoning in your transcripts', short: 'Thinking' },
+  { id: 'claude-bash-diff', area: 'claude', title: 'What a Bash command changed', short: 'Bash diffs' },
 
   { id: 'remote-access', area: 'access', title: 'Remote access' },
 
@@ -509,6 +510,12 @@ export const ENTRIES: Entry[] = [
     group: 'claude-thinking',
     label: 'Whether Claude Code keeps a summary of the reasoning',
     keywords: 'showThinkingSummaries thinking reasoning summary summaries encrypted signature empty',
+  },
+  {
+    id: 'info-bash-diff',
+    group: 'claude-bash-diff',
+    label: 'Whether Claude Code records what each Bash command changed',
+    keywords: 'bashEditDiffEnabled bash diff changed files edit auto mode experiment CLAUDE_CODE_BASH_EDIT_DIFF',
   },
 
   // Remote access
