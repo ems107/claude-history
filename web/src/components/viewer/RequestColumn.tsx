@@ -696,7 +696,13 @@ function thinkingDisplay(d: RequestDetailResponse): string | null {
  */
 function emptyThinking(display: string | null): string {
   if (display === 'summarized') return '(No text came back for this block.)';
-  return `(No text: this request asked for the reasoning without it — thinking display "${display ?? 'default'}" — so only an encrypted signature came back, and the transcript holds nothing more. With showThinkingSummaries on in Claude Code's settings, new sessions keep a summary of it.)`;
+  // No display at all is what a session that was ALREADY open sends once the
+  // setting is turned on: the CLI drops "updates" live, but "summarized" is
+  // decided when a session starts.
+  if (display === null) {
+    return '(No text: this request named no thinking display, and the API sent only an encrypted signature. A session that was already open when showThinkingSummaries was turned on sends its requests like this — only sessions started after it keep a summary.)';
+  }
+  return `(No text: this request asked for the reasoning without it — thinking display "${display}" — so only an encrypted signature came back, and the transcript holds nothing more. With showThinkingSummaries on in Claude Code's settings, new sessions keep a summary of it.)`;
 }
 
 function blockText(block: unknown, display: string | null): string {
