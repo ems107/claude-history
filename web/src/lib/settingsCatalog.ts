@@ -232,6 +232,7 @@ export const GROUPS: Group[] = [
   { id: 'usage', area: 'claude', title: 'Subscription usage' },
   { id: 'auto-reload', area: 'claude', title: 'The 5-hour window' },
   { id: 'chat', area: 'claude', title: 'Sending prompts from the app', short: 'Sending prompts' },
+  { id: 'claude-thinking', area: 'claude', title: 'Claude’s reasoning in your transcripts', short: 'Thinking' },
 
   { id: 'remote-access', area: 'access', title: 'Remote access' },
 
@@ -502,6 +503,12 @@ export const ENTRIES: Entry[] = [
     group: 'chat',
     label: 'Administrator terminals',
     keywords: 'admin administrator elevated elevation uac sudo runas privileges shield',
+  },
+  {
+    id: 'info-thinking',
+    group: 'claude-thinking',
+    label: 'Whether Claude Code keeps a summary of the reasoning',
+    keywords: 'showThinkingSummaries thinking reasoning summary summaries encrypted signature empty',
   },
 
   // Remote access

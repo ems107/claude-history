@@ -1,4 +1,7 @@
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
+import { api } from '../../api/client.ts';
 import { usePopover } from '../../lib/popover.ts';
 import type { FoldState } from '../../lib/folding.ts';
 import type { ReadingPrefs } from '../../lib/readingPrefs.ts';
@@ -107,6 +110,33 @@ function Switch({ on, disabled }: { on: boolean; disabled?: boolean }) {
         }`}
       />
     </span>
+  );
+}
+
+/**
+ * Why a conversation has no thinking to show, said where the switch that would
+ * show it sits greyed out — visibly, because a tooltip on a disabled control is
+ * the one explanation a phone never gets. Off is Claude Code's default, and
+ * then the blocks are encrypted signatures with nothing to draw: the line names
+ * the setting and leads to the panel that says how to turn it on.
+ */
+function NoThinkingNote() {
+  const { data } = useQuery({ queryKey: ['thinking-setting'], queryFn: api.thinkingSetting, staleTime: 5 * 60_000 });
+  if (!data) return null;
+  return (
+    <p className="px-1.5 pb-1 text-[11px] leading-snug text-[var(--text-dim)] max-md:px-2 max-md:text-xs">
+      {data.on ? (
+        'No thinking text in this conversation: it was written before Claude Code kept a summary of the reasoning.'
+      ) : (
+        <>
+          <span className="text-amber-400">No thinking text:</span> Claude Code keeps none unless{' '}
+          <span className="font-mono">showThinkingSummaries</span> is on.{' '}
+          <Link to="/settings/claude#claude-thinking" className="text-sky-300 hover:underline">
+            How to turn it on
+          </Link>
+        </>
+      )}
+    </p>
   );
 }
 
@@ -268,7 +298,7 @@ export function ViewMenuBody({
                 title={
                   counts.thinking > 0
                     ? 'Show/hide the model’s thinking blocks'
-                    : 'No visible thinking in this conversation (recent Claude Code versions store thinking encrypted)'
+                    : 'No thinking text in this conversation'
                 }
               >
                 <Switch on={reading.showThinking} disabled={counts.thinking === 0} />
@@ -277,6 +307,7 @@ export function ViewMenuBody({
                   {counts.thinking || ''}
                 </span>
               </Item>
+              {counts.thinking === 0 && <NoThinkingNote />}
               <Item
                 onClick={reading.toggleTools}
                 disabled={counts.tools === 0}

@@ -37,6 +37,7 @@ import { registerSessionRoutes } from './routes/sessions.ts';
 import { registerStarRoutes } from './routes/stars.ts';
 import { registerSubagentRoutes } from './routes/subagents.ts';
 import { registerTerminalRoutes } from './routes/terminal.ts';
+import { registerThinkingSettingRoutes } from './routes/thinkingSetting.ts';
 import { registerToolResultRoutes } from './routes/toolResults.ts';
 import { registerUpdateRoutes } from './routes/updates.ts';
 import { registerUserdataRoutes } from './routes/userdata.ts';
@@ -167,6 +168,7 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   registerSessionRoutes(app, ctx);
   registerSearchRoutes(app, ctx);
   registerSubagentRoutes(app, ctx);
+  registerThinkingSettingRoutes(app, ctx);
   registerToolResultRoutes(app, ctx);
   registerFileRoutes(app, ctx);
   registerLiveRoutes(app, ctx);

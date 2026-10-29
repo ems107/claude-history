@@ -2190,6 +2190,37 @@ export interface RetentionSource {
   project: { name: string; path: string } | null;
 }
 
+/** One of Claude Code's settings files, and what it says about `showThinkingSummaries`. */
+export interface ThinkingSettingSource {
+  scope: RetentionScope;
+  path: string;
+  exists: boolean;
+  /** null when the file does not set it (or sets it to something that is not a boolean). */
+  on: boolean | null;
+  /** The file exists but could not be read or parsed. */
+  unreadable: string | null;
+  /** Only on project-scoped sources: whose settings file this is. */
+  project: { name: string; path: string } | null;
+}
+
+/**
+ * Whether Claude Code keeps a summary of Claude's reasoning in new transcripts
+ * (`showThinkingSummaries`). Off, a thinking block reaches the transcript as an
+ * encrypted signature and nothing else.
+ */
+export interface ThinkingSettingResponse {
+  /** In force outside any project that overrides it. */
+  on: boolean;
+  /** Nothing sets it, so Claude Code's default applies — off. */
+  usedDefault: boolean;
+  /** The file to edit: always the user one. */
+  userSettingsFile: string;
+  /** The managed policy and the user file, in precedence order. */
+  sources: ThinkingSettingSource[];
+  /** Project files that set it or cannot be read: they win inside their project. */
+  projectOverrides: ThinkingSettingSource[];
+}
+
 export interface RetentionResponse {
   /** Effective days outside any project that overrides it. */
   days: number;

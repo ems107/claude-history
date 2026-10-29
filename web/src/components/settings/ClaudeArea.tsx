@@ -14,6 +14,7 @@ import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
 import { actionClass } from '../controlClass.ts';
 import { AutoReloadStatus } from './AutoReloadStatus.tsx';
 import { ElevatedTerminalsPanel } from './ElevatedTerminalsPanel.tsx';
+import { ThinkingSummariesPanel } from './ThinkingSummariesPanel.tsx';
 import { useSettingsPage } from './context.ts';
 import {
   Explain,
@@ -294,6 +295,12 @@ export function ClaudeArea() {
             says how many are running, which they are, and offers to close them for you.
           </p>
         </Explain>
+      </GroupCard>
+
+      {/* Claude Code's setting, not ours: read, never written — the retention
+          panel's rule, in the area where it matters. */}
+      <GroupCard id="claude-thinking">
+        <ThinkingSummariesPanel />
       </GroupCard>
     </>
   );
