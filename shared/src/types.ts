@@ -991,7 +991,65 @@ export interface MessageItem {
   usage: MessageUsage | null;
   /** Assistant only: the reasoning effort recorded on the line (`effort`), e.g. "xhigh". */
   effort: string | null;
+  /**
+   * Assistant only: what the API request that produced this message asked for,
+   * from its `api-request` line (joined on `requestRef`). Null where the line is
+   * not there — every transcript written before CLI 2.1.300, and the rare reply
+   * whose request was not recorded.
+   */
+  request: RequestFacts | null;
   blocks: ContentBlock[];
+}
+
+/**
+ * One API request, as its `api-request` line records it (CLI 2.1.300+): the
+ * parts of it that, changed between two requests, can cost the cache. The
+ * system prompt and the tools are in the session's `RequestTables`, keyed by
+ * `shapeHash`, and the beta headers by `betasKey`: both are the same for
+ * hundreds of requests in a row.
+ */
+export interface RequestFacts {
+  shapeHash: string | null;
+  betasKey: string | null;
+  /** `params.output_config.effort`. */
+  effort: string | null;
+  /** `params.thinking.type` (`adaptive` everywhere so far). */
+  thinking: string | null;
+  /** `params.thinking.display` (`updates` / `omitted`). */
+  thinkingDisplay: string | null;
+  /** The TTL and scope of each cache breakpoint, in order: "1h global · 1h · 1h". */
+  cacheControl: string;
+  /** `params.context_management`, as JSON. */
+  contextManagement: string | null;
+  /**
+   * The request names no `base`: the CLI started a new chain and sent the whole
+   * conversation afresh — a session's first request, a resume, a compaction.
+   */
+  newChain: boolean;
+  /**
+   * It kept fewer of its base's messages than the base sent (`keep` <
+   * `keep + tail` of the base): something earlier in the conversation changed.
+   */
+  rewritten: boolean;
+}
+
+/** What a session's requests share, keyed the way `RequestFacts` points at it. */
+export interface RequestTables {
+  /** By `shapeHash`: the system prompt and the tools offered. */
+  shapes: Record<string, RequestShape>;
+  /** By `betasKey`: the beta headers, sorted. */
+  betas: Record<string, string[]>;
+}
+
+export interface RequestShape {
+  /** Characters of the system prompt's text blocks. */
+  systemChars: number;
+  /** A digest of the system prompt alone, so a change to it is told from one to the tools. */
+  systemHash: string;
+  /** The tools offered, by name, sorted. */
+  tools: string[];
+  /** A digest of the tool definitions, so a changed definition is seen even when the names are not. */
+  toolsHash: string;
 }
 
 export interface Turn {
@@ -1150,6 +1208,8 @@ export interface SessionDetail {
   fileChanges: FileChange[];
   /** The MCP servers this session had, and what became of them. Empty where the CLI wrote nothing. */
   mcp: McpPicture;
+  /** What the session's requests share — see `MessageItem.request`. Empty before CLI 2.1.300. */
+  requests: RequestTables;
 }
 
 export interface SubagentDetail {

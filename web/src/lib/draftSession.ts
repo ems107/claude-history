@@ -75,5 +75,6 @@ export function draftSessionDetail(id: string, cwd: string | null): SessionDetai
     prLinks: [],
     fileChanges: [],
     mcp: { servers: [], events: [], failing: 0 },
+    requests: { shapes: {}, betas: {} },
   };
 }
