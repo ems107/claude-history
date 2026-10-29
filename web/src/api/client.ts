@@ -41,6 +41,7 @@ import type { McpLogsResponse,
   RevisionReviewsResponse,
   RevisionReviewUpdateResponse,
   RetentionResponse,
+  ThinkingSettingResponse,
   ScratchpadResponse,
   SearchResponse,
   SessionDetailResponse,
@@ -630,6 +631,7 @@ export const api = {
   // Claude Code's own `cleanupPeriodDays`, read from its settings files. We only
   // ever read it: changing it is a manual edit, explained in Settings.
   retention: () => getJson<RetentionResponse>('/api/retention'),
+  thinkingSetting: () => getJson<ThinkingSettingResponse>('/api/claude-settings/thinking'),
   openClaudeSettingsFolder: () => fetch('/api/retention/open-folder', { method: 'POST' }),
   logs: () => getJson<LogsResponse>('/api/logs'),
   logDay: (date: string, filters: { levels?: string[]; sources?: string[]; q?: string }) => {

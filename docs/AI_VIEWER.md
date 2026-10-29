@@ -511,7 +511,7 @@ does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
 state, actions and read-only information, all wearing the same card.
 
 **What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
-list.** Seven areas → nineteen groups → fifty-two rows, data only, no JSX. Four
+list.** Seven areas → twenty-two groups → fifty-nine rows, data only, no JSX. Four
 readers depend on it and that is why it is data: the rail, the search box, the
 changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
 the field in `AppSettings`, an `Entry` here, the row in its area file — and
@@ -534,7 +534,22 @@ so the hash gets a say in which area renders (`resolveAnchor`) — the path stil
 wins when it names one. Getting this wrong renders the default area and then
 hunts for an element that is in a different one, which is silence.
 `remote-access`, `backups` and `claude-retention` keep their exact ids: they are
-in the README and `RetentionFooter` links to one.
+in the README and `RetentionFooter` links to one. `claude-thinking` is linked to
+from View ▾.
+
+**Claude Code's own settings are read and never written**, in two groups:
+`claude-retention` (Data) and `claude-thinking` (Claude). The second reads
+`showThinkingSummaries` (`core/thinkingSetting.ts`) through the same chain as the
+retention: policy, then the user file, with the projects that set it listed
+apart.
+
+- **Off is drawn amber.** Off is Claude Code's default, and it costs something
+  nobody notices: every new session keeps no reasoning text, and nothing brings
+  it back later. The group gives the line to add, with a copy button, and the
+  file to add it to.
+- **The same fact is said where it is felt**: under View ▾'s thinking switch,
+  greyed out in a conversation with no thinking text, as a visible line
+  rather than a tooltip, with a link to the group while the setting is off.
 
 **State is not drawn like a preference.** `Readout` is mono and dim, `Explain`
 folds the long explanations to the foot of their group, and a `Field` is a

@@ -1335,4 +1335,11 @@ The parts that need no release:
 - `0` and `"30"` → `invalidValue` plus `sweepBlocked`, with `days` NOT presented as what applies;
 - a truncated file → `sweepBlocked` carrying the parser's own message.
 
+The same fake root answers `/api/claude-settings/thinking`, read just as fresh:
+
+- **no key** → `on: false, usedDefault: true`. The thinking group in Settings → Claude is amber and offers the line to add, and View ▾ in a conversation with no thinking text shows the note linking to `/settings/claude#claude-thinking`;
+- **`"showThinkingSummaries": true`** → `on: true`. The group turns green, and the note loses its link.
+
+Over CDP, intercepting that response gives both states without a second server.
+
 A `.claude/settings.local.json` in the fake project's folder must appear in `projectOverrides` with the project's name, and a broken `.claude/settings.json` beside it must appear too rather than being skipped. On the real root, `lastSweepAt` must track the **mtime** of `.last-cleanup`, not the ISO string inside it — Claude Code rewrites the file at each sweep and the two differ.
