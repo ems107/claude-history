@@ -24,11 +24,14 @@ import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } f
 import type { ScannedSession } from './scanner.ts';
 import {
   extractPrompt,
+  handbackOf,
+  handbackPointer,
   injectedOrigin,
   parseNotification,
   queuedByHuman,
   queuedText,
   thinkingKind,
+  type ParsedNotification,
 } from './summarizer.ts';
 
 const MAX_RESULT_CHARS = 20_000;
@@ -960,6 +963,30 @@ export async function parseTranscript(
     blocks: [],
   });
 
+  /** Agents whose report this parse has already drawn from a hand-back. */
+  const handedBack = new Set<string>();
+
+  /**
+   * What a notice says. **A hand-back is a notice of its own and carries the
+   * report**, drawn where it landed — in the `user` envelope Claude answers it
+   * before the notification even arrives (12 lines later in `eb137b52`), so the
+   * report belongs there and not on the notification. That notification follows
+   * with only a pointer for a `<result>`, and once the report it points at is
+   * drawn the pointer is dropped: it is a sentence telling a model where to
+   * look, not something the agent said. A pointer whose hand-back was never
+   * seen stays, because then it is the only trace there is.
+   */
+  const noticeOf = (origin: unknown, content: string): ParsedNotification => {
+    const handback = handbackOf(origin);
+    if (handback) {
+      handedBack.add(handback.taskId);
+      return handback;
+    }
+    const notice = parseNotification(content);
+    const pointsTo = handbackPointer(notice.result);
+    return pointsTo !== null && handedBack.has(pointsTo) ? { ...notice, result: null } : notice;
+  };
+
   /**
    * Something Claude Code injected into the conversation — today an Agent or a
    * background command reporting back.
@@ -992,7 +1019,7 @@ export async function parseTranscript(
   const pushNotice = (
     o: RawLine,
     origin: string,
-    content: string,
+    notice: ParsedNotification,
     carriedOver: boolean,
     runId: string | null,
     queued: boolean,
@@ -1016,7 +1043,7 @@ export async function parseTranscript(
       discardedBranch: null,
       usage: null,
       effort: null,
-      blocks: [{ kind: 'notice', origin, queued, ...parseNotification(content) }],
+      blocks: [{ kind: 'notice', origin, queued, ...notice }],
     });
   };
 
@@ -1075,7 +1102,7 @@ export async function parseTranscript(
         const meta = str(o.message.content);
         const injected = meta ? injectedOrigin(o) : null;
         if (meta && injected) {
-          pushNotice(o, injected, meta, carriedOver, runId, false);
+          pushNotice(o, injected, noticeOf(o.origin, meta), carriedOver, runId, false);
           continue;
         }
         const snapshot = meta ? parseContextSnapshot(meta) : null;
@@ -1132,7 +1159,7 @@ export async function parseTranscript(
         // follows it — but as what it is, and `isPromptItem` stops counting it.
         const injected = injectedOrigin(o);
         if (injected) {
-          pushNotice(o, injected, content, carriedOver, runId, false);
+          pushNotice(o, injected, noticeOf(o.origin, content), carriedOver, runId, false);
           continue;
         }
         const prompt = extractPrompt(content);
@@ -1298,10 +1325,17 @@ export async function parseTranscript(
       // "human"`), which is exactly why it had to be closed before it did.
       const byHuman = queuedByHuman(o);
       const queued = !byHuman && attachment?.type === 'queued_command' ? queuedText(attachment.prompt) : null;
+      // An agent handing its report back while a turn runs: a notice of that
+      // agent's, carrying the report (`handbackOf`). Asked after the human test,
+      // which it cannot pass — its `origin.kind` is `peer`.
+      if (queued !== null && handbackOf(attachment?.origin)) {
+        pushNotice(o, 'peer', noticeOf(attachment?.origin, queued), carriedOver, runId, true);
+        continue;
+      }
       if (queued?.includes(`<${NOTIFICATION_ORIGIN}>`)) {
         // Queued, so a turn was in flight when the task finished: it joins that
         // turn rather than cutting it in two. See `pushNotice`.
-        pushNotice(o, NOTIFICATION_ORIGIN, queued, carriedOver, runId, true);
+        pushNotice(o, NOTIFICATION_ORIGIN, noticeOf(attachment?.origin, queued), carriedOver, runId, true);
         continue;
       }
       const typed = queuedText(byHuman);

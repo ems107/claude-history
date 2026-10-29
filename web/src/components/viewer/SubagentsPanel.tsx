@@ -3,7 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client.ts';
 import { type CostEntry, costEntries, formatTokens, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
 import { durationBetween, formatDateTime, formatDateTimeFull } from '../../lib/format.ts';
-import { promptOf, rowStatus, subagentStatus, type SubagentRow } from '../../lib/subagents.ts';
+import { promptOf, reportedOf, rowStatus, subagentStatus, type SubagentRow } from '../../lib/subagents.ts';
 import { CostPill } from './CostPill.tsx';
 import { Fold } from '../Fold.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -214,7 +214,7 @@ function AgentRow({
 }) {
   const subagents = useSubagents();
   const { meta, call, reports } = row;
-  const reported = reports[reports.length - 1] ?? null;
+  const reported = reportedOf(reports);
   // A nested agent was sent out and reported back inside its parent's
   // transcript, so both of its times come from there.
   const sentTime = call?.timestamp ?? nesting?.sentAt ?? null;
@@ -401,7 +401,7 @@ export function SubagentsPanel({
     const callerOf = new Map<string, SubagentMeta>();
     const sentAt = new Map<string, string | null>();
     const briefOf = new Map<string, string | null>();
-    const reportOf = new Map<string, { uuid: string; at: string | null; status: string | null; result: string | null }>();
+    const reportsOf = new Map<string, { uuid: string; at: string | null; status: string | null; result: string | null }[]>();
     details.forEach((q, i) => {
       if (!q.data) return;
       const owner = rows[i].meta;
@@ -414,12 +414,9 @@ export function SubagentsPanel({
               briefOf.set(block.toolUseId, promptOf(block.input));
             }
             if (block.kind === 'notice' && block.taskId) {
-              reportOf.set(block.taskId, {
-                uuid: item.uuid,
-                at: item.timestamp,
-                status: block.status,
-                result: block.result,
-              });
+              const list = reportsOf.get(block.taskId) ?? [];
+              list.push({ uuid: item.uuid, at: item.timestamp, status: block.status, result: block.result });
+              reportsOf.set(block.taskId, list);
             }
           }
         }
@@ -430,7 +427,11 @@ export function SubagentsPanel({
       if (row.call || !row.meta.toolUseId) continue;
       const parent = callerOf.get(row.meta.toolUseId);
       if (!parent) continue;
-      const report = reportOf.get(row.meta.agentId);
+      // The status is the last notice's, as for any row; the report and the
+      // jump are the last one that carries a report (`reportedOf`), which is
+      // not the same notice when the agent handed its report back.
+      const reports = reportsOf.get(row.meta.agentId) ?? [];
+      const report = reportedOf(reports);
       nesting.set(row.meta.agentId, {
         parent,
         toolUseId: row.meta.toolUseId,
@@ -438,7 +439,7 @@ export function SubagentsPanel({
         prompt: briefOf.get(row.meta.toolUseId) ?? null,
         reportUuid: report?.uuid ?? null,
         reportAt: report?.at ?? null,
-        reportStatus: report?.status ?? null,
+        reportStatus: reports[reports.length - 1]?.status ?? null,
         result: report?.result ?? null,
       });
     }

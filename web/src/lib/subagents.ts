@@ -5,9 +5,13 @@ export interface SubagentReport {
   /** The item carrying it — what `?msg=` needs to land on it. */
   uuid: string;
   timestamp: string | null;
-  /** `completed` / `failed`, verbatim; null on a notification that recorded none. */
+  /** `completed` / `failed`, verbatim; null on a notification that recorded none, and on a hand-back. */
   status: string | null;
-  /** The whole report. Null on a failure, which files a summary and nothing else. */
+  /**
+   * The whole report. Null on a failure, which files a summary and nothing else,
+   * and on the notification that follows a hand-back — the report is on the
+   * hand-back, filed as a report of its own just before it.
+   */
   result: string | null;
   /** The notification's own one-line summary of itself. */
   text: string;
@@ -130,6 +134,19 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
     byId: new Map(rows.map((r) => [r.meta.agentId, r.meta])),
     byToolUse,
   };
+}
+
+/**
+ * The report a row leads with — what "back" is dated from and where its jump
+ * lands: the LAST one carrying a report, and only failing that the last one.
+ * An agent that hands its report back (auto mode, CLI 2.1.271+) files two: the
+ * hand-back with the report, then a notification with the status and nothing
+ * else, and landing on that one showed everything about the agent but what it
+ * said.
+ */
+export function reportedOf<T extends { result: string | null }>(reports: T[]): T | null {
+  for (let i = reports.length - 1; i >= 0; i--) if (reports[i].result) return reports[i];
+  return reports[reports.length - 1] ?? null;
 }
 
 export type SubagentStatus = 'completed' | 'failed' | 'running' | 'unknown';

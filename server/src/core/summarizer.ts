@@ -218,6 +218,59 @@ export function parseNotification(content: string): ParsedNotification {
   };
 }
 
+/** Where the harness's frame around a handed-back report ends and the report begins. */
+const HANDBACK_REPORT_START = 'The report follows:\n';
+
+/**
+ * The report a subagent handed back with its `SubagentHandback` call (auto mode,
+ * CLI 2.1.271+), as a notice of that agent's — or null for any other line.
+ *
+ * **In auto mode this is where an agent's report is, and the notification is
+ * not.** The `<task-notification>` that follows a hand-back only says *"This
+ * agent's report was delivered to you as a message from …"*, so reading reports
+ * off notifications alone drew that sentence as the report of every agent that
+ * handed back — 14 of them here. The message arrives in either envelope a
+ * notification uses: queued while a turn runs, or an `isMeta` `user` line
+ * ("Another Claude session sent a message:") that wakes an idle session.
+ *
+ * `origin.handback` is what says so (14 of 14), and `origin.from` is the agent
+ * id — the `<task-id>` of the notification that follows. The report is
+ * `handbackReportText` where the CLI wrote one (10 of 14, the newer ones);
+ * otherwise it is `body` after the harness's frame, every line indented by two
+ * spaces. Both read back as exactly the `input.message` of the agent's own
+ * call, 14 of 14.
+ */
+export function handbackOf(origin: unknown): (ParsedNotification & { taskId: string }) | null {
+  if (!isRec(origin) || origin.kind !== 'peer' || origin.handback !== true) return null;
+  const agentId = str(origin.from) ?? str(origin.senderTaskId);
+  if (!agentId) return null;
+  let report = str(origin.handbackReportText);
+  if (report === null) {
+    const body = str(origin.body);
+    if (body === null) return null;
+    const start = body.indexOf(HANDBACK_REPORT_START);
+    report =
+      start < 0
+        ? body.trim()
+        : body
+            .slice(start + HANDBACK_REPORT_START.length)
+            .split('\n')
+            .map((line) => (line.startsWith('  ') ? line.slice(2) : line))
+            .join('\n');
+  }
+  return { text: 'Handed its report back', taskId: agentId, toolUseId: null, status: null, result: report };
+}
+
+/**
+ * The agent a notification's `<result>` sends the reader to instead of carrying
+ * its report — the sentence a hand-back leaves behind — or null for a result
+ * that is a report.
+ */
+export function handbackPointer(result: string | null): string | null {
+  if (!result) return null;
+  return /message from "([^"]+)" \(its SubagentHandback call\)/.exec(result)?.[1] ?? null;
+}
+
 /**
  * Classify a user message string. Slash commands arrive wrapped in
  * `<command-name>/foo</command-name>` XML; meta banners are filtered upstream
