@@ -106,6 +106,7 @@ Seven exist in this corpus, and **only three ever carry `content`** — the rest
 - **`summarized`** is what the setting asks for, and the summary IS written to the transcript. Measured with a throwaway `claude -p … --thinking-display summarized`: a 135-character summary of the reasoning in the `thinking` block, labelled `thinking`.
 - **`omitted`** is what `-p` with `text` or `json` output asks for, whatever the setting says, unless `--thinking-display` names a mode.
 - **Nothing recovers the text of a block written without it.** The signature is for the API's eyes; the text never reached this machine.
+- **The app reads the setting and says so**, never writes it: Settings → Claude, and View ▾ under the thinking switch ([The viewer](AI_VIEWER.md#the-settings-page-is-a-catalogue-and-seven-areas)).
 
 The live status lines the terminal shows while it works are narration in this mode, and narration is on disk. An earlier reading (2.1.234) found summarised thinking on screen and an emptied block on disk. It is superseded by the measurement above: a summary that is asked for is kept.
 
