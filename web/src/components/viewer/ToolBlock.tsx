@@ -1,12 +1,14 @@
 import type { ContentBlock } from '@claude-history/shared';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes, formatDateTime, formatMs, formatTimeOfDay, msBetween } from '../../lib/format.ts';
+import { diffTally } from '../../lib/toolDiff.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from '../FoldHeader.tsx';
 import { CardLine, HoverCard } from './HoverCard.tsx';
 import { useFoldable, useRevealed } from './RevealContext.ts';
 import { useSubagents } from './SubagentContext.ts';
+import { DiffBadge, ToolDiffView } from './ToolDiff.tsx';
 
 type ToolContentBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
@@ -107,6 +109,9 @@ export function ToolBlock({
   // and claims no span. For a launched Agent this is the dispatch, not the run:
   // the subagent's own lifetime lives in its panel.
   const tookMs = msBetween(block.timestamp, result?.timestamp ?? null);
+  const diff = result?.diff ?? null;
+  const tally = useMemo(() => (diff ? diffTally(diff) : null), [diff]);
+  const showBadge = !!tally && (tally.files > 0 || tally.counted);
 
   return (
     // The anchor a search result scrolls to and flashes. A data attribute rather
@@ -117,7 +122,15 @@ export function ToolBlock({
       className="my-1.5 rounded border border-[var(--border)] bg-[var(--bg-raised)]/60"
     >
       <div className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs">
-        <FoldHeader open={open} onToggle={() => setOpen((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        {/* On a phone the clock, the name and the cost pills already fill the
+            row, so a call that changed files lets its badge wrap to a line of
+            its own rather than ride over the pills beside it. The summary is
+            `flex-1` with a zero basis, so it never forces a wrap by itself. */}
+        <FoldHeader
+          open={open}
+          onToggle={() => setOpen((v) => !v)}
+          className={`flex min-w-0 flex-1 items-center gap-2 text-left ${showBadge ? 'max-md:flex-wrap max-md:gap-y-0.5' : ''}`}
+        >
           {/* `data-chrome` on the caret and on everything after the header: the
               box's message text is exactly what `findInSession` folds — name,
               intent, summary, input, result — and nothing else in it may be
@@ -172,6 +185,13 @@ export function ToolBlock({
               {block.inputSummary}
             </span>
           </span>
+          {/* What the call changed, readable with the block folded — which
+              command in a run touched files is the question a run of ten
+              Bash calls never answered. Inside the header because it takes no
+              click; `data-chrome` because it is not the call's own words. */}
+          {diff && tally && showBadge && (
+            <DiffBadge tally={tally} source={diff.source} created={diff.newFileLines !== null} />
+          )}
         </FoldHeader>
         {costBadge && (
           <span data-chrome className="flex shrink-0 items-center gap-2">
@@ -252,6 +272,7 @@ export function ToolBlock({
                 // asking to see the output, not a button that fetches it.
                 <OffloadedResult path={result.offloadedFile} sizeBytes={null} autoLoad={targeted || revealed} />
               )}
+              {diff && <ToolDiffView diff={diff} />}
             </>
           )}
         </div>
