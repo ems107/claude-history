@@ -1,20 +1,10 @@
-import type { ThinkingSettingSource } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../../api/client.ts';
-import { useHideLocalOnly, useLocalOnly } from '../../api/useLocal.ts';
-import { copyPlain } from '../../lib/clipboard.ts';
-import { actionClass } from '../controlClass.ts';
+import { CopyLine, ProjectOverrideRows, SettingButtons, SettingSourceRows } from './ClaudeSettingSources.tsx';
 import { Explain } from './controls.tsx';
 
 const LINE = '"showThinkingSummaries": true';
-
-function sourceValue(s: ThinkingSettingSource): { text: string; tone: string } {
-  if (s.unreadable) return { text: s.unreadable, tone: 'text-red-400' };
-  if (s.on !== null) return { text: s.on ? 'on' : 'off', tone: s.on ? 'text-emerald-400' : 'text-amber-400' };
-  if (!s.exists) return { text: 'not there', tone: '' };
-  return { text: 'does not set it', tone: '' };
-}
 
 /**
  * Whether Claude Code keeps a summary of Claude's reasoning, and what to add
@@ -33,8 +23,6 @@ export function ThinkingSummariesPanel() {
     staleTime: 5 * 60_000,
   });
   const [note, setNote] = useState<string | null>(null);
-  const claudeFolder = useLocalOnly('openClaudeFolder');
-  const hideLocal = useHideLocalOnly();
 
   if (!data) return <p className="text-[var(--text-dim)]">Reading Claude Code's settings…</p>;
   const setIn = data.sources.find((s) => s.on !== null);
@@ -70,59 +58,15 @@ export function ThinkingSummariesPanel() {
             <span className="font-mono break-all">{data.userSettingsFile}</span> — and every new session keeps a summary
             of it, in the terminal and here:
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <code className="rounded border border-[var(--border)] bg-[var(--bg)] px-2 py-1 font-mono text-[12px] text-[var(--text)]">
-              {LINE}
-            </code>
-            <button
-              type="button"
-              className={actionClass}
-              onClick={() =>
-                void copyPlain(LINE).then(
-                  () => setNote('Copied — paste it inside the braces, with a comma after the line before it.'),
-                  (err: unknown) => setNote(`Could not copy: ${err instanceof Error ? err.message : String(err)}`),
-                )
-              }
-            >
-              Copy the line
-            </button>
-          </div>
+          <CopyLine line={LINE} onNote={setNote} />
         </div>
       )}
 
-      <div className="grid grid-cols-[auto_auto_1fr] gap-x-3 gap-y-1 border-t border-[var(--border)] pt-3 font-mono text-[11px] text-[var(--text-dim)]">
-        {data.sources.map((s) => {
-          const value = sourceValue(s);
-          return (
-            <Fragment key={s.path}>
-              <span className="opacity-60">{s.scope === 'policy' ? 'policy' : 'user'}</span>
-              <span className="break-all">{s.path}</span>
-              <span className={value.tone}>{value.text}</span>
-            </Fragment>
-          );
-        })}
-      </div>
+      <SettingSourceRows sources={data.sources} />
 
-      {data.projectOverrides.length > 0 && (
-        <div className="space-y-1 border-t border-[var(--border)] pt-3">
-          <p className="text-amber-400">
-            These projects set it themselves, and a project’s settings beat yours whenever Claude Code is started inside
-            it.
-          </p>
-          <div className="grid grid-cols-[auto_auto_1fr] gap-x-3 gap-y-1 font-mono text-[11px] text-[var(--text-dim)]">
-            {data.projectOverrides.map((o) => {
-              const value = sourceValue(o);
-              return (
-                <Fragment key={o.path}>
-                  <span className="opacity-60">{o.project?.name}</span>
-                  <span className="break-all">{o.path}</span>
-                  <span className={value.tone}>{value.text}</span>
-                </Fragment>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <ProjectOverrideRows overrides={data.projectOverrides}>
+        These projects set it themselves, and a project’s settings beat yours whenever Claude Code is started inside it.
+      </ProjectOverrideRows>
 
       <Explain label="What it changes, and why this app does not turn it on">
         <p>
@@ -138,31 +82,14 @@ export function ThinkingSummariesPanel() {
         </p>
       </Explain>
 
-      <div className="flex flex-wrap items-center gap-1.5 pt-1">
-        <button
-          type="button"
-          className={actionClass}
-          onClick={() => {
-            setNote(null);
-            void refetch();
-          }}
-          disabled={isFetching}
-        >
-          {isFetching ? 'Reading…' : 'Refresh'}
-        </button>
-        {!hideLocal && (
-          <button
-            type="button"
-            className={actionClass}
-            onClick={() => void api.openClaudeSettingsFolder()}
-            disabled={claudeFolder.disabled}
-            title={claudeFolder.reason ?? undefined}
-          >
-            Open the folder
-          </button>
-        )}
-        {note && <span className="text-[11px] text-[var(--text-dim)]">{note}</span>}
-      </div>
+      <SettingButtons
+        isFetching={isFetching}
+        onRefresh={() => {
+          setNote(null);
+          void refetch();
+        }}
+        note={note}
+      />
     </>
   );
 }

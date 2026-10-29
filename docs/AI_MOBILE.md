@@ -100,6 +100,8 @@ The desktop session page is a row: a 72px rail, the conversation, an inspector, 
 
 A fold does not survive a **change of session**, either: the page is not remounted when a notification is tapped from inside another conversation, and the next one opens at `scrollTop` 0, which is the one place the header always shows.
 
+**A tool call's header is the one row inside the conversation that runs out of room**: the clock, the dot, the name and the cost pills fill 280px before the summary gets a character, which it takes in its stride (it is `flex-1` with a zero basis and truncates to nothing). A call that changed files adds a badge, and that one may not ride over the pills — so a header that carries one may wrap (`flex-wrap`, at any width, because a desktop pane can be this narrow too), the badge takes a second line, and on a phone it drops the word `files` and keeps the numbers (`±2 +12 −3`). Headers with no badge are exactly as they were ([AI_VIEWER.md](AI_VIEWER.md#what-a-call-changed)).
+
 ## The two shapes a layer takes, and how to choose
 
 `Sheet` and `Popover`, and the question is how much is behind it rather than how much is in it.

@@ -2191,13 +2191,18 @@ export interface RetentionSource {
   project: { name: string; path: string } | null;
 }
 
-/** One of Claude Code's settings files, and what it says about `showThinkingSummaries`. */
-export interface ThinkingSettingSource {
+/** One of Claude Code's settings files, and what it says about one boolean setting of its. */
+export interface ClaudeSettingSource {
   scope: RetentionScope;
   path: string;
   exists: boolean;
   /** null when the file does not set it (or sets it to something that is not a boolean). */
   on: boolean | null;
+  /**
+   * The setting's environment variable as this file's `env` block sets it,
+   * verbatim — null where it does not, or where the setting has none.
+   */
+  env: string | null;
   /** The file exists but could not be read or parsed. */
   unreadable: string | null;
   /** Only on project-scoped sources: whose settings file this is. */
@@ -2217,9 +2222,48 @@ export interface ThinkingSettingResponse {
   /** The file to edit: always the user one. */
   userSettingsFile: string;
   /** The managed policy and the user file, in precedence order. */
-  sources: ThinkingSettingSource[];
+  sources: ClaudeSettingSource[];
   /** Project files that set it or cannot be read: they win inside their project. */
-  projectOverrides: ThinkingSettingSource[];
+  projectOverrides: ClaudeSettingSource[];
+}
+
+/**
+ * Whether Claude Code records what each Bash command changed
+ * (`bashEditDiffEnabled`), as its own settings decide it — read from the
+ * 2.1.312 bundle, in this order:
+ *
+ * 1. `CLAUDE_CODE_BASH_EDIT_DIFF`, wherever it is set (1/true/yes/on,
+ *    0/false/no/off; anything else is ignored);
+ * 2. the first of policy, `--settings` and user that sets the key;
+ * 3. a `false` in ANY settings file, a project's included, turns it off — a
+ *    project's `true` turns nothing on;
+ * 4. with nothing set, it is on only in auto or bypassPermissions mode, and
+ *    only while the account is in an Anthropic experiment — which nothing on
+ *    disk can confirm.
+ */
+export interface BashEditDiffSettingResponse {
+  /** `unset` is step 4: nothing decides it, so Claude Code's own default does. */
+  state: 'on' | 'off' | 'unset';
+  /** What decided it, when something did. */
+  decidedBy:
+    | { kind: 'env'; where: string; value: string }
+    | { kind: 'file'; path: string }
+    | null;
+  /** The file to edit: always the user one. */
+  userSettingsFile: string;
+  /** The managed policy and the user file, in precedence order. */
+  sources: ClaudeSettingSource[];
+  /**
+   * Project files that set it — a `false` turns it off inside that project,
+   * a `true` does nothing — or that set its variable, or cannot be read.
+   */
+  projectOverrides: ClaudeSettingSource[];
+  /**
+   * The newest Bash result in the newest transcripts that carries a diff: the
+   * only proof there is that it is working, whatever the files say. Null when
+   * none of the few transcripts read has one.
+   */
+  lastSeen: { sessionId: string; title: string; toolUseId: string | null; at: string | null } | null;
 }
 
 export interface RetentionResponse {

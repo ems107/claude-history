@@ -675,6 +675,55 @@ export interface SentAttachment {
   pathValidated: boolean | null;
 }
 
+/**
+ * One hunk of a diff exactly as Claude Code writes it: the line numbers of both
+ * sides, then the lines with their one-character prefix (` `, `+`, `-`, `\`).
+ * The shape of `structuredPatch` on an Edit or Write result, and of every file
+ * of a Bash result's `bashEditDiff` — one format, so one renderer.
+ */
+export interface ToolDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: string[];
+}
+
+export interface ToolDiffFile {
+  /** Absolute, as Claude Code wrote it. */
+  path: string;
+  created: boolean;
+  deleted: boolean;
+  /** Empty when `tooLarge`. */
+  hunks: ToolDiffHunk[];
+  /** Past `MAX_DIFF_LINES` / `MAX_DIFF_CHARS` (parser.ts): named, its hunks not carried. */
+  tooLarge: boolean;
+}
+
+/**
+ * What a call changed on disk, as Claude Code recorded it beside the result —
+ * never part of what the model was sent (AI_TRANSCRIPTS.md, "What a call
+ * changed").
+ *
+ * `edit` is an Edit, MultiEdit or Write: one file, its `structuredPatch`.
+ * `bash` is a Bash command's `bashEditDiff`: what changed in the folder WHILE
+ * it ran, which can include writes by any other program.
+ */
+export interface ToolDiff {
+  source: 'edit' | 'bash';
+  files: ToolDiffFile[];
+  /** Bash only: files that changed with no diff kept — over Claude Code's caps, or not comparable. */
+  moreFiles: number;
+  /** Bash only: the paths of those, as far as Claude Code listed them (200 at most, shown ones included). */
+  otherPaths: string[];
+  /** Bash only: another command was running at the same time, so some of these changes may be its. */
+  shared: boolean;
+  /** Bash only: Claude Code could not compare the folder, for some files or for all of them. */
+  unavailable: boolean;
+  /** A Write that CREATED its file: how many lines it wrote. It records no patch — the content is the call's input. */
+  newFileLines: number | null;
+}
+
 export interface ToolResultInfo {
   text: string;
   /**
@@ -763,6 +812,12 @@ export interface ToolResultInfo {
    * and one of a `.md`.
    */
   attachments: SentAttachment[] | null;
+  /**
+   * Edit, MultiEdit, Write and Bash: what the call changed on disk. Null on
+   * every other tool, on a failed call, and on a Bash command that changed
+   * nothing.
+   */
+  diff: ToolDiff | null;
 }
 
 export type ContentBlock =
@@ -1105,11 +1160,23 @@ export interface SubagentMeta {
 }
 
 export interface FileEdit {
-  tool: string; // Edit | Write | NotebookEdit | ...
+  tool: string; // Edit | Write | NotebookEdit | Bash | ...
+  /** The call's own clock, as on its tool block. */
   timestamp: string | null;
+  /**
+   * The call that made it: where `↑ the call` goes, and where its diff is. The
+   * diff Claude Code recorded for this change is that call's `result.diff`,
+   * this file's part of it, and it is looked up there rather than copied here:
+   * a second copy of every hunk was 1.6 MB of the largest session's payload.
+   */
+  toolUseId: string | null;
   oldString: string | null;
   newString: string | null; // Write stores the (truncated) file content here
   truncated: boolean;
+  /** Bash only: the file changed and no diff was kept for it. */
+  noDiff: 'not-kept' | 'unavailable' | 'too-large' | null;
+  created: boolean;
+  deleted: boolean;
 }
 
 export interface FileChange {

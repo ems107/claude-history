@@ -333,7 +333,7 @@ export function useInspector({
             count: changed,
 
             alert: 0,
-            hint: 'Files this session edited or wrote — from the Edit/Write calls in this transcript',
+            hint: 'Files this session changed — from its Edit/Write calls, and what its Bash commands changed',
           }
         : null,
       sent > 0

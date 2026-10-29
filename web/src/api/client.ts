@@ -5,6 +5,7 @@ import type { McpLogsResponse,
   AuthStatusResponse,
   AutoReloadRun,
   AutoReloadStatus,
+  BashEditDiffSettingResponse,
   ChatCreateRequest,
   ChatCreateResponse,
   ChatPermissionMode,
@@ -632,6 +633,7 @@ export const api = {
   // ever read it: changing it is a manual edit, explained in Settings.
   retention: () => getJson<RetentionResponse>('/api/retention'),
   thinkingSetting: () => getJson<ThinkingSettingResponse>('/api/claude-settings/thinking'),
+  bashEditDiffSetting: () => getJson<BashEditDiffSettingResponse>('/api/claude-settings/bash-edit-diff'),
   openClaudeSettingsFolder: () => fetch('/api/retention/open-folder', { method: 'POST' }),
   logs: () => getJson<LogsResponse>('/api/logs'),
   logDay: (date: string, filters: { levels?: string[]; sources?: string[]; q?: string }) => {

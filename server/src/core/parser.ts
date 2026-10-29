@@ -18,6 +18,9 @@ import type {
   SessionDetail,
   SessionSummary,
   SubagentMeta,
+  ToolDiff,
+  ToolDiffFile,
+  ToolDiffHunk,
   ToolResultInfo,
   Turn,
 } from '@claude-history/shared';
@@ -371,6 +374,7 @@ function buildResult(
   response: string | null,
   plan: PlanOutcome | null,
   attachments: SentAttachment[] | null,
+  diff: ToolDiff | null,
 ): ToolResultInfo {
   let text = extractResultText(c.content);
   const totalChars = text.length;
@@ -401,7 +405,93 @@ function buildResult(
     response,
     plan,
     attachments,
+    diff,
   };
+}
+
+/**
+ * A diff is carried whole up to here; past it, the file is named and its hunks
+ * dropped. A Bash diff arrives capped by Claude Code itself (400 lines or 64,000
+ * characters a file, five files); an Edit's patch is not capped at all, and it
+ * travels in the session payload beside everything else.
+ */
+const MAX_DIFF_LINES = 2000;
+const MAX_DIFF_CHARS = 200_000;
+
+function toHunks(value: unknown): ToolDiffHunk[] | null {
+  if (!Array.isArray(value)) return null;
+  const hunks: ToolDiffHunk[] = [];
+  for (const h of value) {
+    if (!isRec(h) || !Array.isArray(h.lines)) return null;
+    const oldStart = num(h.oldStart);
+    const oldLines = num(h.oldLines);
+    const newStart = num(h.newStart);
+    const newLines = num(h.newLines);
+    if (oldStart === null || oldLines === null || newStart === null || newLines === null) return null;
+    hunks.push({ oldStart, oldLines, newStart, newLines, lines: h.lines.filter((l): l is string => typeof l === 'string') });
+  }
+  return hunks;
+}
+
+function diffFile(path: string, hunks: ToolDiffHunk[], created: boolean, deleted: boolean): ToolDiffFile {
+  let lines = 0;
+  let chars = 0;
+  for (const h of hunks) {
+    lines += h.lines.length;
+    for (const l of h.lines) chars += l.length;
+  }
+  const tooLarge = lines > MAX_DIFF_LINES || chars > MAX_DIFF_CHARS;
+  return { path, created, deleted, hunks: tooLarge ? [] : hunks, tooLarge };
+}
+
+/** How many lines a created file holds: a final newline ends the last line, it does not start another. */
+function lineCount(content: string): number {
+  if (content === '') return 0;
+  const n = content.split('\n').length;
+  return content.endsWith('\n') ? n - 1 : n;
+}
+
+/**
+ * What a call changed on disk, off the line's `toolUseResult`. Read by tool
+ * name, like every other field of it: `structuredPatch` means "this call's
+ * edit" only on the file tools, and `bashEditDiff` only on Bash.
+ *
+ * A Bash diff with nothing in it is no diff: `{files: [], moreFiles: 0, shared:
+ * true}` says only that another command was running, and `skipped` says
+ * nothing was compared.
+ */
+function toToolDiff(toolName: string, result: unknown, input: unknown): ToolDiff | null {
+  if (!isRec(result)) return null;
+  if (toolName === 'Bash') {
+    const d = result.bashEditDiff;
+    if (!isRec(d) || d.skipped === true || !Array.isArray(d.files)) return null;
+    const files: ToolDiffFile[] = [];
+    for (const f of d.files) {
+      if (!isRec(f)) continue;
+      const filePath = str(f.filePath);
+      const hunks = toHunks(f.hunks);
+      if (filePath && hunks) files.push(diffFile(filePath, hunks, f.created === true, f.deleted === true));
+    }
+    const shown = new Set(files.map((f) => f.path));
+    const otherPaths = Array.isArray(d.changedFiles)
+      ? d.changedFiles.filter((p): p is string => typeof p === 'string' && !shown.has(p))
+      : [];
+    const moreFiles = num(d.moreFiles) ?? 0;
+    const unavailable = d.unavailable === true;
+    if (files.length === 0 && moreFiles === 0 && otherPaths.length === 0 && !unavailable) return null;
+    return { source: 'bash', files, moreFiles, otherPaths, shared: d.shared === true, unavailable, newFileLines: null };
+  }
+  if (toolName !== 'Edit' && toolName !== 'MultiEdit' && toolName !== 'Write') return null;
+  const filePath = str(result.filePath) ?? (isRec(input) ? str(input.file_path) : null);
+  if (!filePath) return null;
+  const none = { source: 'edit' as const, moreFiles: 0, otherPaths: [], shared: false, unavailable: false };
+  if (result.type === 'create') {
+    const content = str(result.content) ?? (isRec(input) ? str(input.content) : null);
+    return content === null ? null : { ...none, files: [], newFileLines: lineCount(content) };
+  }
+  const hunks = toHunks(result.structuredPatch);
+  if (!hunks || hunks.length === 0) return null;
+  return { ...none, files: [diffFile(filePath, hunks, false, false)], newFileLines: null };
 }
 
 /**
@@ -666,25 +756,50 @@ function editString(value: unknown): { text: string | null; truncated: boolean }
     : { text: value, truncated: false };
 }
 
+/**
+ * One key per file. An Edit's `file_path` is whatever the model typed and a Bash
+ * diff's `filePath` is what Claude Code resolved, so the same file can arrive
+ * spelled twice — separators, a drive letter's case — and the panel would
+ * list it twice. The first spelling seen is the one shown.
+ */
+function fileKey(p: string): string {
+  return process.platform === 'win32' ? path.win32.normalize(p).toLowerCase() : path.normalize(p);
+}
+
+function editsOf(changes: Map<string, FileChange>, filePath: string): FileEdit[] {
+  const key = fileKey(filePath);
+  let change = changes.get(key);
+  if (!change) {
+    change = { path: filePath, edits: [] };
+    changes.set(key, change);
+  }
+  return change.edits;
+}
+
 /** Record file mutations from Edit/Write/NotebookEdit (and MultiEdit) tool calls. */
 function recordFileEdits(
-  changes: Map<string, FileEdit[]>,
+  changes: Map<string, FileChange>,
   toolName: string,
+  toolUseId: string,
   input: Record<string, unknown>,
   timestamp: string | null,
 ): void {
   const filePath = str(input.file_path) ?? str(input.notebook_path);
   if (!filePath) return;
-  const list = changes.get(filePath) ?? [];
+  const list = editsOf(changes, filePath);
   const push = (oldValue: unknown, newValue: unknown) => {
     const oldS = editString(oldValue);
     const newS = editString(newValue);
     list.push({
       tool: toolName,
       timestamp,
+      toolUseId: toolUseId || null,
       oldString: oldS.text,
       newString: newS.text,
       truncated: oldS.truncated || newS.truncated,
+      noDiff: null,
+      created: false,
+      deleted: false,
     });
   };
   if (toolName === 'Write') {
@@ -697,7 +812,52 @@ function recordFileEdits(
   } else {
     push(input.old_string, input.new_string ?? input.new_source);
   }
-  changes.set(filePath, list);
+}
+
+/**
+ * The second half of a change, from its result: the diff Claude Code recorded.
+ * The hunks stay on the call (`FileEdit.toolUseId` finds them); what changes
+ * here is which entries exist.
+ *
+ * An Edit's entries already exist — made from its input when the call was seen.
+ * A MultiEdit records one patch for all its edits, which then stands for every
+ * one of them, so one entry is kept. A Bash command has no entry until here:
+ * one per file its diff names, and one per file it only lists.
+ */
+function recordToolDiff(changes: Map<string, FileChange>, tool: ToolBlock, diff: ToolDiff): void {
+  if (diff.source === 'edit') {
+    const file = diff.files[0];
+    if (!file || file.tooLarge) return;
+    const list = changes.get(fileKey(file.path))?.edits;
+    if (!list) return;
+    const own = list.filter((e) => e.toolUseId === tool.toolUseId);
+    for (const extra of own.slice(1)) list.splice(list.indexOf(extra), 1);
+    return;
+  }
+  const base = {
+    tool: tool.toolName,
+    timestamp: tool.timestamp,
+    toolUseId: tool.toolUseId || null,
+    oldString: null,
+    newString: null,
+    truncated: false,
+  };
+  for (const f of diff.files) {
+    editsOf(changes, f.path).push({
+      ...base,
+      noDiff: f.tooLarge ? 'too-large' : null,
+      created: f.created,
+      deleted: f.deleted,
+    });
+  }
+  for (const p of diff.otherPaths) {
+    editsOf(changes, p).push({
+      ...base,
+      noDiff: diff.unavailable ? 'unavailable' : 'not-kept',
+      created: false,
+      deleted: false,
+    });
+  }
 }
 
 /**
@@ -975,7 +1135,7 @@ export async function parseTranscript(
   let forkedFrom: string | null = null;
   const toolBlocksById = new Map<string, ToolBlock>();
   const assistantItems = new Map<string, MessageItem>();
-  const fileEdits = new Map<string, FileEdit[]>();
+  const fileEdits = new Map<string, FileChange>();
   const mcp = createMcpTracker();
   const MUTATING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
   const isReplay = replayFilter();
@@ -1290,6 +1450,8 @@ export async function parseTranscript(
             const toolUseId = str(c.tool_use_id);
             const tool = toolUseId ? toolBlocksById.get(toolUseId) : undefined;
             if (tool) {
+              // A failed call changed nothing, whatever its line says about it.
+              const diff = c.is_error === true ? null : toToolDiff(tool.toolName, o.toolUseResult, tool.input);
               tool.result = buildResult(
                 c,
                 str(o.timestamp),
@@ -1300,8 +1462,10 @@ export async function parseTranscript(
                 tool.toolName === 'AskUserQuestion' ? askedResponse : null,
                 tool.toolName === 'ExitPlanMode' ? planOutcome : null,
                 tool.toolName === 'SendUserFile' ? sentAttachments : null,
+                diff,
               );
               if (tool.result?.isError) mcp.callFailed(tool.toolName);
+              if (diff) recordToolDiff(fileEdits, tool, diff);
             }
           } else if (c.type === 'text' && typeof c.text === 'string' && c.text.trim()) {
             userBlocks.push({ kind: 'text', text: c.text });
@@ -1521,7 +1685,7 @@ export async function parseTranscript(
             item.blocks.push(block);
             if (toolUseId) toolBlocksById.set(toolUseId, block);
             if (MUTATING_TOOLS.has(toolName) && isRec(c.input)) {
-              recordFileEdits(fileEdits, toolName, c.input, str(o.timestamp));
+              recordFileEdits(fileEdits, toolName, toolUseId, c.input, str(o.timestamp));
             }
             mcp.call(toolName, str(o.timestamp), item.uuid);
           }
@@ -1616,8 +1780,13 @@ export async function parseTranscript(
     }
   }
 
-  const fileChanges: FileChange[] = [...fileEdits.entries()]
-    .map(([path, edits]) => ({ path, edits }))
+  // In the order they happened: a Bash command's entries are made when its
+  // result arrives, which can be after a call that started later.
+  const fileChanges: FileChange[] = [...fileEdits.values()]
+    .map(({ path, edits }) => ({
+      path,
+      edits: edits.sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? '')),
+    }))
     .sort((a, b) => b.edits.length - a.edits.length);
 
   return {
