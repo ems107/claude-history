@@ -1481,7 +1481,13 @@ export function SessionViewPage() {
           />
         );
       case 'changed':
-        return <FileChangesPanel fileChanges={session.fileChanges} />;
+        return (
+          <FileChangesPanel
+            fileChanges={session.fileChanges}
+            turns={session.turns}
+            onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
+          />
+        );
       case 'sent':
         return (
           <SessionFilesPanel

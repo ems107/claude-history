@@ -1,4 +1,5 @@
-import type { GitDiffLine, GitDiffLineKind, GitFileDiff, GitHunk, ToolDiff, ToolDiffFile } from '@claude-history/shared';
+import type { GitDiffLine, GitDiffLineKind, GitFileDiff, GitHunk, ToolDiff, ToolDiffFile, Turn } from '@claude-history/shared';
+import { normalisePath } from './fileRefs.ts';
 
 /**
  * A call's recorded diff, put into the shape the GIT tab's renderer draws.
@@ -82,6 +83,30 @@ export function lineEndingChange(file: ToolDiffFile): 'CRLF' | 'LF' | null {
     to ??= add[0].endsWith('\r') ? 'CRLF' : 'LF';
   }
   return to;
+}
+
+/**
+ * Every recorded diff of a session, by the call that made it. The Changed
+ * panel's entries name their call rather than carry a copy of its hunks, and
+ * this is where they are looked up.
+ */
+export function diffsByCall(turns: Turn[]): Map<string, ToolDiff> {
+  const out = new Map<string, ToolDiff>();
+  for (const turn of turns) {
+    for (const item of turn.items) {
+      for (const b of item.blocks) {
+        if (b.kind === 'tool' && b.toolUseId && b.result?.diff) out.set(b.toolUseId, b.result.diff);
+      }
+    }
+  }
+  return out;
+}
+
+/** One file's part of a call's diff: an Edit's only file, or the command's file with this path. */
+export function fileOfDiff(diff: ToolDiff, path: string): ToolDiffFile | null {
+  if (diff.source === 'edit') return diff.files[0] ?? null;
+  const key = normalisePath(path);
+  return diff.files.find((f) => normalisePath(f.path) === key) ?? null;
 }
 
 export interface DiffTally {
