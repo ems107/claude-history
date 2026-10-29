@@ -755,6 +755,18 @@ Then in the viewer, on that same session: the row leads with `HH:mm:ss` (the cal
 - **And the other end of it — coming back to a terminal that is gone.** `setBlockedURLs ['*/terminal/ws']` will not hold the line down either (measured: the retry connects straight through it), so build the state instead of waiting for it: in one `Runtime.evaluate`, close the page's socket **and** `POST /terminal/stop` from the page itself. The panel must end up drawing the **start bar** with no `[data-terminal]` and nothing left running. Normally `terminal-changed` over SSE gets there first and the socket is torn down before its retry even fires — the `{t:'error'}` invalidation is the belt for a browser whose SSE was away too, and a page that shows a dead screen here is the thing to look at.
 - **A dev-server restart under an open panel is NOT that case**, and it is worth knowing before it is filed as a bug: the reservation lived in the server's memory, so after a restart the id is unknown to everything, the reconnect is refused with **1008 `Session not found.`** — which the retry correctly stops on — and both `GET /terminal` and the status behind the panel 404. The panel keeps its dead screen with that sentence on it. Measured: two sockets in total, no loop, nothing running.
 
+**73. A pid file whose process is another program now** ([Transcripts](AI_TRANSCRIPTS.md#live-sessions-and-streaming)). **Never inside `~/.claude`.** Copy one real file from `~/.claude/sessions` into a scratch `sessions` folder, write the rest with `JSON.stringify` (a hand-typed `C:\x` is invalid JSON, and an unreadable file is dropped for the wrong reason), and call `readLiveSessions(<that folder>, previous)` from a tsx script — an `.mts`, because of the top-level `await`. Each file must come back as follows:
+
+- **the real CLI's file** → listed;
+- **the pid of a running program that is not Claude** (`explorer.exe`) with an old `procStart` → **not listed**, and one `pid N is another program now` record in the log;
+- **a `procStart` in ticks** (above 3×10¹⁷, on another live pid), **and pid 4 with no `procStart`** → listed, as before;
+- **a dead pid** → not listed;
+- **a half-written file whose pid is in `previous`** → listed, from `previous`.
+
+Two reads at once must cost one PowerShell: about 700 ms, and one log record. A third read must take milliseconds.
+
+Then run it with `powershell.exe` off the PATH. Expect one `could not ask Windows` warning and every live pid listed, **the recycled one included** — a failed question never hides a session.
+
 **47. The settings page: the catalogue is the assertion.** Everything below is
 cheap to automate over CDP (check 26's harness) and the point of it is that one
 list decides all of it, so a row that fell out of `lib/settingsCatalog.ts` shows

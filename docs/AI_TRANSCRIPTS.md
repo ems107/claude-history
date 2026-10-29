@@ -310,6 +310,13 @@ The app keeps them as `runIds` and says "resumed ×N", never as lineage.
 
 `sessions/<pid>.json` lists what is running: `sessionId`, `cwd`, `status`, `pid`. **Verify pid liveness with `process.kill(pid, 0)` before trusting an entry** (on Windows, treat `EPERM` as alive).
 
+**And verify the pid is still the same process.** Windows hands a freed pid to whatever starts next. A file left by a CLI that never cleaned up — after a crash, or for every one of them after a reboot — passes the liveness test for as long as some unrelated program holds the number: the session shows LIVE, and the guard refuses to open it.
+
+- `procStart` is the CLI's process creation time, as a FILETIME in a string. It equals `Win32_Process.CreationDate` to the microsecond (measured on all six files open at the time).
+- The CLI's own list skips a record whose pid started at another moment, but **leaves the file on disk** (2.1.312 calls it `"recycled"`).
+- `core/live.ts` asks WMI once per pid and `procStart` — one PowerShell, about 650 ms, for any number of pids — and keeps the answer while the pid stays alive.
+- A record is trusted on its pid alone, as before, when it has no `procStart`, when its `procStart` is in .NET ticks (above 3×10¹⁷, in local time, written when the CLI had to ask PowerShell itself), or when the question fails. A failed question never hides a session.
+
 ### `status` has four values, and one of them says the session is waiting for you
 
 Read out of the 2.1.239 binary rather than guessed from what this machine happens to have written — which for a year was only two of them, and left the field typed `string // "idle" | "busy" | ...`:
