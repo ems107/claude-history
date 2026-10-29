@@ -32,7 +32,7 @@ Every `pending` item, and every `implement` whose commit is not linked yet, grou
 
 **To fix**
 
-- [2.1.271 — a report a subagent hands back is never shown](#21271) — implement
+Nothing open.
 
 **To build**
 
@@ -254,7 +254,7 @@ Every `pending` item, and every `implement` whose commit is not linked yet, grou
 
 136 bullets, 24 for other surfaces.
 
-- **[implement · reads]** A subagent's run now ends as soon as it hands its report back — see [2.1.271](#21271).
+- **[implement · reads]** A subagent's run now ends as soon as it hands its report back — landed with [2.1.271](#21271), in `c363d8a`.
 - **[tolerate · runs]** `claude --resume` on a session running in the background now attaches to it instead of refusing — the embedded terminal never gets that far: it refuses a session any live CLI of someone else's holds in `sessions/` (`core/sessionTerminal.ts`), and a background session is a CLI that registers there (the CLI's own agents view is built from that folder, [2.1.293](#21293)).
 - **[tolerate · runs]** `-p` and the Python SDK starting in auto mode with no permission mode — the composer always passes one.
 - **[implement · idea]** **Open a session in Claude Desktop.** `claude --desktop --resume <id>` opens the desktop app on a session — a third way out beside the embedded terminal and "resume in terminal", and local-only for the same reason the second one is.
@@ -321,7 +321,7 @@ Every `pending` item, and every `implement` whose commit is not linked yet, grou
 1 bullet; nothing in the changelog reaches this app.
 
 - **[tolerate · reads]** *(corpus)* the `ReadNotifications` tool and `user.turnOrigin` (`human`, `task_notification`, `sdk`, `peer`) — `2500b6bb` opens and draws. `turnOrigin` agrees with `origin.kind` on every line that has both; who wrote a line is still decided by `origin.kind` ([Transcripts](AI_TRANSCRIPTS.md#who-wrote-a-user-line)).
-- **[implement · idea]** **Messages between sessions, drawn as such.** A line with `turnOrigin: "peer"` (and `origin.kind: "peer"`) is a message another Claude session sent this one; a queued `<agent-message from="…">` is one from an agent ([2.1.271](#21271)). Both could be drawn as coming from that sender, with a way to the sending session — teammates, `SendMessage` and the agents view all speak through this channel.
+- **[implement · idea]** **Messages between sessions, drawn as such.** A line with `turnOrigin: "peer"` (and `origin.kind: "peer"`) is a message another Claude session sent this one; a queued `<agent-message from="…">` is one from an agent ([2.1.271](#21271)). Both could be drawn as coming from that sender, with a way to the sending session — teammates, `SendMessage` and the agents view all speak through this channel. Every `peer` line in the corpus so far is an agent's hand-back (14 of 14, `origin.handback: true`), and those are drawn since [2.1.271](#21271) landed — so what is left here is a peer message that is not one, of which there is none yet to build against.
 
 ## 2.1.275
 
@@ -353,7 +353,7 @@ Every `pending` item, and every `implement` whose commit is not linked yet, grou
 
 96 bullets, 24 for other surfaces.
 
-- **[implement · reads]** **"In auto mode a subagent reports back to its caller through a dedicated hand-back call."** The notification's `<result>` then only points at the report, and the report itself arrives as a `queued_command` attachment opening `<agent-message from="<agentId>">` ([Subagents](AI_AGENTS_QUESTIONS_PLANS.md#subagents)). The app reads neither: the ⑂ drawer shows the pointer as the agent's report, and the report is drawn nowhere. All four agents of `60e0dcc4` are like that; `db4fe0c0` has more. **To do:** take a queued `<agent-message>` as its agent's report.
+- **[implement · reads]** **"In auto mode a subagent reports back to its caller through a dedicated hand-back call."** The notification's `<result>` then only points at the report, and the report itself arrives as a `queued_command` attachment opening `<agent-message from="<agentId>">` ([Subagents](AI_AGENTS_QUESTIONS_PLANS.md#subagents)). The app reads neither: the ⑂ drawer shows the pointer as the agent's report, and the report is drawn nowhere. All four agents of `60e0dcc4` are like that; `db4fe0c0` has more. **Landed in `c363d8a`**: a hand-back is drawn where it landed as a notice of its agent's carrying the report, and the pointer is dropped. The fix found that the message comes in both envelopes a notification uses — 6 queued, 8 as `isMeta` `user` lines that wake an idle session — and that `origin.handback: true` is what marks it; 14 agents over 7 sessions now show their report byte for byte ([Subagents](AI_AGENTS_QUESTIONS_PLANS.md#subagents)).
 - *Not applicable:* `allowed_domains` on shell calls (none in the corpus); `SendMessage` delivery notices; `[1m]` lost on resume (no window is read); synced skills in the cleanup; capability replies at exit; dynamic workflows waiting out a limit; Monitor deadlines; VS Code on mapped drives; 260-character PowerShell paths.
 
 ## 2.1.270
