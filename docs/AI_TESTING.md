@@ -31,6 +31,7 @@ Fixtures are sessions in `~/.claude/projects`, and Claude Code sweeps them on `c
 | Files a session only MENTIONED | `1806cedb` (its answers name six paths: four on disk, one `also changed`, one `not found`, plus a folder dropped), `980751cb` (every path it names is a file this checkout does not have, so every row says `not found`) | — |
 | Files delivered to the user (`SendUserFile`) | `fbc2e20c` (3 PNGs, `display:"render"`, **files still on disk**), `b343d4ac` (4 calls / 5 PNGs **and** a plan file, so `Sent Files (6)` — the fixture for the panel, with the only `changed since` on disk: `answered.png` is 72515 there against 84918 sent), `15dd6c99` (3 calls, **no `display` field**), `f3384d17` (3 PNGs, **files already swept** — the "gone" state, and the one message that carries a second call), `0dd71f3d` (a `.md`, `isImage:false`) | — |
 | A code review's findings (`ReportFindings`) | `c483a438` (Preventa-4) — **the only one in the corpus**: 2 calls, the first rejected (`InputValidationError`, three `short_summary` over the 60-character cap) and the second accepting 12 findings, over 3 categories and 5 files, with `verdict`, `outcome` and `level` absent from all of them | — |
+| A line holding U+2028 or U+2029 raw | `60e0dcc4` (6 lines, 726–795: five Bash calls and one result); `cd2180fb` has one more. Shortlist with `rg -l '\x{2028}|\x{2029}'` | — |
 | A recap longer than `SYSTEM_CHARS` | `aa686022` (465 chars — the only one over 400, of 148 recaps in 56 sessions) | — |
 | Clean control (no compaction, no re-cache) | `3b326b6c` | — |
 

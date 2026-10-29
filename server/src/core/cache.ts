@@ -23,8 +23,10 @@ import { createLogger } from './logger.ts';
  * block says WHEN it was written, so a match row can carry its own clock.
  * 18: the commentary Claude Code printed while it worked (`narration`) joined it
  * — it is drawn now, so it is searched.
+ * 19: a line holding U+2028 or U+2029 stopped being dropped — `readline` split
+ * it in two, and neither half parsed.
  */
-export const CACHE_VERSION = 18;
+export const CACHE_VERSION = 19;
 
 const cacheLog = createLogger('cache');
 

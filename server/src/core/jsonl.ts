@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import readline from 'node:readline';
 
 // Transcript lines can be huge (~27 KB observed) and files are appended while
 // we read them, so head/tail readers work on byte chunks and only ever return
@@ -127,11 +126,36 @@ export async function appendedText(filePath: string, from: number, cap = 512 * 1
   }
 }
 
-/** Stream every line of the file (for full parses). */
+/**
+ * Stream every line of the file (for full parses).
+ *
+ * Splits on `\n` alone. `readline` would also break a line at U+2028 and
+ * U+2029, which `JSON.stringify` leaves raw inside strings — so a message
+ * holding one became two halves that both failed to parse, and the message was
+ * silently not there.
+ *
+ * Only the new chunk is searched: a line can run to megabytes (a screenshot's
+ * base64), and re-splitting what has accumulated would scan it once per chunk.
+ */
 export async function* streamLines(filePath: string): AsyncGenerator<string> {
-  const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
-  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-  for await (const line of rl) yield line;
+  const noCr = (line: string) => (line.endsWith('\r') ? line.slice(0, -1) : line);
+  let rest = '';
+  for await (const chunk of fs.createReadStream(filePath, { encoding: 'utf8' })) {
+    const text = chunk as string;
+    let nl = text.indexOf('\n');
+    if (nl < 0) {
+      rest += text;
+      continue;
+    }
+    yield noCr(rest + text.slice(0, nl));
+    let start = nl + 1;
+    while ((nl = text.indexOf('\n', start)) >= 0) {
+      yield noCr(text.slice(start, nl));
+      start = nl + 1;
+    }
+    rest = text.slice(start);
+  }
+  if (rest) yield noCr(rest);
 }
 
 /**
