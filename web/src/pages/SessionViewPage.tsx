@@ -1390,7 +1390,14 @@ export function SessionViewPage() {
   const panel = (() => {
     switch (inspector.open) {
       case 'tokens':
-        return <TokenPanel summary={session.summary} turns={session.turns} requests={session.requests} />;
+        return (
+          <TokenPanel
+            summary={session.summary}
+            turns={session.turns}
+            requests={session.requests}
+            drivers={session.costDrivers}
+          />
+        );
       case 'plan':
         return (
           <PlanPanel

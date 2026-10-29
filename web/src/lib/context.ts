@@ -369,6 +369,24 @@ export function recacheCauseText(
   }
 }
 
+/** A cause in a few words, for a list that groups re-caches by it. */
+export function recacheCauseLabel(cause: RecacheCause | null): string {
+  switch (cause) {
+    case 'ttl-expired':
+      return 'the 1-hour cache expired';
+    case 'new-run':
+      return 'resumed from a fresh CLI';
+    case 'model-changed':
+      return 'the model changed';
+    case 'request-changed':
+      return 'the request changed';
+    case 'server-side':
+      return "dropped on Anthropic's side";
+    default:
+      return 'no local explanation';
+  }
+}
+
 /** "+21.7k" / "-785k" — a context delta always carries its sign. */
 export function formatContextDelta(n: number): string {
   const sign = n > 0 ? '+' : n < 0 ? '-' : '';

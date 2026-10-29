@@ -6,6 +6,7 @@ export * from './localOnly.ts';
 export * from './prices.ts';
 export * from './recache.ts';
 export * from './requests.ts';
+export * from './costDrivers.ts';
 export * from './fold.ts';
 export * from './match.ts';
 export * from './searchText.ts';

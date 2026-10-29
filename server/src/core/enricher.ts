@@ -10,9 +10,10 @@ import type {
   SearchBlock,
   SessionEnrichment,
 } from '@claude-history/shared';
-import { recacheOf, requestChanges } from '@claude-history/shared';
+import { addDrivers, costDriverTracker, emptyDriverUsage, recacheOf, requestChanges } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { planFeedback, planTitle, toMessageUsage, toolIntent } from './parser.ts';
+import { feedCostDrivers } from './costDriverFeed.ts';
 import { requestReader } from './requests.ts';
 import { subagentDirs } from './scanner.ts';
 import { INTENT_ROLE, PLAN_ROLE, RECAP_ROLE, RECAP_SUBTYPE, systemChars } from './searchText.ts';
@@ -86,12 +87,15 @@ export interface SubagentSpend {
   byModel: Record<string, MessageUsage>;
   /** day (UTC) → model → usage, to be merged into the session's daily buckets. */
   daily: Record<string, Record<string, MessageUsage>>;
+  /** The part of `byModel` and `daily` spent by the agents of a Workflow run. */
+  workflowByModel: Record<string, MessageUsage>;
+  workflowDaily: Record<string, Record<string, MessageUsage>>;
   /** The agents themselves, so their ids can be searched for like a session's. */
   ids: string[];
 }
 
 function emptySpend(): SubagentSpend {
-  return { usage: zeroMessageUsage(), byModel: {}, daily: {}, ids: [] };
+  return { usage: zeroMessageUsage(), byModel: {}, daily: {}, workflowByModel: {}, workflowDaily: {}, ids: [] };
 }
 
 /**
@@ -112,18 +116,18 @@ function emptySpend(): SubagentSpend {
 export async function enrichSubagents(sessionDir: string | null): Promise<SubagentSpend> {
   const spend = emptySpend();
   if (!sessionDir) return spend;
-  const files: string[] = [];
-  for (const { dir } of await subagentDirs(sessionDir)) {
+  const files: Array<{ file: string; workflow: boolean }> = [];
+  for (const { dir, workflowRunId } of await subagentDirs(sessionDir)) {
     try {
       for (const f of await fsp.readdir(dir)) {
-        if (f.startsWith('agent-') && f.endsWith('.jsonl')) files.push(path.join(dir, f));
+        if (f.startsWith('agent-') && f.endsWith('.jsonl')) files.push({ file: path.join(dir, f), workflow: !!workflowRunId });
       }
     } catch {
       // gone between the listing and the read
     }
   }
 
-  for (const file of files) {
+  for (const { file, workflow } of files) {
     spend.ids.push(path.basename(file).slice('agent-'.length, -'.jsonl'.length));
     const isReplay = replayFilter();
     const seenMessageIds = new Set<string>();
@@ -142,6 +146,10 @@ export async function enrichSubagents(sessionDir: string | null): Promise<Subage
         addMessageUsage((spend.byModel[model] ??= zeroMessageUsage()), usage);
         const day = dayOf(o);
         if (day) addMessageUsage(((spend.daily[day] ??= {})[model] ??= zeroMessageUsage()), usage);
+        if (workflow) {
+          addMessageUsage((spend.workflowByModel[model] ??= zeroMessageUsage()), usage);
+          if (day) addMessageUsage(((spend.workflowDaily[day] ??= {})[model] ??= zeroMessageUsage()), usage);
+        }
       }
     } catch {
       // An agent's transcript being written while we read it is not a reason to
@@ -197,12 +205,15 @@ export async function enrichSession(
     | null = null;
   let compactedSinceLastRequest = false;
   const requests = requestReader();
+  const drivers = costDriverTracker();
 
   const dayBucket = (day: string): DailyUsage =>
     (daily[day] ??= {
       prompts: 0,
       byModel: {},
       recaches: [],
+      drivers: emptyDriverUsage(),
+      workflowByModel: {},
       subagentByModel: {},
     });
 
@@ -230,6 +241,9 @@ export async function enrichSession(
     // the prompts, the tool calls, the compactions and the daily buckets did
     // not, and neither did the indexed text.
     if (isReplay(o)) continue;
+    // The same lines the parser feeds its tracker, so a day's reasons add up to
+    // the session's — see `feedCostDrivers`.
+    feedCostDrivers(drivers, o, line);
 
     // `session_id` names the RUN that wrote the line, NOT an ancestor: resuming
     // from a fresh CLI stamps that CLI's id on everything it appends here. The
@@ -322,6 +336,10 @@ export async function enrichSession(
               addMessageUsage((bucket.byModel[model] ??= zeroMessageUsage()), billed);
             }
           }
+
+          const reasons = drivers.request({ model, usage: billed, effort: str(o.effort), carried });
+          const reasonDay = reasons ? dayOf(o) : null;
+          if (reasons && reasonDay) addDrivers(dayBucket(reasonDay).drivers, reasons);
 
           const current: CacheState = { read: billed.cacheRead, write: billed.cacheCreate };
           const request = requests.of(str(o.requestRef));
@@ -454,6 +472,9 @@ export async function enrichSession(
   for (const [day, byModel] of Object.entries(subagents.daily)) {
     dayBucket(day).subagentByModel = byModel;
   }
+  for (const [day, byModel] of Object.entries(subagents.workflowDaily)) {
+    dayBucket(day).workflowByModel = byModel;
+  }
 
   return {
     enrichment: {
@@ -466,6 +487,7 @@ export async function enrichSession(
       usageByModel,
       subagentUsage: subagents.usage,
       subagentUsageByModel: subagents.byModel,
+      workflowUsageByModel: subagents.workflowByModel,
       subagentIds: subagents.ids,
       daily,
       models: [...models].sort(),

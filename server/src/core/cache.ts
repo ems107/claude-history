@@ -26,9 +26,11 @@ import { createLogger } from './logger.ts';
  * 19: a line holding U+2028 or U+2029 stopped being dropped — `readline` split
  * it in two, and neither half parsed. 20: the session's own totals kept the TTL
  * split of every cache write, the way its agents' already did. 21: a re-cache
- * keeps its cause, read off the requests the transcript now records.
+ * keeps its cause, read off the requests the transcript now records. 22: each
+ * day keeps what made it expensive (`DailyUsage.drivers`), and what a Workflow
+ * run's agents spent.
  */
-export const CACHE_VERSION = 21;
+export const CACHE_VERSION = 22;
 
 const cacheLog = createLogger('cache');
 

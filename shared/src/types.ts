@@ -1,6 +1,7 @@
 // Domain types shared between server and web.
 // Data model reference: see docs/AI_TRANSCRIPTS.md and docs/AI_COST_AND_CONTEXT.md.
 
+import type { DriverUsage, SessionCostDrivers } from './costDrivers.ts';
 import type { RecacheCause } from './recache.ts';
 
 export type TitleSource =
@@ -135,6 +136,10 @@ export interface DailyUsage {
    * `byModel` it would be priced at the session's rate and overcharged.
    */
   subagentByModel: Record<string, MessageUsage>;
+  /** The part of `subagentByModel` spent by the agents of a Workflow run. */
+  workflowByModel: Record<string, MessageUsage>;
+  /** What made that day's requests expensive, as tokens by reason (`shared/src/costDrivers.ts`). Carried-over lines excluded. */
+  drivers: DriverUsage;
 }
 
 /**
@@ -199,6 +204,8 @@ export interface SessionEnrichment {
    */
   subagentUsage: MessageUsage;
   subagentUsageByModel: Record<string, MessageUsage>;
+  /** The part of `subagentUsageByModel` spent by the agents of a Workflow run (`subagents/workflows/`). */
+  workflowUsageByModel: Record<string, MessageUsage>;
   /**
    * The agents' own ids (`agent-<id>.jsonl`), which is what a notification's
    * `<task-id>` is. Indexed like the session's own id so that pasting one finds
@@ -1220,6 +1227,8 @@ export interface SessionDetail {
   mcp: McpPicture;
   /** What the session's requests share — see `MessageItem.request`. Empty before CLI 2.1.300. */
   requests: RequestTables;
+  /** What made it expensive, as tokens by reason (`shared/src/costDrivers.ts`): this transcript's requests only. */
+  costDrivers: SessionCostDrivers;
 }
 
 export interface SubagentDetail {

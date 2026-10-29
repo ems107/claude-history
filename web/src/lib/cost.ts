@@ -106,6 +106,25 @@ export function computeMessageCost(usage: MessageUsage, prices: ModelPrices | un
   );
 }
 
+/**
+ * A usage split by model, priced: the cost of what had a price, and whether
+ * something had none — the same three cases as every other sum here (null,
+ * whole, partial).
+ */
+export function priceByModel(
+  byModel: Record<string, MessageUsage>,
+  prices: PriceTable,
+): { cost: number | null; partial: boolean } {
+  let cost: number | null = null;
+  let partial = false;
+  for (const [model, usage] of Object.entries(byModel)) {
+    const one = computeMessageCost(usage, resolvePrices(model, prices));
+    if (one === null) partial = true;
+    else cost = (cost ?? 0) + one;
+  }
+  return { cost, partial: partial && cost !== null };
+}
+
 // ---- re-cached context ----
 
 /**

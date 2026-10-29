@@ -1,4 +1,4 @@
-import type { RequestTables, SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
+import type { RequestTables, SessionCostDrivers, SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
 import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -9,6 +9,7 @@ import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
 import { computeMessageCost, formatUsd, sessionCostParts, summariseRecache, unpricedOf } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
+import { CostDrivers } from './CostDrivers.tsx';
 import { Fold } from '../Fold.tsx';
 
 function fmt(n: number): string {
@@ -102,10 +103,13 @@ export function TokenPanel({
   summary,
   turns,
   requests,
+  drivers,
 }: {
   summary: SessionSummary;
   turns: Turn[];
   requests: RequestTables;
+  /** What made it expensive, from the parse — see `CostDrivers`. */
+  drivers: SessionCostDrivers;
 }) {
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
   const contextIndex = useMemo(() => buildContextIndex(turns, requests), [turns, requests]);
@@ -308,6 +312,15 @@ export function TokenPanel({
           </span>
         </Fold>
       )}
+
+      <CostDrivers
+        summary={summary}
+        turns={turns}
+        drivers={drivers}
+        contextIndex={contextIndex}
+        cost={cost}
+        prices={priceTable}
+      />
 
       <div className="mt-1 text-[10px] opacity-70">
         ≈ cost is API-equivalent value at the prices configured in Stats — not actual subscription spend.
