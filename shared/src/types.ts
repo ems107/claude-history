@@ -1,6 +1,8 @@
 // Domain types shared between server and web.
 // Data model reference: see docs/AI_TRANSCRIPTS.md and docs/AI_COST_AND_CONTEXT.md.
 
+import type { RecacheCause } from './recache.ts';
+
 export type TitleSource =
   | 'custom-title'
   | 'ai-title'
@@ -87,32 +89,40 @@ export interface PrLink {
   prRepository: string;
 }
 
+/**
+ * One re-cache, as the enricher keeps it. Tokens and never an amount: the
+ * price table is user-editable, so a saved cost would freeze yesterday's rates.
+ */
+export interface RecacheRecord {
+  model: string;
+  tokens: number;
+  /**
+   * The part written at the 5-minute TTL — the re-write bills at the rate of
+   * the write that carried it, as the viewer prices it (`recacheCost`).
+   */
+  tokens5m: number;
+  cause: RecacheCause;
+}
+
 export interface DailyUsage {
   /** User-typed prompts that day. */
   prompts: number;
   /** With the TTL split: a session's writes are not all 1-hour ones (see `MessageUsage`). */
   byModel: Record<string, MessageUsage>;
   /**
-   * Context that was already cached and had to be written again, per model — a
-   * SUBSET of `byModel[...].cacheCreate`, never an addition to it. Stored as
-   * tokens and never as an amount: the price table is user-editable, so a saved
-   * cost would freeze yesterday's rates. Carried-over lines are excluded, like
-   * every other aggregate here.
+   * Every request that day which had to write already-cached context again —
+   * a SUBSET of `byModel[...].cacheCreate`, never an addition to it. One record
+   * per event rather than a sum, because the Stats page splits them by cause
+   * and prices each at its own model and TTL, and because they are few: 56 in
+   * the whole corpus. Carried-over lines are excluded, like every other
+   * aggregate here.
    *
    * It lives in the daily buckets rather than on the session because that is
    * what the stats page filters by, and because a session-level copy would be a
    * second source of truth for the number the viewer already computes from the
    * parsed turns. Both go through `recacheOf` in `shared/src/recache.ts`.
    */
-  recachedByModel: Record<string, number>;
-  /**
-   * The part of `recachedByModel` that was written at the 5-minute TTL, per
-   * model — the re-write bills at the rate of the write that carried it, as the
-   * viewer prices it (`recacheCost`).
-   */
-  recached5mByModel: Record<string, number>;
-  /** Requests that day which had to re-write a cached prefix. */
-  recacheEvents: number;
+  recaches: RecacheRecord[];
   /**
    * What the agents this session sent out spent THAT day, in their own
    * conversations. An addition to `byModel`, never a subset of it: those
@@ -1215,4 +1225,6 @@ export interface SessionDetail {
 export interface SubagentDetail {
   meta: SubagentMeta;
   turns: Turn[];
+  /** The agent's own requests — see `SessionDetail.requests`. */
+  requests: RequestTables;
 }

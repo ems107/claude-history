@@ -6,12 +6,14 @@ import type {
   MessageUsage,
   PlanRecord,
   PrLink,
+  RequestFacts,
   SearchBlock,
   SessionEnrichment,
 } from '@claude-history/shared';
-import { recacheOf } from '@claude-history/shared';
+import { recacheOf, requestChanges } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { planFeedback, planTitle, toMessageUsage, toolIntent } from './parser.ts';
+import { requestReader } from './requests.ts';
 import { subagentDirs } from './scanner.ts';
 import { INTENT_ROLE, PLAN_ROLE, RECAP_ROLE, RECAP_SUBTYPE, systemChars } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt, thinkingKind } from './summarizer.ts';
@@ -184,17 +186,23 @@ export async function enrichSession(
   // request to be the first line of a `message.id` that carries usage, both let
   // a carried-over line be the predecessor of the next one, and neither counts
   // an event on a carried-over line itself.
-  let previous: (CacheState & { messageId: string; model: string; runId: string | null; ts: number | null }) | null =
-    null;
+  let previous:
+    | (CacheState & {
+        messageId: string;
+        model: string;
+        runId: string | null;
+        ts: number | null;
+        request: RequestFacts | null;
+      })
+    | null = null;
   let compactedSinceLastRequest = false;
+  const requests = requestReader();
 
   const dayBucket = (day: string): DailyUsage =>
     (daily[day] ??= {
       prompts: 0,
       byModel: {},
-      recachedByModel: {},
-      recached5mByModel: {},
-      recacheEvents: 0,
+      recaches: [],
       subagentByModel: {},
     });
 
@@ -213,6 +221,9 @@ export async function enrichSession(
       }
       continue;
     }
+    // What each request asked for, read before the reply that names it — see
+    // `requestReader`, which the parser shares.
+    if (requests.read(o)) continue;
 
     // A line already counted, re-appended by a compaction (see `replayFilter`).
     // The token totals survived it by luck — they dedupe by `message.id` — but
@@ -313,6 +324,7 @@ export async function enrichSession(
           }
 
           const current: CacheState = { read: billed.cacheRead, write: billed.cacheCreate };
+          const request = requests.of(str(o.requestRef));
           // A fork's copies were billed in the parent, so what they re-wrote is
           // the parent's story — but they still describe the cache the next
           // request met, which is why they stay eligible as a predecessor.
@@ -328,24 +340,26 @@ export async function enrichSession(
                     previous.ts !== null && lineTime !== null && !Number.isNaN(lineTime)
                       ? Math.max(0, lineTime - previous.ts)
                       : null,
+                  changes:
+                    previous.request && request ? requestChanges(previous.request, request, requests.tables()) : null,
                 })
               : null;
           if (event) {
             const day = dayOf(o);
             if (day) {
               const bucket = dayBucket(day);
-              bucket.recachedByModel[model] = (bucket.recachedByModel[model] ?? 0) + event.tokens;
-              // Apportioned the way `recacheCost` blends the rate in the viewer.
-              // No message here has ever mixed the two TTLs, so in practice this
-              // is all of it or none.
-              if (billed.cacheCreate5m > 0 && billed.cacheCreate > 0) {
-                bucket.recached5mByModel[model] =
-                  (bucket.recached5mByModel[model] ?? 0) + (event.tokens * billed.cacheCreate5m) / billed.cacheCreate;
-              }
-              bucket.recacheEvents++;
+              bucket.recaches.push({
+                model,
+                tokens: event.tokens,
+                // Apportioned the way `recacheCost` blends the rate in the
+                // viewer. No message here has ever mixed the two TTLs, so in
+                // practice this is all of it or none.
+                tokens5m: billed.cacheCreate > 0 ? (event.tokens * billed.cacheCreate5m) / billed.cacheCreate : 0,
+                cause: event.cause,
+              });
             }
           }
-          previous = { ...current, messageId, model, runId, ts: Number.isNaN(lineTime) ? null : lineTime };
+          previous = { ...current, messageId, model, runId, ts: Number.isNaN(lineTime) ? null : lineTime, request };
           compactedSinceLastRequest = false;
         }
       } else if (previous && messageId === previous.messageId && lineTime !== null && !Number.isNaN(lineTime)) {

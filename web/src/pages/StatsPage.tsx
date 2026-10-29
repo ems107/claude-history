@@ -189,17 +189,17 @@ export function StatsPage() {
           m.output += u.output;
           addSpend(m.spend, name, cost);
         }
-        recache.events += du.recacheEvents;
-        for (const [name, tokens] of Object.entries(du.recachedByModel)) {
-          const rates = resolvePrices(name, prices);
-          recache.tokens += tokens;
+        recache.events += du.recaches.length;
+        for (const r of du.recaches) {
+          const rates = resolvePrices(r.model, prices);
+          recache.tokens += r.tokens;
           // No rates for this model: count the tokens, price nothing. Each
           // re-write bills at the TTL of the write that carried it, as the
           // viewer prices it — 1 hour, except where a session wrote 5-minute ones.
           if (rates) {
-            const at5m = du.recached5mByModel[name] ?? 0;
-            recache.billed += ((tokens - at5m) * rates.cacheWrite + at5m * cacheWrite5mRate(rates)) / 1_000_000;
-            recache.ifRead += (tokens * rates.cacheRead) / 1_000_000;
+            recache.billed +=
+              ((r.tokens - r.tokens5m) * rates.cacheWrite + r.tokens5m * cacheWrite5mRate(rates)) / 1_000_000;
+            recache.ifRead += (r.tokens * rates.cacheRead) / 1_000_000;
           }
         }
       }

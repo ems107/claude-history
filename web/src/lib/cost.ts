@@ -4,6 +4,7 @@ import type {
   ModelPrices,
   PriceTable,
   RecacheCause,
+  RequestChange,
   SessionSummary,
   Turn,
 } from '@claude-history/shared';
@@ -154,6 +155,7 @@ export interface RecachedRequest {
   usage: MessageUsage;
   recached: number;
   recacheCause: RecacheCause | null;
+  recacheChanges: RequestChange[];
   gapMs: number | null;
 }
 
@@ -166,6 +168,8 @@ export interface RecacheSummary {
    * explain the wrong thing.
    */
   cause: RecacheCause | null;
+  /** What the request changed, on that same largest event. */
+  changes: RequestChange[];
   gapMs: number | null;
 }
 
@@ -177,7 +181,7 @@ export function summariseRecache(requests: RecachedRequest[], prices: PriceTable
     (best, r) => (r.recached > 0 && (!best || r.recached > best.recached) ? r : best),
     null,
   );
-  return { cost, cause: worst?.recacheCause ?? null, gapMs: worst?.gapMs ?? null };
+  return { cost, cause: worst?.recacheCause ?? null, changes: worst?.recacheChanges ?? [], gapMs: worst?.gapMs ?? null };
 }
 
 /** The re-cache across several requests, each priced at its own model's rates. */

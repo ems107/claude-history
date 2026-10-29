@@ -1,4 +1,4 @@
-import type { PriceTable, Turn } from '@claude-history/shared';
+import type { PriceTable, RequestTables, Turn } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Fragment, memo, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
@@ -163,6 +163,7 @@ export interface FindState {
  */
 export const TurnList = memo(function TurnList({
   turns,
+  requests,
   showThinking,
   expandTools = false,
   fold,
@@ -179,6 +180,8 @@ export const TurnList = memo(function TurnList({
   pending,
 }: {
   turns: Turn[];
+  /** What the transcript's requests share, so a re-cache can say what changed in one. */
+  requests: RequestTables;
   showThinking: boolean;
   expandTools?: boolean;
   /** Which turns have their answers folded away — owned above, see useFoldState. */
@@ -250,7 +253,7 @@ export const TurnList = memo(function TurnList({
   // this one also works for a subagent transcript, which is enriched nowhere.
   const index = useMemo(() => buildCostIndex(turns, prices), [turns, prices]);
   // The context chain needs no prices, so it is built once per conversation.
-  const contextIndex = useMemo(() => buildContextIndex(turns), [turns]);
+  const contextIndex = useMemo(() => buildContextIndex(turns, requests), [turns, requests]);
   const costs = useMemo(
     () => ({
       prices,

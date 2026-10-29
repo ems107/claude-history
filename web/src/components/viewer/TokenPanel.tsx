@@ -1,4 +1,4 @@
-import type { SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
+import type { RequestTables, SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
 import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -98,9 +98,17 @@ function Card({
   );
 }
 
-export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns: Turn[] }) {
+export function TokenPanel({
+  summary,
+  turns,
+  requests,
+}: {
+  summary: SessionSummary;
+  turns: Turn[];
+  requests: RequestTables;
+}) {
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
-  const contextIndex = useMemo(() => buildContextIndex(turns), [turns]);
+  const contextIndex = useMemo(() => buildContextIndex(turns, requests), [turns, requests]);
   const e = summary.enrichment;
   if (!e) {
     return <div className="p-3 text-xs text-[var(--text-dim)]">Token stats not indexed yet.</div>;
@@ -158,7 +166,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           {recache.cost.extra !== null && (
             <> — {formatUsd(recache.cost.extra, recache.cost.partial)} more than reading them would have cost</>
           )}
-          . {recacheCauseText(recache.cause, recache.gapMs)}
+          . {recacheCauseText(recache.cause, recache.gapMs, recache.changes)}
         </span>
       </Fold>
     </div>

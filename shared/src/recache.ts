@@ -16,6 +16,7 @@
  * This lives in `shared/` for the same reason `fold.ts` does: the enricher and
  * the viewer both answer this question, and a hand-kept second copy drifts.
  */
+import type { RequestChange } from './requests.ts';
 
 /** The two cache figures of one request — all the arithmetic needs. */
 export interface CacheState {
@@ -40,7 +41,19 @@ export const RECACHE_MIN_TOKENS = 1000;
 /** The TTL Claude Code writes in session transcripts (`ephemeral_1h`). */
 export const CACHE_TTL_MS = 60 * 60 * 1000;
 
-export type RecacheCause = 'ttl-expired' | 'new-run' | 'model-changed' | 'unknown';
+/**
+ * Why the cached prefix had to be written again — the one the user can act on
+ * first. `request-changed` and `server-side` exist only where both requests are
+ * recorded (`api-request`, CLI 2.1.300+): the first means the request itself
+ * differed, the second that it did not and the cache was still dropped.
+ */
+export type RecacheCause =
+  | 'ttl-expired'
+  | 'new-run'
+  | 'model-changed'
+  | 'request-changed'
+  | 'server-side'
+  | 'unknown';
 
 export interface RecacheSignals {
   /** A `compact_boundary` sits between the two requests. */
@@ -50,11 +63,18 @@ export interface RecacheSignals {
   runChanged: boolean;
   /** Time from the end of the previous request to the start of this one. */
   gapMs: number | null;
+  /**
+   * What differed between the two requests (`requestChanges`), or null when
+   * either was not recorded — which is not the same as nothing having changed.
+   */
+  changes: RequestChange[] | null;
 }
 
 export interface RecacheEvent {
   tokens: number;
   cause: RecacheCause;
+  /** Every difference between the two requests, beside whichever cause won: facts, not a second verdict. */
+  changes: RequestChange[];
 }
 
 /**
@@ -66,16 +86,25 @@ export interface RecacheEvent {
  * a fresh CLI having re-sent everything two minutes after the last reply is
  * genuinely the interesting case.
  *
+ * Where both requests are recorded, the request itself can be asked: a change
+ * in it (the tools, the system prompt, the effort, a new chain…) is the
+ * `request-changed` answer, and NO change is the `server-side` one — the same
+ * prompt, inside the hour, and the cache was dropped anyway. Neither is claimed
+ * past the hour, where the TTL already explains everything, and the changes are
+ * kept on the event either way so they can still be shown as what they are.
+ *
  * `unknown` is not a placeholder for "probably the TTL". 11 events here have no
  * local explanation at all — in `797db462` a cache written 17 seconds earlier is
  * simply not reused — and Anthropic's cache is best-effort. A plausible wrong
- * cause is worse than an admitted unknown.
+ * cause is worse than an admitted unknown, so it stays wherever the requests
+ * were not recorded.
  */
 function causeOf(signals: RecacheSignals): RecacheCause {
   if (signals.gapMs !== null && signals.gapMs >= CACHE_TTL_MS) return 'ttl-expired';
   if (signals.runChanged) return 'new-run';
   if (signals.modelChanged) return 'model-changed';
-  return 'unknown';
+  if (signals.changes === null) return 'unknown';
+  return signals.changes.length > 0 ? 'request-changed' : 'server-side';
 }
 
 /**
@@ -89,5 +118,5 @@ export function recacheOf(prev: CacheState, current: CacheState, signals: Recach
   if (signals.compactedBetween) return null;
   const tokens = recachedTokens(prev, current);
   if (tokens < RECACHE_MIN_TOKENS) return null;
-  return { tokens, cause: causeOf(signals) };
+  return { tokens, cause: causeOf(signals), changes: signals.changes ?? [] };
 }

@@ -329,7 +329,7 @@ function Chart({ index, jump }: { index: ContextIndex; jump: ((uuid: string) => 
                   onClick={jump ? () => jump(p.uuid) : undefined}
                 >
                   <title>
-                    {`Re-cached ${p.recached.toLocaleString()} tokens. ${recacheCauseText(p.recacheCause, p.gapMs) ?? ''} Click to open the request.`}
+                    {`Re-cached ${p.recached.toLocaleString()} tokens. ${recacheCauseText(p.recacheCause, p.gapMs, p.recacheChanges) ?? ''} Click to open the request.`}
                   </title>
                 </rect>
               </g>
@@ -388,7 +388,7 @@ function Chart({ index, jump }: { index: ContextIndex; jump: ((uuid: string) => 
               )}
               {hovered.recached > 0 && (
                 <div className="mt-1 text-amber-400/90">
-                  re-cached {hovered.recached.toLocaleString()} tok. {recacheCauseText(hovered.recacheCause, hovered.gapMs)}
+                  re-cached {hovered.recached.toLocaleString()} tok. {recacheCauseText(hovered.recacheCause, hovered.gapMs, hovered.recacheChanges)}
                 </div>
               )}
               {hovered.shrink && (
@@ -556,7 +556,7 @@ function EventList({
                 {point.recached.toLocaleString()} tok
                 {cost !== null && cost.billed !== null && ` · ≈${formatUsd(cost.billed)}`}
               </span>
-              <span className="min-w-0">{recacheCauseText(point.recacheCause, point.gapMs)}</span>
+              <span className="min-w-0">{recacheCauseText(point.recacheCause, point.gapMs, point.recacheChanges)}</span>
               {jump && <span className="ml-auto text-[var(--text-dim)]/70">→</span>}
             </div>
           </div>
