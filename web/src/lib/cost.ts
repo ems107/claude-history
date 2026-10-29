@@ -4,6 +4,7 @@ import type {
   ModelPrices,
   PriceTable,
   RecacheCause,
+  RecacheRecord,
   RequestChange,
   SessionSummary,
   Turn,
@@ -126,6 +127,30 @@ export function priceByModel(
 }
 
 // ---- re-cached context ----
+
+/**
+ * Re-caches as the enricher keeps them (`DailyUsage.recaches`), priced the way
+ * `recacheCost` prices one from a parsed message: each re-write at the TTL of
+ * the write that carried it. Null when there are none.
+ */
+export function priceRecacheRecords(records: RecacheRecord[], prices: PriceTable): RecacheCost | null {
+  let tokens = 0;
+  let billed: number | null = null;
+  let ifRead: number | null = null;
+  let partial = false;
+  for (const r of records) {
+    tokens += r.tokens;
+    const rates = resolvePrices(r.model, prices);
+    if (!rates) {
+      partial = true;
+      continue;
+    }
+    billed = (billed ?? 0) + ((r.tokens - r.tokens5m) * rates.cacheWrite + r.tokens5m * cacheWrite5mRate(rates)) / 1_000_000;
+    ifRead = (ifRead ?? 0) + (r.tokens * rates.cacheRead) / 1_000_000;
+  }
+  if (tokens === 0) return null;
+  return { tokens, billed, ifRead, extra: billed === null || ifRead === null ? null : billed - ifRead, partial };
+}
 
 /**
  * What re-writing already-cached context cost, in the two forms that have to be
