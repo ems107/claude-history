@@ -1,7 +1,7 @@
 import type { PriceTable } from '@claude-history/shared';
 import type { ReactNode } from 'react';
 import { formatContextTokens } from '../../lib/context.ts';
-import { costEntries, formatUsd, sumCost } from '../../lib/cost.ts';
+import { costEntries, formatUsd, sumCost, unpricedModels } from '../../lib/cost.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { type Segment, summarizeSegment } from '../../lib/segments.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
@@ -30,7 +30,9 @@ export function CompactedSegment({
   children?: ReactNode;
 }) {
   const { items, prompts, firstAt, lastAt } = summarizeSegment(segment);
-  const cost = sumCost(costEntries(items, prices));
+  const entries = costEntries(items, prices);
+  const cost = sumCost(entries);
+  const partial = unpricedModels(entries).length > 0;
   const b = segment.boundary;
 
   const range =
@@ -52,7 +54,7 @@ export function CompactedSegment({
           <b className="text-[var(--text)]">{prompts}</b> prompt{prompts === 1 ? '' : 's'}
         </span>
         {range && <span className="text-[var(--text-dim)]">{range}</span>}
-        {cost !== null && <span className="font-mono text-[var(--text-dim)]">{formatUsd(cost)}</span>}
+        {cost !== null && <span className="font-mono text-[var(--text-dim)]">{formatUsd(cost, partial)}</span>}
         {b && b.preTokens !== null && b.postTokens !== null && (
           <span className="ml-auto font-mono text-[var(--text-dim)]">
             compacted {formatContextTokens(b.preTokens)} → {formatContextTokens(b.postTokens)}

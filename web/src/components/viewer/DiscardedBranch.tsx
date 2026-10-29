@@ -1,6 +1,6 @@
 import type { PriceTable } from '@claude-history/shared';
 import type { ReactNode } from 'react';
-import { costEntries, formatUsd, sumCost } from '../../lib/cost.ts';
+import { costEntries, formatUsd, sumCost, unpricedModels } from '../../lib/cost.ts';
 import { formatDateTime } from '../../lib/format.ts';
 import { type SegmentTurn, summarizeTurns } from '../../lib/segments.ts';
 import { FoldHeader } from '../FoldHeader.tsx';
@@ -31,7 +31,9 @@ export function DiscardedBranch({
   children?: ReactNode;
 }) {
   const { items, prompts, firstAt, lastAt } = summarizeTurns(turns);
-  const cost = sumCost(costEntries(items, prices));
+  const entries = costEntries(items, prices);
+  const cost = sumCost(entries);
+  const partial = unpricedModels(entries).length > 0;
   const range =
     firstAt && lastAt ? `${formatDateTime(firstAt)} → ${formatDateTime(lastAt)}` : firstAt ? formatDateTime(firstAt) : '';
 
@@ -62,7 +64,7 @@ export function DiscardedBranch({
         {range && <span className="text-[var(--text-dim)]">{range}</span>}
         {cost !== null && (
           <span className="font-mono text-[var(--text-dim)]" title="Billed all the same — a rewind does not refund it">
-            {formatUsd(cost)}
+            {formatUsd(cost, partial)}
           </span>
         )}
         <span className="ml-auto text-[var(--text-dim)] opacity-70">discarded by a rewind</span>

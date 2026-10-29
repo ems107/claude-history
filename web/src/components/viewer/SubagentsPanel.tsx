@@ -1,7 +1,15 @@
 import type { PriceTable, SubagentDetail, SubagentMeta } from '@claude-history/shared';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client.ts';
-import { type CostEntry, costEntries, formatTokens, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
+import {
+  type CostEntry,
+  costEntries,
+  formatTokens,
+  formatUsd,
+  sumCost,
+  sumUsage,
+  unpricedModels,
+} from '../../lib/cost.ts';
 import { durationBetween, formatDateTime, formatDateTimeFull } from '../../lib/format.ts';
 import { promptOf, reportedOf, rowStatus, subagentStatus, type SubagentRow } from '../../lib/subagents.ts';
 import { CostPill } from './CostPill.tsx';
@@ -456,7 +464,7 @@ export function SubagentsPanel({
       <div className="mb-2 text-[11px] text-[var(--text-dim)]/80">
         {tokens > 0 && (
           <span className="text-[var(--text-dim)]">
-            {formatTokens(tokens)} tokens · {formatUsd(total)} ·{' '}
+            {formatTokens(tokens)} tokens · {formatUsd(total, unpricedModels(allEntries).length > 0)} ·{' '}
           </span>
         )}
         each one its own conversation — counted in the session total, and in none of its messages

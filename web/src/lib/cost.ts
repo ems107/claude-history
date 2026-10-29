@@ -14,6 +14,12 @@ import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
  * What a session cost, in the two halves it is really made of. `null` where
  * nothing can be priced — not enriched yet, or no model with a price — because
  * an unknown cost must never render as "$0.000".
+ *
+ * **A figure can also be PART of the cost**: a session that ran on two models,
+ * one of them missing from the price table, has a price for one half of its
+ * usage and none for the other. The figures then hold the priced half and
+ * `unpriced` names what they leave out, so every reader can say so
+ * (`formatUsd(cost, partial)`) instead of passing the half off as the whole.
  */
 export interface SessionCostParts {
   /** The requests in this transcript: what the per-message pills add up to. */
@@ -22,25 +28,50 @@ export interface SessionCostParts {
   subagents: number | null;
   /** What the session cost, which is the two together — the figure to lead with. */
   total: number | null;
+  /** Models with usage in each half and no price: in none of the figures above. */
+  unpriced: { own: string[]; subagents: string[] };
 }
 
 const add = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : a + b);
 
 export function sessionCostParts(session: SessionSummary, prices: PriceTable): SessionCostParts {
+  const unpriced = { own: [] as string[], subagents: [] as string[] };
   const e = session.enrichment;
-  if (!e) return { own: null, subagents: null, total: null };
+  if (!e) return { own: null, subagents: null, total: null, unpriced };
   let own: number | null = null;
   for (const [model, usage] of Object.entries(e.usageByModel)) {
-    own = add(own, computeCost(usage, resolvePrices(model, prices)));
+    const cost = computeCost(usage, resolvePrices(model, prices));
+    if (cost === null) unpriced.own.push(model);
+    own = add(own, cost);
   }
   // Priced with `computeMessageCost`, not `computeCost`: these aggregates keep
   // the TTL split because an agent's writes are mostly 5-minute ones, and the
   // 1-hour rate would overcharge them by 60% of the write.
   let subagents: number | null = null;
   for (const [model, usage] of Object.entries(e.subagentUsageByModel ?? {})) {
-    subagents = add(subagents, computeMessageCost(usage, resolvePrices(model, prices)));
+    const cost = computeMessageCost(usage, resolvePrices(model, prices));
+    if (cost === null) unpriced.subagents.push(model);
+    subagents = add(subagents, cost);
   }
-  return { own, subagents, total: add(own, subagents) };
+  return { own, subagents, total: add(own, subagents), unpriced };
+}
+
+/** Every model a session's cost leaves out, both halves, each once. */
+export function unpricedOf(parts: SessionCostParts): string[] {
+  return [...new Set([...parts.unpriced.own, ...parts.unpriced.subagents])];
+}
+
+/** The hover on a session's cost, wherever it is drawn: the split, and what it leaves out. */
+export function describeSessionCost(parts: SessionCostParts, subagentCount: number): string {
+  const missing = unpricedOf(parts);
+  const split =
+    parts.subagents !== null
+      ? `${formatUsd(parts.own, parts.unpriced.own.length > 0)} in this conversation + ${formatUsd(
+          parts.subagents,
+          parts.unpriced.subagents.length > 0,
+        )} in ${subagentCount} subagent${subagentCount === 1 ? '' : 's'} — API-equivalent value at the configured prices`
+      : 'API-equivalent value at the configured prices — not actual subscription spend (see Stats)';
+  return missing.length > 0 ? `${split}. Plus the usage of ${missing.join(', ')}, which has no price` : split;
 }
 
 /**
@@ -111,6 +142,8 @@ export interface RecacheCost {
   ifRead: number | null;
   /** `billed - ifRead`: the part the re-write alone is responsible for. */
   extra: number | null;
+  /** Some of `tokens` belong to a model with no price, so the money leaves them out. */
+  partial: boolean;
 }
 
 /**
@@ -128,10 +161,10 @@ function blendedWriteRate(usage: MessageUsage, prices: ModelPrices): number {
 }
 
 export function recacheCost(usage: MessageUsage, recached: number, prices: ModelPrices | undefined): RecacheCost {
-  if (!prices) return { tokens: recached, billed: null, ifRead: null, extra: null };
+  if (!prices) return { tokens: recached, billed: null, ifRead: null, extra: null, partial: false };
   const billed = (recached * blendedWriteRate(usage, prices)) / 1_000_000;
   const ifRead = (recached * prices.cacheRead) / 1_000_000;
-  return { tokens: recached, billed, ifRead, extra: billed - ifRead };
+  return { tokens: recached, billed, ifRead, extra: billed - ifRead, partial: false };
 }
 
 /** One re-cached request, structurally — so this file and `context.ts` need not know each other. */
@@ -171,6 +204,7 @@ export function sumRecacheCost(requests: RecachedRequest[], prices: PriceTable):
   let tokens = 0;
   let billed: number | null = null;
   let ifRead: number | null = null;
+  let partial = false;
   for (const r of requests) {
     if (r.recached <= 0) continue;
     tokens += r.recached;
@@ -178,17 +212,26 @@ export function sumRecacheCost(requests: RecachedRequest[], prices: PriceTable):
     if (one.billed !== null && one.ifRead !== null) {
       billed = (billed ?? 0) + one.billed;
       ifRead = (ifRead ?? 0) + one.ifRead;
+    } else {
+      partial = true;
     }
   }
   if (tokens === 0) return null;
-  return { tokens, billed, ifRead, extra: billed === null || ifRead === null ? null : billed - ifRead };
+  return { tokens, billed, ifRead, extra: billed === null || ifRead === null ? null : billed - ifRead, partial };
 }
 
-export function formatUsd(n: number | null): string {
+/**
+ * A cost for display. Null is "—", never "$0.000": nothing in it had a price.
+ * `partial` is the other half of the same rule — a sum that left out the usage
+ * of a model with no price is the priced part and a `+`, never the priced part
+ * passed off as the whole.
+ */
+export function formatUsd(n: number | null, partial = false): string {
   if (n === null) return '—';
-  if (n >= 100) return `$${n.toFixed(0)}`;
-  if (n >= 1) return `$${n.toFixed(2)}`;
-  return `$${n.toFixed(3)}`;
+  const more = partial ? '+' : '';
+  if (n >= 100) return `$${n.toFixed(0)}${more}`;
+  if (n >= 1) return `$${n.toFixed(2)}${more}`;
+  return `$${n.toFixed(3)}${more}`;
 }
 
 export function formatTokens(n: number): string {
@@ -262,12 +305,21 @@ export function sumCost(entries: CostEntry[]): number | null {
   return total;
 }
 
+/** The models of the entries `sumCost` had to leave out, each once. */
+export function unpricedModels(entries: CostEntry[]): string[] {
+  return [...new Set(entries.filter((e) => e.cost === null).map((e) => e.model ?? 'unknown model'))];
+}
+
 export interface CostIndex {
   /** Running total of every priced message up to and INCLUDING that uuid. */
   cumulative: Map<string, number>;
+  /** The uuids whose running total leaves out an unpriced message before them. */
+  cumulativePartial: Set<string>;
   /** The priced assistant messages of each turn, in order. */
   perTurn: CostEntry[][];
   total: number | null;
+  /** Some message of the session has no price, so `total` leaves it out. */
+  partial: boolean;
 }
 
 /**
@@ -278,9 +330,11 @@ export interface CostIndex {
  */
 export function buildCostIndex(turns: Turn[], prices: PriceTable): CostIndex {
   const cumulative = new Map<string, number>();
+  const cumulativePartial = new Set<string>();
   const perTurn: CostEntry[][] = [];
   let running = 0;
   let anyPriced = false;
+  let anyUnpriced = false;
 
   for (const turn of turns) {
     const entries = costEntries(turn.items, prices);
@@ -288,11 +342,14 @@ export function buildCostIndex(turns: Turn[], prices: PriceTable): CostIndex {
       if (e.cost !== null) {
         running += e.cost;
         anyPriced = true;
+      } else {
+        anyUnpriced = true;
       }
       cumulative.set(e.uuid, running);
+      if (anyUnpriced) cumulativePartial.add(e.uuid);
     }
     perTurn.push(entries);
   }
 
-  return { cumulative, perTurn, total: anyPriced ? running : null };
+  return { cumulative, cumulativePartial, perTurn, total: anyPriced ? running : null, partial: anyUnpriced };
 }

@@ -1,7 +1,7 @@
 import type { PriceTable } from '@claude-history/shared';
 import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
 import { recacheCauseText } from '../../lib/context.ts';
-import { type CostEntry, type RecacheSummary, formatUsd, sumCost, sumUsage } from '../../lib/cost.ts';
+import { type CostEntry, type RecacheSummary, formatUsd, sumCost, sumUsage, unpricedModels } from '../../lib/cost.ts';
 import { formatMs, shortModel } from '../../lib/format.ts';
 import { CardFoot, CardHead, CardLine, HoverCard } from './HoverCard.tsx';
 
@@ -23,6 +23,7 @@ export function CostPill({
   entries,
   prices,
   cumulative,
+  cumulativePartial = false,
   sessionTotal,
   label,
   variant = 'inline',
@@ -32,6 +33,8 @@ export function CostPill({
   prices: PriceTable;
   /** Session spend up to and including these messages. */
   cumulative?: number | null;
+  /** `cumulative` leaves out an earlier message with no price. */
+  cumulativePartial?: boolean;
   sessionTotal?: number | null;
   /** Prefix shown on the pill, e.g. "turn". */
   label?: string;
@@ -47,6 +50,10 @@ export function CostPill({
   if (entries.length === 0) return null;
 
   const total = sumCost(entries);
+  // A run or a turn can mix models — the turn a model was switched in — and a
+  // model missing from the price table is in its tokens but not in `total`.
+  const unpriced = unpricedModels(entries);
+  const partial = unpriced.length > 0;
   const usage = sumUsage(entries);
   const single = entries.length === 1 ? entries[0] : null;
   const models = [...new Set(entries.map((e) => e.model ?? 'unknown'))];
@@ -87,7 +94,7 @@ export function CostPill({
         <>
           {recache && <span className="mr-1">↺</span>}
           {label && <span className="mr-1 opacity-70">{label}</span>}
-          {total === null ? '—' : `≈${formatUsd(total)}`}
+          {total === null ? '—' : `≈${formatUsd(total, partial)}`}
         </>
       }
     >
@@ -107,8 +114,14 @@ export function CostPill({
             </>
           )
         }
-        right={total === null ? '—' : formatUsd(total)}
+        right={formatUsd(total, partial)}
       />
+
+      {partial && total !== null && (
+        <span className="mb-1 block text-[10px] text-amber-300/90">
+          + no price for {unpriced.map((m) => shortModel(m) ?? m).join(', ')}, so its messages are not in this total
+        </span>
+      )}
 
       <span className="block">
         {rows.map((row) => {
@@ -132,9 +145,9 @@ export function CostPill({
           <span className="mb-0.5 block text-amber-300/90">
             ↺ of the cache write, {tokens(recache.cost.tokens)} tok were already cached
           </span>
-          <CardLine label="written again" value={formatUsd(recache.cost.billed)} tone="warn" />
-          <CardLine label="if it had been read" value={formatUsd(recache.cost.ifRead)} />
-          <CardLine label="extra" value={formatUsd(recache.cost.extra)} tone="warn" />
+          <CardLine label="written again" value={formatUsd(recache.cost.billed, recache.cost.partial)} tone="warn" />
+          <CardLine label="if it had been read" value={formatUsd(recache.cost.ifRead, recache.cost.partial)} />
+          <CardLine label="extra" value={formatUsd(recache.cost.extra, recache.cost.partial)} tone="warn" />
           {recacheCauseText(recache.cause, recache.gapMs) && (
             <span className="mt-1 block text-[10px] text-amber-400/90">
               {recacheCauseText(recache.cause, recache.gapMs)}
@@ -151,8 +164,8 @@ export function CostPill({
             label="cumulative"
             value={
               sessionTotal
-                ? `${formatUsd(cumulative)} · ${Math.round((cumulative / sessionTotal) * 100)}% of session`
-                : formatUsd(cumulative)
+                ? `${formatUsd(cumulative, cumulativePartial)} · ${Math.round((cumulative / sessionTotal) * 100)}% of session`
+                : formatUsd(cumulative, cumulativePartial)
             }
           />
         )}

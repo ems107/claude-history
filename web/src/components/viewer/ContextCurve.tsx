@@ -52,7 +52,7 @@ export function ContextCurve({ index, prices }: { index: ContextIndex; prices: P
         {recache && (
           <span className="normal-case text-amber-400/90">
             {index.recaches.length} re-cache{index.recaches.length !== 1 ? 's' : ''}
-            {recache.cost.billed !== null && ` (≈${formatUsd(recache.cost.billed)})`}
+            {recache.cost.billed !== null && ` (≈${formatUsd(recache.cost.billed, recache.cost.partial)})`}
           </span>
         )}
         <button

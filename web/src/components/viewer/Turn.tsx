@@ -63,6 +63,8 @@ interface PendingTool {
 interface CostContext {
   prices: PriceTable;
   cumulative: Map<string, number>;
+  /** The uuids whose running total leaves out an unpriced message — see `CostIndex`. */
+  cumulativePartial: Set<string>;
   sessionTotal: number | null;
   /** Context window per request, keyed by the assistant item's uuid. */
   context: Map<string, ContextPoint>;
@@ -260,6 +262,7 @@ function ToolGroup({
       entries={entries}
       prices={costs.prices}
       cumulative={lastUuid ? costs.cumulative.get(lastUuid) : undefined}
+      cumulativePartial={lastUuid ? costs.cumulativePartial.has(lastUuid) : false}
       sessionTotal={costs.sessionTotal}
       recache={summariseRecache(pointsOf(owners, costs), costs.prices)}
     />
@@ -307,6 +310,7 @@ function ToolGroup({
                       entries={[entry]}
                       prices={costs.prices}
                       cumulative={costs.cumulative.get(entry.uuid)}
+                      cumulativePartial={costs.cumulativePartial.has(entry.uuid)}
                       sessionTotal={costs.sessionTotal}
                     />
                     <ContextPill point={costs.context.get(t.item.uuid)} />
@@ -378,6 +382,7 @@ function AssistantHeader({ item, costs, actions }: { item: MessageItem; costs: C
             entries={[entry]}
             prices={costs.prices}
             cumulative={costs.cumulative.get(entry.uuid)}
+            cumulativePartial={costs.cumulativePartial.has(entry.uuid)}
             sessionTotal={costs.sessionTotal}
             recache={summariseRecache(pointsOf([item], costs), costs.prices)}
           />
@@ -778,6 +783,7 @@ export function TurnView({
             entries={turnCost}
             prices={costs.prices}
             cumulative={lastTurnUuid ? costs.cumulative.get(lastTurnUuid) : undefined}
+            cumulativePartial={lastTurnUuid ? costs.cumulativePartial.has(lastTurnUuid) : false}
             sessionTotal={costs.sessionTotal}
             label="turn"
             variant="badge"

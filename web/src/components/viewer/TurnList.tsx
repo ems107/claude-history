@@ -252,7 +252,13 @@ export const TurnList = memo(function TurnList({
   // The context chain needs no prices, so it is built once per conversation.
   const contextIndex = useMemo(() => buildContextIndex(turns), [turns]);
   const costs = useMemo(
-    () => ({ prices, cumulative: index.cumulative, sessionTotal: index.total, context: contextIndex.byUuid }),
+    () => ({
+      prices,
+      cumulative: index.cumulative,
+      cumulativePartial: index.cumulativePartial,
+      sessionTotal: index.total,
+      context: contextIndex.byUuid,
+    }),
     [prices, index, contextIndex],
   );
   // Presentation only: the indexes above still see every turn, which is the

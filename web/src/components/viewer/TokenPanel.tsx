@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
-import { computeCost, computeMessageCost, formatUsd, summariseRecache } from '../../lib/cost.ts';
+import { computeCost, formatUsd, sessionCostParts, summariseRecache, unpricedOf } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
 import { Fold } from '../Fold.tsx';
@@ -117,19 +117,16 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
     (n, t) => n + t.items.filter((i) => i.role === 'assistant' && i.carriedOver && i.usage).length,
     0,
   );
-  const totalCost = models.reduce(
-    (acc, [model, usage]) => acc + (computeCost(usage, resolvePrices(model, priceTable)) ?? 0),
-    0,
-  );
+  // The same three figures as the list and the header, from the same function —
+  // which also says what each one leaves out, where summing here with `?? 0`
+  // read a session whose every model lacked a price as "$0.000".
+  const cost = sessionCostParts(summary, priceTable);
+  const unpriced = unpricedOf(cost);
   // What the agents this session sent out spent, in their own conversations.
   // Their requests are not in this transcript, so this is an addition to the
   // figures above and not a part of them — the opposite of "of which re-cached".
   const sub = e.subagentUsage;
   const subTokens = sub ? sub.input + sub.output + sub.cacheRead + sub.cacheCreate : 0;
-  const subCost = Object.entries(e.subagentUsageByModel ?? {}).reduce(
-    (acc, [model, usage]) => acc + (computeMessageCost(usage, resolvePrices(model, priceTable)) ?? 0),
-    0,
-  );
   const recache = summariseRecache(contextIndex.recaches, priceTable);
   const duration =
     summary.createdAt && summary.lastActivityAt
@@ -150,7 +147,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           ↳ of which re-cached
         </span>
         <span className="shrink-0 tabular-nums">
-          {fmt(recache.cost.tokens)} · {formatUsd(recache.cost.billed)}
+          {fmt(recache.cost.tokens)} · {formatUsd(recache.cost.billed, recache.cost.partial)}
         </span>
       </div>
       <Fold label="why it was written twice" className="text-amber-300/70 hover:text-amber-200">
@@ -158,7 +155,9 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           {fmt(recache.cost.tokens)} tokens of the cache write above had already been cached and had to be written
           again, over {contextIndex.recaches.length} request
           {contextIndex.recaches.length !== 1 ? 's' : ''}
-          {recache.cost.extra !== null && <> — {formatUsd(recache.cost.extra)} more than reading them would have cost</>}
+          {recache.cost.extra !== null && (
+            <> — {formatUsd(recache.cost.extra, recache.cost.partial)} more than reading them would have cost</>
+          )}
           . {recacheCauseText(recache.cause, recache.gapMs)}
         </span>
       </Fold>
@@ -191,6 +190,15 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
         )}
       </div>
 
+      {/* Said here, in words, because this is where a `+` on the list or the
+          header leads — and a tooltip is no explanation on a phone. */}
+      {unpriced.length > 0 && (
+        <div className="mb-2 rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-300">
+          No price for {unpriced.map((m) => shortModel(m) ?? m).join(', ')}: its usage is in the token figures but in
+          no cost here, so every total that includes it is marked +. Set it in the price table on the Stats page.
+        </div>
+      )}
+
       {models.map(([model, usage], i) => (
         <Card
           key={model}
@@ -208,7 +216,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
         <Card
           label={subTokens > 0 ? 'this conversation' : 'total'}
           title="The requests in this transcript — what the per-message pills in the conversation add up to"
-          cost={formatUsd(totalCost)}
+          cost={formatUsd(cost.own, cost.unpriced.own.length > 0)}
           usage={e.usage}
           tone="total"
         >
@@ -225,7 +233,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
               </Link>
             }
             title="Separate API conversations, in their own transcripts — nothing of this is in the file above"
-            cost={formatUsd(subCost)}
+            cost={formatUsd(cost.subagents, cost.unpriced.subagents.length > 0)}
             usage={sub}
             tone="add"
           >
@@ -240,7 +248,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           <div className="mt-2 mb-1.5 border-t-2 border-[var(--border)] pt-1.5 text-[var(--text)]">
             <div className="flex items-baseline gap-2">
               <span className="min-w-0 flex-1 font-mono font-semibold">session total</span>
-              <span className="shrink-0 font-semibold tabular-nums">{formatUsd(totalCost + subCost)}</span>
+              <span className="shrink-0 font-semibold tabular-nums">{formatUsd(cost.total, unpriced.length > 0)}</span>
             </div>
             <Figures
               usage={{

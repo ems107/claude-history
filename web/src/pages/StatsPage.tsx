@@ -67,19 +67,14 @@ function addSpend(spend: Spend, model: string, cost: number | null): void {
   spend.priced = true;
 }
 
-/** "—" when nothing in it had a price; the priced part and a `+` when only some did. */
+/** "—" when nothing in it had a price; the priced part and a `+` when only some did (`formatUsd`). */
 function SpendText({ spend }: { spend: Spend }) {
+  const partial = spend.unpriced.size > 0;
+  // Nothing priced and nothing left out is a real zero: no usage at all.
+  const text = formatUsd(spend.priced ? spend.cost : partial ? null : 0, spend.priced && partial);
+  if (!partial) return <>{text}</>;
   const missing = [...spend.unpriced].map(shortModel).join(', ');
-  if (!spend.priced) {
-    return spend.unpriced.size > 0 ? <span title={`No price for ${missing}`}>—</span> : <>{formatUsd(0)}</>;
-  }
-  if (spend.unpriced.size === 0) return <>{formatUsd(spend.cost)}</>;
-  return (
-    <span title={`Plus the usage of ${missing}, which has no price`}>
-      {formatUsd(spend.cost)}
-      <span className="text-amber-400">+</span>
-    </span>
-  );
+  return <span title={spend.priced ? `Plus the usage of ${missing}, which has no price` : `No price for ${missing}`}>{text}</span>;
 }
 
 function Card({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {

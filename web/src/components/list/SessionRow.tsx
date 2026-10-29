@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
-import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
+import { describeSessionCost, formatUsd, sessionCostParts, unpricedOf } from '../../lib/cost.ts';
 import { entrypointLabel, formatBytes, formatDateTime, relativeTime, shortModel } from '../../lib/format.ts';
 import { SessionBadges } from './Badges.tsx';
 import { ProjectTag } from './ProjectTag.tsx';
@@ -164,17 +164,8 @@ function RowContent({
               agents, and saying it twice is noise around the one figure being
               read. */}
           {cost.total !== null && (
-            <span
-              className="shrink-0"
-              title={
-                cost.subagents !== null
-                  ? `${formatUsd(cost.own)} in this conversation + ${formatUsd(cost.subagents)} in ${
-                      session.subagentCount
-                    } subagent${session.subagentCount === 1 ? '' : 's'} — API-equivalent value at the configured prices`
-                  : 'API-equivalent value at the configured prices — not actual subscription spend (see Stats)'
-              }
-            >
-              {formatUsd(cost.total)}
+            <span className="shrink-0" title={describeSessionCost(cost, session.subagentCount)}>
+              {formatUsd(cost.total, unpricedOf(cost).length > 0)}
             </span>
           )}
           {/* Nothing in here is interactive: the row is a <Link> and every badge

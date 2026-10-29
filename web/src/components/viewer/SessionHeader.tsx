@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
-import { formatUsd, sessionCostParts } from '../../lib/cost.ts';
+import { describeSessionCost, formatUsd, sessionCostParts, unpricedOf } from '../../lib/cost.ts';
 import { entrypointLabel, formatDateTimeFull, shortModel } from '../../lib/format.ts';
 import { controlRow } from '../controlClass.ts';
 import { Badge, SessionBadges } from '../list/Badges.tsx';
@@ -397,17 +397,8 @@ export function SessionHeader({
             with the split on the hover. A session that cannot be priced stays
             blank rather than claiming it was free. */}
         {cost.total !== null && (
-          <span
-            className="font-semibold text-[var(--text)]"
-            title={
-              cost.subagents !== null
-                ? `${formatUsd(cost.own)} in this conversation + ${formatUsd(cost.subagents)} in ${
-                    s.subagentCount
-                  } subagent${s.subagentCount === 1 ? '' : 's'} — API-equivalent value at the configured prices`
-                : 'API-equivalent value at the configured prices — not actual subscription spend (see Stats)'
-            }
-          >
-            {formatUsd(cost.total)}
+          <span className="font-semibold text-[var(--text)]" title={describeSessionCost(cost, s.subagentCount)}>
+            {formatUsd(cost.total, unpricedOf(cost).length > 0)}
           </span>
         )}
         <span className="ml-auto" />
