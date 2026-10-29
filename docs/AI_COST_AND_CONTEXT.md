@@ -1,6 +1,6 @@
 # Tokens, cost, context and compaction
 
-**Load this when:** you touch anything that counts tokens, prices a message, draws a cost or context pill, or reads a `compact_boundary` — `enricher`, `parser`, `shared/src/prices.ts`, `shared/src/recache.ts`, `web/src/lib/cost.ts`, `web/src/lib/context.ts`, `TokenPanel`, `ContextCurve`, the Stats page.
+**Load this when:** you touch anything that counts tokens, prices a message, draws a cost or context pill, or reads a `compact_boundary` — `enricher`, `parser`, `shared/src/prices.ts`, `shared/src/recache.ts`, `shared/src/requests.ts`, `shared/src/costDrivers.ts`, `web/src/lib/cost.ts`, `web/src/lib/context.ts`, `TokenPanel`, `CostDrivers`, `ContextCurve`, the Stats page.
 
 The line format itself is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md); subagent transcripts in [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md).
 
@@ -16,6 +16,8 @@ The line format itself is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md); subagent tr
 - **No percentage of the context window anywhere**, except quoted inside a `/context` panel.
 - **A compaction is not a re-cache**, and `postTokens` is not "the context afterwards".
 - **In the token panel, a figure's PLACE says how it relates to the others** — inside, beside with a `+`, or below the rule.
+- **The reasons a session cost what it did overlap**: each is a share OF the total, none is a part that adds up to it, and they are never drawn or summed as if they were.
+- **The parser and the enricher feed one tracker the same lines** (`costDriverTracker` through `feedCostDrivers`), so a session's reasons and its days' agree to the token.
 
 ## Reading usage off a line
 
@@ -98,6 +100,25 @@ There is **no grey zone**: of the 60 pairs here that lost anything, none lost un
 - **Cause is inferable, never certain, and the honest ranking is TTL first.** Past an hour the cache was gone whatever else happened, so naming a model switch there would blame the wrong thing; below the hour a changed `session_id` (a fresh CLI re-sent everything) or a model switch become the answer. **A compaction is not a re-cache** and must be excluded outright — `postTokens` is a new, smaller context written once, so counting it bills the user for a saving. And 11 events have **no local explanation at all**: in `797db462` a cache written 16 seconds earlier is simply not reused, twice in a row. Anthropic's cache is best-effort; say "the cached prefix was invalidated" and stop, because a plausible wrong cause is worse than an admitted unknown.
 - **Where the transcript records its requests (CLI 2.1.300+), the request itself can be asked** — `requestChanges` over the two `api-request` lines ([Transcripts](AI_TRANSCRIPTS.md#line-types)): a new request chain, rewritten history, the system prompt, the tools, effort, thinking and its display, the beta headers, the cache breakpoints. Below the hour, a change there is `request-changed`, and NO change is `server-side` — the same prompt, and the cache still dropped; `unknown` stays for the transcripts that cannot say either. **But a change is a fact, not a cause**: of the 101 times the system prompt or the tools changed between two requests here, 4 came with a re-cache — deferred tools loading mid-session cost the cache nothing — so the changes are listed BESIDE whichever cause won, past the hour included, and never promoted over the TTL. On this corpus no event has needed either new cause yet: every re-cache since 2.1.300 came after an hour or a model switch (`a7d5b145` #620: Opus 5.5 → Fable 5.1 after 20 minutes, and the request also rewrote its history and dropped the `advisor` tool).
 - **Never persist the cost, only the tokens.** `DailyUsage.recaches` holds one record per event — model, tokens, the part written at 5 minutes, cause — and the pages price them at read time.
+
+## What made a session expensive
+
+**The total says how much; this says why**, with the reasons Claude Code's own `/usage` gives (2.1.299, its "What's contributing to your limits usage?"), priced here at the app's rates: re-cached context by cause, **long context**, the **always-on context**, **large tool results**, **max effort**, the agents and a Workflow's. The token panel draws them for one session under the ledger (`CostDrivers`), the Stats page for a period in place of the re-cache strip it had — the same rows, words and folds (`ReasonList`, `EXPLAIN`). Each row carries its share of the total and a "how this is counted" fold, because two of them are estimates and a figure nobody can check is not an explanation.
+
+**The rules are `/usage`'s, read out of the 2.1.312 bundle** rather than re-invented, so the two answer the same question the same way:
+
+- **long context**: the whole cost of every request that sent over 150k tokens (input + cache read + cache write).
+- **max effort**: the whole cost of every request whose line says `"effort":"max"`. None here has ever run at max (xhigh is 96% of the corpus), so the row is usually absent; the cost **by effort** under the rows is shown anyway, and unlike the rows it IS a partition of the session's own usage.
+- **always-on context** (≈): the system prompt, tools, CLAUDE.md, memory and skills that go with every request. `/usage` takes it as the first request's context less its preamble (the files attached before it, by line length; here the typed prompt as well), then the smallest context any later request sent; each request's INPUT (cost less output) is charged in proportion to that part of its context. Checked on `f3384d17`: 41.3k estimated against 37.8k–42.1k in the fixed categories of its four `/context` snapshots. This is not the per-category split [below](#the-context-window), which stays unrecoverable — it is a floor of what every request carried, labelled as an estimate.
+- **large tool results** (≈): a result over 10k tokens, counted at 2.5 characters a token, joins the context at the next request for at most what the context grew by; a shrink (a compaction, stale results dropped) takes back what it dropped, proportionally; and each request's input is charged in proportion to what the live ones hold. The five most expensive are named and linked to their call.
+- **re-cached context** is this file's own measure ([above](#re-cached-context--the-most-expensive-thing-in-the-corpus)), priced and split by cause; `/usage`'s `cache_miss` is cruder (uncached + re-cached over 100k counts the whole request).
+- **subagents** and **workflow agents**: what they spent ([above](#the-agents-a-session-sent-out)); the second is a part of the first, kept apart in `workflowUsageByModel` / `daily[].workflowByModel` because `/usage` names it.
+
+**They overlap — a request can be long, at max effort and carrying a large result all at once — so the rows never add up**, and both places say so before the first row. That is also why they sit outside the ledger: the panel's rule is that a figure's place says how it relates to the others, and these relate to the total only one by one.
+
+**One tracker, fed the same lines by both readers.** `costDriverTracker` (`shared/src/costDrivers.ts`) takes a transcript line at a time — tool results and the preamble through `feedCostDrivers` (`server/src/core/costDriverFeed.ts`), each request where the reader counts a `message.id` — and returns, per request, tokens by reason. The parser sums them for the session (`SessionDetail.costDrivers`, with the large results one by one); the enricher adds them to the request's day (`DailyUsage.drivers`). Tokens only, fractional where an input is shared out: a cost is put on at read time (`priceByModel`), and a model with no price makes its row read "—" or carry a `+`, never vanish. The two sides agree on every reason of all 654 sessions here — check 72.
+
+`/usage`'s three cross-session behaviours (`subagent_heavy`, `high_parallel`, `cron`) are not here: the first is the agents' row already, and the other two are about sessions running side by side or for hours, which a list of reasons for one session cannot say.
 
 ## The ledger the token panel draws
 
