@@ -887,6 +887,21 @@ export interface UpdateStatusResponse {
 export const CHAT_UI_MODES = ['terminal', 'composer'] as const;
 export type ChatUiMode = (typeof CHAT_UI_MODES)[number];
 
+/**
+ * Modes the app no longer offers. The composer is retired — never really used,
+ * no longer maintained, and turned off (AI_RUNNING_CLAUDE.md, "The composer is
+ * retired"). Its code stays and nothing reaches it: emptying this list is the
+ * whole of bringing it back.
+ */
+export const RETIRED_CHAT_UI_MODES: readonly ChatUiMode[] = ['composer'];
+
+/** `mode` if the app still offers it, else the default — what a write stores and a load reads. */
+export function offeredChatMode(mode: unknown): ChatUiMode {
+  return (CHAT_UI_MODES as readonly unknown[]).includes(mode) && !RETIRED_CHAT_UI_MODES.includes(mode as ChatUiMode)
+    ? (mode as ChatUiMode)
+    : DEFAULT_SETTINGS.chatMode;
+}
+
 // ---- Notifications: what a stop rings with ----
 
 /**

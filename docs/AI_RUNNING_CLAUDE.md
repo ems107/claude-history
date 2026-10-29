@@ -19,6 +19,7 @@ The app has two halves and they are not the same kind of thing. **Everything tha
 - **A firm `resets_at` outranks every wait**; waits belong on the paths with no date to act on.
 - **No layer of the anti-loop may disable "Send it now"**, and every refusal must say why.
 - **Two writers on one transcript is the thing being prevented** — but never block on a list, always re-check `pidAlive`.
+- **The composer is retired** — never really used, no longer maintained, and turned off. Its code stays, and no time goes into it ([below](#the-composer-is-retired)).
 - **The composer never renders the answer from the SDK stream** — the transcript is the source, as for any other session.
 - **A new session's id is minted here, and which of `sessionId` / `resume` applies is asked of the disk**, never remembered in a flag.
 - **A typed folder is the one path that comes from the request**, and it is validated rather than trusted.
@@ -150,6 +151,8 @@ What is specific to this one is the gating and the exclusion:
 
 **`chatEnabled` is ON by default**, unlike `autoReloadEnabled`, and the difference is what each does when nobody is looking: the auto-reload spawns sessions on a timer and had to be asked for, while this spawns nothing until somebody presses a button or types a prompt. **The default mode is `terminal`**, and the composer is the one the UI marks experimental — not because it is newer, it is not, but because everything it draws it draws itself, while a terminal is the CLI with nothing in between.
 
+**Only `terminal` can be chosen**: the composer column is [retired](#the-composer-is-retired).
+
 **They are exclusive and must stay so**: both at once is two writers on one transcript, which is the corruption everything around this feature exists to prevent. Each refuses while the other holds a session, and both say which one it is.
 
 ### How a refusal looks, and what it says
@@ -194,6 +197,23 @@ Six actions destroy a live `claude` this app started, and the page they are pres
 **The page's own cleanup is gone, and that is the point.** `← Change folder` used to stop both doors on the way out; it covered one exit out of seven and, being the only one, is why the other six went unnoticed for so long. A rule enforced where the leaving happens can only ever cover the leavings somebody thought of.
 
 **The browser's half of it is the reconnect** ([below](#what-the-page-had-to-learn)). A dropped line and a closed tab look identical from here, and only one of them means anybody left — so the panel had to start coming back on its own before a minute could be a safe number.
+
+## The composer is retired
+
+It was started, never polished, and never really used: the embedded terminal is how this app talks to Claude. **It is not maintained, and no time goes into it** — no fixes, no features, no checks, and no review of what a Claude Code release does to it. Its code stays where it is, switched off rather than deleted, in case it is ever wanted back.
+
+One list turns it off, `RETIRED_CHAT_UI_MODES` (`shared/src/api.ts`), and emptying it is the whole of bringing the composer back:
+
+- **`offeredChatMode()` maps a retired mode to the default, on load and on every write.** A `userdata.json` or a backup that still says `composer` runs the terminal, and a `PUT` cannot ask for it back.
+- **Settings still shows the option**, greyed out and saying why.
+- **`sendBlockedReason()` refuses unless `chatMode` is `composer`** — the terminal's own check, mirrored — so no prompt and no `open` reaches the SDK. `POST /api/chat/new` is untouched: that reservation is shared with the terminal.
+
+Until the list is emptied:
+
+- **A bug or a gap that only the composer shows is not one to fix.**
+- **A Claude Code change that only reaches the composer** — an `[SDK]` bullet, an SDK-only behaviour — is *not applicable* in the [versions register](AI_CLAUDE_CODE_VERSIONS.md).
+- **Checks run their terminal half only** ([Verifying a change](AI_TESTING.md#running-claude)).
+- **What the rest of this document says about the composer is how it was built**, kept for whoever brings it back. The parts it shares with the terminal — the two-writers guard, the active-session cap, the refusals — are still live.
 
 ## The composer: sending a prompt from the app
 

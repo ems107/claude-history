@@ -665,7 +665,8 @@ export function RadioField<T extends string>({
 }: {
   field: keyof AppSettings & string;
   name: string;
-  options: { value: T; label: string; hint: string }[];
+  /** `disabled` on one option greys that one alone: a choice the app no longer offers, still shown and explained. */
+  options: { value: T; label: string; hint: string; disabled?: boolean }[];
   disabled?: boolean;
 }) {
   const { settings, save } = useSettingsPage();
@@ -678,14 +679,14 @@ export function RadioField<T extends string>({
           <label
             key={option.value}
             className={`flex items-baseline gap-2 rounded px-1 py-0.5 select-none ${
-              disabled ? '' : 'cursor-pointer hover:bg-[var(--bg-hover)]'
+              disabled ? '' : option.disabled ? inactiveRow : 'cursor-pointer hover:bg-[var(--bg-hover)]'
             }`}
           >
             <input
               type="radio"
               name={name}
               checked={value === option.value}
-              disabled={disabled}
+              disabled={disabled || option.disabled}
               onChange={() => save({ [field]: option.value } as Partial<AppSettings>)}
               className="accent-[var(--accent)]"
             />

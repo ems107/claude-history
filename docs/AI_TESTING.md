@@ -654,6 +654,8 @@ Then in the viewer, on that same session: the row leads with `HH:mm:ss` (the cal
 
 ## Running Claude
 
+**The composer is retired** ([Running Claude](AI_RUNNING_CLAUDE.md#the-composer-is-retired)): check 19 is not run, and the composer halves of checks 37, 39, 53 and 55 are skipped. Their text stays, for whoever brings the composer back.
+
 **8. Auto-reload.** Point it at a throwaway folder and drive the config errors through `PUT /api/settings` — missing folder, a file instead of a folder, relative path, empty message, unknown model — each must come back in `configError`.
 
 - "Send it now" answers in a few seconds and logs the reply, then flips to "started a window" on its own about a minute later without touching the page. The useful part cannot be scheduled: read the log viewer (source `auto-reload`) afterwards.
@@ -661,7 +663,7 @@ Then in the viewer, on that same session: the row leads with `HH:mm:ss` (the cal
 - **The no-floor rule without waiting five hours**: press it while a window is running. The log must read `the window was already running, so a reload is still due at its expiry`, the panel must *not* say "started a window", and `nextCheckAt` must land on that expiry + 1 min — never on the send + 30 min.
 - Toggle `autoReloadHideSessions` against a folder that HAS sessions: `/api/sessions`, `/api/projects`, `/api/prompts`, `/api/search`, `/api/plans` and `/api/meta`'s `projectCount` must all drop together and come back. **That folder must NOT appear in `/api/projects?all=1`** — it is the one project *Settings → Projects* does not offer a checkbox for. The other way in is check 58.
 
-**19. Sending a prompt from the app.** The two rules above apply first. Make a throwaway session (`claude -p "Reply with exactly: FIRST" --model haiku --output-format json` in a temp folder gives you its id), then drive the API with curl:
+**19. Sending a prompt from the app.** *Retired with the composer — not run.* The two rules above apply first. Make a throwaway session (`claude -p "Reply with exactly: FIRST" --model haiku --output-format json` in a temp folder gives you its id), then drive the API with curl:
 
 - a cross-origin POST → 403, a same-origin one → not; `blockedReason` names the reason while `chatEnabled` is off; a prompt goes `starting` → `working` → `idle` and lands in the SAME `.jsonl` the session already had; two prompts back to back show `queued: 1` and run in order. The `chat` log tells the whole story and is the fastest way to read it. `--resume` does NOT stamp a different `session_id`, so no "resumed ×N" appears for these.
 - The browser half over CDP: the composer renders, typing and clicking Send lights `[role="status"]`, the answer text appears, `[data-bubble]` count grows, and the indicator goes out on its own.

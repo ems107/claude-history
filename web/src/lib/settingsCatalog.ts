@@ -488,7 +488,7 @@ export const ENTRIES: Entry[] = [
     group: 'chat',
     field: 'chatMode',
     label: 'How prompts are sent',
-    keywords: 'composer terminal embedded cli experimental mode',
+    keywords: 'composer terminal embedded cli retired mode',
   },
   {
     id: 'set-maxActiveSessions',

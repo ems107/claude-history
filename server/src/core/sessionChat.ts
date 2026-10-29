@@ -355,6 +355,9 @@ export class SessionChatService implements TranscriptWriter {
   sendBlockedReason(sessionId: string): string | null {
     const s = this.settings();
     if (!s.chatEnabled) return 'Sending from the app is turned off in Settings.';
+    // The terminal's own check, mirrored — and with the composer retired
+    // (`RETIRED_CHAT_UI_MODES`), the one that keeps every prompt away from it.
+    if (s.chatMode !== 'composer') return 'The app is set to use the embedded terminal instead of the composer.';
     // The index first and a reserved id second: a session being born has no
     // summary to read a folder off, and this is the only thing that knows where
     // it is going to live.

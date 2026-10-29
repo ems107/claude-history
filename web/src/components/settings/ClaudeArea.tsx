@@ -1,11 +1,11 @@
 import {
   ACTIVE_SESSIONS_MAX,
   ACTIVE_SESSIONS_MIN,
-  CHAT_IDLE_TIMEOUT_MINUTES,
   CLAUDE_MODELS,
   DEFAULT_SETTINGS,
   MIN_USAGE_INTERVAL_SECONDS,
   MIN_USAGE_RATE_LIMIT_SECONDS,
+  RETIRED_CHAT_UI_MODES,
 } from '@claude-history/shared';
 import { useState } from 'react';
 import { api } from '../../api/client.ts';
@@ -257,8 +257,9 @@ export function ClaudeArea() {
             },
             {
               value: 'composer',
-              label: 'A composer at the foot of the conversation (experimental)',
-              hint: 'A box you type into — questions as buttons, plans commented passage by passage, model and effort beside Send. All of it drawn by this app, which is what makes it the experimental one.',
+              label: 'A composer at the foot of the conversation (retired)',
+              hint: 'It was never really used and is no longer maintained, so it cannot be chosen any more. Its code is still in the app.',
+              disabled: RETIRED_CHAT_UI_MODES.includes('composer'),
             },
           ]}
         />
@@ -275,26 +276,16 @@ export function ClaudeArea() {
               )}
             </span>
           }
-          note="Both doors counted together. Lowering it never closes anything; it refuses the next one to ask."
+          note="Lowering it never closes anything; it refuses the next one to ask."
         />
         <ElevatedTerminalsPanel disabled={!s.chatEnabled || s.chatMode !== 'terminal'} />
 
         <Explain label="What is not set here, and what locks while Claude is running">
           <p>
-            The model and effort are not set here: the composer starts each session from whatever that conversation was
-            last answered with, and you change them per session there; a terminal is asked inside the CLI, with{' '}
-            <span className="text-[var(--text)]">/model</span>. The composer runs tools under Claude Code's{' '}
-            <span className="text-[var(--text)]">auto</span> permission mode, so it only stops when it genuinely needs
-            you — and then it asks in the conversation, above the box. Your MCP servers are loaded as usual either way,
-            so the first prompt of a session takes a moment longer than the ones after it. A terminal is never closed by
-            a timer and survives closing the tab: it belongs to the server, so you come back to it still running.
-          </p>
-          <p>
-            An idle composer process closes itself after{' '}
-            <span className="text-[var(--text)]">{CHAT_IDLE_TIMEOUT_MINUTES} minutes</span>, and that number is not a
-            preference. Claude's prompt cache lives for an hour, and a CLI that restarts while it is still warm has to
-            rewrite the whole prompt often enough to matter — so a shorter timeout would cost you money rather than save
-            it, and once the hour is up there is nothing left to lose.
+            The model and effort are not set here: the terminal asks inside the CLI, with{' '}
+            <span className="text-[var(--text)]">/model</span>. Your MCP servers are loaded as usual, so the first
+            prompt of a session takes a moment longer than the ones after it. A terminal is never closed by a timer and
+            survives closing the tab: it belongs to the server, so you come back to it still running.
           </p>
           <p>
             While the app is running Claude, the two settings above are <span className="text-[var(--text)]">locked</span>

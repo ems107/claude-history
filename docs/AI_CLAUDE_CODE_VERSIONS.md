@@ -51,8 +51,7 @@ Nothing open.
 
 **To measure**
 
-- [2.1.304 — does a composer resume meet the new "resume anyway?" warning](#21304)
-- [2.1.300 — a pid file whose pid Windows gave to another program](#21300)
+Nothing open.
 
 ## Rounds
 
@@ -120,7 +119,7 @@ Nothing open.
 
 76 bullets, 10 for other surfaces.
 
-- **[pending · runs]** Resuming an inactive conversation on Pro or Max now warns that it will use a noticeable share of the 5-hour limit, offering to resume anyway or start a new conversation. In the embedded terminal that is the CLI's own prompt, answered there like in any terminal. **To measure:** whether a composer (SDK) resume of an old session meets it too, and what the composer shows if it does.
+- **[not applicable · runs]** Resuming an inactive conversation on Pro or Max now warns that it will use a noticeable share of the 5-hour limit, offering to resume anyway or start a new conversation. In the embedded terminal that is the CLI's own prompt, answered there like in any terminal. Whether a composer (SDK) resume meets it was left to measure, and will not be: the composer is [retired](AI_RUNNING_CLAUDE.md#the-composer-is-retired).
 - **[tolerate · reads]** `CLAUDE_CODE_TRANSCRIPT_LOCAL_GC` dropping messages on a full disk — the variable is opt-in and unset here; what it does is in [Transcripts](AI_TRANSCRIPTS.md#files-and-directories) (filed under [2.1.296](#21296)).
 - **[tolerate · reads]** A new transcript line when a plugin skips a mod's hook — not in the corpus; a session holding a `system` subtype the app has never heard of (`agents_killed`, [2.1.268](#21268)) opens and draws.
 - **[tolerate · reads]** Mods' `settings.read` hook can rewrite the effective `cleanupPeriodDays` — the retention panel reads `settings.json`, so a managed mod could make the sweep differ from what it shows. No mods here.

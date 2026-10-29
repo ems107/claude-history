@@ -19,7 +19,6 @@ import type {
 import {
   APP_NAME_MAX,
   AUTO_RELOAD_MESSAGE_MAX,
-  CHAT_UI_MODES,
   ACTIVE_SESSIONS_MAX,
   ACTIVE_SESSIONS_MIN,
   CLAUDE_EFFORTS,
@@ -28,6 +27,7 @@ import {
   DEFAULT_SETTINGS,
   defaultSettings,
   GIT_FETCH_MODES,
+  offeredChatMode,
   GIT_MERGE_MODES,
   GIT_PULL_MODES,
   GIT_PUSH_MODES,
@@ -782,6 +782,8 @@ export class SessionIndex {
     // edited by hand and a `PUT` cannot end up meaning different things.
     this.settings.hiddenProjects = sanitizeHiddenProjects(this.settings.hiddenProjects);
     this.settings.projectGroups = sanitizeProjectGroups(this.settings.projectGroups);
+    // A copy saved while the composer was still offered runs the terminal now.
+    this.settings.chatMode = offeredChatMode(this.settings.chatMode);
     // The GIT tab's lists. Objects rather than bare strings, so a future alias
     // or pin needs no migration — but a plain string is still read, in case one
     // was ever written by hand.
@@ -929,9 +931,8 @@ export class SessionIndex {
       )
         ? (patch.autoReloadModel ?? this.settings.autoReloadModel)
         : DEFAULT_SETTINGS.autoReloadModel,
-      chatMode: (CHAT_UI_MODES as readonly string[]).includes(patch.chatMode ?? this.settings.chatMode)
-        ? (patch.chatMode ?? this.settings.chatMode)
-        : DEFAULT_SETTINGS.chatMode,
+      // A retired mode cannot be asked for back: it stores the default.
+      chatMode: offeredChatMode(patch.chatMode ?? this.settings.chatMode),
       autoReloadMessage: (patch.autoReloadMessage ?? this.settings.autoReloadMessage).slice(
         0,
         AUTO_RELOAD_MESSAGE_MAX,
