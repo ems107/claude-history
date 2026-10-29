@@ -33,7 +33,6 @@ Every `pending` item, and every `implement` whose commit is not linked yet, grou
 **To fix**
 
 - [2.1.300 — the deep scan reads the copies of each API request as conversation](#21300) — implement
-- [2.1.296 — a transcript line holding U+2028 or U+2029 is dropped](#21296) — implement
 - [2.1.271 — a report a subagent hands back is never shown](#21271) — implement
 - [2.1.284 — the 5.5 models are not in the default prices, and Haiku 5.5 has a long-prompt rate](#21284) — implement; how to price the tier is settled when it is implemented
 
@@ -181,7 +180,7 @@ Every `pending` item, and every `implement` whose commit is not linked yet, grou
 
 79 bullets, 17 for other surfaces.
 
-- **[implement · reads]** Claude Code fixed messages holding U+2028 or U+2029 being dropped by its own transcript code. **This app has the same bug**: `streamLines()` (`core/jsonl.ts`) splits with Node's `readline`, which also breaks lines at both characters, so the parser, the enricher and the deep scan all lose such a line without a word. Reproduced on `60e0dcc4`: line 726, an assistant turn whose command holds one, is absent from the parse (uuid `8e1f77a1…`), while its neighbours are there. **To do:** split on `\n` alone, as `scripts/corpus-shapes.mjs` now does. The rule is in [Transcripts](AI_TRANSCRIPTS.md#files-and-directories).
+- **[implement · reads]** Claude Code fixed messages holding U+2028 or U+2029 being dropped by its own transcript code. **This app has the same bug**: `streamLines()` (`core/jsonl.ts`) splits with Node's `readline`, which also breaks lines at both characters, so the parser, the enricher and the deep scan all lose such a line without a word. Reproduced on `60e0dcc4`: line 726, an assistant turn whose command holds one, is absent from the parse (uuid `8e1f77a1…`), while its neighbours are there. **Landed in `1edfabd`**: `streamLines()` splits on `\n` itself. The six lines of `60e0dcc4` (five calls and a result) now draw, and 931 of the corpus's 933 transcripts read exactly as before. The rule is in [Transcripts](AI_TRANSCRIPTS.md#files-and-directories).
 - **[tolerate · reads]** `CLAUDE_CODE_TRANSCRIPT_LOCAL_GC` trims a transcript in place — opt-in, non-interactive sessions only, unset here; written down in [Transcripts](AI_TRANSCRIPTS.md#files-and-directories) because the docs used to say nothing is ever rewritten.
 - **[tolerate · reads]** Sonnet 5.5 cache reads priced at $0.10 per million — the price table saved in the release already says 0.1; the defaults are under [2.1.284](#21284).
 - *Not applicable:* `autoCompactWindow` for subagents (a subagent is parsed by the same parser, compactions included); Read's `allow_large`; the wording given to resumed subagents about interrupted calls; interrupts during a submit hook; `CLAUDE_CODE_RESUME_INTERRUPTED_TURN`; Windows MCP shutdown; link hover in fullscreen; auto mode's "Not run" rows.
