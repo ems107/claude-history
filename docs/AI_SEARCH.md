@@ -8,6 +8,7 @@
 - **`system` lines are not indexed either** — with exactly one exception, a recap — and none of them is read by the deep scan.
 - **Nothing may be indexed past where the viewer will DRAW it** — `systemChars`, one function, three readers.
 - **The deep scan re-matches the indexed text too**, so it is a superset of the plain search by construction.
+- **The deep scan reads `user` and `assistant` lines only** — the API request copies carry a `message.content` too.
 - **One predicate decides what is searchable** (`skipBlock`), shared by the index, the deep scan and both paged match lists.
 - **A find bar counts occurrences; a match page counts places.**
 - **A row leads with WHEN, and the column is drawn even when it is empty.**
@@ -41,6 +42,8 @@ Measured on this machine: the indexed text (titles, typed prompts, assistant pro
 - **The deep scan reads no `system` line at all** (it walks `message.content`, and a system line has none), so there is no second copy to strip this time — and it stays a superset only because it re-matches the index.
 
 **The deep scan re-matches the indexed text**, rather than merging two result sets: only that way can "all words anywhere in the session" pair a word from a prompt with one that exists solely in a tool result. It is a superset of the plain search by construction, snippet budget included (6 a session against 3, so pressing the button never shows less than not pressing it).
+
+**It reads `user` and `assistant` lines and nothing else**, in a session's transcript and in its agents' alike. Those are the only lines with conversation in them — but not the only ones with a `message.content`: since CLI 2.1.300 every API request is recorded too, and its `api-request-blob` lines copy the messages as the API received them ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#line-types)), with no uuid and no clock. Read as conversation they counted every command and every agent prompt twice, quoted commands in a form no view draws, and found sessions through text nobody wrote in them — the CLAUDE.md and `gitStatus` injected into a request, which the transcript otherwise keeps only in `attachment` lines. Measured over six corpus-wide queries: every count that fell belonged to one of the 85 sessions holding such lines, by up to 1,625 matches a query, and two sessions stopped being hits at all.
 
 It also reads what nothing else can: the outputs offloaded to `tool-results/` (path validated against `projectsDir` first — it comes out of a transcript, not from us) and **every subagent transcript**, 54 MB that no search could otherwise reach. Subagent snippets carry `uuid: null` on purpose: the viewer knows only the parent transcript, so an anchor there would resolve nowhere.
 

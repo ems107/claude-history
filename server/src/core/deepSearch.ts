@@ -69,6 +69,18 @@ function toolResultText(content: unknown): string {
   return content === undefined || content === null ? '' : JSON.stringify(content);
 }
 
+/**
+ * Only `user` and `assistant` lines are conversation. Since CLI 2.1.300 every API
+ * request is recorded as well, and its `api-request-blob` lines carry a
+ * `message.content` of their own — copies of what the conversation already
+ * holds, sometimes in the form the API saw, with no uuid and no timestamp — so
+ * walking `message.content` without asking the line's type reads them twice.
+ */
+function isConversation(o: Record<string, unknown>): boolean {
+  const type = str(o.type);
+  return type === 'user' || type === 'assistant';
+}
+
 /** Where an `ExitPlanMode` approval stops explaining itself and repeats the plan. */
 const APPROVED_PLAN_MARKER = '## Approved Plan:';
 
@@ -376,7 +388,7 @@ export class DeepSearchService {
         if (overBudget()) return;
         scan.bytesRead += line.length;
         const o = safeParse(line);
-        if (!o) continue;
+        if (!o || !isConversation(o)) continue;
         if (isReplay(o)) continue;
         const uuid = str(o.uuid);
         const when = str(o.timestamp);
@@ -432,7 +444,7 @@ export class DeepSearchService {
           if (overBudget()) return;
           scan.bytesRead += line.length;
           const o = safeParse(line);
-          if (!o) continue;
+          if (!o || !isConversation(o)) continue;
           const message = isRec(o.message) ? o.message : null;
           if (!message) continue;
           const when = str(o.timestamp);
