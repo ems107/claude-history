@@ -81,22 +81,28 @@ export function promptOf(input: unknown): string | null {
 export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): SubagentIndex {
   if (subagents.length === 0) return EMPTY;
 
-  const byToolUse = new Map(subagents.filter((m) => m.toolUseId).map((m) => [m.toolUseId, m]));
+  // A workflow's agents share the run's one call, so it is theirs by its id
+  // rather than by the single `agentId` a tool block can carry.
+  const byToolUse = new Map(subagents.filter((m) => m.toolUseId && !m.workflowRunId).map((m) => [m.toolUseId, m]));
+  const workflowCalls = new Set(subagents.filter((m) => m.workflowRunId && m.toolUseId).map((m) => m.toolUseId));
   const known = new Set(subagents.map((m) => m.agentId));
   const calls = new Map<string, SubagentCall>();
+  const runCalls = new Map<string, SubagentCall>();
   const reports = new Map<string, SubagentReport[]>();
 
   for (const turn of turns) {
     for (const item of turn.items) {
       for (const block of item.blocks) {
         if (block.kind === 'tool') {
-          if (!block.agentId || calls.has(block.agentId)) continue;
-          calls.set(block.agentId, {
+          const call = {
             toolUseId: block.toolUseId,
             messageUuid: item.uuid,
             timestamp: item.timestamp,
             prompt: promptOf(block.input),
-          });
+          };
+          if (workflowCalls.has(block.toolUseId)) runCalls.set(block.toolUseId, call);
+          if (!block.agentId || calls.has(block.agentId)) continue;
+          calls.set(block.agentId, call);
         } else if (block.kind === 'notice') {
           // A background command notifies through the very same channel, with an
           // id that matches no transcript — so a notice counts as an agent's
@@ -118,7 +124,7 @@ export function buildSubagentIndex(turns: Turn[], subagents: SubagentMeta[]): Su
 
   const rows: SubagentRow[] = subagents.map((meta) => ({
     meta,
-    call: calls.get(meta.agentId) ?? null,
+    call: calls.get(meta.agentId) ?? (meta.workflowRunId ? (runCalls.get(meta.toolUseId) ?? null) : null),
     reports: reports.get(meta.agentId) ?? [],
   }));
   // ISO-8601 UTC sorts as text, and `sort` is stable, so agents sent out in the
@@ -209,8 +215,10 @@ export function subagentStatus(opts: {
 /** A row's status, for the two places that read one straight off the conversation. */
 export function rowStatus(row: SubagentRow, live: { sessionAlive: boolean; now: number }): SubagentStatus {
   return subagentStatus({
-    reports: row.reports.map((r) => r.status),
-    reportKnowable: row.call !== null,
+    // A workflow agent reports to its run's journal, never to the conversation,
+    // so that is where it is read from, and no report here says nothing.
+    reports: row.meta.workflowCompleted ? ['completed'] : row.reports.map((r) => r.status),
+    reportKnowable: row.call !== null && !row.meta.workflowRunId,
     sessionAlive: live.sessionAlive,
     lastWriteMs: row.meta.lastWriteMs,
     now: live.now,

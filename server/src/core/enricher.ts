@@ -12,6 +12,7 @@ import type {
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { planFeedback, planTitle, toMessageUsage, toolIntent } from './parser.ts';
+import { subagentDirs } from './scanner.ts';
 import { INTENT_ROLE, PLAN_ROLE, RECAP_ROLE, RECAP_SUBTYPE, systemChars } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt, thinkingKind } from './summarizer.ts';
 
@@ -92,7 +93,8 @@ function emptySpend(): SubagentSpend {
 }
 
 /**
- * Every `subagents/agent-*.jsonl` of a session, totalled.
+ * Every agent transcript of a session, totalled — `subagents/agent-*.jsonl` and
+ * the agents of each Workflow run beside them (`subagentDirs`).
  *
  * These are separate API conversations that appear nowhere in the parent
  * transcript, so this is the only way the session's real cost can be known —
@@ -108,19 +110,23 @@ function emptySpend(): SubagentSpend {
 export async function enrichSubagents(sessionDir: string | null): Promise<SubagentSpend> {
   const spend = emptySpend();
   if (!sessionDir) return spend;
-  let files: string[];
-  try {
-    files = (await fsp.readdir(path.join(sessionDir, 'subagents'))).filter((f) => f.endsWith('.jsonl'));
-  } catch {
-    return spend; // no subagents dir: the usual case
+  const files: string[] = [];
+  for (const { dir } of await subagentDirs(sessionDir)) {
+    try {
+      for (const f of await fsp.readdir(dir)) {
+        if (f.startsWith('agent-') && f.endsWith('.jsonl')) files.push(path.join(dir, f));
+      }
+    } catch {
+      // gone between the listing and the read
+    }
   }
 
   for (const file of files) {
-    spend.ids.push(file.slice('agent-'.length, -'.jsonl'.length));
+    spend.ids.push(path.basename(file).slice('agent-'.length, -'.jsonl'.length));
     const isReplay = replayFilter();
     const seenMessageIds = new Set<string>();
     try {
-      for await (const line of streamLines(path.join(sessionDir, 'subagents', file))) {
+      for await (const line of streamLines(file)) {
         const o = safeParse(line);
         if (!o || isReplay(o)) continue;
         if (str(o.type) !== 'assistant' || !isRec(o.message)) continue;

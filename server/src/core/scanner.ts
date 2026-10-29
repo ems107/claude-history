@@ -38,31 +38,85 @@ interface ScannedSubagents {
 
 const NO_SUBAGENTS: ScannedSubagents = { count: 0, bytes: 0, sizes: {} };
 
-async function scanSubagents(sessionDir: string): Promise<ScannedSubagents> {
-  const dir = path.join(sessionDir, 'subagents');
-  let entries: string[];
+/** A folder holding agent transcripts (`agent-<id>.jsonl` and their `.meta.json`). */
+export interface SubagentDir {
+  dir: string;
+  /** The Workflow run whose agents these are (`wf_…`), null for the agents a call sent out. */
+  workflowRunId: string | null;
+}
+
+const WORKFLOW_RUN_RE = /^wf_[a-z0-9-]+$/i;
+
+/**
+ * Every folder that holds the agents of a session: `subagents/` for the ones an
+ * Agent call sent out, and `subagents/workflows/<runId>/` for each run of the
+ * Workflow tool — whose agents no call names one by one, and which nothing here
+ * read until one ran: their cost was in no total. Each reader of agent
+ * transcripts goes through this, so a third layout is one edit.
+ */
+export async function subagentDirs(sessionDir: string): Promise<SubagentDir[]> {
+  const root = path.join(sessionDir, 'subagents');
   try {
-    entries = await fsp.readdir(dir);
+    await fsp.access(root);
   } catch {
-    return NO_SUBAGENTS;
+    return []; // no subagents dir: the usual case
   }
-  let bytes = 0;
-  const sizes: Record<string, number> = {};
-  for (const name of entries) {
-    if (!name.endsWith('.jsonl')) continue;
+  const dirs: SubagentDir[] = [{ dir: root, workflowRunId: null }];
+  try {
+    const runs = await fsp.readdir(path.join(root, 'workflows'), { withFileTypes: true });
+    for (const run of runs) {
+      if (run.isDirectory() && WORKFLOW_RUN_RE.test(run.name)) {
+        dirs.push({ dir: path.join(root, 'workflows', run.name), workflowRunId: run.name });
+      }
+    }
+  } catch {
+    // no workflow ever ran in this session
+  }
+  return dirs;
+}
+
+/** Where an agent's transcript is, looked up rather than built from what a request said. */
+export async function findSubagentFile(sessionDir: string, agentId: string): Promise<string | null> {
+  for (const { dir } of await subagentDirs(sessionDir)) {
+    const file = path.join(dir, `agent-${agentId}.jsonl`);
     try {
-      const size = (await fsp.stat(path.join(dir, name))).size;
-      bytes += size;
-      // Keyed on the agent id, because that is what the URL, the query key and a
-      // notification all call this agent; the filename is where it is written.
-      sizes[name.slice('agent-'.length, -'.jsonl'.length)] = size;
+      await fsp.access(file);
+      return file;
     } catch {
-      // deleted between readdir and stat
+      // not in this folder
     }
   }
-  // Counted by the meta files, as before: a transcript with no meta is not an
-  // agent we can name, and a meta with no transcript is still one that ran.
-  return { count: entries.filter((e) => e.endsWith('.meta.json')).length, bytes, sizes };
+  return null;
+}
+
+async function scanSubagents(sessionDir: string): Promise<ScannedSubagents> {
+  let count = 0;
+  let bytes = 0;
+  const sizes: Record<string, number> = {};
+  for (const { dir } of await subagentDirs(sessionDir)) {
+    let entries: string[];
+    try {
+      entries = await fsp.readdir(dir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      if (!name.endsWith('.jsonl') || !name.startsWith('agent-')) continue;
+      try {
+        const size = (await fsp.stat(path.join(dir, name))).size;
+        bytes += size;
+        // Keyed on the agent id, because that is what the URL, the query key and a
+        // notification all call this agent; the filename is where it is written.
+        sizes[name.slice('agent-'.length, -'.jsonl'.length)] = size;
+      } catch {
+        // deleted between readdir and stat
+      }
+    }
+    // Counted by the meta files, as before: a transcript with no meta is not an
+    // agent we can name, and a meta with no transcript is still one that ran.
+    count += entries.filter((e) => e.endsWith('.meta.json')).length;
+  }
+  return count === 0 && bytes === 0 ? NO_SUBAGENTS : { count, bytes, sizes };
 }
 
 /** Enumerate all top-level session transcripts under ~/.claude/projects. */

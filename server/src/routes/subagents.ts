@@ -1,9 +1,8 @@
-import path from 'node:path';
 import type { SubagentDetailResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { loadSubagents, parseTranscript } from '../core/parser.ts';
-import { UUID_RE } from '../core/scanner.ts';
+import { findSubagentFile, UUID_RE } from '../core/scanner.ts';
 
 const AGENT_ID_RE = /^[0-9a-f]{6,64}$/i;
 
@@ -22,7 +21,10 @@ export function registerSubagentRoutes(app: FastifyInstance, ctx: AppContext): v
       const meta = metas.find((m) => m.agentId === agentId);
       if (!meta) return reply.code(404).send({ error: 'Subagent not found' });
 
-      const filePath = path.join(scanned.sessionDir, 'subagents', `agent-${agentId}.jsonl`);
+      // Looked up among the session's agent folders, a workflow run's included,
+      // never assembled from the request beyond the id it was validated as.
+      const filePath = await findSubagentFile(scanned.sessionDir, agentId);
+      if (!filePath) return reply.code(404).send({ error: 'Subagent not found' });
       const { turns } = await parseTranscript(filePath, new Map(), ctx.config.projectsDir);
       return { meta, turns };
     },

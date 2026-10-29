@@ -54,6 +54,15 @@ A **fork subagent** (`subagent_type: "fork"`, `agentType: "fork"` in its `meta.j
 
 Those reports only exist because a notification inside a subagent transcript is written `isMeta: true`; if they come back empty, that rule regressed ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#task-notifications)).
 
+### Workflow agents
+
+**The Workflow tool's agents live one level down, and nothing read them until one ran**: `subagents/workflows/<runId>/agent-<id>.jsonl` + `.meta.json`, beside a `journal.jsonl`, with the run's own record at `<sessionUuid>/workflows/<runId>.json` and its script under `workflows/scripts/`. The run id reads `wf_…`. Until then every reader listed `subagents/` flat, so a workflow's agents were in no total, no ⑂ panel and no deep scan. `subagentDirs` (`scanner.ts`) is now the one list of folders, and the scanner, the enricher, the parser, the deep scan and the agent route all walk it. Fixture: `cd2180fb`, run `wf_07005c21-692` — two haiku agents, $0.010 between them, exactly what the session's agent total grew by.
+
+The transcripts are ordinary agent ones (`isSidechain`, their own `api-request` lines, 5-minute cache writes, `attributionAgent: "workflow-subagent"`). Two things differ, and both break a join the panel relied on:
+
+- **The meta names no call** (`agentType: "workflow-subagent"`, `description` = the agent's label in the script, `workflowPhase`, `model`; no `toolUseId`), and one Workflow call runs every agent of its run. So the call is found from the parse — the Workflow tool result quotes the run id (`Run ID: wf_…`, `linkWorkflowCalls`) — and it is kept out of `agentIdByToolUse`, which gives a call ONE agent to open.
+- **The report never reaches the conversation.** Each agent's return value goes to the run's `journal.jsonl` (`{"type":"result","agentId":…,"result":…}`) and the conversation gets one notification for the whole run, under the run's task id. So `workflowCompleted` is read from the journal, and a row with no result there is `unknown` rather than `running`: its silence in the conversation says nothing.
+
 **The agent id is written on screen** — on the row and in the drawer header — and indexed like a session's ([AI_SEARCH.md](AI_SEARCH.md)). It is what the URL carries and what a notification calls the agent; while it appeared nowhere on the page there was no way back from the string to the thing.
 
 ### A running agent

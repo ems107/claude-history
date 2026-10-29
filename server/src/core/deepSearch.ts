@@ -15,6 +15,7 @@ import type { SearchBlock } from './enricher.ts';
 import type { SessionIndex } from './index.ts';
 import { isRec, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { createLogger } from './logger.ts';
+import { subagentDirs } from './scanner.ts';
 import type { SearchService } from './search.ts';
 import {
   buildSnippet,
@@ -431,16 +432,19 @@ export class DeepSearchService {
     }
 
     if (!scanned.sessionDir || scanned.subagentCount === 0) return;
-    const dir = path.join(scanned.sessionDir, 'subagents');
-    let entries: string[];
-    try {
-      entries = (await fsp.readdir(dir)).filter((e) => e.endsWith('.jsonl'));
-    } catch {
-      return;
+    const entries: string[] = [];
+    for (const { dir } of await subagentDirs(scanned.sessionDir)) {
+      try {
+        for (const e of await fsp.readdir(dir)) {
+          if (e.startsWith('agent-') && e.endsWith('.jsonl')) entries.push(path.join(dir, e));
+        }
+      } catch {
+        // gone between the listing and the read
+      }
     }
     for (const entry of entries) {
       try {
-        for await (const line of streamLines(path.join(dir, entry))) {
+        for await (const line of streamLines(entry)) {
           if (overBudget()) return;
           scan.bytesRead += line.length;
           const o = safeParse(line);
@@ -482,7 +486,7 @@ export class DeepSearchService {
           }
         }
       } catch (err) {
-        log.debug(`could not finish reading subagent ${entry}`, { err: String(err) });
+        log.debug(`could not finish reading subagent ${path.basename(entry)}`, { err: String(err) });
       }
     }
   }

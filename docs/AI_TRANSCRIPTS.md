@@ -28,7 +28,7 @@ Paths are relative to the data root (`~/.claude` unless `--data-root` / `CLAUDE_
 | Path | What it is |
 | --- | --- |
 | `projects/<encoded-dir>/<sessionUuid>.jsonl` | The transcript: one JSON object per line. Lines reach ~27 KB, files several MB. |
-| `projects/<encoded-dir>/<sessionUuid>/subagents/` | `agent-<17hex>.jsonl` + `.meta.json` — see [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md). |
+| `projects/<encoded-dir>/<sessionUuid>/subagents/` | `agent-<17hex>.jsonl` + `.meta.json`, and a Workflow run's agents one level down in `workflows/<runId>/` — see [AI_AGENTS_QUESTIONS_PLANS.md](AI_AGENTS_QUESTIONS_PLANS.md#workflow-agents). |
 | `projects/<encoded-dir>/<sessionUuid>/tool-results/*.txt` | Offloaded tool output (same doc). |
 | `history.jsonl` | Every prompt ever typed: `display`, epoch-**ms** `timestamp`, the real `project` path, `sessionId`. |
 | `sessions/<pid>.json` | Sessions running right now: `sessionId`, `cwd`, `status` (idle/busy), `pid`. |

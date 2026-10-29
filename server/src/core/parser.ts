@@ -21,7 +21,7 @@ import type {
 } from '@claude-history/shared';
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
-import type { ScannedSession } from './scanner.ts';
+import { subagentDirs, type ScannedSession } from './scanner.ts';
 import {
   extractPrompt,
   handbackOf,
@@ -96,41 +96,89 @@ function queuedImages(prompt: unknown): ContentBlock[] {
 
 export async function loadSubagents(sessionDir: string | null): Promise<SubagentMeta[]> {
   if (!sessionDir) return [];
-  const dir = path.join(sessionDir, 'subagents');
-  let files: string[];
-  try {
-    files = await fsp.readdir(dir);
-  } catch {
-    return [];
-  }
   const metas: SubagentMeta[] = [];
-  for (const f of files.sort()) {
-    if (!f.startsWith('agent-') || !f.endsWith('.meta.json')) continue;
+  for (const { dir, workflowRunId } of await subagentDirs(sessionDir)) {
+    let files: string[];
     try {
-      const raw = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf8')) as RawLine;
-      const agentId = f.slice('agent-'.length, -'.meta.json'.length);
-      // The transcript's own clock, beside the meta that never carries one. A
-      // meta with no transcript is still an agent that ran, so a missing file is
-      // null rather than a reason to drop the row.
-      let lastWriteMs: number | null = null;
-      try {
-        lastWriteMs = (await fsp.stat(path.join(dir, `agent-${agentId}.jsonl`))).mtimeMs;
-      } catch {
-        // no transcript beside this meta
-      }
-      metas.push({
-        agentId,
-        agentType: str(raw.agentType) ?? 'unknown',
-        description: str(raw.description) ?? '',
-        toolUseId: str(raw.toolUseId) ?? '',
-        spawnDepth: num(raw.spawnDepth) ?? 1,
-        lastWriteMs,
-      });
+      files = await fsp.readdir(dir);
     } catch {
-      // unreadable meta — skip this subagent
+      continue;
+    }
+    const returned = workflowRunId ? await workflowReturns(dir) : new Set<string>();
+    for (const f of files.sort()) {
+      if (!f.startsWith('agent-') || !f.endsWith('.meta.json')) continue;
+      try {
+        const raw = JSON.parse(await fsp.readFile(path.join(dir, f), 'utf8')) as RawLine;
+        const agentId = f.slice('agent-'.length, -'.meta.json'.length);
+        // The transcript's own clock, beside the meta that never carries one. A
+        // meta with no transcript is still an agent that ran, so a missing file is
+        // null rather than a reason to drop the row.
+        let lastWriteMs: number | null = null;
+        try {
+          lastWriteMs = (await fsp.stat(path.join(dir, `agent-${agentId}.jsonl`))).mtimeMs;
+        } catch {
+          // no transcript beside this meta
+        }
+        metas.push({
+          agentId,
+          agentType: str(raw.agentType) ?? 'unknown',
+          description: str(raw.description) ?? '',
+          // A workflow agent's meta names no call: the Workflow call that ran it
+          // is found from the parse (`linkWorkflowCalls`).
+          toolUseId: str(raw.toolUseId) ?? '',
+          spawnDepth: num(raw.spawnDepth) ?? 1,
+          lastWriteMs,
+          workflowRunId,
+          workflowCompleted: returned.has(agentId),
+        });
+      } catch {
+        // unreadable meta — skip this subagent
+      }
     }
   }
   return metas;
+}
+
+/**
+ * The agents of a workflow run that returned a value. They report to the run's
+ * `journal.jsonl` — `{"type":"result","agentId":…}` — and never to the
+ * conversation, so this is the only place that says one finished.
+ */
+async function workflowReturns(runDir: string): Promise<Set<string>> {
+  const done = new Set<string>();
+  try {
+    for await (const line of streamLines(path.join(runDir, 'journal.jsonl'))) {
+      const o = safeParse(line);
+      const agentId = o && str(o.type) === 'result' ? str(o.agentId) : null;
+      if (agentId) done.add(agentId);
+    }
+  } catch {
+    // no journal yet: the run has only just started
+  }
+  return done;
+}
+
+/**
+ * The Workflow call that ran each workflow agent. Its meta names no call, and
+ * one call runs many agents, so the join cannot go through `agentIdByToolUse`
+ * (one agent per call); what ties them is the run id, which the call's result
+ * quotes ("Run ID: wf_…").
+ */
+function linkWorkflowCalls(metas: SubagentMeta[], turns: Turn[]): void {
+  const runs = new Set(metas.map((m) => m.workflowRunId).filter((r): r is string => r !== null));
+  if (runs.size === 0) return;
+  const callOfRun = new Map<string, string>();
+  for (const turn of turns) {
+    for (const item of turn.items) {
+      for (const block of item.blocks) {
+        if (block.kind !== 'tool' || block.toolName !== 'Workflow' || !block.result) continue;
+        for (const run of runs) if (block.result.text.includes(run)) callOfRun.set(run, block.toolUseId);
+      }
+    }
+  }
+  for (const meta of metas) {
+    if (meta.workflowRunId && !meta.toolUseId) meta.toolUseId = callOfRun.get(meta.workflowRunId) ?? '';
+  }
 }
 
 /**
@@ -1551,12 +1599,15 @@ export async function parseSession(
   projectsDir: string,
 ): Promise<SessionDetail> {
   const subagents = await loadSubagents(scanned.sessionDir);
+  // Workflow agents have no call of their own yet — `linkWorkflowCalls` gives
+  // them the run's, which must not make that call open one of them.
   const agentIdByToolUse = new Map(subagents.filter((a) => a.toolUseId).map((a) => [a.toolUseId, a.agentId]));
   const { turns, prLinks, forkedFrom, fileChanges, mcp } = await parseTranscript(
     scanned.filePath,
     agentIdByToolUse,
     projectsDir,
   );
+  linkWorkflowCalls(subagents, turns);
   return {
     summary,
     turns,

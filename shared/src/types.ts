@@ -1016,6 +1016,15 @@ export interface SubagentMeta {
    * from the report it has not filed and from this.
    */
   lastWriteMs: number | null;
+  /**
+   * The Workflow run that ran it (`wf_…`), null for an agent an Agent call sent
+   * out. A workflow agent's transcript sits under `subagents/workflows/<runId>/`,
+   * its `toolUseId` is the run's Workflow call — one call, many agents — and its
+   * report goes to the run's own journal, never into the conversation.
+   */
+  workflowRunId: string | null;
+  /** The run's journal records the value it returned: a workflow agent's only "report". */
+  workflowCompleted: boolean;
 }
 
 export interface FileEdit {
