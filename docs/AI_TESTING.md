@@ -135,6 +135,30 @@ Checks 8, 19, 23, 37, 38 and 40 spawn real `claude` processes against the user's
 - Unpriced: intercept `/api/prices` and delete `claude-sonnet-5` on `2f1e9c7b` (see check 10) — the rows that include it read `$164+`, `$16.51+`, `$11.95+`, `$4.74+`, while **re-cached context** stays `$3.18` with no `+`, because it happened on Opus. A row whose every model is unpriced reads "—" and stays.
 - Stats, all time: the causes of **re-cached context** add up to its figure, and the cost by effort to the cost card less the agents' row.
 
+**74. The exact request** ([The viewer](AI_VIEWER.md#the-request-a-reply-answered)). **The server first, with no browser.** Rebuild every request of the corpus with `requestDetail` from a tsx `.mts`:
+
+- `unresolved` must be 0 across all of them;
+- the biggest request must rebuild in well under a second (measured: 1,359 messages, 124 ms).
+
+Then, on `cd2180fb`, request `54fe5ae9` (#301):
+
+- 108 messages, 42 of them `request`;
+- new = #105–#107 and no others. #105 and #106 have identical twins earlier in the list, which is what catches a hash-based test;
+- cache marks at `system[1]` (1h, global), `system[2]` and `messages[107]`;
+- `/raw` carries the same 108 messages with the breakpoints put back;
+- `?download=1` answers `content-disposition: attachment`.
+
+**A live file**: fetch a session's newest request, let the transcript grow, and fetch the new newest. It must be found in tens of milliseconds, without re-reading the file.
+
+**Then the browser** (check 26's harness):
+
+- **The rail item** exists on `cd2180fb` and NOT on `797db462`, which was written before 2.1.303. None of `797db462`'s ctx pills carries `role=button`.
+- **The panel**: its chips count new chains, changes and unanswered requests. A row where plan mode was entered reads `Δ tools +EnterPlanMode` (or `+ExitPlanMode`).
+- **Hovering a ctx pill** shows `Click to open the request it sent.`, and clicking it opens the column on `?request=`.
+- **The column**: › goes to the next number, and Escape closes the column and empties the URL.
+- **Thinking blocks**: an empty one in a request with display `updates` names that display and `showThinkingSummaries`. A narration block's row reads `progress note: …`.
+- **At 390 px** the column is a sheet with no sideways scroll, its tabs stay pinned while the list scrolls, and it offers Copy but no Download.
+
 ## Parsing the tree
 
 **11. Replayed lines.** Fixture today: `f3384d17` (18 duplicate uuids). The historical cases were `0f5b1c8b` (2,072 lines → **7 "earlier context" headers, not 9**), `cae7f9f5` (17,678 → **19, not 42**) and `1decb824` (26, text only, no duplicated boundary). No header may date backwards, none may hold prompts with no answer, and every collapsed header must quote the compaction that really closed it (the last of `0f5b1c8b`: 12 prompts, 12/08 11:44:21 → 12/08 14:31:19, 642k → 9.0k). **No assistant item may carry the same text block twice** (108 did). And the guard that says the fix took nothing real with it: the four token totals identical before and after, and no `message.id` appearing only in a replay.

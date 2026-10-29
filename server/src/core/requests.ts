@@ -60,6 +60,7 @@ export function requestReader(): RequestReader {
           .join(' · ')
       : '';
     facts.set(id, {
+      id,
       shapeHash: str(o.shapeHash),
       betasKey,
       effort: output ? str(output.effort) : null,

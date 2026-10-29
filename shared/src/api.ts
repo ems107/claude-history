@@ -4,6 +4,7 @@ import type { GitFetchMode, GitMergeMode, GitPullMode, GitPushMode } from './git
 import type {
   FileReviewRecord,
   LiveInfo,
+  MessageUsage,
   PlanRecord,
   PlanReviewRecord,
   ProjectGroup,
@@ -2466,6 +2467,132 @@ export interface UserdataRestoreResponse {
   restoredFrom: string;
   /** The copy taken of what was replaced, so a wrong restore is undoable. */
   backedUpTo: string | null;
+}
+
+// ---- The exact request a reply answered (CLI 2.1.303+) ----
+
+/**
+ * How much of a block's text travels in an outline. The whole of it is one more
+ * request away (`RequestMessageResponse`): a single message can hold megabytes.
+ */
+export const REQUEST_PREVIEW_CHARS = 240;
+
+/** One content block of a message as the request sent it, summarised. */
+export interface RequestBlockSummary {
+  /** `text`, `tool_use`, `tool_result`, `thinking`, `image`, `tool_addition`, … — as recorded. */
+  type: string;
+  /** The tool: a `tool_use` and a `tool_addition` name it, a `tool_result` takes it from the call it answers. */
+  name: string | null;
+  /** The call a `tool_use` makes or a `tool_result` answers — the conversation's `?tool=` anchor. */
+  toolUseId: string | null;
+  /** Characters of the block as sent: its JSON. */
+  chars: number;
+  /** The start of its text (or input, or result), up to `REQUEST_PREVIEW_CHARS`. */
+  preview: string;
+  /**
+   * A `thinking` block whose signature labels it narration: prose the CLI
+   * printed to the reader, not reasoning (AI_TRANSCRIPTS.md, "Narration is not
+   * thinking").
+   */
+  narration: boolean;
+}
+
+/** One message of a request. */
+export interface RequestMessageSummary {
+  role: string;
+  /**
+   * `conversation`: the transcript holds this message as it was sent, and the
+   * viewer draws it. `request`: sent in this form only in the request — context
+   * the CLI injected (CLAUDE.md, reminders, a compaction's summary) or a message
+   * it rewrote before sending.
+   */
+  source: 'conversation' | 'request';
+  /** The first transcript line of a `conversation` message, for `?msg=`. */
+  uuid: string | null;
+  /** Sent for the first time by this request (its `tail`), rather than kept from the one before. */
+  isNew: boolean;
+  chars: number;
+  blocks: RequestBlockSummary[];
+}
+
+/** A cache breakpoint, where the request put it: `["system", 1]`, `["messages", 107, "content", 0]`. */
+export interface RequestCacheMark {
+  path: Array<string | number>;
+  /** No `ttl` is the API's default, 5 minutes. */
+  ttl: string | null;
+  scope: string | null;
+}
+
+export interface RequestSystemBlock {
+  text: string;
+  chars: number;
+}
+
+export interface RequestTool {
+  name: string;
+  chars: number;
+  description: string;
+  inputSchema: unknown;
+}
+
+export interface RequestDetailResponse {
+  id: string;
+  /** Its place among the transcript's requests, from 1, and how many there are. */
+  index: number;
+  count: number;
+  prevId: string | null;
+  nextId: string | null;
+  timestamp: string | null;
+  querySource: string | null;
+  /** The CLI that wrote it. */
+  version: string | null;
+  /** As recorded: `model`, `max_tokens`, `thinking`, `output_config`, `context_management`, `betas`. */
+  params: Record<string, unknown>;
+  /** Messages kept from the request before, and messages added. A new chain kept none. */
+  kept: number;
+  added: number;
+  newChain: boolean;
+  /** Null only if the transcript lost the shape line, which has not happened. */
+  system: RequestSystemBlock[] | null;
+  tools: RequestTool[] | null;
+  messages: RequestMessageSummary[];
+  cacheMarks: RequestCacheMark[];
+  /** The reply that answered it, and what it billed. Null for a request nobody answered. */
+  reply: { uuid: string; usage: MessageUsage } | null;
+  /** Messages whose content could not be found. 0 across the whole corpus; drawn if it ever is not. */
+  unresolved: number;
+}
+
+/**
+ * One request in a transcript's list, numbered as the column numbers it. Every
+ * request is here, answered or not: 152 of 5,366 in main transcripts had no
+ * reply — interrupted, refused, or still in flight.
+ */
+export interface RequestListEntry {
+  id: string;
+  index: number;
+  at: string | null;
+  querySource: string | null;
+  model: string | null;
+  kept: number;
+  added: number;
+  newChain: boolean;
+  /** It kept fewer of its base's messages than the base sent: something earlier changed. */
+  rewritten: boolean;
+  /** The first line of the reply, which is also the context point's uuid; null when nothing answered. */
+  replyUuid: string | null;
+}
+
+export interface RequestListResponse {
+  requests: RequestListEntry[];
+}
+
+/** One message in full. */
+export interface RequestMessageResponse {
+  role: string;
+  source: RequestMessageSummary['source'];
+  uuid: string | null;
+  content: unknown[];
 }
 
 // ---- SSE events on /api/events ----

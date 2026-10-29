@@ -42,7 +42,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A panel opens BESIDE the conversation, never above it and never over it**, and only one rail panel is open at a time.
 - **The rail is furniture**: it is always drawn, and nothing may cover it — which nothing can, now that everything that opens is a column to one side of it.
 - **A pane is a BOX**: nothing inside one may grow the page or be drawn in its neighbour. Every fact in a panel's header truncates; only its controls are `shrink-0`.
-- **One column beside the session, never two** — the file viewer and a subagent's transcript swap places, they do not stack. The rail's panel is not part of that rule.
+- **One column beside the session, never two** — the file viewer, a subagent's transcript, a file of a branch review and a request swap places, they do not stack. The rail's panel is not part of that rule.
 - **The find bar belongs to the conversation's column**, not to the page.
 - **Anything that measures the column measures `--conv-box`**, never `100vw`.
 - **Every clock on the working indicator belongs to the turn in flight**, and a tool call is not a message.
@@ -147,7 +147,7 @@ arriving, now true of a panel opening too.
   stops existing cannot stay open (`useInspector` re-checks on every render), or
   a session whose last agent row went away with a re-parse would leave the
   inspector holding a title with nothing under it.
-- **Nine panels, and `Plan` sits second** — right after `Tokens` and before the
+- **Twelve panels, and `Plan` sits second** — right after `Tokens` and before the
   three file ones, because a plan is what the session DECIDED and those are what
   it then touched. Its count is the remarks left on its plans rather than the
   plans themselves: the plans are why the button is there, the remarks are what
@@ -1211,6 +1211,37 @@ The three above it read the CONVERSATION. This one reads the disk: what the sess
 - **Each moment says where in the conversation it happened.** The line it came off is not drawn (it is not a message), so it cannot be its own anchor — the item ABOVE it is, and being an item it is certainly on screen. Measured: the delta's own `parentUuid` is a `user` message in 541 of 600 cases and never missing, so the item above is almost always that prompt. On a resumed session that button is *"here is where you picked it back up"*, which nothing else in the app can point at.
 - **An event names its server by key and looks the name up**, because a server gets renamed mid-session: the needs-auth list spells it one way and its own tools another, so a name copied into the event would be the OLD one and the history would disagree with the rows above it.
 - **The parser pays for it, not the cache.** It rides the `SessionDetail` the viewer already fetches, so there is no new endpoint, no index field and **no `CACHE_VERSION` bump** — and `replayFilter` is applied before the attachment branch, so a replayed line is dropped without this having to know replays exist.
+
+## The request a reply answered
+
+Every request a session written since CLI 2.1.303 sent to the API, rebuilt from the transcript ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) has how). It is what Claude actually had in front of it, which the conversation is not: the injected context is part of it, and the conversation draws none of that.
+
+**Two ways in, and both are on the conversation's side of the page.**
+
+- **The `Requests` panel**, after `MCP` in the rail, because both are about what Claude was given. It exists only where the transcript records requests, and has no count: the number would cost a request to the server on every session opened.
+- **The context pill of a single request**, which is a button with a mouse or the keyboard. Its card ends `Click to open the request it sent.` where the pointer can hover. **A touch is unchanged**: on a phone a tap is the only way to the card, and the panel is the way to the request. The turn's pill covers several requests and stays a pill.
+- **Only the conversation provides the opener** (`RequestContext`, around the conversation's `TurnList` like `StarContext`). A subagent's drawer draws a transcript that records its OWN requests, and those are not wired yet.
+
+**The panel's list is the server's** (`GET /api/sessions/:id/requests`), not the conversation's.
+
+- Only the server holds the requests nothing answered, 2.8 % of them. Numbering only the answered ones would number them differently from the column.
+- The sizes and the re-caches are the context index's, joined on the reply's uuid. What changed comes from `requestChanges` against the answered request before.
+- It is fetched under `['session', id, 'requests']`, so the session's own invalidation keeps it live.
+- A chip exists only where a mark has rows, and what each mark means is a fold under the intro: a phone has no hover, and this panel is how a phone reaches a request.
+- The selected message's row is outlined and brought into view **once per selection**. Following every refetch of a live session pulled the list back under the reader every few seconds, and with nothing selected the match on `replyUuid === null` landed on the newest unanswered request.
+
+**The request is the fourth thing the side column holds** (`?request=`, read after the two file parameters and before `agent`). Every opener clears the other three, as before.
+
+- **The order on screen is the API's order**: tools, then the system prompt, then the messages. It is the order the cache reads the prompt in, so a breakpoint is drawn where it really cuts.
+- **"Changed" is measured against the panel's request**: the last one before it that got a reply, because the facts live on replies. Usually #N-1; when it is not, the *Since* line names it, so a row and its column never disagree.
+- **The billed total is real; its split is an estimate** (≈), shared out by characters, because the API gives one number per request. Its `Fold` says so, the way the cost panel does.
+- **One scroller under the header, the tabs pinned to its top.** Held fixed, the summary took 300 px of the column, and more than half of a phone.
+- **`only in the request`** marks a message sent in that form only here. **`new`** is a position, as in the transcript.
+- **A thinking block says what it is.** One with narration's label reads `progress note`, as in the conversation. An empty one gives the reason its request had: the `display` it asked for ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) has the rule) and the setting that would keep a summary of it.
+- **↗ prefers a tool's id to a uuid**: the line carrying a `tool_result` is drawn nowhere, so its uuid would scroll to nothing.
+- **A message is fetched whole only when opened** (`/messages/:index`, `staleTime: Infinity` — it never changes). The outline carries 240 characters of each block, because a single message can be megabytes.
+- **On a phone it is a sheet**, and a ↗ from it behaves like a jump from any other sheet: the anchor is written underneath, and Back shows it. Closing the sheet in the same gesture would undo the jump. `useBackDismiss` closes a layer with `history.back()`, and the entry it lands on predates the anchor.
+- **Copy as JSON and Download .json** give the whole request rebuilt, breakpoints put back on the blocks they marked. The download is not offered on a phone.
 
 ## The end of the conversation
 

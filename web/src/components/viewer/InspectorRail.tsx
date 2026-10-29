@@ -113,6 +113,15 @@ export const PANEL_ICONS: Record<PanelKey, () => import('react').ReactElement> =
       <path d="M8 12v2" />
     </svg>
   ),
+  // An arrow going out to a wall: what was SENT, and to something beyond the
+  // session. Not an envelope — the Sent panel is about files handed over.
+  requests: () => (
+    <svg {...base}>
+      <path d="M2.5 8h7.5" />
+      <path d="m7.5 5 3 3-3 3" />
+      <path d="M13.5 3v10" />
+    </svg>
+  ),
   lineage: () => (
     <svg {...base}>
       <circle cx="4.5" cy="4" r="1.6" />

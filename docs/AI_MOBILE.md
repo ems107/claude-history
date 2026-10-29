@@ -86,7 +86,7 @@ wants checking across all seven.
 
 ## The session view
 
-The desktop session page is a row: a 72px rail, the conversation, an inspector, a side column. At 360px the rail and the conversation's own floor already do not fit, and opening a panel left the conversation four pixels wide. So on a phone `useSideLayout` returns zeros, **the rail is not drawn**, and **every panel is a sheet over the conversation** — the inspector, a subagent's transcript, the file viewer. Nothing inside them changed: they were all written to read at 320px, which is what that floor was for.
+The desktop session page is a row: a 72px rail, the conversation, an inspector, a side column. At 360px the rail and the conversation's own floor already do not fit, and opening a panel left the conversation four pixels wide. So on a phone `useSideLayout` returns zeros, **the rail is not drawn**, and **every panel is a sheet over the conversation** — the inspector, a subagent's transcript, the file viewer, a request. Nothing inside them changed: they were all written to read at 320px, which is what that floor was for.
 
 **The header is a name and one button.** Row one is the title and a square ⋮; row two is what the session IS — the project tag, the rename mark, the live badges — ending in `more`, which grows the header UNDERNEATH that row instead of swapping it, so nothing you were looking at moves. The ← went from both sizes: Escape has always been the way out on a desktop, Back is the way out on a phone, and the mark in the app's own header goes to the list from either.
 

@@ -1026,6 +1026,8 @@ export interface MessageItem {
  * hundreds of requests in a row.
  */
 export interface RequestFacts {
+  /** The request's own id: what `?request=` names, and what its reply's `requestRef` was. */
+  id: string;
   shapeHash: string | null;
   betasKey: string | null;
   /** `params.output_config.effort`. */

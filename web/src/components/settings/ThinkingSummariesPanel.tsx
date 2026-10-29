@@ -46,7 +46,7 @@ export function ThinkingSummariesPanel() {
           Claude Code keeps a <span className="font-semibold text-emerald-400">summary of Claude’s reasoning</span> in
           every new session — set as <span className="font-mono">showThinkingSummaries</span> in{' '}
           <span className="font-mono break-all">{setIn?.path ?? data.userSettingsFile}</span>. It shows in the
-          conversation under View ▾ → thinking.
+          conversation under View ▾ → thinking, and in the column of each request.
         </p>
       ) : (
         <div id="info-thinking" className="scroll-mt-16 space-y-2 rounded border border-amber-500/40 px-3 py-2">

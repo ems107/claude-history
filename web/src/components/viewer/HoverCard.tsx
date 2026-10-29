@@ -65,6 +65,7 @@ export function HoverCard({
   variant = 'inline',
   tone = 'default',
   title,
+  onActivate,
 }: {
   pill: ReactNode;
   children: ReactNode;
@@ -72,8 +73,16 @@ export function HoverCard({
   /** `warn` marks a pill whose figure needs explaining, not merely reading. */
   tone?: 'default' | 'warn';
   title?: string;
+  /**
+   * What a CLICK on the pill does, with a mouse or the keyboard — the context
+   * pill opens its request. A touch is left alone: on a phone a tap is already
+   * the only way to the card, and the panel is the way to the request.
+   */
+  onActivate?: () => void;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
+  /** The pointer that pressed it, which the click that follows does not carry. */
+  const pressedWith = useRef('mouse');
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   /** Held open by a tap rather than by a pointer resting on it. */
   const [tapped, setTapped] = useState(false);
@@ -112,6 +121,28 @@ export function HoverCard({
       title={title}
       onMouseEnter={open}
       onMouseLeave={() => !tapped && setAnchor(null)}
+      {...(onActivate && {
+        role: 'button',
+        tabIndex: 0,
+        onPointerDown: (e: React.PointerEvent) => {
+          pressedWith.current = e.pointerType;
+        },
+        onClick: (e: React.MouseEvent) => {
+          // `detail` is 0 for a click the keyboard made.
+          if (pressedWith.current !== 'mouse' && e.detail !== 0) return;
+          // Inside a fold header and a scroller that selects on a click, and it
+          // meant neither.
+          e.stopPropagation();
+          setAnchor(null);
+          onActivate();
+        },
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          e.stopPropagation();
+          onActivate();
+        },
+      })}
       onPointerUp={(e) => {
         // A mouse already has hover; this is for the pointers that do not.
         if (e.pointerType === 'mouse') return;
@@ -126,7 +157,7 @@ export function HoverCard({
           setTapped(true);
         }
       }}
-      className={`${PILL_BASE} ${PILL_TONE[tone][variant]}`}
+      className={`${onActivate ? PILL_BASE.replace('cursor-default', 'cursor-pointer') : PILL_BASE} ${PILL_TONE[tone][variant]}`}
     >
       {pill}
       {/* Portalled to the body, not rendered in place: the card is positioned

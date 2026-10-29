@@ -45,6 +45,9 @@ import { Inspector } from '../components/viewer/Inspector.tsx';
 import { InspectorRail } from '../components/viewer/InspectorRail.tsx';
 import { LineagePanel } from '../components/viewer/LineagePanel.tsx';
 import { McpPanel } from '../components/viewer/McpPanel.tsx';
+import { RequestColumn } from '../components/viewer/RequestColumn.tsx';
+import { RequestContext } from '../components/viewer/RequestContext.ts';
+import { RequestsPanel } from '../components/viewer/RequestsPanel.tsx';
 import { PendingTurn } from '../components/viewer/PendingTurn.tsx';
 import { SessionHeader } from '../components/viewer/SessionHeader.tsx';
 import { SessionSheetSections } from '../components/viewer/SessionSheetSections.tsx';
@@ -78,6 +81,8 @@ const AGENTS_PARAM = 'agents';
 /** Anchors inside the OPEN DRAWER, the drawer's counterpart of `tool` and `msg`. */
 const AGENT_TOOL_PARAM = 'agentTool';
 const AGENT_MSG_PARAM = 'agentMsg';
+/** The request open beside the conversation: what Claude was sent for one reply. */
+const REQUEST_PARAM = 'request';
 
 export function SessionViewPage() {
   const { id = '' } = useParams();
@@ -268,7 +273,9 @@ export function SessionViewPage() {
   /** Read here rather than beside `fileRef`, because the drawer below defers to it. */
   const fileParam = revFileParam ? null : searchParams.get(FILE_PARAM);
   /** `null` while a file is open — one column beside the session, never two (see `fileRef`). */
-  const agentId = revFileParam || fileParam ? null : searchParams.get('agent');
+  const requestId = revFileParam || fileParam ? null : searchParams.get(REQUEST_PARAM);
+  /** `null` while a file or a request is open, by the same rule. */
+  const agentId = revFileParam || fileParam || requestId ? null : searchParams.get('agent');
   /**
    * The subagent list, open from the URL rather than from state: the ⑂ badge in
    * the session list opens a session straight onto it, and the link can be
@@ -308,6 +315,7 @@ export function SessionViewPage() {
           // the rule and what it costs.
           sp.delete(FILE_PARAM);
           sp.delete(REV_FILE_PARAM);
+          sp.delete(REQUEST_PARAM);
           // Anchors INSIDE the drawer, and always rewritten together: one left
           // over from a previous jump would point into another agent's
           // transcript, where it resolves to nothing at all.
@@ -427,6 +435,7 @@ export function SessionViewPage() {
           const sp = new URLSearchParams(prev);
           sp.set(REV_FILE_PARAM, path);
           sp.delete(FILE_PARAM);
+          sp.delete(REQUEST_PARAM);
           sp.delete('agent');
           sp.delete(AGENT_TOOL_PARAM);
           sp.delete(AGENT_MSG_PARAM);
@@ -441,6 +450,39 @@ export function SessionViewPage() {
       (prev) => {
         const sp = new URLSearchParams(prev);
         sp.delete(REV_FILE_PARAM);
+        return sp;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  /**
+   * One request, in the column — from the Requests panel, or from the context
+   * pill of the reply it produced. The fourth thing that column can hold, and
+   * by the same rule as the other three: opening it closes them.
+   */
+  const openRequest = useCallback(
+    (rid: string) =>
+      setSearchParams(
+        (prev) => {
+          const sp = new URLSearchParams(prev);
+          sp.set(REQUEST_PARAM, rid);
+          sp.delete(FILE_PARAM);
+          sp.delete(REV_FILE_PARAM);
+          sp.delete('agent');
+          sp.delete(AGENT_TOOL_PARAM);
+          sp.delete(AGENT_MSG_PARAM);
+          return sp;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
+  const closeRequest = useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        sp.delete(REQUEST_PARAM);
         return sp;
       },
       { replace: true },
@@ -467,6 +509,7 @@ export function SessionViewPage() {
             sp.delete(AGENT_TOOL_PARAM);
             sp.delete(AGENT_MSG_PARAM);
             sp.delete(REV_FILE_PARAM);
+            sp.delete(REQUEST_PARAM);
             return sp;
           },
           { replace: true },
@@ -947,6 +990,12 @@ export function SessionViewPage() {
    */
   const typing = useIsTyping();
 
+  /** Written by CLI 2.1.303 or later: its replies know the request they answered. */
+  const hasRequests = useMemo(
+    () => !!session?.turns.some((t) => t.items.some((i) => i.request !== null)),
+    [session?.turns],
+  );
+
   /**
    * Which panel is open beside the conversation. Declared here because the
    * counts it needs are the last of them to be worked out, and read by the
@@ -968,6 +1017,7 @@ export function SessionViewPage() {
     scratchpadCount: scratchpad.data?.entries.length ?? 0,
     agentCount: session?.subagents.length ?? 0,
     mcp: session?.mcp ?? null,
+    hasRequests,
     hasLineage: !!session && (session.ancestry.forkedFrom !== null || session.ancestry.descendants.length > 0),
     agents: { open: agentsOpen, toggle: toggleAgents, close: closeAgents },
   });
@@ -992,7 +1042,7 @@ export function SessionViewPage() {
   const sideLayout = useSideLayout({
     mobile,
     inspector: inspector.open === null ? null : inspector.width,
-    column: agentId || fileRef || revFileParam ? column.width : null,
+    column: agentId || fileRef || revFileParam || requestId ? column.width : null,
     // Whichever seam is under the hand wins, and the other gives way to its
     // floor — the pane you are dragging is the one you mean. At rest it is the
     // column's, which is the thing just opened to be looked at.
@@ -1018,6 +1068,7 @@ export function SessionViewPage() {
    */
   useBackDismiss(!!fileRef, closeFile);
   useBackDismiss(!!agentId, closeAgent);
+  useBackDismiss(!!requestId, closeRequest);
   useBackDismiss(!!revFileParam, closeRevisionFile);
   useBackDismiss(inspector.open !== null, inspector.close);
   useBackDismiss(finder.isOpen, finder.close);
@@ -1049,6 +1100,7 @@ export function SessionViewPage() {
       // reading, with the bar still open behind you.
       if (fileRef) closeFile();
       else if (agentId) closeAgent();
+      else if (requestId) closeRequest();
       else if (revFileParam) closeRevisionFile();
       else if (inspector.open !== null) inspector.close();
       else if (finder.isOpen) finder.close();
@@ -1061,6 +1113,8 @@ export function SessionViewPage() {
     closeFile,
     agentId,
     closeAgent,
+    requestId,
+    closeRequest,
     revFileParam,
     closeRevisionFile,
     inspector,
@@ -1474,6 +1528,16 @@ export function SessionViewPage() {
         );
       case 'mcp':
         return <McpPanel sessionId={id} mcp={session.mcp} onGoToMessage={(uuid) => jumpTo('msg', uuid)} />;
+      case 'requests':
+        return (
+          <RequestsPanel
+            sessionId={id}
+            turns={session.turns}
+            tables={session.requests}
+            openRequestId={requestId}
+            onOpen={openRequest}
+          />
+        );
       case 'lineage':
         return <LineagePanel sessionId={id} />;
       default:
@@ -1659,29 +1723,33 @@ export function SessionViewPage() {
                       renders the same `TurnList` over a SUBAGENT's transcript,
                       whose uuids are in that file and not in this session — a
                       star there would key on a message this session does not
-                      have. No context, no star button. */}
+                      have. No context, no star button. The request opener is
+                      the conversation's for the same reason: an agent's
+                      requests are in its own file, and not wired yet. */}
                   <StarContext value={starContext}>
-                    <TurnList
-                      // Keyed on the session: what the user unfolded here must not
-                      // carry over to the next session's segments and turns.
-                      key={id}
-                      turns={session.turns}
-                      requests={session.requests}
-                      showThinking={showThinking}
-                      expandTools={expandTools}
-                      fold={fold}
-                      expandSegments={expandSegments}
-                      scrollToUuid={anchorUuid}
-                      scrollToTool={anchorTool}
-                      jumpNonce={jumpNonce}
-                      highlight={highlight}
-                      find={finder.find}
-                      onFindMarks={finder.onFindMarks}
-                      onOpenAgent={openAgent}
-                      footer={workingFooter}
-                      lastTurnInFlight={isWorking(liveInfo) || isWaiting(liveInfo)}
-                      pending={pendingTurns}
-                    />
+                    <RequestContext value={openRequest}>
+                      <TurnList
+                        // Keyed on the session: what the user unfolded here must not
+                        // carry over to the next session's segments and turns.
+                        key={id}
+                        turns={session.turns}
+                        requests={session.requests}
+                        showThinking={showThinking}
+                        expandTools={expandTools}
+                        fold={fold}
+                        expandSegments={expandSegments}
+                        scrollToUuid={anchorUuid}
+                        scrollToTool={anchorTool}
+                        jumpNonce={jumpNonce}
+                        highlight={highlight}
+                        find={finder.find}
+                        onFindMarks={finder.onFindMarks}
+                        onOpenAgent={openAgent}
+                        footer={workingFooter}
+                        lastTurnInFlight={isWorking(liveInfo) || isWaiting(liveInfo)}
+                        pending={pendingTurns}
+                      />
+                    </RequestContext>
                   </StarContext>
                   {session.turns.length === 0 && pending.length === 0 && (
                     <div className="p-8 text-center text-[var(--text-dim)]">
@@ -1796,6 +1864,21 @@ export function SessionViewPage() {
                 jumpNonce={jumpNonce}
                 running={agentRunning}
                 onClose={closeAgent}
+              />
+            </SideColumn>
+          )}
+          {requestId && session && (
+            <SideColumn kind="request" mobile={mobile} width={sideLayout.column} onResizeStart={startColumnResize}>
+              <RequestColumn
+                sessionId={id}
+                requestId={requestId}
+                turns={session.turns}
+                tables={session.requests}
+                mobile={mobile}
+                onOpen={openRequest}
+                onClose={closeRequest}
+                onGoToMessage={(uuid) => jumpTo('msg', uuid)}
+                onGoToCall={(toolUseId) => jumpTo(TOOL_PARAM, toolUseId)}
               />
             </SideColumn>
           )}

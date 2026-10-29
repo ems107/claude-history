@@ -329,6 +329,42 @@ export function requestChangeText(change: RequestChange): string {
 }
 
 /**
+ * The same difference in two or three words, for a row that has a dozen
+ * others under it: "tools +ExitPlanMode", "effort high → xhigh". The chain
+ * facts are left to the caller, which draws them as marks of their own.
+ */
+export function requestChangeLabel(change: RequestChange): string | null {
+  switch (change.kind) {
+    case 'new-chain':
+    case 'history-rewritten':
+      return null;
+    case 'system-prompt':
+      return change.chars === 0 ? 'system' : `system ${change.chars > 0 ? '+' : '−'}${Math.abs(change.chars).toLocaleString()}`;
+    case 'tools': {
+      const parts = [
+        change.added.length > 0 ? `+${change.added.length === 1 ? change.added[0] : change.added.length}` : null,
+        change.removed.length > 0 ? `−${change.removed.length === 1 ? change.removed[0] : change.removed.length}` : null,
+      ].filter(Boolean);
+      return `tools${parts.length > 0 ? ` ${parts.join(' ')}` : ''}`;
+    }
+    case 'shape':
+      return 'system or tools';
+    case 'effort':
+      return `effort ${change.from ?? 'default'} → ${change.to ?? 'default'}`;
+    case 'thinking':
+      return `thinking ${change.to ?? 'off'}`;
+    case 'thinking-display':
+      return `thinking display ${change.to ?? 'none'}`;
+    case 'betas':
+      return 'betas';
+    case 'cache-control':
+      return 'cache marks';
+    case 'context-management':
+      return 'context management';
+  }
+}
+
+/**
  * Why the cached context had to be written again.
  *
  * `unknown` says so outright instead of reaching for the likeliest-sounding
