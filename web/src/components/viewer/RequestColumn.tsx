@@ -460,7 +460,7 @@ function messageSummary(m: RequestMessageSummary): string {
       if (texts++ === 0) parts.push(b.preview.replace(/\s+/g, ' ').trim() || '(empty)');
     } else if (b.type === 'thinking') {
       const said = b.preview.replace(/\s+/g, ' ').trim();
-      parts.push(b.narration ? `narration: ${said}` : said ? `thinking: ${said}` : 'thinking');
+      parts.push(b.narration ? `progress note: ${said}` : said ? `thinking: ${said}` : 'thinking');
     }
     else if (b.type === 'tool_use') parts.push(b.name ?? 'a call');
     else if (b.type === 'tool_result') parts.push(`result of ${b.name ?? 'a call'}`);
@@ -669,7 +669,7 @@ function MessageBody({
           <BlockView
             key={i}
             text={text}
-            label={[s?.type ?? '?', s?.narration ? 'narration' : s?.name, blocks.length > 1 ? `${i + 1} of ${blocks.length}` : null]
+            label={[s?.type ?? '?', s?.narration ? 'progress note · summary' : s?.name, blocks.length > 1 ? `${i + 1} of ${blocks.length}` : null]
               .filter(Boolean)
               .join(' · ')}
             chars={s?.chars ?? text.length}
@@ -690,7 +690,7 @@ function thinkingDisplay(d: RequestDetailResponse): string | null {
  * Why a thinking block has no text, which is the common case and not a loss:
  * the request did not ask for it. Claude Code sends `display: "updates"` unless
  * its `showThinkingSummaries` setting is on, and the API then returns the
- * reasoning as an encrypted signature alone — only narration comes back as
+ * reasoning as an encrypted signature alone — only progress notes come back as
  * words. With the setting on (`"summarized"`) a summary of it reaches the
  * transcript, and is drawn here.
  */

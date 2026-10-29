@@ -156,7 +156,7 @@ Then, on `cd2180fb`, request `54fe5ae9` (#301):
 - **The panel**: its chips count new chains, changes and unanswered requests. A row where plan mode was entered reads `Δ tools +EnterPlanMode` (or `+ExitPlanMode`).
 - **Hovering a ctx pill** shows `Click to open the request it sent.`, and clicking it opens the column on `?request=`.
 - **The column**: › goes to the next number, and Escape closes the column and empties the URL.
-- **Thinking blocks**: an empty one in a request with display `updates` names that display and `showThinkingSummaries`. A narration block's row reads `narration: …`.
+- **Thinking blocks**: an empty one in a request with display `updates` names that display and `showThinkingSummaries`. A narration block's row reads `progress note: …`.
 - **At 390 px** the column is a sheet with no sideways scroll, its tabs stay pinned while the list scrolls, and it offers Copy but no Download.
 
 ## Parsing the tree
