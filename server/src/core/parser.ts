@@ -405,8 +405,7 @@ function buildResult(
     response,
     plan,
     attachments,
-    // A failed call changed nothing, whatever the line says about it.
-    diff: c.is_error === true ? null : diff,
+    diff,
   };
 }
 
@@ -1451,6 +1450,7 @@ export async function parseTranscript(
             const toolUseId = str(c.tool_use_id);
             const tool = toolUseId ? toolBlocksById.get(toolUseId) : undefined;
             if (tool) {
+              // A failed call changed nothing, whatever its line says about it.
               const diff = c.is_error === true ? null : toToolDiff(tool.toolName, o.toolUseResult, tool.input);
               tool.result = buildResult(
                 c,

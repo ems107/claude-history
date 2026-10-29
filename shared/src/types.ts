@@ -1164,7 +1164,7 @@ export interface FileEdit {
   /** The call's own clock, as on its tool block. */
   timestamp: string | null;
   /**
-   * The call that made it: where `↗ the call` goes, and where its diff is. The
+   * The call that made it: where `↑ the call` goes, and where its diff is. The
    * diff Claude Code recorded for this change is that call's `result.diff`,
    * this file's part of it, and it is looked up there rather than copied here:
    * a second copy of every hunk was 1.6 MB of the largest session's payload.

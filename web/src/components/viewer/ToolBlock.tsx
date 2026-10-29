@@ -126,14 +126,18 @@ export function ToolBlock({
       className="my-1.5 rounded border border-[var(--border)] bg-[var(--bg-raised)]/60"
     >
       <div className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs">
-        {/* On a phone the clock, the name and the cost pills already fill the
-            row, so a call that changed files lets its badge wrap to a line of
-            its own rather than ride over the pills beside it. The summary is
-            `flex-1` with a zero basis, so it never forces a wrap by itself. */}
+        {/* Where the row is narrow the clock, the name and the cost pills
+            already fill it, so a call that changed files lets its badge wrap
+            to a line of its own rather than ride over the pills beside it.
+            The PANE's width, not the viewport's: on a desktop with a panel and
+            a column open the conversation is as narrow as a phone, and a
+            `max-md:` wrap left the badge over the pills there. The summary is
+            `flex-1` with a zero basis, so it never forces a wrap by itself and
+            a row with room stays one line. */}
         <FoldHeader
           open={open}
           onToggle={() => setOpen((v) => !v)}
-          className={`flex min-w-0 flex-1 items-center gap-2 text-left ${showBadge ? 'max-md:flex-wrap max-md:gap-y-0.5' : ''}`}
+          className={`flex min-w-0 flex-1 items-center gap-2 text-left ${showBadge ? 'flex-wrap gap-y-0.5' : ''}`}
         >
           {/* `data-chrome` on the caret and on everything after the header: the
               box's message text is exactly what `findInSession` folds — name,

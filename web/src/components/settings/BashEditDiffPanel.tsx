@@ -38,7 +38,8 @@ function decidedIn(d: NonNullable<BashEditDiffSettingResponse['decidedBy']>) {
       <span className="font-mono">
         {ENV}={d.value}
       </span>{' '}
-      in <span className="font-mono break-all">{d.where}</span>, which decides above every setting
+      in {d.where === 'the environment' ? d.where : <span className="font-mono break-all">{d.where}</span>}, which decides
+      above every setting
     </>
   ) : (
     <>

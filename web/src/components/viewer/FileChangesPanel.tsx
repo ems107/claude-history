@@ -97,9 +97,10 @@ function EditBlock({
  * Every file the session changed, with every change in the order it happened.
  *
  * Two kinds of change meet here. An Edit or Write is named by its call and
- * drawn from the patch Claude Code recorded for it, falling back to the
- * strings the call asked for where there is none (a failed call, a created
- * file, a transcript older than the patch). A Bash command's entries are the
+ * drawn from the patch Claude Code recorded for it — a created file from its
+ * content, all additions — falling back to the strings the call asked for
+ * where there is none (a failed call, a transcript older than the patch, a
+ * created file too long to draw). A Bash command's entries are the
  * files that changed in the folder while it ran — merged in under the same
  * path, marked as a command's, and saying why when no diff was kept.
  */

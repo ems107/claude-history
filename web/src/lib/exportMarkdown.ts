@@ -259,7 +259,9 @@ function contentLines(
           const diff = block.result.diff;
           if (diff && diff.files.length > 0) {
             // As the app draws it under the result: Claude Code's own hunks,
-            // one header per file, in a `diff` fence that renders anywhere.
+            // one header per file, in a `diff` fence that renders anywhere. A
+            // created file is the one thing left out: the app makes its lines
+            // from the Input above, and here that would print the file twice.
             const text = diff.files
               .map((f) => [
                 `--- ${f.path}`,
