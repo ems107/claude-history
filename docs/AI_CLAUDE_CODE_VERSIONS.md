@@ -67,6 +67,7 @@ Nothing open.
 39 bullets, 13 for other surfaces.
 
 - **[tolerate · runs]** Usage-limit messages now say "5-hour limit" instead of "session limit" — the auto-reload reads `resets_at` from the usage endpoint and matches no message text (`core/autoReload.ts`).
+- **[implement · reads]** *(corpus)* **A Workflow run's agents, one level down.** The first workflow run on this machine (`cd2180fb`, a fixture made for the purpose) wrote its agents to `subagents/workflows/<runId>/`, where every reader of agent transcripts was blind — their cost was in no total, their rows in no ⑂ panel ([Subagents](AI_AGENTS_QUESTIONS_PLANS.md#workflow-agents)). The layout was read out of the 2.1.312 bundle first (`WORKFLOW_TRANSCRIPT_SUBDIR`), and `/usage` counts these as its `workflow` behaviour ([2.1.299](#21299)). **Landed in `4c73e87`**: one list of agent folders for every reader; the call is joined through the run id and the status read from the run's journal.
 - **[tolerate · reads]** *(layout, version unknown)* `sessions/` now holds a `<pid>.<64 hex>.key` file of 115 bytes beside each `<pid>.json` — first noticed in this round, on the live sessions of 26–28 October; `core/live.ts` reads only `.json`.
 - *Not applicable:* transcripts naming the effort level in force rather than one just picked; "waiting on you" detection; a first reply lost after a terminal resume; an invalid command name silencing `claude -p`; Remote Control idle status.
 
