@@ -1,11 +1,13 @@
 // Default model pricing in $ per million tokens, taken from Anthropic's
-// official API price list (first-party rates). Cache read = 0.1x input; cache
-// writes come in two TTLs and Claude Code uses BOTH — 1h (2x input) in a
-// session transcript, 5m (1.25x input) in a subagent's, without exception in
-// this corpus, so a single write rate overcharged every subagent message by
-// 60% of its write cost. Claude Sonnet 5 has an introductory price
-// ($2/$10 through 2026-08-31) — the sticker rate is used here; edit in the
-// UI if you want the intro rate. All values are user-editable and stored in
+// official API price list (first-party rates, 29/10/2026). Cache read is 0.1x
+// input except where the list says otherwise — 0.05x for the 5.5 models, 0.025x
+// for the 5.1 ones. Cache writes come in two TTLs and Claude Code uses BOTH —
+// 1h (2x input) in a session transcript, 5m (1.25x input) in a subagent's,
+// without exception in this corpus, so a single write rate overcharged every
+// subagent message by 60% of its write cost. Claude Haiku 5.5 bills prompts
+// over 100,000 tokens at five times these rates; the table holds one rate per
+// model, so such a request is underpriced (none in this corpus, whose largest
+// Haiku 5.5 prompt is 33K). All values are user-editable and stored in
 // userdata.json.
 
 export interface ModelPrices {
@@ -57,13 +59,18 @@ export function cacheWrite5mRate(prices: ModelPrices): number {
 }
 
 export const DEFAULT_PRICES: PriceTable = {
+  'claude-fable-5-1': { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 20, cacheWrite5m: 12.5 },
+  'claude-mythos-5-1': { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 20, cacheWrite5m: 12.5 },
   'claude-fable-5': { input: 10, output: 50, cacheRead: 1, cacheWrite: 20, cacheWrite5m: 12.5 },
   'claude-mythos-5': { input: 10, output: 50, cacheRead: 1, cacheWrite: 20, cacheWrite5m: 12.5 },
+  'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 8, cacheWrite5m: 5 },
   'claude-opus-5': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 10, cacheWrite5m: 6.25 },
   'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 10, cacheWrite5m: 6.25 },
   'claude-opus-4-7': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 10, cacheWrite5m: 6.25 },
   'claude-opus-4-6': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 10, cacheWrite5m: 6.25 },
-  'claude-sonnet-5': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 6, cacheWrite5m: 3.75 },
+  'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 4, cacheWrite5m: 2.5 },
+  'claude-sonnet-5': { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 4, cacheWrite5m: 2.5 },
   'claude-sonnet-4-6': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 6, cacheWrite5m: 3.75 },
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.2, cacheWrite5m: 0.125 },
   'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 2, cacheWrite5m: 1.25 },
 };

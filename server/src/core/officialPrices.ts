@@ -39,6 +39,18 @@ function parseQualifierDate(text: string, kind: 'through' | 'starting'): Date | 
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * A rate for prompts over some size — "Claude Haiku 5.5 (for prompts over
+ * 100,000 tokens)" — listed as a row of its own after the model's base one
+ * ("… up to 100,000 tokens"). Both name the same id once the parenthetical is
+ * stripped, so the later row used to overwrite the base and price every
+ * message at the long-prompt rate, five times the real one. The table holds one
+ * rate per model, and the base one is what an ordinary request bills at.
+ */
+function isLongPromptRow(rawName: string): boolean {
+  return /\bover\s+[\d,.]+\s*[km]?\s+tokens\b/i.test(rawName);
+}
+
 /** Is this row's price valid right now? (e.g. Sonnet 5 intro vs standard rows) */
 function rowValidNow(rawName: string, now: Date): boolean {
   const through = parseQualifierDate(rawName, 'through');
@@ -90,7 +102,7 @@ export function parsePricingMarkdown(markdown: string, now = new Date()): PriceT
     if (/^[-\s:]+$/.test(cells[0])) continue; // separator row
     const rawName = cells[0];
     const id = modelIdFromName(rawName);
-    if (!id || !rowValidNow(rawName, now)) continue;
+    if (!id || !rowValidNow(rawName, now) || isLongPromptRow(rawName)) continue;
     const prices: ModelPrices = {
       input: parseMoney(cells[cInput]) ?? -1,
       output: parseMoney(cells[cOutput]) ?? -1,
