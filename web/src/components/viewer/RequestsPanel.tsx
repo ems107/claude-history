@@ -7,6 +7,7 @@ import { buildContextIndex, type ContextPoint, formatGap, requestChangeLabel, re
 import { formatDateTime, formatTimeOfDay } from '../../lib/format.ts';
 import { anchorOfKey } from '../../lib/highlight.ts';
 import { useSelectedMessage } from '../../lib/selectedMessage.ts';
+import { Fold } from '../Fold.tsx';
 
 type Mark = 'new-chain' | 'rewritten' | 'changed' | 'recached' | 'unanswered';
 
@@ -16,7 +17,7 @@ const MARKS: Record<Mark, { chip: string; hint: string }> = {
     hint: 'The CLI sent the whole conversation afresh: the first request, a resume, a compaction',
   },
   rewritten: { chip: '✎ rewritten', hint: 'It kept fewer of the earlier messages than the request before it sent' },
-  changed: { chip: 'Δ changed', hint: 'The system prompt, the tools or a parameter differs from the request before' },
+  changed: { chip: 'Δ changed', hint: 'The system prompt, the tools or a parameter differs from the last answered request before it' },
   recached: { chip: '↺ re-cached', hint: 'It had to write context the cache already held' },
   unanswered: { chip: 'no reply', hint: 'Nothing answered it: interrupted, refused, or still in flight' },
 };
@@ -108,11 +109,19 @@ export function RequestsPanel({
   }, [selectedKey, messageOfTool]);
 
   // The selected message's row comes into view as the panel opens and as the
-  // selection moves — the panel is how a phone reaches a request at all.
+  // selection moves — the panel is how a phone reaches a request at all. Once
+  // per selection: the rows are rebuilt on every refetch of a live session, and
+  // following them would pull the list back under the reader every few seconds.
+  // And never with nothing selected, where `replyUuid === null` would land on
+  // the newest request nothing answered.
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  const broughtIntoView = useRef<string | null>(null);
   useEffect(() => {
+    if (!selectedReply || broughtIntoView.current === selectedReply) return;
     const row = rows.find((r) => r.entry.replyUuid === selectedReply);
-    if (row) rowRefs.current.get(row.entry.id)?.scrollIntoView({ block: 'nearest' });
+    if (!row) return; // not loaded yet: the next render tries again
+    broughtIntoView.current = selectedReply;
+    rowRefs.current.get(row.entry.id)?.scrollIntoView({ block: 'nearest' });
   }, [selectedReply, rows]);
 
   if (list.isPending) return <div className="p-3 text-[12px] text-[var(--text-dim)]">Reading the requests…</div>;
@@ -125,6 +134,27 @@ export function RequestsPanel({
       <p className="px-3 pt-2.5 pb-2 text-[11.5px] text-[var(--text-dim)]">
         What this session sent to the API, newest first. Open one to see everything Claude received.
       </p>
+      {/* Said in words, not only in the chips' titles: a phone has no hover,
+          and this panel is how a phone reaches a request at all. */}
+      <div className="px-2 pb-1.5">
+        <Fold label="What the marks mean">
+          <ul className="space-y-0.5 px-1 pb-1 text-[11px] text-[var(--text-dim)]">
+            <li>
+              <span className="text-[var(--text)]">bar and ctx</span> — the context the request sent, against the
+              largest in the session
+            </li>
+            <li>
+              <span className="text-[var(--text)]">+N</span> — messages it sent for the first time
+            </li>
+            {(Object.keys(MARKS) as Mark[]).map((m) => (
+              <li key={m}>
+                <span className="text-[var(--text)]">{MARKS[m].chip}</span> — {MARKS[m].hint.charAt(0).toLowerCase()}
+                {MARKS[m].hint.slice(1)}
+              </li>
+            ))}
+          </ul>
+        </Fold>
+      </div>
       {counts.size > 0 && (
         <div className="flex flex-wrap gap-1.5 border-b border-[var(--border)] px-3 pb-2">
           <FilterChip on={filter === null} onClick={() => setFilter(null)} hint="Every request">

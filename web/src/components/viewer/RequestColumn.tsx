@@ -70,6 +70,24 @@ export function RequestColumn({
   }, [turns]);
 
   const d = query.data;
+
+  /**
+   * What "changed" is measured against: the last request before this one that
+   * got a reply — the facts live on replies — which is the Requests panel's
+   * rule too, so a row and its column cannot disagree. Usually #N-1; after an
+   * interrupted request, the one before it.
+   */
+  const list = useQuery({ queryKey: ['session', sessionId, 'requests'], queryFn: () => api.requests(sessionId) });
+  const prevAnswered = useMemo(() => {
+    const entries = list.data?.requests;
+    if (!entries || !d) return null;
+    for (let i = Math.min(d.index - 2, entries.length - 1); i >= 0; i--) {
+      const f = facts.get(entries[i].id);
+      if (f) return { facts: f, index: entries[i].index };
+    }
+    return null;
+  }, [list.data, d, facts]);
+
   return (
     <>
       <div className="flex shrink-0 flex-col gap-1 border-b border-[var(--border)] bg-[var(--bg-raised)] px-4 py-2 max-md:px-3">
@@ -108,7 +126,7 @@ export function RequestColumn({
             <SinceBefore
               d={d}
               cur={facts.get(d.id) ?? null}
-              prev={d.prevId ? (facts.get(d.prevId) ?? null) : null}
+              prev={prevAnswered}
               tables={tables}
             />
             <div
@@ -369,7 +387,7 @@ function SinceBefore({
 }: {
   d: RequestDetailResponse;
   cur: RequestFacts | null;
-  prev: RequestFacts | null;
+  prev: { facts: RequestFacts; index: number } | null;
   tables: RequestTables;
 }) {
   let text: ReactNode;
@@ -383,10 +401,12 @@ function SinceBefore({
   } else {
     const changes =
       cur && prev
-        ? requestChanges(prev, cur, tables)
+        ? requestChanges(prev.facts, cur, tables)
             .filter((c) => c.kind !== 'new-chain' && c.kind !== 'history-rewritten')
             .map(requestChangeText)
         : null;
+    // Said when it is not the request just before: that one got no reply.
+    const against = prev && prev.index !== d.index - 1 ? ` since #${prev.index}, the last request answered before it` : '';
     text = (
       <>
         Since #{d.index - 1}:{' '}
@@ -397,8 +417,8 @@ function SinceBefore({
         {changes === null
           ? null
           : changes.length > 0
-            ? ` Changed: ${changes.join('; ')}.`
-            : ' Tools, system prompt and parameters unchanged.'}
+            ? ` Changed${against}: ${changes.join('; ')}.`
+            : ` Tools, system prompt and parameters unchanged${against}.`}
       </>
     );
   }

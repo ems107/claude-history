@@ -51,6 +51,8 @@ interface RawRequest {
   querySource: string | null;
   version: string | null;
   timestamp: string | null;
+  /** Where its line is: a message it sent was written before it. */
+  offset: number;
 }
 
 /** A run of transcript lines, as a range of `FileIndex.msgLines`. */
@@ -76,7 +78,12 @@ interface FileIndex {
   byId: Map<string, number>;
   shapes: Map<string, Loc>;
   blobs: Map<string, Loc>;
-  runs: Map<string, RunRef>;
+  /**
+   * Every run a hash names, in file order. One message can be there twice — a
+   * prompt typed again, `/compact`'s caveat — and both share a hash, so a
+   * request picks its own copies by position (`locate`).
+   */
+  runs: Map<string, RunRef[]>;
   /** Every `user`/`assistant` line that joined a run, in file order. */
   msgLines: Array<Loc & { uuid: string | null }>;
   /** By `requestRef`: the first line of the reply. */
@@ -113,7 +120,7 @@ function continuesRun(run: OpenRun, role: string, messageId: string | undefined)
   return run.role === role && (role === 'user' || (messageId !== undefined && run.messageId === messageId));
 }
 
-function readRequest(o: RawLine): RawRequest | null {
+function readRequest(o: RawLine, offset: number): RawRequest | null {
   const id = str(o.id);
   if (!id) return null;
   const cacheControl: RequestCacheMark[] = Array.isArray(o.cacheControl)
@@ -137,6 +144,7 @@ function readRequest(o: RawLine): RawRequest | null {
     querySource: str(o.querySource),
     version: str(o.version),
     timestamp: str(o.timestamp),
+    offset,
   };
 }
 
@@ -152,7 +160,7 @@ function note(index: FileIndex, line: string, loc: Loc): void {
   if (!o) return;
   const type = str(o.type);
   if (type === 'api-request') {
-    const r = readRequest(o);
+    const r = readRequest(o, loc.offset);
     if (r && !index.byId.has(r.id)) {
       index.byId.set(r.id, index.requests.length);
       index.requests.push(r);
@@ -202,7 +210,10 @@ function note(index: FileIndex, line: string, loc: Loc): void {
   // Every prefix of a run is a message the CLI may have sent: a reply is
   // hashed again with each block it streams.
   const hash = run.hash.copy().update(`],"role":${JSON.stringify(m.role)}}`).digest('hex');
-  index.runs.set(hash, { start: run.start, end: index.msgLines.length });
+  const ref = { start: run.start, end: index.msgLines.length };
+  const known = index.runs.get(hash);
+  if (known) known.push(ref);
+  else index.runs.set(hash, [ref]);
 }
 
 /**
@@ -256,7 +267,16 @@ async function indexFor(filePath: string): Promise<FileIndex> {
         run: null,
       };
     }
-    if (st.size > index.pos) await readFrom(index, index.pos);
+    if (st.size > index.pos) {
+      try {
+        await readFrom(index, index.pos);
+      } catch (err) {
+        // Half-folded: the lines read so far are in the index and `pos` is not
+        // past them, so the next read would fold them twice. Start over then.
+        cache.delete(filePath);
+        throw err;
+      }
+    }
     cache.delete(filePath);
     cache.set(filePath, index);
     while (cache.size > CACHED_FILES) cache.delete(cache.keys().next().value!);
@@ -306,15 +326,39 @@ interface ResolvedMessage {
   content: unknown[];
 }
 
-/** One message's content: its blob, or the transcript lines its hash names. */
-async function resolveMessages(index: FileIndex, hashes: readonly string[]): Promise<Array<ResolvedMessage | null>> {
-  const plan = hashes.map((h) => {
+type Plan = { kind: 'blob' | 'run'; locs: Array<Loc & { uuid?: string | null }> } | null;
+
+/**
+ * Where each of a request's messages is: its blob, or the transcript lines its
+ * hash names. A hash the transcript holds more than once is handed out by
+ * position — the request's n copies of it are the last n written before it,
+ * in order — so a jump to "this message" lands on the copy that was sent.
+ */
+function locate(index: FileIndex, r: RawRequest, hashes: readonly string[]): Plan[] {
+  const wanted = new Map<string, number>();
+  for (const h of hashes) if (!index.blobs.has(h) && index.runs.has(h)) wanted.set(h, (wanted.get(h) ?? 0) + 1);
+  const copies = new Map<string, RunRef[]>();
+  for (const [h, n] of wanted) {
+    const all = index.runs.get(h)!;
+    const before = all.filter((ref) => index.msgLines[ref.start].offset < r.offset);
+    const pool = before.length > 0 ? before : all;
+    copies.set(h, pool.slice(Math.max(0, pool.length - n)));
+  }
+  const handed = new Map<string, number>();
+  return hashes.map((h) => {
     const blob = index.blobs.get(h);
-    if (blob) return { kind: 'blob' as const, locs: [blob] };
-    const run = index.runs.get(h);
-    if (run) return { kind: 'run' as const, locs: index.msgLines.slice(run.start, run.end) };
-    return null;
+    if (blob) return { kind: 'blob', locs: [blob] };
+    const pool = copies.get(h);
+    if (!pool) return null;
+    const k = handed.get(h) ?? 0;
+    handed.set(h, k + 1);
+    const ref = pool[Math.min(k, pool.length - 1)];
+    return { kind: 'run', locs: index.msgLines.slice(ref.start, ref.end) };
   });
+}
+
+/** Each planned message's content, read from where `locate` found it. */
+async function resolveMessages(index: FileIndex, plan: readonly Plan[]): Promise<Array<ResolvedMessage | null>> {
   const lines = await readLines(
     index.filePath,
     plan.flatMap((p) => p?.locs ?? []),
@@ -336,7 +380,7 @@ async function resolveMessages(index: FileIndex, hashes: readonly string[]): Pro
       role = str(m.role) ?? role;
       content.push(...contentBlocks(m.content));
     }
-    return { role, source: 'conversation', uuid: (p.locs[0] as Loc & { uuid: string | null }).uuid, content };
+    return { role, source: 'conversation', uuid: p.locs[0].uuid ?? null, content };
   });
 }
 
@@ -391,7 +435,7 @@ export async function requestDetail(filePath: string, requestId: string): Promis
   if (at === undefined) return null;
   const r = index.requests[at];
   const hashes = messageHashes(index, r);
-  const resolved = await resolveMessages(index, hashes);
+  const resolved = await resolveMessages(index, locate(index, r, hashes));
   // New is a POSITION, not a hash: the list is the kept messages and then the
   // tail, and two identical messages (an empty result, read twice) share one.
   const firstNew = hashes.length - r.tail.length;
@@ -484,9 +528,11 @@ export async function requestMessage(
   const index = await indexFor(filePath);
   const at = index.byId.get(requestId);
   if (at === undefined) return null;
-  const hashes = messageHashes(index, index.requests[at]);
+  const r = index.requests[at];
+  const hashes = messageHashes(index, r);
   if (!Number.isInteger(messageIndex) || messageIndex < 0 || messageIndex >= hashes.length) return null;
-  const [m] = await resolveMessages(index, [hashes[messageIndex]]);
+  // Located among all of them, so a repeated message is the same copy the outline named.
+  const [m] = await resolveMessages(index, [locate(index, r, hashes)[messageIndex]]);
   return m ? { role: m.role, source: m.source, uuid: m.uuid, content: m.content } : null;
 }
 
@@ -516,7 +562,8 @@ export async function requestBody(filePath: string, requestId: string): Promise<
   const at = index.byId.get(requestId);
   if (at === undefined) return null;
   const r = index.requests[at];
-  const resolved = await resolveMessages(index, messageHashes(index, r));
+  const hashes = messageHashes(index, r);
+  const resolved = await resolveMessages(index, locate(index, r, hashes));
   if (resolved.some((m) => !m)) return null;
   const shapeLoc = r.shapeHash ? index.shapes.get(r.shapeHash) : undefined;
   const [line] = shapeLoc ? await readLines(filePath, [shapeLoc]) : [null];

@@ -1227,12 +1227,13 @@ Every request a session written since CLI 2.1.303 sent to the API, rebuilt from 
 - Only the server holds the requests nothing answered, 2.8 % of them. Numbering only the answered ones would number them differently from the column.
 - The sizes and the re-caches are the context index's, joined on the reply's uuid. What changed comes from `requestChanges` against the answered request before.
 - It is fetched under `['session', id, 'requests']`, so the session's own invalidation keeps it live.
-- A chip exists only where a mark has rows.
-- The selected message's row is outlined and brought into view.
+- A chip exists only where a mark has rows, and what each mark means is a fold under the intro: a phone has no hover, and this panel is how a phone reaches a request.
+- The selected message's row is outlined and brought into view **once per selection**. Following every refetch of a live session pulled the list back under the reader every few seconds, and with nothing selected the match on `replyUuid === null` landed on the newest unanswered request.
 
 **The request is the fourth thing the side column holds** (`?request=`, read after the two file parameters and before `agent`). Every opener clears the other three, as before.
 
 - **The order on screen is the API's order**: tools, then the system prompt, then the messages. It is the order the cache reads the prompt in, so a breakpoint is drawn where it really cuts.
+- **"Changed" is measured against the panel's request**: the last one before it that got a reply, because the facts live on replies. Usually #N-1; when it is not, the *Since* line names it, so a row and its column never disagree.
 - **The billed total is real; its split is an estimate** (≈), shared out by characters, because the API gives one number per request. Its `Fold` says so, the way the cost panel does.
 - **One scroller under the header, the tabs pinned to its top.** Held fixed, the summary took 300 px of the column, and more than half of a phone.
 - **`only in the request`** marks a message sent in that form only here. **`new`** is a position, as in the transcript.
