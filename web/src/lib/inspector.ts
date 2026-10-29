@@ -40,6 +40,7 @@ export type PanelKey =
   | 'scratchpad'
   | 'agents'
   | 'mcp'
+  | 'requests'
   | 'lineage';
 
 export interface PanelItem {
@@ -98,6 +99,7 @@ export function useInspector({
   scratchpadCount,
   agentCount,
   mcp,
+  hasRequests,
   hasLineage,
   agents,
 }: {
@@ -159,6 +161,12 @@ export function useInspector({
    * an absent panel says "nothing is known" where a `0` would have lied.
    */
   mcp: McpPicture | null;
+  /**
+   * Whether the transcript records its API requests — every session written
+   * by CLI 2.1.303 or later, and none before. No count: the rail would have to
+   * ask the server for the list just to draw a number, on every session opened.
+   */
+  hasRequests: boolean;
   hasLineage: boolean;
   /**
    * The subagent list is the one panel whose open/closed lives in the URL, and
@@ -394,6 +402,18 @@ export function useInspector({
                 : 'The MCP servers this session had, what they offered, and what became of them',
           }
         : null,
+      // After MCP because both are about what Claude was GIVEN — the servers
+      // plugged in, and then everything each request put in front of it.
+      hasRequests
+        ? {
+            key: 'requests',
+            short: 'Requests',
+            title: 'Requests',
+            count: null,
+            alert: 0,
+            hint: 'Every request this session sent to the API — the system prompt, the tools, the parameters and the conversation exactly as Claude received them, injected context included',
+          }
+        : null,
       hasLineage
         ? {
             key: 'lineage',
@@ -423,6 +443,7 @@ export function useInspector({
     scratchpadCount,
     agentCount,
     mcp,
+    hasRequests,
     hasLineage,
   ]);
 

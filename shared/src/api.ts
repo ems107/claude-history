@@ -2526,6 +2526,30 @@ export interface RequestDetailResponse {
   unresolved: number;
 }
 
+/**
+ * One request in a transcript's list, numbered as the column numbers it. Every
+ * request is here, answered or not: 152 of 5,366 in main transcripts had no
+ * reply — interrupted, refused, or still in flight.
+ */
+export interface RequestListEntry {
+  id: string;
+  index: number;
+  at: string | null;
+  querySource: string | null;
+  model: string | null;
+  kept: number;
+  added: number;
+  newChain: boolean;
+  /** It kept fewer of its base's messages than the base sent: something earlier changed. */
+  rewritten: boolean;
+  /** The first line of the reply, which is also the context point's uuid; null when nothing answered. */
+  replyUuid: string | null;
+}
+
+export interface RequestListResponse {
+  requests: RequestListEntry[];
+}
+
 /** One message in full. */
 export interface RequestMessageResponse {
   role: string;

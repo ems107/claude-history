@@ -48,6 +48,9 @@ import type { McpLogsResponse,
   SessionsResponse,
   StarsResponse,
   StarUpdateResponse,
+  RequestDetailResponse,
+  RequestListResponse,
+  RequestMessageResponse,
   SubagentDetailResponse,
   TerminalStartRequest,
   TerminalStatus,
@@ -784,6 +787,14 @@ export const api = {
   mcpLogs: (id: string) => getJson<McpLogsResponse>(`/api/sessions/${id}/mcp-logs`),
   subagent: (id: string, agentId: string) =>
     getJson<SubagentDetailResponse>(`/api/sessions/${id}/subagents/${agentId}`),
+  requests: (id: string) => getJson<RequestListResponse>(`/api/sessions/${id}/requests`),
+  request: (id: string, requestId: string) =>
+    getJson<RequestDetailResponse>(`/api/sessions/${id}/requests/${requestId}`),
+  requestMessage: (id: string, requestId: string, index: number) =>
+    getJson<RequestMessageResponse>(`/api/sessions/${id}/requests/${requestId}/messages/${index}`),
+  /** The whole request as JSON: fetched to copy it, followed as a link to download it. */
+  requestRawUrl: (id: string, requestId: string, download = false) =>
+    `/api/sessions/${id}/requests/${requestId}/raw${download ? '?download=1' : ''}`,
   toolResult: (path: string) => getJson<ToolResultFileResponse>(`/api/tool-results?path=${encodeURIComponent(path)}`),
   /**
    * One local file for the viewer panel. Deliberately not `getJson`: this is the

@@ -1,5 +1,6 @@
 import { type ContextPoint, type ContextTurn, formatContextDelta, formatContextTokens } from '../../lib/context.ts';
 import { CardFoot, CardHead, CardLine, HoverCard } from './HoverCard.tsx';
+import { useRequestOpener } from './RequestContext.ts';
 
 const tok = (n: number) => `${n.toLocaleString()} tok`;
 
@@ -66,11 +67,22 @@ export function ContextPill({
   }
 
   if (!point) return null;
+  return <PointPill point={point} variant={variant} />;
+}
+
+/** Read once: whether this pointer can hover, which is what makes "click the pill" something it can do. */
+const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+
+function PointPill({ point, variant }: { point: ContextPoint; variant: 'inline' | 'badge' }) {
+  const openRequest = useRequestOpener();
+  const requestId = point.request?.id ?? null;
+  const onActivate = openRequest && requestId ? () => openRequest(requestId) : undefined;
   const note = point.shrink ? shrinkNote(point.shrink) : null;
 
   return (
     <HoverCard
       variant={variant}
+      onActivate={onActivate}
       pill={
         <>
           <span className="mr-1 opacity-70">ctx</span>
@@ -107,6 +119,9 @@ export function ContextPill({
         </span>
       )}
       {note && <span className="mt-1 block text-[10px] text-amber-400/90">{note}</span>}
+      {onActivate && canHover && (
+        <span className="mt-1.5 block text-[10.5px] text-sky-300">Click to open the request it sent.</span>
+      )}
       <CardFoot>
         Measured, not estimated — the same figure /context reports (it rounds to 0.1k). The split by category exists
         only where /context was actually run.

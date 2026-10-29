@@ -29,7 +29,7 @@ export function SideColumn({
   children,
 }: {
   /** The measurement hook, like `data-inspector` and `data-inspector-rail`. */
-  kind: 'file' | 'agent' | 'revision';
+  kind: 'file' | 'agent' | 'revision' | 'request';
   /** Draw it over the conversation rather than beside it. */
   mobile: boolean;
   /** What is DRAWN, which the layout may have squeezed below what was remembered. */

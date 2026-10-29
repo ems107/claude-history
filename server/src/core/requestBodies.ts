@@ -6,6 +6,7 @@ import {
   type RequestBlockSummary,
   type RequestCacheMark,
   type RequestDetailResponse,
+  type RequestListEntry,
   type RequestMessageResponse,
   type RequestMessageSummary,
   type RequestSystemBlock,
@@ -441,6 +442,29 @@ export async function requestDetail(filePath: string, requestId: string): Promis
     reply: reply ? { uuid: reply.uuid, usage: toMessageUsage(reply.usage) } : null,
     unresolved: resolved.filter((m) => !m).length,
   };
+}
+
+/** Every request the transcript holds, in order. */
+export async function requestList(filePath: string): Promise<RequestListEntry[]> {
+  const index = await indexFor(filePath);
+  /** Messages each request sent, to tell a rewritten history from a grown one. */
+  const sent = new Map<string, number>();
+  return index.requests.map((r, i) => {
+    const baseSent = r.base ? sent.get(r.base) : undefined;
+    sent.set(r.id, r.keep + r.tail.length);
+    return {
+      id: r.id,
+      index: i + 1,
+      at: r.timestamp,
+      querySource: r.querySource,
+      model: str(r.params.model),
+      kept: r.keep,
+      added: r.tail.length,
+      newChain: r.base === null,
+      rewritten: baseSent !== undefined && r.keep < baseSent,
+      replyUuid: index.replies.get(r.id)?.uuid ?? null,
+    };
+  });
 }
 
 /** One message of a request, in full. */

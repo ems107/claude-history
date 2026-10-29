@@ -1,7 +1,7 @@
-import type { RequestDetailResponse, RequestMessageResponse } from '@claude-history/shared';
+import type { RequestDetailResponse, RequestListResponse, RequestMessageResponse } from '@claude-history/shared';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
-import { requestBody, requestDetail, requestMessage } from '../core/requestBodies.ts';
+import { requestBody, requestDetail, requestList, requestMessage } from '../core/requestBodies.ts';
 import { UUID_RE } from '../core/scanner.ts';
 
 /**
@@ -14,6 +14,17 @@ export function registerRequestRoutes(app: FastifyInstance, ctx: AppContext): vo
     const scanned = ctx.index.getScanned(id);
     return ctx.index.get(id) && scanned ? scanned.filePath : null;
   };
+
+  app.get<{ Params: { id: string } }>(
+    '/api/sessions/:id/requests',
+    async (request, reply): Promise<RequestListResponse | void> => {
+      const { id } = request.params;
+      if (!UUID_RE.test(id)) return reply.code(400).send({ error: 'Invalid id' });
+      const file = fileOf(id);
+      if (!file) return reply.code(404).send({ error: 'Session not found' });
+      return { requests: await requestList(file) };
+    },
+  );
 
   app.get<{ Params: { id: string; requestId: string } }>(
     '/api/sessions/:id/requests/:requestId',
