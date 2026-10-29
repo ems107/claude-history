@@ -8,7 +8,6 @@ import type {
   PrLink,
   SearchBlock,
   SessionEnrichment,
-  UsageTotals,
 } from '@claude-history/shared';
 import { recacheOf } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
@@ -26,19 +25,8 @@ export interface EnrichData {
   searchBlocks: SearchBlock[];
 }
 
-function zeroUsage(): UsageTotals {
-  return { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
-}
-
-function addUsage(totals: UsageTotals, usage: Record<string, unknown>): void {
-  totals.input += num(usage.input_tokens) ?? 0;
-  totals.output += num(usage.output_tokens) ?? 0;
-  totals.cacheRead += num(usage.cache_read_input_tokens) ?? 0;
-  totals.cacheCreate += num(usage.cache_creation_input_tokens) ?? 0;
-}
-
 function zeroMessageUsage(): MessageUsage {
-  return { ...zeroUsage(), cacheCreate1h: 0, cacheCreate5m: 0 };
+  return { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, cacheCreate1h: 0, cacheCreate5m: 0 };
 }
 
 function addMessageUsage(totals: MessageUsage, u: MessageUsage): void {
@@ -166,9 +154,9 @@ export async function enrichSession(
   /** `<projectDir>/<sessionUuid>`, when the session has one: where its agents' transcripts live. */
   sessionDir: string | null = null,
 ): Promise<EnrichData> {
-  const usage = zeroUsage();
-  const carriedOverUsage = zeroUsage();
-  const usageByModel: Record<string, UsageTotals> = {};
+  const usage = zeroMessageUsage();
+  const carriedOverUsage = zeroMessageUsage();
+  const usageByModel: Record<string, MessageUsage> = {};
   const models = new Set<string>();
   const prLinks: PrLink[] = [];
   const runIds = new Set<string>();
@@ -195,7 +183,14 @@ export async function enrichSession(
   let compactedSinceLastRequest = false;
 
   const dayBucket = (day: string): DailyUsage =>
-    (daily[day] ??= { prompts: 0, byModel: {}, recachedByModel: {}, recacheEvents: 0, subagentByModel: {} });
+    (daily[day] ??= {
+      prompts: 0,
+      byModel: {},
+      recachedByModel: {},
+      recached5mByModel: {},
+      recacheEvents: 0,
+      subagentByModel: {},
+    });
 
   for await (const line of streamLines(filePath)) {
     const o = safeParse(line);
@@ -296,22 +291,22 @@ export async function enrichSession(
         seenMessageIds.add(messageId);
         assistantMessageCount++;
         if (model && model !== '<synthetic>' && isRec(o.message.usage)) {
+          // The parser's own reading of the line, TTL split included, so the
+          // totals stay exactly what the per-message pills add up to.
+          const billed = toMessageUsage(o.message.usage);
           if (carried) {
-            addUsage(carriedOverUsage, o.message.usage);
+            addMessageUsage(carriedOverUsage, billed);
           } else {
-            addUsage(usage, o.message.usage);
-            addUsage((usageByModel[model] ??= zeroUsage()), o.message.usage);
+            addMessageUsage(usage, billed);
+            addMessageUsage((usageByModel[model] ??= zeroMessageUsage()), billed);
             const day = dayOf(o);
             if (day) {
               const bucket = dayBucket(day);
-              addUsage((bucket.byModel[model] ??= zeroUsage()), o.message.usage);
+              addMessageUsage((bucket.byModel[model] ??= zeroMessageUsage()), billed);
             }
           }
 
-          const current: CacheState = {
-            read: num(o.message.usage.cache_read_input_tokens) ?? 0,
-            write: num(o.message.usage.cache_creation_input_tokens) ?? 0,
-          };
+          const current: CacheState = { read: billed.cacheRead, write: billed.cacheCreate };
           // A fork's copies were billed in the parent, so what they re-wrote is
           // the parent's story — but they still describe the cache the next
           // request met, which is why they stay eligible as a predecessor.
@@ -334,6 +329,13 @@ export async function enrichSession(
             if (day) {
               const bucket = dayBucket(day);
               bucket.recachedByModel[model] = (bucket.recachedByModel[model] ?? 0) + event.tokens;
+              // Apportioned the way `recacheCost` blends the rate in the viewer.
+              // No message here has ever mixed the two TTLs, so in practice this
+              // is all of it or none.
+              if (billed.cacheCreate5m > 0 && billed.cacheCreate > 0) {
+                bucket.recached5mByModel[model] =
+                  (bucket.recached5mByModel[model] ?? 0) + (event.tokens * billed.cacheCreate5m) / billed.cacheCreate;
+              }
               bucket.recacheEvents++;
             }
           }

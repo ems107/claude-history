@@ -6,7 +6,6 @@ import type {
   RecacheCause,
   SessionSummary,
   Turn,
-  UsageTotals,
 } from '@claude-history/shared';
 import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
 
@@ -38,15 +37,15 @@ export function sessionCostParts(session: SessionSummary, prices: PriceTable): S
   const unpriced = { own: [] as string[], subagents: [] as string[] };
   const e = session.enrichment;
   if (!e) return { own: null, subagents: null, total: null, unpriced };
+  // Both halves keep the TTL split and are priced with it: an agent's writes are
+  // mostly 5-minute ones, and some sessions' are too, so a flat 1-hour rate
+  // overcharges them by 60% of the write — and stops adding up to the pills.
   let own: number | null = null;
   for (const [model, usage] of Object.entries(e.usageByModel)) {
-    const cost = computeCost(usage, resolvePrices(model, prices));
+    const cost = computeMessageCost(usage, resolvePrices(model, prices));
     if (cost === null) unpriced.own.push(model);
     own = add(own, cost);
   }
-  // Priced with `computeMessageCost`, not `computeCost`: these aggregates keep
-  // the TTL split because an agent's writes are mostly 5-minute ones, and the
-  // 1-hour rate would overcharge them by 60% of the write.
   let subagents: number | null = null;
   for (const [model, usage] of Object.entries(e.subagentUsageByModel ?? {})) {
     const cost = computeMessageCost(usage, resolvePrices(model, prices));
@@ -85,31 +84,13 @@ export function sessionCost(session: SessionSummary, prices: PriceTable): number
 }
 
 /**
- * API-equivalent cost in $ for one usage block (prices are $ per MTok).
- *
- * Cache writes bill at the 1-hour rate here because that is what a session
- * transcript records — every one of them, verified. The aggregates this runs on
- * (`usageByModel`, `daily`) do not keep the TTL split, so a session that ever
- * wrote a 5-minute cache would need the split carried into the enrichment;
- * `computeMessageCost` is the one that knows it.
- */
-export function computeCost(usage: UsageTotals, prices: ModelPrices | undefined): number | null {
-  if (!prices) return null;
-  return (
-    (usage.input * prices.input +
-      usage.output * prices.output +
-      usage.cacheRead * prices.cacheRead +
-      usage.cacheCreate * prices.cacheWrite) /
-    1_000_000
-  );
-}
-
-/**
- * Cost of ONE message, pricing each cache write at its own TTL: subagents write
- * 5-minute caches (1.25x input) and sessions 1-hour ones (2x input), so charging
- * everything at the 1h rate overstated every subagent message. Tokens the
+ * API-equivalent cost in $ of a usage block — one message or any sum of them
+ * (prices are $ per MTok) — pricing each cache write at its own TTL: subagents
+ * write 5-minute caches (1.25x input) and sessions mostly 1-hour ones (2x
+ * input), so charging everything at the 1h rate overstated every subagent
+ * message, and every session that wrote 5-minute ones too. Tokens the
  * transcript did not attribute to a TTL fall back to the 1h rate — the
- * conservative direction, and the shape of every line seen so far.
+ * conservative direction.
  */
 export function computeMessageCost(usage: MessageUsage, prices: ModelPrices | undefined): number | null {
   if (!prices) return null;

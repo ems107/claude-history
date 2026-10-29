@@ -45,11 +45,14 @@ Beyond the four token counts, `usage` carries `cache_creation.{ephemeral_1h,ephe
 
 ### The cache-write TTL, and why it is read per line
 
-**The two TTLs bill differently**: 1h costs 2× input, 5m costs 1.25×. Session files write 1-hour caches (3446/3446 messages) and subagent files overwhelmingly 5-minute ones, so pricing everything at the 1h rate overcharged every subagent message by 60% of its write cost ($2.71 of $7.22 when measured). `computeMessageCost` prices each TTL separately (`cacheWrite` / `cacheWrite5m`, the latter optional and derived as 1.25× input when a saved table lacks it); tokens with no TTL recorded fall back to the 1h rate.
+**The two TTLs bill differently**: 1h costs 2× input, 5m costs 1.25×. Session files mostly write 1-hour caches and subagent files overwhelmingly 5-minute ones, so pricing everything at the 1h rate overcharged every subagent message by 60% of its write cost ($2.71 of $7.22 when measured). `computeMessageCost` prices each TTL separately (`cacheWrite` / `cacheWrite5m`, the latter optional and derived as 1.25× input when a saved table lacks it); tokens with no TTL recorded fall back to the 1h rate. It is the one pricing function: a sum of messages is priced the same way as one.
 
-**"5m only, no exceptions" no longer holds, so never infer the rate from the kind of file.** The seven `fork` subagents of `15a86025` each write exactly **3,257 tokens at the 1-hour TTL** beside their 5-minute ones, while the four `general-purpose` ones in the same session write none — a constant, so it is the inherited prefix rather than something proportional to the work. 22,799 tokens of 4.6M corpus-wide: small money, large trap.
+**Neither rule holds without exceptions, so never infer the rate from the kind of file.**
 
-`SessionEnrichment.usage` / `usageByModel` / `daily[].byModel` keep NO split and are priced at 1h, which is right while session files stay 1h-only. The subagent aggregates beside them (`subagentUsage`, `subagentUsageByModel`, `daily[].subagentByModel`) are `MessageUsage` and DO keep it.
+- The seven `fork` subagents of `15a86025` each write exactly **3,257 tokens at the 1-hour TTL** beside their 5-minute ones, while the four `general-purpose` ones in the same session write none — a constant, so it is the inherited prefix rather than something proportional to the work. 22,799 tokens of 4.6M corpus-wide: small money, large trap.
+- **Session files wrote 5-minute caches for a week.** 2,135 messages of 27 sessions, written by CLI 2.1.303–2.1.309 between 19 and 24 October during working hours, report their writes as `ephemeral_5m` — 10.5M tokens, against 163M at 1h corpus-wide, and never both TTLs in one message. Every request still ASKS for 1h (`cacheControl` on the `api-request` line), and those caches still lasted an hour: of the requests that followed a 5-minute write, all 70 that came 5–60 minutes later read it back and all 18 that came an hour or more later did not. So the line is what is billed and the hour is what is cached: the price follows the line, and the re-cache rule keeps its hour ([below](#re-cached-context--the-most-expensive-thing-in-the-corpus)).
+
+So every aggregate keeps the split: `SessionEnrichment.usage` / `usageByModel` / `daily[].byModel` / `carriedOverUsage` are `MessageUsage`, like the subagent ones beside them (`subagentUsage`, `subagentUsageByModel`, `daily[].subagentByModel`), and a re-cache bills at the TTL of the write that carried it (`recacheCost` in the viewer, `daily[].recached5mByModel` for the Stats page). Until they did, the session totals priced every write at 1h and stopped adding up to the pills on exactly those 27 sessions — $89.42 of pills shown as $101.56 on `a7d5b145`, $41 over all of them.
 
 ## Where the cost lives
 
@@ -106,8 +109,8 @@ different things anyway — a model, a subset of one of its own cells, a separat
 conversation, and a total that leaves one of them out.
 
 **The arithmetic did not change.** `buildContextIndex`, `summariseRecache`,
-`computeCost`, `computeMessageCost` and `resolvePrices` are the same calls in the
-same order, so what check 20 verifies is exactly what it was. What had to be
+`computeMessageCost` and `resolvePrices` are the same calls in the same order,
+so what check 20 verifies is exactly what it was. What had to be
 re-drawn is what the table said with indentation, dots and border weights,
 because that was load-bearing and none of it survives a re-flow:
 

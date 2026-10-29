@@ -105,6 +105,7 @@ Checks 8, 19, 23, 37, 38 and 40 spawn real `claude` processes against the user's
 
 **10. Per-response cost — the pills must reconcile**, checkable without the UI: sum `usage` over every assistant item of `GET /api/sessions/:id` at the `/api/prices` rates; it must equal the token panel's total to the last decimal (delta 0 on 89- and 831-message sessions).
 
+- **Over the whole corpus, priced with the TTL split.** For every session, `computeMessageCost` over each model of `enrichment.usageByModel` must equal the sum of `computeMessageCost` over its non-carried assistant items — zero mismatches over 654 sessions. The 27 sessions that wrote 5-minute caches (CLI 2.1.303–2.1.309; `a7d5b145` is the largest gap, $89.42) are the ones a 1h-only total breaks, so a mismatch confined to them means a total lost the split.
 - On a fork it reconciles in **two halves**: `carriedOver: false` items → `enrichment.usage`, `carriedOver: true` items → `enrichment.carriedOverUsage`, exactly. (Verified on `c0f70eda`, and with an empty second half on `0f5b1c8b`; both since swept.)
 - A turn with a long tool run: the collapsed run carries its own pill, expanding moves one pill onto the first call of each message, and no message may be counted at two levels.
 - `claude-haiku-4-5-20251001` must price at the `claude-haiku-4-5` rates — not "—", never $0.000. A model with no row must read "—" and appear in the price editor in amber.

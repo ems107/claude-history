@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router';
 import { api } from '../../api/client.ts';
 import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
-import { computeCost, formatUsd, sessionCostParts, summariseRecache, unpricedOf } from '../../lib/cost.ts';
+import { computeMessageCost, formatUsd, sessionCostParts, summariseRecache, unpricedOf } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
 import { Fold } from '../Fold.tsx';
@@ -112,7 +112,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
   // Priced at the session's own model: the enrichment does not split the carried
   // tokens per model, and a fork copies the parent's last exchanges, answered by
   // the model that was running then — the same one.
-  const carriedCost = carriedTokens > 0 ? computeCost(carried, resolvePrices(summary.model, priceTable)) : null;
+  const carriedCost = carriedTokens > 0 ? computeMessageCost(carried, resolvePrices(summary.model, priceTable)) : null;
   const carriedMessages = turns.reduce(
     (n, t) => n + t.items.filter((i) => i.role === 'assistant' && i.carriedOver && i.usage).length,
     0,
@@ -203,7 +203,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
         <Card
           key={model}
           label={shortModel(model) ?? model}
-          cost={formatUsd(computeCost(usage, resolvePrices(model, priceTable)))}
+          cost={formatUsd(computeMessageCost(usage, resolvePrices(model, priceTable)))}
           usage={usage}
         >
           {models.length === 1 && i === 0 ? recacheNote : null}

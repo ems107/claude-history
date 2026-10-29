@@ -24,9 +24,10 @@ import { createLogger } from './logger.ts';
  * 18: the commentary Claude Code printed while it worked (`narration`) joined it
  * — it is drawn now, so it is searched.
  * 19: a line holding U+2028 or U+2029 stopped being dropped — `readline` split
- * it in two, and neither half parsed.
+ * it in two, and neither half parsed. 20: the session's own totals kept the TTL
+ * split of every cache write, the way its agents' already did.
  */
-export const CACHE_VERSION = 19;
+export const CACHE_VERSION = 20;
 
 const cacheLog = createLogger('cache');
 

@@ -28,8 +28,10 @@ export interface UsageTotals {
  */
 export interface MessageUsage extends UsageTotals {
   /**
-   * `cache_creation` split by TTL. Claude Code writes 1-hour caches — 100% of
-   * this corpus — which is why the default cache-write price is the 1h rate.
+   * `cache_creation` split by TTL, which bill differently (2x input against
+   * 1.25x). A session transcript normally writes 1-hour caches, but not always:
+   * 2,135 messages of 27 sessions written by CLI 2.1.303–2.1.309 report theirs
+   * as 5-minute ones — so the TTL is read off each line, everywhere.
    */
   cacheCreate1h: number;
   cacheCreate5m: number;
@@ -88,7 +90,8 @@ export interface PrLink {
 export interface DailyUsage {
   /** User-typed prompts that day. */
   prompts: number;
-  byModel: Record<string, UsageTotals>;
+  /** With the TTL split: a session's writes are not all 1-hour ones (see `MessageUsage`). */
+  byModel: Record<string, MessageUsage>;
   /**
    * Context that was already cached and had to be written again, per model — a
    * SUBSET of `byModel[...].cacheCreate`, never an addition to it. Stored as
@@ -102,6 +105,12 @@ export interface DailyUsage {
    * parsed turns. Both go through `recacheOf` in `shared/src/recache.ts`.
    */
   recachedByModel: Record<string, number>;
+  /**
+   * The part of `recachedByModel` that was written at the 5-minute TTL, per
+   * model — the re-write bills at the rate of the write that carried it, as the
+   * viewer prices it (`recacheCost`).
+   */
+  recached5mByModel: Record<string, number>;
   /** Requests that day which had to re-write a cached prefix. */
   recacheEvents: number;
   /**
@@ -158,10 +167,12 @@ export interface SessionEnrichment {
    * This is no longer the whole of what the session spent — the agents it sent
    * out are in `subagentUsage` — and it must stay this exact quantity: it is
    * what the viewer's per-message pills add up to, which is the only check that
-   * the token arithmetic is right.
+   * the token arithmetic is right. Hence the TTL split: the pills price each
+   * write at its own TTL, and a total that priced them all at 1h did not add up
+   * on the 27 sessions that wrote 5-minute caches.
    */
-  usage: UsageTotals;
-  usageByModel: Record<string, UsageTotals>;
+  usage: MessageUsage;
+  usageByModel: Record<string, MessageUsage>;
   /**
    * What the agents this session sent out spent, added up from their own
    * transcripts (`<sessionUuid>/subagents/agent-*.jsonl`). Their requests are
@@ -202,7 +213,7 @@ export interface SessionEnrichment {
    * billed there. Kept apart instead of dropped, because the viewer renders
    * those messages and their pills have to add up to something.
    */
-  carriedOverUsage: UsageTotals;
+  carriedOverUsage: MessageUsage;
   /**
    * Other Claude Code runs that appended to this transcript, from the
    * `session_id` field — which names the RUN that wrote a line, not an ancestor.

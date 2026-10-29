@@ -1,5 +1,5 @@
 import type { SessionSummary } from '@claude-history/shared';
-import { resolvePrices } from '@claude-history/shared';
+import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
@@ -7,7 +7,7 @@ import { api } from '../api/client.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { DailyChart, type ChartSeries } from '../components/stats/DailyChart.tsx';
 import { PricingEditor } from '../components/stats/PricingEditor.tsx';
-import { computeCost, computeMessageCost, formatTokens, formatUsd } from '../lib/cost.ts';
+import { computeMessageCost, formatTokens, formatUsd } from '../lib/cost.ts';
 import { formatDateTime, shortModel } from '../lib/format.ts';
 
 type Metric = 'cost' | 'output' | 'prompts' | 'sessions';
@@ -154,7 +154,7 @@ export function StatsPage() {
         p.lastMs = Math.max(p.lastMs, s.mtimeMs);
         for (const [name, u] of Object.entries(du.byModel)) {
           // Null when the model has no price: kept apart from zero, see `Spend`.
-          const cost = computeCost(u, resolvePrices(name, prices));
+          const cost = computeMessageCost(u, resolvePrices(name, prices));
           const m = model(name);
           totals.output += u.output;
           addSpend(totals.spend, name, cost);
@@ -193,11 +193,12 @@ export function StatsPage() {
         for (const [name, tokens] of Object.entries(du.recachedByModel)) {
           const rates = resolvePrices(name, prices);
           recache.tokens += tokens;
-          // No rates for this model: count the tokens, price nothing. The
-          // enrichment does not keep the 1h/5m split, and every session
-          // transcript in this corpus writes 1h caches.
+          // No rates for this model: count the tokens, price nothing. Each
+          // re-write bills at the TTL of the write that carried it, as the
+          // viewer prices it — 1 hour, except where a session wrote 5-minute ones.
           if (rates) {
-            recache.billed += (tokens * rates.cacheWrite) / 1_000_000;
+            const at5m = du.recached5mByModel[name] ?? 0;
+            recache.billed += ((tokens - at5m) * rates.cacheWrite + at5m * cacheWrite5mRate(rates)) / 1_000_000;
             recache.ifRead += (tokens * rates.cacheRead) / 1_000_000;
           }
         }
