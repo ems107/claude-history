@@ -1,5 +1,6 @@
 import type { SessionSummary } from '@claude-history/shared';
-import { cacheWrite5mRate, resolvePrices } from '@claude-history/shared';
+import type { DriverUsage, PriceTable, RecacheCause, RecacheRecord, UsageByModel } from '@claude-history/shared';
+import { addToModel, emptyDriverUsage, resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
@@ -7,7 +8,8 @@ import { api } from '../api/client.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
 import { DailyChart, type ChartSeries } from '../components/stats/DailyChart.tsx';
 import { PricingEditor } from '../components/stats/PricingEditor.tsx';
-import { computeMessageCost, formatTokens, formatUsd } from '../lib/cost.ts';
+import { CauseList, EXPLAIN, hasTokens, OVERLAP_NOTE, type Reason, ReasonList } from '../components/viewer/CostDrivers.tsx';
+import { computeMessageCost, formatTokens, formatUsd, priceByModel, priceRecacheRecords } from '../lib/cost.ts';
 import { formatDateTime, shortModel } from '../lib/format.ts';
 
 type Metric = 'cost' | 'output' | 'prompts' | 'sessions';
@@ -95,6 +97,63 @@ interface ProjectAgg {
   lastMs: number;
 }
 
+/**
+ * The period's reasons, as `CostDrivers` draws one session's: the same rows
+ * and the same words, from the enricher's day buckets instead of a parse.
+ */
+function reasonsOf(
+  agg: {
+    drivers: DriverUsage;
+    agents: UsageByModel;
+    workflows: UsageByModel;
+    recaches: RecacheRecord[];
+  },
+  prices: PriceTable,
+): { reasons: Reason[]; efforts: Array<{ effort: string; cost: number | null; partial: boolean }> } {
+  const reasons: Reason[] = [];
+  const recache = priceRecacheRecords(agg.recaches, prices);
+  if (recache) {
+    const byCause = new Map<RecacheCause, RecacheRecord[]>();
+    for (const r of agg.recaches) byCause.set(r.cause, [...(byCause.get(r.cause) ?? []), r]);
+    const causes = [...byCause.entries()].map(([cause, records]) => {
+      const priced = priceRecacheRecords(records, prices);
+      return { cause, count: records.length, cost: priced?.billed ?? null, partial: priced?.partial ?? false };
+    });
+    reasons.push({
+      key: 'recache',
+      label: '↺ re-cached context',
+      cost: recache.billed,
+      partial: recache.partial,
+      note: (
+        <>
+          <CauseList causes={causes} />
+          {recache.extra !== null && (
+            <span className="block opacity-80">
+              {formatUsd(recache.extra, recache.partial)} more than reading it from the cache would have cost
+            </span>
+          )}
+        </>
+      ),
+      explain: EXPLAIN.recache,
+    });
+  }
+  const rows: Array<[string, ReactNode, UsageByModel, string, ReactNode]> = [
+    ['long', 'long context', agg.drivers.longContext, 'requests that sent over 150k tokens', EXPLAIN.long],
+    ['always-on', '≈ always-on context', agg.drivers.alwaysOn, 'what every request sent again: system prompt, tools, CLAUDE.md, memory', EXPLAIN.alwaysOn],
+    ['large', '≈ large tool results', agg.drivers.largeResults, 'tool results over ≈10k tokens, while they stayed in the context', EXPLAIN.large],
+    ['max', 'max effort', agg.drivers.maxEffort, 'requests at effort max', EXPLAIN.max],
+    ['agents', '⑂ subagents', agg.agents, 'the agents the sessions sent out, in conversations of their own', EXPLAIN.agents],
+    ['workflow', '⑂ workflow agents', agg.workflows, 'the agents of Workflow runs — part of the subagents above', EXPLAIN.workflow],
+  ];
+  for (const [key, label, byModel, note, explain] of rows) {
+    if (hasTokens(byModel)) reasons.push({ key, label, ...priceByModel(byModel, prices), note, explain });
+  }
+  const efforts = Object.entries(agg.drivers.byEffort)
+    .filter(([, byModel]) => hasTokens(byModel))
+    .map(([effort, byModel]) => ({ effort, ...priceByModel(byModel, prices) }));
+  return { reasons, efforts };
+}
+
 export function StatsPage() {
   const sessionsQ = useQuery({ queryKey: ['sessions'], queryFn: api.sessions });
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: api.projects });
@@ -130,11 +189,14 @@ export function StatsPage() {
       if (!m) perModel.set(name, (m = { output: 0, spend: newSpend() }));
       return m;
     };
-    const totals = { sessions: 0, prompts: 0, output: 0, spend: newSpend(), ownCost: 0 };
-    // Context that was cached, expired and had to be written again. Priced here
-    // rather than stored: the enrichment keeps tokens only, so an edit to the
-    // price table moves this figure like it moves every other.
-    let recache = { tokens: 0, events: 0, billed: 0, ifRead: 0 };
+    const totals = { sessions: 0, prompts: 0, output: 0, spend: newSpend() };
+    // What drove the spend: tokens by reason, and every re-cache with its cause.
+    // Priced at render rather than stored: the enrichment keeps tokens only, so
+    // an edit to the price table moves these like it moves every other figure.
+    const drivers = emptyDriverUsage();
+    const agents: UsageByModel = {};
+    const workflows: UsageByModel = {};
+    const recaches: RecacheRecord[] = [];
 
     for (const s of sessions) {
       const createdDay = (s.createdAt ?? '').slice(0, 10);
@@ -158,12 +220,6 @@ export function StatsPage() {
           const m = model(name);
           totals.output += u.output;
           addSpend(totals.spend, name, cost);
-          // Kept apart for one figure only: the share of spend that went on
-          // re-cached context. Re-caches are measured in session transcripts and
-          // nowhere else, so counting the agents' spend in that denominator
-          // would make the percentage fall as more work is delegated, saying
-          // something about caching that never happened.
-          totals.ownCost += cost ?? 0;
           p.output += u.output;
           addSpend(p.spend, name, cost);
           c.output += u.output;
@@ -178,6 +234,7 @@ export function StatsPage() {
         // so without this the dashboard is short by whatever was delegated, and
         // the sessions that delegate most are the ones it understates most.
         for (const [name, u] of Object.entries(du.subagentByModel ?? {})) {
+          addToModel(agents, name, u);
           const cost = computeMessageCost(u, resolvePrices(name, prices));
           const m = model(name);
           totals.output += u.output;
@@ -189,18 +246,14 @@ export function StatsPage() {
           m.output += u.output;
           addSpend(m.spend, name, cost);
         }
-        recache.events += du.recacheEvents;
-        for (const [name, tokens] of Object.entries(du.recachedByModel)) {
-          const rates = resolvePrices(name, prices);
-          recache.tokens += tokens;
-          // No rates for this model: count the tokens, price nothing. Each
-          // re-write bills at the TTL of the write that carried it, as the
-          // viewer prices it — 1 hour, except where a session wrote 5-minute ones.
-          if (rates) {
-            const at5m = du.recached5mByModel[name] ?? 0;
-            recache.billed += ((tokens - at5m) * rates.cacheWrite + at5m * cacheWrite5mRate(rates)) / 1_000_000;
-            recache.ifRead += (tokens * rates.cacheRead) / 1_000_000;
-          }
+        for (const [name, u] of Object.entries(du.workflowByModel ?? {})) addToModel(workflows, name, u);
+        recaches.push(...du.recaches);
+        const d = du.drivers;
+        for (const key of ['longContext', 'maxEffort', 'alwaysOn', 'largeResults'] as const) {
+          for (const [name, u] of Object.entries(d[key])) addToModel(drivers[key], name, u);
+        }
+        for (const [effort, byModel] of Object.entries(d.byEffort)) {
+          for (const [name, u] of Object.entries(byModel)) addToModel((drivers.byEffort[effort] ??= {}), name, u);
         }
       }
     }
@@ -211,7 +264,7 @@ export function StatsPage() {
         ? daysBetween(cutoff && cutoff > chartDays[0] ? cutoff : chartDays[0], chartDays[chartDays.length - 1])
         : [];
 
-    return { chart, days, perProject, perModel, totals, recache };
+    return { chart, days, perProject, perModel, totals, drivers, agents, workflows, recaches };
   }, [sessionsQ.data, pricesQ.data, range]);
 
   const series: ChartSeries[] = useMemo(() => {
@@ -228,6 +281,7 @@ export function StatsPage() {
   }
 
   const fmt = metric === 'cost' ? formatUsd : metric === 'output' ? formatTokens : (n: number) => String(Math.round(n));
+  const { reasons, efforts } = reasonsOf(agg, pricesQ.data?.prices ?? {});
   const projectRows = [...agg.perProject.values()].sort((a, b) => b.spend.cost - a.spend.cost);
   const unpriced = [...agg.totals.spend.unpriced].sort();
   const modelRows = [...agg.perModel.entries()].sort((a, b) => b[1].output - a[1].output);
@@ -273,27 +327,23 @@ export function StatsPage() {
           </div>
         )}
 
-        {/* A full-width strip rather than a fifth card: the grid above is
-            `md:grid-cols-4` and a fifth would leave one orphan on its own row.
-            Hidden when nothing was re-cached, which is most short periods. */}
-        {agg.recache.tokens > 0 && (
-          <div className="rounded border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-            <div className="text-[11px] tracking-wider text-amber-400/80 uppercase">↺ Re-cached context</div>
-            <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
-              <span className="text-2xl font-semibold text-amber-300">{formatUsd(agg.recache.billed)}</span>
-              <span className="text-xs text-[var(--text-dim)]">
-                {agg.totals.ownCost > 0 && (
-                  <>{((agg.recache.billed / agg.totals.ownCost) * 100).toFixed(1)}% of session spend · </>
-                )}
-                {formatTokens(agg.recache.tokens)} tokens over {agg.recache.events} request
-                {agg.recache.events !== 1 ? 's' : ''} · {formatUsd(agg.recache.billed - agg.recache.ifRead)} more than
-                reading them from cache would have cost
-              </span>
-            </div>
-            <div className="mt-1 text-[10px] text-[var(--text-dim)]">
-              Context that was already cached when a request went out and had to be written again — usually because the
-              1-hour cache expired while the session sat idle. Counted inside the cost above, not on top of it.
-            </div>
+        {/* What drove the spend: the reasons the token panel gives for one
+            session, summed over the period. A full-width section rather than
+            more cards — the grid above is `md:grid-cols-4` — and hidden when
+            the period spent nothing. */}
+        {reasons.length > 0 && (
+          <div className="rounded border border-[var(--border)] px-4 py-3" data-cost-drivers>
+            <div className="text-[11px] tracking-wider text-[var(--text-dim)] uppercase">What drove the spend</div>
+            <p className="mt-1 mb-2 text-xs text-[var(--text-dim)]">
+              Each line is a part of the cost above. {OVERLAP_NOTE}
+            </p>
+            <ReasonList
+              reasons={reasons}
+              total={agg.totals.spend.priced ? agg.totals.spend.cost : null}
+              efforts={efforts}
+              effortLabel="by effort, the sessions' own requests"
+              className="grid gap-x-3 text-xs md:grid-cols-2"
+            />
           </div>
         )}
 

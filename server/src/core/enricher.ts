@@ -6,12 +6,15 @@ import type {
   MessageUsage,
   PlanRecord,
   PrLink,
+  RequestFacts,
   SearchBlock,
   SessionEnrichment,
 } from '@claude-history/shared';
-import { recacheOf } from '@claude-history/shared';
+import { addDrivers, costDriverTracker, emptyDriverUsage, recacheOf, requestChanges } from '@claude-history/shared';
 import { isRec, num, replayFilter, safeParse, str, streamLines } from './jsonl.ts';
 import { planFeedback, planTitle, toMessageUsage, toolIntent } from './parser.ts';
+import { feedCostDrivers } from './costDriverFeed.ts';
+import { requestReader } from './requests.ts';
 import { subagentDirs } from './scanner.ts';
 import { INTENT_ROLE, PLAN_ROLE, RECAP_ROLE, RECAP_SUBTYPE, systemChars } from './searchText.ts';
 import { extractPrompt, injectedOrigin, queuedPrompt, thinkingKind } from './summarizer.ts';
@@ -84,12 +87,15 @@ export interface SubagentSpend {
   byModel: Record<string, MessageUsage>;
   /** day (UTC) → model → usage, to be merged into the session's daily buckets. */
   daily: Record<string, Record<string, MessageUsage>>;
+  /** The part of `byModel` and `daily` spent by the agents of a Workflow run. */
+  workflowByModel: Record<string, MessageUsage>;
+  workflowDaily: Record<string, Record<string, MessageUsage>>;
   /** The agents themselves, so their ids can be searched for like a session's. */
   ids: string[];
 }
 
 function emptySpend(): SubagentSpend {
-  return { usage: zeroMessageUsage(), byModel: {}, daily: {}, ids: [] };
+  return { usage: zeroMessageUsage(), byModel: {}, daily: {}, workflowByModel: {}, workflowDaily: {}, ids: [] };
 }
 
 /**
@@ -110,18 +116,18 @@ function emptySpend(): SubagentSpend {
 export async function enrichSubagents(sessionDir: string | null): Promise<SubagentSpend> {
   const spend = emptySpend();
   if (!sessionDir) return spend;
-  const files: string[] = [];
-  for (const { dir } of await subagentDirs(sessionDir)) {
+  const files: Array<{ file: string; workflow: boolean }> = [];
+  for (const { dir, workflowRunId } of await subagentDirs(sessionDir)) {
     try {
       for (const f of await fsp.readdir(dir)) {
-        if (f.startsWith('agent-') && f.endsWith('.jsonl')) files.push(path.join(dir, f));
+        if (f.startsWith('agent-') && f.endsWith('.jsonl')) files.push({ file: path.join(dir, f), workflow: !!workflowRunId });
       }
     } catch {
       // gone between the listing and the read
     }
   }
 
-  for (const file of files) {
+  for (const { file, workflow } of files) {
     spend.ids.push(path.basename(file).slice('agent-'.length, -'.jsonl'.length));
     const isReplay = replayFilter();
     const seenMessageIds = new Set<string>();
@@ -140,6 +146,10 @@ export async function enrichSubagents(sessionDir: string | null): Promise<Subage
         addMessageUsage((spend.byModel[model] ??= zeroMessageUsage()), usage);
         const day = dayOf(o);
         if (day) addMessageUsage(((spend.daily[day] ??= {})[model] ??= zeroMessageUsage()), usage);
+        if (workflow) {
+          addMessageUsage((spend.workflowByModel[model] ??= zeroMessageUsage()), usage);
+          if (day) addMessageUsage(((spend.workflowDaily[day] ??= {})[model] ??= zeroMessageUsage()), usage);
+        }
       }
     } catch {
       // An agent's transcript being written while we read it is not a reason to
@@ -184,17 +194,26 @@ export async function enrichSession(
   // request to be the first line of a `message.id` that carries usage, both let
   // a carried-over line be the predecessor of the next one, and neither counts
   // an event on a carried-over line itself.
-  let previous: (CacheState & { messageId: string; model: string; runId: string | null; ts: number | null }) | null =
-    null;
+  let previous:
+    | (CacheState & {
+        messageId: string;
+        model: string;
+        runId: string | null;
+        ts: number | null;
+        request: RequestFacts | null;
+      })
+    | null = null;
   let compactedSinceLastRequest = false;
+  const requests = requestReader();
+  const drivers = costDriverTracker();
 
   const dayBucket = (day: string): DailyUsage =>
     (daily[day] ??= {
       prompts: 0,
       byModel: {},
-      recachedByModel: {},
-      recached5mByModel: {},
-      recacheEvents: 0,
+      recaches: [],
+      drivers: emptyDriverUsage(),
+      workflowByModel: {},
       subagentByModel: {},
     });
 
@@ -213,12 +232,18 @@ export async function enrichSession(
       }
       continue;
     }
+    // What each request asked for, read before the reply that names it — see
+    // `requestReader`, which the parser shares.
+    if (requests.read(o)) continue;
 
     // A line already counted, re-appended by a compaction (see `replayFilter`).
     // The token totals survived it by luck — they dedupe by `message.id` — but
     // the prompts, the tool calls, the compactions and the daily buckets did
     // not, and neither did the indexed text.
     if (isReplay(o)) continue;
+    // The same lines the parser feeds its tracker, so a day's reasons add up to
+    // the session's — see `feedCostDrivers`.
+    feedCostDrivers(drivers, o, line);
 
     // `session_id` names the RUN that wrote the line, NOT an ancestor: resuming
     // from a fresh CLI stamps that CLI's id on everything it appends here. The
@@ -312,7 +337,12 @@ export async function enrichSession(
             }
           }
 
+          const reasons = drivers.request({ model, usage: billed, effort: str(o.effort), carried });
+          const reasonDay = reasons ? dayOf(o) : null;
+          if (reasons && reasonDay) addDrivers(dayBucket(reasonDay).drivers, reasons);
+
           const current: CacheState = { read: billed.cacheRead, write: billed.cacheCreate };
+          const request = requests.of(str(o.requestRef));
           // A fork's copies were billed in the parent, so what they re-wrote is
           // the parent's story — but they still describe the cache the next
           // request met, which is why they stay eligible as a predecessor.
@@ -328,24 +358,26 @@ export async function enrichSession(
                     previous.ts !== null && lineTime !== null && !Number.isNaN(lineTime)
                       ? Math.max(0, lineTime - previous.ts)
                       : null,
+                  changes:
+                    previous.request && request ? requestChanges(previous.request, request, requests.tables()) : null,
                 })
               : null;
           if (event) {
             const day = dayOf(o);
             if (day) {
               const bucket = dayBucket(day);
-              bucket.recachedByModel[model] = (bucket.recachedByModel[model] ?? 0) + event.tokens;
-              // Apportioned the way `recacheCost` blends the rate in the viewer.
-              // No message here has ever mixed the two TTLs, so in practice this
-              // is all of it or none.
-              if (billed.cacheCreate5m > 0 && billed.cacheCreate > 0) {
-                bucket.recached5mByModel[model] =
-                  (bucket.recached5mByModel[model] ?? 0) + (event.tokens * billed.cacheCreate5m) / billed.cacheCreate;
-              }
-              bucket.recacheEvents++;
+              bucket.recaches.push({
+                model,
+                tokens: event.tokens,
+                // Apportioned the way `recacheCost` blends the rate in the
+                // viewer. No message here has ever mixed the two TTLs, so in
+                // practice this is all of it or none.
+                tokens5m: billed.cacheCreate > 0 ? (event.tokens * billed.cacheCreate5m) / billed.cacheCreate : 0,
+                cause: event.cause,
+              });
             }
           }
-          previous = { ...current, messageId, model, runId, ts: Number.isNaN(lineTime) ? null : lineTime };
+          previous = { ...current, messageId, model, runId, ts: Number.isNaN(lineTime) ? null : lineTime, request };
           compactedSinceLastRequest = false;
         }
       } else if (previous && messageId === previous.messageId && lineTime !== null && !Number.isNaN(lineTime)) {
@@ -440,6 +472,9 @@ export async function enrichSession(
   for (const [day, byModel] of Object.entries(subagents.daily)) {
     dayBucket(day).subagentByModel = byModel;
   }
+  for (const [day, byModel] of Object.entries(subagents.workflowDaily)) {
+    dayBucket(day).workflowByModel = byModel;
+  }
 
   return {
     enrichment: {
@@ -452,6 +487,7 @@ export async function enrichSession(
       usageByModel,
       subagentUsage: subagents.usage,
       subagentUsageByModel: subagents.byModel,
+      workflowUsageByModel: subagents.workflowByModel,
       subagentIds: subagents.ids,
       daily,
       models: [...models].sort(),

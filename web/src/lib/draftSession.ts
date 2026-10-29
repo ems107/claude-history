@@ -1,4 +1,5 @@
 import type { SessionDetailResponse } from '@claude-history/shared';
+import { emptyDriverUsage } from '@claude-history/shared';
 
 /**
  * What a session looks like before it has a transcript.
@@ -75,5 +76,7 @@ export function draftSessionDetail(id: string, cwd: string | null): SessionDetai
     prLinks: [],
     fileChanges: [],
     mcp: { servers: [], events: [], failing: 0 },
+    requests: { shapes: {}, betas: {} },
+    costDrivers: { ...emptyDriverUsage(), alwaysOnTokens: 0, counts: { longContext: 0, maxEffort: 0, alwaysOn: 0, largeResults: 0 }, largeResultList: [] },
   };
 }

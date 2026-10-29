@@ -25,8 +25,8 @@ export function registerSubagentRoutes(app: FastifyInstance, ctx: AppContext): v
       // never assembled from the request beyond the id it was validated as.
       const filePath = await findSubagentFile(scanned.sessionDir, agentId);
       if (!filePath) return reply.code(404).send({ error: 'Subagent not found' });
-      const { turns } = await parseTranscript(filePath, new Map(), ctx.config.projectsDir);
-      return { meta, turns };
+      const { turns, requests } = await parseTranscript(filePath, new Map(), ctx.config.projectsDir);
+      return { meta, turns, requests };
     },
   );
 }

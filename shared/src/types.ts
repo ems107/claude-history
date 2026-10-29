@@ -1,6 +1,9 @@
 // Domain types shared between server and web.
 // Data model reference: see docs/AI_TRANSCRIPTS.md and docs/AI_COST_AND_CONTEXT.md.
 
+import type { DriverUsage, SessionCostDrivers } from './costDrivers.ts';
+import type { RecacheCause } from './recache.ts';
+
 export type TitleSource =
   | 'custom-title'
   | 'ai-title'
@@ -87,32 +90,40 @@ export interface PrLink {
   prRepository: string;
 }
 
+/**
+ * One re-cache, as the enricher keeps it. Tokens and never an amount: the
+ * price table is user-editable, so a saved cost would freeze yesterday's rates.
+ */
+export interface RecacheRecord {
+  model: string;
+  tokens: number;
+  /**
+   * The part written at the 5-minute TTL — the re-write bills at the rate of
+   * the write that carried it, as the viewer prices it (`recacheCost`).
+   */
+  tokens5m: number;
+  cause: RecacheCause;
+}
+
 export interface DailyUsage {
   /** User-typed prompts that day. */
   prompts: number;
   /** With the TTL split: a session's writes are not all 1-hour ones (see `MessageUsage`). */
   byModel: Record<string, MessageUsage>;
   /**
-   * Context that was already cached and had to be written again, per model — a
-   * SUBSET of `byModel[...].cacheCreate`, never an addition to it. Stored as
-   * tokens and never as an amount: the price table is user-editable, so a saved
-   * cost would freeze yesterday's rates. Carried-over lines are excluded, like
-   * every other aggregate here.
+   * Every request that day which had to write already-cached context again —
+   * a SUBSET of `byModel[...].cacheCreate`, never an addition to it. One record
+   * per event rather than a sum, because the Stats page splits them by cause
+   * and prices each at its own model and TTL, and because they are few: 56 in
+   * the whole corpus. Carried-over lines are excluded, like every other
+   * aggregate here.
    *
    * It lives in the daily buckets rather than on the session because that is
    * what the stats page filters by, and because a session-level copy would be a
    * second source of truth for the number the viewer already computes from the
    * parsed turns. Both go through `recacheOf` in `shared/src/recache.ts`.
    */
-  recachedByModel: Record<string, number>;
-  /**
-   * The part of `recachedByModel` that was written at the 5-minute TTL, per
-   * model — the re-write bills at the rate of the write that carried it, as the
-   * viewer prices it (`recacheCost`).
-   */
-  recached5mByModel: Record<string, number>;
-  /** Requests that day which had to re-write a cached prefix. */
-  recacheEvents: number;
+  recaches: RecacheRecord[];
   /**
    * What the agents this session sent out spent THAT day, in their own
    * conversations. An addition to `byModel`, never a subset of it: those
@@ -125,6 +136,10 @@ export interface DailyUsage {
    * `byModel` it would be priced at the session's rate and overcharged.
    */
   subagentByModel: Record<string, MessageUsage>;
+  /** The part of `subagentByModel` spent by the agents of a Workflow run. */
+  workflowByModel: Record<string, MessageUsage>;
+  /** What made that day's requests expensive, as tokens by reason (`shared/src/costDrivers.ts`). Carried-over lines excluded. */
+  drivers: DriverUsage;
 }
 
 /**
@@ -189,6 +204,8 @@ export interface SessionEnrichment {
    */
   subagentUsage: MessageUsage;
   subagentUsageByModel: Record<string, MessageUsage>;
+  /** The part of `subagentUsageByModel` spent by the agents of a Workflow run (`subagents/workflows/`). */
+  workflowUsageByModel: Record<string, MessageUsage>;
   /**
    * The agents' own ids (`agent-<id>.jsonl`), which is what a notification's
    * `<task-id>` is. Indexed like the session's own id so that pasting one finds
@@ -991,7 +1008,65 @@ export interface MessageItem {
   usage: MessageUsage | null;
   /** Assistant only: the reasoning effort recorded on the line (`effort`), e.g. "xhigh". */
   effort: string | null;
+  /**
+   * Assistant only: what the API request that produced this message asked for,
+   * from its `api-request` line (joined on `requestRef`). Null where the line is
+   * not there — every transcript written before CLI 2.1.300, and the rare reply
+   * whose request was not recorded.
+   */
+  request: RequestFacts | null;
   blocks: ContentBlock[];
+}
+
+/**
+ * One API request, as its `api-request` line records it (CLI 2.1.300+): the
+ * parts of it that, changed between two requests, can cost the cache. The
+ * system prompt and the tools are in the session's `RequestTables`, keyed by
+ * `shapeHash`, and the beta headers by `betasKey`: both are the same for
+ * hundreds of requests in a row.
+ */
+export interface RequestFacts {
+  shapeHash: string | null;
+  betasKey: string | null;
+  /** `params.output_config.effort`. */
+  effort: string | null;
+  /** `params.thinking.type` (`adaptive` everywhere so far). */
+  thinking: string | null;
+  /** `params.thinking.display` (`updates` / `omitted`). */
+  thinkingDisplay: string | null;
+  /** The TTL and scope of each cache breakpoint, in order: "1h global · 1h · 1h". */
+  cacheControl: string;
+  /** `params.context_management`, as JSON. */
+  contextManagement: string | null;
+  /**
+   * The request names no `base`: the CLI started a new chain and sent the whole
+   * conversation afresh — a session's first request, a resume, a compaction.
+   */
+  newChain: boolean;
+  /**
+   * It kept fewer of its base's messages than the base sent (`keep` <
+   * `keep + tail` of the base): something earlier in the conversation changed.
+   */
+  rewritten: boolean;
+}
+
+/** What a session's requests share, keyed the way `RequestFacts` points at it. */
+export interface RequestTables {
+  /** By `shapeHash`: the system prompt and the tools offered. */
+  shapes: Record<string, RequestShape>;
+  /** By `betasKey`: the beta headers, sorted. */
+  betas: Record<string, string[]>;
+}
+
+export interface RequestShape {
+  /** Characters of the system prompt's text blocks. */
+  systemChars: number;
+  /** A digest of the system prompt alone, so a change to it is told from one to the tools. */
+  systemHash: string;
+  /** The tools offered, by name, sorted. */
+  tools: string[];
+  /** A digest of the tool definitions, so a changed definition is seen even when the names are not. */
+  toolsHash: string;
 }
 
 export interface Turn {
@@ -1150,9 +1225,15 @@ export interface SessionDetail {
   fileChanges: FileChange[];
   /** The MCP servers this session had, and what became of them. Empty where the CLI wrote nothing. */
   mcp: McpPicture;
+  /** What the session's requests share — see `MessageItem.request`. Empty before CLI 2.1.300. */
+  requests: RequestTables;
+  /** What made it expensive, as tokens by reason (`shared/src/costDrivers.ts`): this transcript's requests only. */
+  costDrivers: SessionCostDrivers;
 }
 
 export interface SubagentDetail {
   meta: SubagentMeta;
   turns: Turn[];
+  /** The agent's own requests — see `SessionDetail.requests`. */
+  requests: RequestTables;
 }

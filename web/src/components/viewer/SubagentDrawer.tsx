@@ -193,6 +193,7 @@ export function SubagentDrawer({
                 <TurnList
                   key={agentId}
                   turns={query.data.turns}
+                  requests={query.data.requests}
                   showThinking={showThinking}
                   fold={fold}
                   scrollToTool={scrollToTool}

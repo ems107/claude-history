@@ -118,7 +118,7 @@ export function ContextCurve({ index, prices }: { index: ContextIndex; prices: P
             vectorEffect="non-scaling-stroke"
           >
             <title>
-              {`Re-cached ${p.recached.toLocaleString()} tokens. ${recacheCauseText(p.recacheCause, p.gapMs) ?? ''}`}
+              {`Re-cached ${p.recached.toLocaleString()} tokens. ${recacheCauseText(p.recacheCause, p.gapMs, p.recacheChanges) ?? ''}`}
             </title>
           </line>
         ))}

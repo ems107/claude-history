@@ -1,4 +1,4 @@
-import type { SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
+import type { RequestTables, SessionCostDrivers, SessionSummary, Turn, UsageTotals } from '@claude-history/shared';
 import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -9,6 +9,7 @@ import { buildContextIndex, recacheCauseText } from '../../lib/context.ts';
 import { computeMessageCost, formatUsd, sessionCostParts, summariseRecache, unpricedOf } from '../../lib/cost.ts';
 import { shortModel } from '../../lib/format.ts';
 import { ContextCurve } from './ContextCurve.tsx';
+import { CostDrivers } from './CostDrivers.tsx';
 import { Fold } from '../Fold.tsx';
 
 function fmt(n: number): string {
@@ -98,9 +99,20 @@ function Card({
   );
 }
 
-export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns: Turn[] }) {
+export function TokenPanel({
+  summary,
+  turns,
+  requests,
+  drivers,
+}: {
+  summary: SessionSummary;
+  turns: Turn[];
+  requests: RequestTables;
+  /** What made it expensive, from the parse — see `CostDrivers`. */
+  drivers: SessionCostDrivers;
+}) {
   const pricesQ = useQuery({ queryKey: ['prices'], queryFn: api.prices });
-  const contextIndex = useMemo(() => buildContextIndex(turns), [turns]);
+  const contextIndex = useMemo(() => buildContextIndex(turns, requests), [turns, requests]);
   const e = summary.enrichment;
   if (!e) {
     return <div className="p-3 text-xs text-[var(--text-dim)]">Token stats not indexed yet.</div>;
@@ -158,7 +170,7 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           {recache.cost.extra !== null && (
             <> — {formatUsd(recache.cost.extra, recache.cost.partial)} more than reading them would have cost</>
           )}
-          . {recacheCauseText(recache.cause, recache.gapMs)}
+          . {recacheCauseText(recache.cause, recache.gapMs, recache.changes)}
         </span>
       </Fold>
     </div>
@@ -300,6 +312,15 @@ export function TokenPanel({ summary, turns }: { summary: SessionSummary; turns:
           </span>
         </Fold>
       )}
+
+      <CostDrivers
+        summary={summary}
+        turns={turns}
+        drivers={drivers}
+        contextIndex={contextIndex}
+        cost={cost}
+        prices={priceTable}
+      />
 
       <div className="mt-1 text-[10px] opacity-70">
         ≈ cost is API-equivalent value at the prices configured in Stats — not actual subscription spend.

@@ -12,7 +12,9 @@ import type {
   MessageUsage,
   PlanOutcome,
   PrLink,
+  RequestTables,
   SentAttachment,
+  SessionCostDrivers,
   SessionDetail,
   SessionSummary,
   SubagentMeta,
@@ -21,6 +23,9 @@ import type {
 } from '@claude-history/shared';
 import { isContextUsageAnsi, parseContextSnapshot } from './contextSnapshot.ts';
 import { isRec, num, replayFilter, safeParse, str, streamLines, type RawLine } from './jsonl.ts';
+import { costDriverTracker, sessionDriverCollector } from '@claude-history/shared';
+import { feedCostDrivers } from './costDriverFeed.ts';
+import { requestReader } from './requests.ts';
 import { subagentDirs, type ScannedSession } from './scanner.ts';
 import {
   extractPrompt,
@@ -534,6 +539,8 @@ export interface ParsedTranscript {
   forkedFrom: string | null;
   fileChanges: FileChange[];
   mcp: McpPicture;
+  requests: RequestTables;
+  costDrivers: SessionCostDrivers;
 }
 
 /**
@@ -972,6 +979,9 @@ export async function parseTranscript(
   const mcp = createMcpTracker();
   const MUTATING_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
   const isReplay = replayFilter();
+  const requests = requestReader();
+  const drivers = costDriverTracker();
+  const driverTotals = sessionDriverCollector();
   let current: Turn | null = null;
   let fallbackId = 0;
   /** Whether a `plan_mode` entry is still open — see `planModeEvent`. */
@@ -1008,6 +1018,7 @@ export async function parseTranscript(
     discardedBranch: null,
     usage: null,
     effort: null,
+    request: null,
     blocks: [],
   });
 
@@ -1091,6 +1102,7 @@ export async function parseTranscript(
       discardedBranch: null,
       usage: null,
       effort: null,
+      request: null,
       blocks: [{ kind: 'notice', origin, queued, ...notice }],
     });
   };
@@ -1109,6 +1121,9 @@ export async function parseTranscript(
       }
       continue;
     }
+    // A request line renders nothing and belongs to no tree: it is read for the
+    // reply that names it (`requestRef`), which comes after it.
+    if (requests.read(o)) continue;
 
     // The message tree is recorded BEFORE anything is dropped: it needs the lines
     // that render nothing (attachments — one was a rewind target — and
@@ -1128,6 +1143,9 @@ export async function parseTranscript(
     // otherwise be merged by `message.id` into the item written days earlier and
     // append its text to it a second time.
     if (isReplay(o)) continue;
+    // What made the session expensive, read off the same lines as the
+    // enricher reads them — see `feedCostDrivers`.
+    feedCostDrivers(drivers, o, line);
 
     const fork = isRec(o.forkedFrom) ? str(o.forkedFrom.sessionId) : null;
     if (fork) forkedFrom ??= fork;
@@ -1172,6 +1190,7 @@ export async function parseTranscript(
             discardedBranch: null,
             usage: null,
             effort: null,
+            request: null,
             blocks: [{ kind: 'context', snapshot }],
           });
         }
@@ -1246,6 +1265,7 @@ export async function parseTranscript(
           discardedBranch: null,
           usage: null,
           effort: null,
+          request: null,
           blocks: [textOrCommand(prompt)],
         });
       } else if (Array.isArray(content)) {
@@ -1307,6 +1327,7 @@ export async function parseTranscript(
             discardedBranch: null,
             usage: null,
             effort: null,
+            request: null,
             blocks: userBlocks,
           });
         }
@@ -1422,6 +1443,7 @@ export async function parseTranscript(
         discardedBranch: null,
         usage: null,
         effort: null,
+        request: null,
         // Text first, then what was pasted, the order the payload itself uses.
         blocks: [...(prompt ? [textOrCommand(prompt)] : []), ...images],
       });
@@ -1455,9 +1477,15 @@ export async function parseTranscript(
               ? toMessageUsage(o.message.usage)
               : null,
           effort: str(o.effort),
+          request: requests.of(str(o.requestRef)),
           blocks: [],
         };
         assistantItems.set(messageId, item);
+        if (item.usage) {
+          driverTotals.add(
+            drivers.request({ model: model as string, usage: item.usage, effort: item.effort, carried: carriedOver }),
+          );
+        }
         ensureTurn().items.push(item);
       } else {
         const u = str(o.uuid);
@@ -1524,6 +1552,7 @@ export async function parseTranscript(
           discardedBranch: null,
           usage: null,
           effort: null,
+          request: null,
           blocks: [
             {
               kind: 'compact',
@@ -1564,6 +1593,7 @@ export async function parseTranscript(
         discardedBranch: null,
         usage: null,
         effort: null,
+        request: null,
         blocks: [{ kind: 'text', text }],
       });
     }
@@ -1590,7 +1620,15 @@ export async function parseTranscript(
     .map(([path, edits]) => ({ path, edits }))
     .sort((a, b) => b.edits.length - a.edits.length);
 
-  return { turns, prLinks, forkedFrom, fileChanges, mcp: mcp.result() };
+  return {
+    turns,
+    prLinks,
+    forkedFrom,
+    fileChanges,
+    mcp: mcp.result(),
+    requests: requests.tables(),
+    costDrivers: driverTotals.result(drivers.alwaysOnTokens()),
+  };
 }
 
 export async function parseSession(
@@ -1602,7 +1640,7 @@ export async function parseSession(
   // Workflow agents have no call of their own yet — `linkWorkflowCalls` gives
   // them the run's, which must not make that call open one of them.
   const agentIdByToolUse = new Map(subagents.filter((a) => a.toolUseId).map((a) => [a.toolUseId, a.agentId]));
-  const { turns, prLinks, forkedFrom, fileChanges, mcp } = await parseTranscript(
+  const { turns, prLinks, forkedFrom, fileChanges, mcp, requests, costDrivers } = await parseTranscript(
     scanned.filePath,
     agentIdByToolUse,
     projectsDir,
@@ -1620,5 +1658,7 @@ export async function parseSession(
     prLinks: prLinks.length > 0 ? prLinks : (summary.enrichment?.prLinks ?? []),
     fileChanges,
     mcp,
+    requests,
+    costDrivers,
   };
 }

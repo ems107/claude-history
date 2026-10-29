@@ -1,5 +1,14 @@
-import type { CompactBoundary, MessageItem, MessageUsage, RecacheCause, Turn } from '@claude-history/shared';
-import { recacheOf } from '@claude-history/shared';
+import type {
+  CompactBoundary,
+  MessageItem,
+  MessageUsage,
+  RecacheCause,
+  RequestChange,
+  RequestFacts,
+  RequestTables,
+  Turn,
+} from '@claude-history/shared';
+import { recacheOf, requestChanges } from '@claude-history/shared';
 
 /**
  * The context window, per request, from what the transcript already records.
@@ -52,6 +61,10 @@ export interface ContextPoint {
    */
   recached: number;
   recacheCause: RecacheCause | null;
+  /** What the request changed against the one before it, beside a re-cache's cause; empty when nothing did or nothing is known. */
+  recacheChanges: RequestChange[];
+  /** The request that produced it, where the transcript recorded one. */
+  request: RequestFacts | null;
   /** Set when the context shrank into this request. */
   shrink: { from: number; to: number; compacted: CompactBoundary | null; boundaryUuid: string | null } | null;
 }
@@ -122,6 +135,8 @@ function pointOf(item: MessageItem, index: number): ContextPoint | null {
     gapMs: null,
     recached: 0,
     recacheCause: null,
+    recacheChanges: [],
+    request: item.request,
     shrink: null,
   };
 }
@@ -133,7 +148,11 @@ function gapBetween(previous: ContextPoint, point: ContextPoint): number | null 
   return Number.isNaN(from) || Number.isNaN(to) ? null : Math.max(0, to - from);
 }
 
-export function buildContextIndex(turns: Turn[]): ContextIndex {
+/**
+ * `tables` resolves what changed between two requests (the system prompt and
+ * the tools live in it, not on the items): the session's, or an agent's own.
+ */
+export function buildContextIndex(turns: Turn[], tables: RequestTables): ContextIndex {
   const points: ContextPoint[] = [];
   const byUuid = new Map<string, ContextPoint>();
   const perTurn: ContextIndex['perTurn'] = [];
@@ -190,10 +209,13 @@ export function buildContextIndex(turns: Turn[]): ContextIndex {
               // transcripts carry no `session_id` at all.
               runChanged: previous.runId !== null && point.runId !== null && previous.runId !== point.runId,
               gapMs: point.gapMs,
+              changes:
+                previous.request && point.request ? requestChanges(previous.request, point.request, tables) : null,
             });
         if (event) {
           point.recached = event.tokens;
           point.recacheCause = event.cause;
+          point.recacheChanges = event.changes;
           recaches.push(point);
           turnRecaches.push(point);
         }
@@ -263,6 +285,49 @@ export function formatGap(ms: number): string {
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
+const listOf = (names: string[]): string =>
+  names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`;
+
+/** One difference between two requests, as a phrase: "effort xhigh → medium". */
+export function requestChangeText(change: RequestChange): string {
+  switch (change.kind) {
+    case 'new-chain':
+      return 'the CLI started a new request chain, sending the whole conversation afresh';
+    case 'history-rewritten':
+      return 'earlier messages were rewritten';
+    case 'system-prompt':
+      return change.chars === 0
+        ? 'the system prompt changed'
+        : `the system prompt changed (${change.chars > 0 ? '+' : '−'}${Math.abs(change.chars).toLocaleString()} chars)`;
+    case 'tools': {
+      const parts = [
+        change.added.length > 0 ? `+${listOf(change.added)}` : null,
+        change.removed.length > 0 ? `−${listOf(change.removed)}` : null,
+      ].filter(Boolean);
+      return parts.length > 0 ? `the tools changed (${parts.join('; ')})` : 'a tool definition changed (same tools)';
+    }
+    case 'shape':
+      return 'the system prompt or the tools changed';
+    case 'effort':
+      return `effort ${change.from ?? 'default'} → ${change.to ?? 'default'}`;
+    case 'thinking':
+      return `thinking ${change.from ?? 'off'} → ${change.to ?? 'off'}`;
+    case 'thinking-display':
+      return `thinking display ${change.from ?? 'none'} → ${change.to ?? 'none'}`;
+    case 'betas': {
+      const parts = [
+        change.added.length > 0 ? `+${listOf(change.added)}` : null,
+        change.removed.length > 0 ? `−${listOf(change.removed)}` : null,
+      ].filter(Boolean);
+      return `the beta headers changed${parts.length > 0 ? ` (${parts.join('; ')})` : ''}`;
+    }
+    case 'cache-control':
+      return `the cache breakpoints changed (${change.from || 'none'} → ${change.to || 'none'})`;
+    case 'context-management':
+      return 'the context management changed';
+  }
+}
+
 /**
  * Why the cached context had to be written again.
  *
@@ -271,22 +336,54 @@ export function formatGap(ms: number): string {
  * Anthropic's cache is best-effort. A plausible wrong reason would be worse
  * than an admitted unknown, and this is the line the user reads to decide
  * whether their own habits caused it.
+ *
+ * What changed in the request is said as what it is — a fact beside the
+ * cause, never promoted to one past the hour: most of those changes cost the
+ * cache nothing (4 of the 101 here came with a re-cache).
  */
-export function recacheCauseText(cause: RecacheCause | null, gapMs: number | null): string | null {
+export function recacheCauseText(
+  cause: RecacheCause | null,
+  gapMs: number | null,
+  changes: RequestChange[] = [],
+): string | null {
   const gap = gapMs === null ? null : formatGap(gapMs);
+  const facts = changes.map(requestChangeText);
+  const also = facts.length > 0 ? ` The request also changed: ${facts.join('; ')}.` : '';
   switch (cause) {
     case 'ttl-expired':
-      return `The 1-hour cache had expired${gap ? ` — ${gap} since the previous request` : ''}.`;
+      return `The 1-hour cache had expired${gap ? ` — ${gap} since the previous request` : ''}.${also}`;
     case 'new-run':
-      return 'The session was resumed from a fresh CLI, which re-sent the whole conversation.';
+      return `The session was resumed from a fresh CLI, which re-sent the whole conversation.${also}`;
     case 'model-changed':
-      return 'The model changed, and a cache entry belongs to one model.';
+      return `The model changed, and a cache entry belongs to one model.${also}`;
+    case 'request-changed':
+      return `The request had changed: ${facts.join('; ')}${gap ? ` — only ${gap} after the previous one, so the 1-hour cache was still in date` : ''}.`;
+    case 'server-side':
+      return `Nothing in the request had changed${gap ? ` and only ${gap} had passed` : ''}, yet the cache was not reused — dropped on Anthropic's side, whose caching is best-effort.`;
     case 'unknown':
       return gap
         ? `The cached prefix was invalidated — only ${gap} had passed, so the 1-hour cache had not expired.`
         : 'The cached prefix was invalidated, with the 1-hour cache still in date.';
     default:
       return null;
+  }
+}
+
+/** A cause in a few words, for a list that groups re-caches by it. */
+export function recacheCauseLabel(cause: RecacheCause | null): string {
+  switch (cause) {
+    case 'ttl-expired':
+      return 'the 1-hour cache expired';
+    case 'new-run':
+      return 'resumed from a fresh CLI';
+    case 'model-changed':
+      return 'the model changed';
+    case 'request-changed':
+      return 'the request changed';
+    case 'server-side':
+      return "dropped on Anthropic's side";
+    default:
+      return 'no local explanation';
   }
 }
 

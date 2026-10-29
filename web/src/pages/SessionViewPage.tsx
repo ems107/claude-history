@@ -1390,7 +1390,14 @@ export function SessionViewPage() {
   const panel = (() => {
     switch (inspector.open) {
       case 'tokens':
-        return <TokenPanel summary={session.summary} turns={session.turns} />;
+        return (
+          <TokenPanel
+            summary={session.summary}
+            turns={session.turns}
+            requests={session.requests}
+            drivers={session.costDrivers}
+          />
+        );
       case 'plan':
         return (
           <PlanPanel
@@ -1659,6 +1666,7 @@ export function SessionViewPage() {
                       // carry over to the next session's segments and turns.
                       key={id}
                       turns={session.turns}
+                      requests={session.requests}
                       showThinking={showThinking}
                       expandTools={expandTools}
                       fold={fold}

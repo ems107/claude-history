@@ -148,9 +148,9 @@ export function CostPill({
           <CardLine label="written again" value={formatUsd(recache.cost.billed, recache.cost.partial)} tone="warn" />
           <CardLine label="if it had been read" value={formatUsd(recache.cost.ifRead, recache.cost.partial)} />
           <CardLine label="extra" value={formatUsd(recache.cost.extra, recache.cost.partial)} tone="warn" />
-          {recacheCauseText(recache.cause, recache.gapMs) && (
+          {recacheCauseText(recache.cause, recache.gapMs, recache.changes) && (
             <span className="mt-1 block text-[10px] text-amber-400/90">
-              {recacheCauseText(recache.cause, recache.gapMs)}
+              {recacheCauseText(recache.cause, recache.gapMs, recache.changes)}
             </span>
           )}
         </span>

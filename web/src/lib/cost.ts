@@ -4,6 +4,8 @@ import type {
   ModelPrices,
   PriceTable,
   RecacheCause,
+  RecacheRecord,
+  RequestChange,
   SessionSummary,
   Turn,
 } from '@claude-history/shared';
@@ -105,7 +107,50 @@ export function computeMessageCost(usage: MessageUsage, prices: ModelPrices | un
   );
 }
 
+/**
+ * A usage split by model, priced: the cost of what had a price, and whether
+ * something had none — the same three cases as every other sum here (null,
+ * whole, partial).
+ */
+export function priceByModel(
+  byModel: Record<string, MessageUsage>,
+  prices: PriceTable,
+): { cost: number | null; partial: boolean } {
+  let cost: number | null = null;
+  let partial = false;
+  for (const [model, usage] of Object.entries(byModel)) {
+    const one = computeMessageCost(usage, resolvePrices(model, prices));
+    if (one === null) partial = true;
+    else cost = (cost ?? 0) + one;
+  }
+  return { cost, partial: partial && cost !== null };
+}
+
 // ---- re-cached context ----
+
+/**
+ * Re-caches as the enricher keeps them (`DailyUsage.recaches`), priced the way
+ * `recacheCost` prices one from a parsed message: each re-write at the TTL of
+ * the write that carried it. Null when there are none.
+ */
+export function priceRecacheRecords(records: RecacheRecord[], prices: PriceTable): RecacheCost | null {
+  let tokens = 0;
+  let billed: number | null = null;
+  let ifRead: number | null = null;
+  let partial = false;
+  for (const r of records) {
+    tokens += r.tokens;
+    const rates = resolvePrices(r.model, prices);
+    if (!rates) {
+      partial = true;
+      continue;
+    }
+    billed = (billed ?? 0) + ((r.tokens - r.tokens5m) * rates.cacheWrite + r.tokens5m * cacheWrite5mRate(rates)) / 1_000_000;
+    ifRead = (ifRead ?? 0) + (r.tokens * rates.cacheRead) / 1_000_000;
+  }
+  if (tokens === 0) return null;
+  return { tokens, billed, ifRead, extra: billed === null || ifRead === null ? null : billed - ifRead, partial };
+}
 
 /**
  * What re-writing already-cached context cost, in the two forms that have to be
@@ -154,6 +199,7 @@ export interface RecachedRequest {
   usage: MessageUsage;
   recached: number;
   recacheCause: RecacheCause | null;
+  recacheChanges: RequestChange[];
   gapMs: number | null;
 }
 
@@ -166,6 +212,8 @@ export interface RecacheSummary {
    * explain the wrong thing.
    */
   cause: RecacheCause | null;
+  /** What the request changed, on that same largest event. */
+  changes: RequestChange[];
   gapMs: number | null;
 }
 
@@ -177,7 +225,7 @@ export function summariseRecache(requests: RecachedRequest[], prices: PriceTable
     (best, r) => (r.recached > 0 && (!best || r.recached > best.recached) ? r : best),
     null,
   );
-  return { cost, cause: worst?.recacheCause ?? null, gapMs: worst?.gapMs ?? null };
+  return { cost, cause: worst?.recacheCause ?? null, changes: worst?.recacheChanges ?? [], gapMs: worst?.gapMs ?? null };
 }
 
 /** The re-cache across several requests, each priced at its own model's rates. */
