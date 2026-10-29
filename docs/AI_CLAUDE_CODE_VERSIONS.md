@@ -46,7 +46,6 @@ Nothing open.
 - [2.1.287 — a claude-history mod for Claude Code itself](#21287) — implement, last of all by the user's choice
 - [2.1.304 — the tools called before a compaction](#21304) — implement
 - [2.1.292 — each subagent's effort in the ⑂ panel](#21292) — implement
-- [2.1.269 — the diff of what a Bash command changed](#21269) — implement
 
 **To measure**
 
@@ -363,7 +362,7 @@ Nothing open.
 98 bullets, 39 for other surfaces.
 
 - **[tolerate · reads]** Headless and remote sessions stay busy while background agents run, and SDK sessions now report a status — the live badge says working while agents work, which is the truth; the guard already excludes the composer's own pids ([Running Claude](AI_RUNNING_CLAUDE.md)).
-- **[implement · idea]** **The diff of what a Bash command changed.** With `bashEditDiffEnabled` on, the Bash tool's result carries a diff of the files the command changed — drawn the way an Edit's is. Off here, so there is nothing to build against until it is turned on.
+- **[implement · idea]** **The diff of what a Bash command changed.** With `bashEditDiffEnabled` on, the Bash tool's result carries a diff of the files the command changed. The first round filed it as off here, which was wrong: with nothing written, Claude Code turns it on in auto mode for an account in its experiment, and 1,055 Bash results in 48 transcripts carried one from the day this version shipped ([Transcripts](AI_TRANSCRIPTS.md#what-a-call-changed)). The same pass found that no Edit or Write diff was drawn either, though 7,556 Edit results carry `structuredPatch`. **Landed** with the `tool-diffs` branch (`5ddd76c` the parser, `aa73a39` the badge and the diff under the call, `be85305` the Changed panel, `7975e99` the group in Settings → Claude): one renderer for both kinds, Bash commands in the Changed panel, and a group that is amber while the setting is left to the mode and the experiment ([The viewer](AI_VIEWER.md#what-a-call-changed)).
 - *Not applicable:* keyboard fixes for other terminals; capability replies at startup; blank rows after a resize; replies lost by resumed headless sessions; escape codes in background-task records; synchronized-output detection; `permission_denials`; "Prompt is too long" in SDK sessions; `/goal` retries; `CLAUDE_CODE_RESUME_INTERRUPTED_TURN`'s age limit; stray characters over slow links; background PowerShell on exit; the kitty keyboard query; VS Code renames.
 
 ## 2.1.268

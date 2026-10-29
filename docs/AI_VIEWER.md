@@ -511,7 +511,7 @@ does, where a deep link lands. It was 1461 lines and ten `<Section>`s in one
 state, actions and read-only information, all wearing the same card.
 
 **What exists lives in `lib/settingsCatalog.ts`, and nothing else may hold that
-list.** Seven areas → twenty-two groups → fifty-nine rows, data only, no JSX. Four
+list.** Seven areas → twenty-three groups → sixty rows, data only, no JSX. Four
 readers depend on it and that is why it is data: the rail, the search box, the
 changed-from-default tally and `resolveAnchor`. Adding a setting is three edits —
 the field in `AppSettings`, an `Entry` here, the row in its area file — and
@@ -537,11 +537,14 @@ hunts for an element that is in a different one, which is silence.
 in the README and `RetentionFooter` links to one. `claude-thinking` is linked to
 from View ▾.
 
-**Claude Code's own settings are read and never written**, in two groups:
-`claude-retention` (Data) and `claude-thinking` (Claude). The second reads
-`showThinkingSummaries` (`core/thinkingSetting.ts`) through the same chain as the
-retention: policy, then the user file, with the projects that set it listed
-apart.
+**Claude Code's own settings are read and never written**, in three groups:
+`claude-retention` (Data), and `claude-thinking` and `claude-bash-diff` (Claude).
+The two in Claude read one boolean each through the same chain as the
+retention — policy, then the user file, with the projects that set it listed
+apart — and share their reader (`core/claudeSettingFiles.ts`) and their rows,
+line and buttons (`ClaudeSettingSources.tsx`). `claude-thinking` reads
+`showThinkingSummaries`; `claude-bash-diff` is described with the diffs it is
+about ([What a call changed](#what-a-call-changed)).
 
 - **Off is drawn amber.** Off is Claude Code's default, and it costs something
   nobody notices: every new session keeps no reasoning text, and nothing brings
@@ -794,6 +797,20 @@ Four things are lifted out from between the tool calls, because each is a turn o
 **The user pressing stop** (`InterruptMarker`, block kind `interrupt`) is the fifth, and the only one that is not a message at all: Claude Code writes `[Request interrupted by user]` as a `user` line ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#the-stop-marker-request-interrupted-by-user)), so it drew a bubble in the user's own colour quoting words nobody typed — and `isPromptItem` counted it, so every fold header above it said one prompt too many. It is drawn as the event it is: a thin rose line on the rail with the answer it cut short, no timestamp of its own (it lands within a second of that answer), and it stays visible when the turn is folded, like the "rewound away" notice. The cut it makes falls between items, so there is nothing for `costOwner` to undo — and being always the last item of its turn, no run follows it anyway.
 
 > **The trap in all four: `costEntries` dedupes by message uuid WITHIN a run**, so a message whose calls land in two runs would be billed by both. `costOwner` drops to false after the cut, and that is the only reason the pills still reconcile. (For the queued prompt the cut falls between items, so there is nothing to undo.) The way to check it is on the page: collapse the runs — expanded, a run shows its own pill AND the per-message pills inside it, the same money twice — and the pills of a turn must still add up to its badge.
+
+## What a call changed
+
+**A Bash, Edit or Write call with a recorded diff says so on its face, and draws the diff under its result** (`ToolDiff.tsx`, fed `ToolResultInfo.diff` — the shapes are in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#what-a-call-changed)). Before this an Edit drew its input JSON and a Bash command its output, and nothing in a run of ten commands said which of them had touched a file.
+
+- **The badge is readable with the block folded**: `± 2 files +12 −3` for a command, `+3 −1` for a file tool, `+40 new file` for a Write that created one, and `± 1 file` alone where a command's files were all kept without a diff — a `+0 −0` there would claim a count nobody made. It sits inside the `FoldHeader`, because it takes no click, and it is `data-chrome`. **On a phone the row is already full** (clock, name, cost pills), so a call with a badge lets its header wrap and the badge takes a line of its own; one that rode over the pills was the first version.
+- **One renderer, the GIT tab's.** `toGitFileDiff` (`lib/toolDiff.ts`) turns Claude Code's hunks into `GitFileDiff` — kinds from the prefixes, numbers counted from each hunk's start, the gap before each hunk — and `FileDiffBody` draws them with its gutters and word-level marks. One fold per file: its path relative to the session's folder, its status, `+a −d`, the 📄 opener beside the header.
+- **All of it is `data-chrome`**, so the find bar counts none of it and the formatted copy leaves it out. That is the rule rather than a shortcut: the model never saw this diff — Claude Code records it beside the result for its own display — and what the call WAS, the command or the edit's strings, is in its input, which is searched as before.
+- **A Bash diff says what it is where it is read**: `Changed while it ran`, with the line that it can include other programs' writes beside the label, not on a hover. Files changed with no diff kept are listed under the diffs; another command running at the same time and a folder that could not be compared are each a sentence.
+- **A file whose only change is its line endings says that instead** (`line endings → CRLF`): its diff is every line removed and added again, identical on screen. 63 of the Bash file diffs here are only that.
+
+**The Changed panel holds both kinds** — every file the session changed, each change in the order it happened. An Edit or Write is drawn from its recorded patch, with line numbers and context, and falls back to the strings it asked for where there is none (a failed call, a created file). A Bash command adds an entry per file that changed while it ran, merged under the same path as the file's Edit/Write changes (the parser folds separators and case into one key), marked `BASH`, and saying why where no diff was kept. Every entry has `↑ the call`. **The hunks are looked up on the call, never copied onto the entry** (`diffsByCall`): a second copy was 1.6 MB of the largest session's payload.
+
+**Settings → Claude → `claude-bash-diff`** says whether Claude Code records these at all, read through `bashEditDiffEnabled`'s whole chain (`core/bashEditDiffSetting.ts`). Written `true` is green, written `false` red — and **not written is amber even while it works**, because Claude Code then decides it by the mode and by an Anthropic experiment, neither of which this machine can see or keep. The amber state carries the one proof there is, the newest diff in the newest transcripts with a link to its call, without being turned green by it. There is deliberately no counterpart of the thinking switch's note in the conversation: a Bash call with no diff may simply have changed nothing.
 
 ## Narration: the prose that was printed while the work went past
 
@@ -1146,7 +1163,7 @@ below is what it draws once it is there.
 
 ## The three file panels
 
-The rail carries three of them, and the words are the feature: **`Changed Files`** is what the session EDITED (`detail.fileChanges`, built server-side from `Edit`/`Write`/`NotebookEdit`/`MultiEdit`), **`Sent Files`** is what it HANDED OVER, and **`Mentioned`** is what it only TALKED about. While the first was called plain `Files` the second had no name left to take, and none of the three is another's superset — a delivered screenshot was never edited, an edited source was never delivered, and a file merely named was neither. All three read the CONVERSATION, which is what makes [the scratchpad](#the-scratchpad-is-the-fourth-file-question) a fourth question rather than a fourth answer to this one: it reads the disk.
+The rail carries three of them, and the words are the feature: **`Changed Files`** is what the session CHANGED (`detail.fileChanges`, built server-side from `Edit`/`Write`/`NotebookEdit`/`MultiEdit` and from what Bash commands changed — [What a call changed](#what-a-call-changed)), **`Sent Files`** is what it HANDED OVER, and **`Mentioned`** is what it only TALKED about. While the first was called plain `Files` the second had no name left to take, and none of the three is another's superset — a delivered screenshot was never edited, an edited source was never delivered, and a file merely named was neither. All three read the CONVERSATION, which is what makes [the scratchpad](#the-scratchpad-is-the-fourth-file-question) a fourth question rather than a fourth answer to this one: it reads the disk.
 
 The third is the weakest of them by nature and says so on every row that needs it, because **a path in prose is written for a person**: `core/git.ts` for the real thing, `<pid>.json` for a naming scheme, `~/.claude` for a folder, `vX.Y.Z` for nothing at all. Measured over five sessions, 14 of 64 such paths pointed at a file that is really there.
 

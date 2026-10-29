@@ -256,6 +256,21 @@ function contentLines(
             fence(block.result.text),
             '',
           );
+          const diff = block.result.diff;
+          if (diff && diff.files.length > 0) {
+            // As the app draws it under the result: Claude Code's own hunks,
+            // one header per file, in a `diff` fence that renders anywhere.
+            const text = diff.files
+              .map((f) => [
+                `--- ${f.path}`,
+                `+++ ${f.path}`,
+                ...(f.tooLarge
+                  ? ['(too large to carry)']
+                  : f.hunks.flatMap((h) => [`@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@`, ...h.lines])),
+              ].join('\n'))
+              .join('\n');
+            out.push(`**${diff.source === 'bash' ? 'Changed while it ran' : 'Diff'}**`, '', fence(text, 'diff'), '');
+          }
         }
         out.push('</details>', '');
         break;
