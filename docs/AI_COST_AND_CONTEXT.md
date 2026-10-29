@@ -9,7 +9,7 @@ The line format itself is in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md); subagent tr
 - **One usage per `message.id`, taken from its FIRST line.** Exclude model `<synthetic>`; drop replays.
 - **`parser.ts` and `enricher.ts` must dedupe identically** — that parity is the only reason the viewer's per-message costs add up to the session total.
 - **Never look a model up in the price table by exact key** — go through `resolvePrices` / `priceKey`.
-- **Anything genuinely unpriced reads "—", never "$0.000".**
+- **Anything genuinely unpriced reads "—", never "$0.000"** — and a sum that leaves an unpriced model out says so.
 - **The cache-write TTL is read off the line, never assumed from the kind of file.**
 - **A session's cost includes the agents it sent out**, stored separately and added, never folded in.
 - **Never persist a cost, only tokens** — the price table is user-editable.
@@ -28,6 +28,8 @@ Beyond the four token counts, `usage` carries `cache_creation.{ephemeral_1h,ephe
 ## Pricing
 
 **Never look a model up in the price table by exact key** — go through `resolvePrices` / `priceKey`. Claude Code records dated ids (`claude-haiku-4-5-20251001`) while the table is keyed by family (`claude-haiku-4-5`), and the exact-key lookup priced those messages at **$0, silently**, in the session cost, the stats dashboard and the price editor, which did not even render a row for them. A trailing `-YYYYMMDD` falls back to the family key; anything genuinely unpriced must read "—", never "$0.000".
+
+**The Stats page sums over models, so "unpriced" there is three cases, not one** (`Spend` in `StatsPage.tsx`). Its sums used to take a missing price as `?? 0`, which put "$0.000" on every unpriced model in the model mix and every project made only of them, and let the total come out short with nothing to say so — $27.86 for a month that really cost $707, the day the 5.5 models were missing from the defaults. Now a figure with nothing priced in it reads "—", one where only part was priced reads the priced part with a `+`, and an amber line under the cards names the models no cost on the page includes, the chart's included — the line is what explains the `+` at phone width, where a tooltip explains nothing. The session list is the one place left that sums a partial cost silently (`sessionCostParts` adds what it can price).
 
 **The table holds one rate per model, and a model can have two.** Claude Haiku 5.5 bills a prompt over 100,000 tokens at five times its base rate ($0.50/$2.50 against $0.10/$0.50), and the docs list that as a second row of the same model, after the base one. The scraper used to let the later row overwrite the earlier, so a fetched table priced every Haiku 5.5 message at five times its cost; it now skips any row priced for prompts "over N tokens". Learning the tier for real would mean splitting every by-model aggregate (`usageByModel`, `daily`, the subagent ones) by prompt size, since a request's size is gone once its tokens are summed — and nothing here needs it: all 47 Haiku 5.5 messages in the corpus are one-message sessions, the largest prompt 33,312 tokens. A request over the threshold is underpriced by 5×, and that is the known gap. A table saved before the fix keeps its wrong row until it is fetched again or edited.
 

@@ -1,7 +1,7 @@
 import type { SessionSummary } from '@claude-history/shared';
 import { resolvePrices } from '@claude-history/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { api } from '../api/client.ts';
 import { ProjectTag } from '../components/list/ProjectTag.tsx';
@@ -40,7 +40,49 @@ function daysBetween(from: string, to: string): string[] {
   return out;
 }
 
-function Card({ label, value, hint }: { label: string; value: string; hint?: string }) {
+/**
+ * Money summed over models, some of which may have no price. Counting those as
+ * $0 is how a model missing from the table read "$0.000" in the model mix, a
+ * project made only of such models "$0.000" in its row, and the total came out
+ * short with nothing to say so — all three while the token figures beside them
+ * counted that usage in full.
+ */
+interface Spend {
+  /** What the priced part comes to. */
+  cost: number;
+  /** Something in it had a price; without that the sum is unknown, not zero. */
+  priced: boolean;
+  /** Models whose usage is in the figures beside it but not in `cost`. */
+  unpriced: Set<string>;
+}
+
+const newSpend = (): Spend => ({ cost: 0, priced: false, unpriced: new Set() });
+
+function addSpend(spend: Spend, model: string, cost: number | null): void {
+  if (cost === null) {
+    spend.unpriced.add(model);
+    return;
+  }
+  spend.cost += cost;
+  spend.priced = true;
+}
+
+/** "—" when nothing in it had a price; the priced part and a `+` when only some did. */
+function SpendText({ spend }: { spend: Spend }) {
+  const missing = [...spend.unpriced].map(shortModel).join(', ');
+  if (!spend.priced) {
+    return spend.unpriced.size > 0 ? <span title={`No price for ${missing}`}>—</span> : <>{formatUsd(0)}</>;
+  }
+  if (spend.unpriced.size === 0) return <>{formatUsd(spend.cost)}</>;
+  return (
+    <span title={`Plus the usage of ${missing}, which has no price`}>
+      {formatUsd(spend.cost)}
+      <span className="text-amber-400">+</span>
+    </span>
+  );
+}
+
+function Card({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
     <div className="rounded border border-[var(--border)] bg-[var(--bg-raised)]/50 px-4 py-3" title={hint}>
       <div className="text-[11px] tracking-wider text-[var(--text-dim)] uppercase">{label}</div>
@@ -54,7 +96,7 @@ interface ProjectAgg {
   sessions: number;
   prompts: number;
   output: number;
-  cost: number;
+  spend: Spend;
   lastMs: number;
 }
 
@@ -84,11 +126,16 @@ export function StatsPage() {
     const perProject = new Map<string, ProjectAgg>();
     const proj = (key: string) => {
       let p = perProject.get(key);
-      if (!p) perProject.set(key, (p = { key, sessions: 0, prompts: 0, output: 0, cost: 0, lastMs: 0 }));
+      if (!p) perProject.set(key, (p = { key, sessions: 0, prompts: 0, output: 0, spend: newSpend(), lastMs: 0 }));
       return p;
     };
-    const perModel = new Map<string, { output: number; cost: number }>();
-    let totals = { sessions: 0, prompts: 0, output: 0, cost: 0, ownCost: 0 };
+    const perModel = new Map<string, { output: number; spend: Spend }>();
+    const model = (name: string) => {
+      let m = perModel.get(name);
+      if (!m) perModel.set(name, (m = { output: 0, spend: newSpend() }));
+      return m;
+    };
+    const totals = { sessions: 0, prompts: 0, output: 0, spend: newSpend(), ownCost: 0 };
     // Context that was cached, expired and had to be written again. Priced here
     // rather than stored: the enrichment keeps tokens only, so an edit to the
     // price table moves this figure like it moves every other.
@@ -110,45 +157,46 @@ export function StatsPage() {
         p.prompts += du.prompts;
         c.prompts += du.prompts;
         p.lastMs = Math.max(p.lastMs, s.mtimeMs);
-        for (const [model, u] of Object.entries(du.byModel)) {
-          const cost = computeCost(u, resolvePrices(model, prices)) ?? 0;
+        for (const [name, u] of Object.entries(du.byModel)) {
+          // Null when the model has no price: kept apart from zero, see `Spend`.
+          const cost = computeCost(u, resolvePrices(name, prices));
+          const m = model(name);
           totals.output += u.output;
-          totals.cost += cost;
+          addSpend(totals.spend, name, cost);
           // Kept apart for one figure only: the share of spend that went on
           // re-cached context. Re-caches are measured in session transcripts and
           // nowhere else, so counting the agents' spend in that denominator
           // would make the percentage fall as more work is delegated, saying
           // something about caching that never happened.
-          totals.ownCost += cost;
+          totals.ownCost += cost ?? 0;
           p.output += u.output;
-          p.cost += cost;
+          addSpend(p.spend, name, cost);
           c.output += u.output;
-          c.cost += cost;
-          const m = perModel.get(model) ?? { output: 0, cost: 0 };
+          // The chart can only stack what has a price; the line under the
+          // cards names what it leaves out.
+          c.cost += cost ?? 0;
           m.output += u.output;
-          m.cost += cost;
-          perModel.set(model, m);
+          addSpend(m.spend, name, cost);
         }
         // The agents those sessions sent out, on the day THEY ran. Their tokens
         // are not in `byModel` — separate conversations, separate transcripts —
         // so without this the dashboard is short by whatever was delegated, and
         // the sessions that delegate most are the ones it understates most.
-        for (const [model, u] of Object.entries(du.subagentByModel ?? {})) {
-          const cost = computeMessageCost(u, resolvePrices(model, prices)) ?? 0;
+        for (const [name, u] of Object.entries(du.subagentByModel ?? {})) {
+          const cost = computeMessageCost(u, resolvePrices(name, prices));
+          const m = model(name);
           totals.output += u.output;
-          totals.cost += cost;
+          addSpend(totals.spend, name, cost);
           p.output += u.output;
-          p.cost += cost;
+          addSpend(p.spend, name, cost);
           c.output += u.output;
-          c.cost += cost;
-          const m = perModel.get(model) ?? { output: 0, cost: 0 };
+          c.cost += cost ?? 0;
           m.output += u.output;
-          m.cost += cost;
-          perModel.set(model, m);
+          addSpend(m.spend, name, cost);
         }
         recache.events += du.recacheEvents;
-        for (const [model, tokens] of Object.entries(du.recachedByModel)) {
-          const rates = resolvePrices(model, prices);
+        for (const [name, tokens] of Object.entries(du.recachedByModel)) {
+          const rates = resolvePrices(name, prices);
           recache.tokens += tokens;
           // No rates for this model: count the tokens, price nothing. The
           // enrichment does not keep the 1h/5m split, and every session
@@ -184,7 +232,8 @@ export function StatsPage() {
   }
 
   const fmt = metric === 'cost' ? formatUsd : metric === 'output' ? formatTokens : (n: number) => String(Math.round(n));
-  const projectRows = [...agg.perProject.values()].sort((a, b) => b.cost - a.cost);
+  const projectRows = [...agg.perProject.values()].sort((a, b) => b.spend.cost - a.spend.cost);
+  const unpriced = [...agg.totals.spend.unpriced].sort();
   const modelRows = [...agg.perModel.entries()].sort((a, b) => b[1].output - a[1].output);
   const maxModelOutput = Math.max(1, ...modelRows.map(([, m]) => m.output));
   const projectInfo = new Map((projectsQ.data ?? []).map((p) => [p.key, p]));
@@ -213,10 +262,20 @@ export function StatsPage() {
           <Card label="Output tokens" value={formatTokens(agg.totals.output)} hint="Assistant output tokens" />
           <Card
             label="≈ Cost"
-            value={formatUsd(agg.totals.cost)}
+            value={<SpendText spend={agg.totals.spend} />}
             hint="API-equivalent value at the configured prices, subagents included — not actual subscription spend"
           />
         </div>
+
+        {/* Every cost on this page leaves these out, the chart included, while
+            every token figure counts them — so it is said once, here, rather
+            than left for a `+` on a tooltip to explain. */}
+        {unpriced.length > 0 && (
+          <div className="rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300">
+            No price for {unpriced.map(shortModel).join(', ')}: their usage is in the token figures but in no cost on
+            this page. Set {unpriced.length === 1 ? 'it' : 'them'} in the price table below.
+          </div>
+        )}
 
         {/* A full-width strip rather than a fifth card: the grid above is
             `md:grid-cols-4` and a fifth would leave one orphan on its own row.
@@ -291,7 +350,7 @@ export function StatsPage() {
                     />
                   </div>
                   <span className="w-32 shrink-0 text-right text-[var(--text-dim)]">
-                    {formatTokens(m.output)} out · {formatUsd(m.cost)}
+                    {formatTokens(m.output)} out · <SpendText spend={m.spend} />
                   </span>
                 </div>
               </div>
@@ -334,7 +393,9 @@ export function StatsPage() {
                       <td className="px-2 text-right">{p.sessions}</td>
                       <td className="px-2 text-right">{p.prompts}</td>
                       <td className="px-2 text-right">{formatTokens(p.output)}</td>
-                      <td className="px-2 text-right">{formatUsd(p.cost)}</td>
+                      <td className="px-2 text-right">
+                        <SpendText spend={p.spend} />
+                      </td>
                     </tr>
                   );
                 })}
