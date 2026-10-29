@@ -1221,6 +1221,7 @@ Every request a session written since CLI 2.1.303 sent to the API, rebuilt from 
 - **The billed total is real; its split is an estimate** (≈), shared out by characters, because the API gives one number per request. Its `Fold` says so, the way the cost panel does.
 - **One scroller under the header, the tabs pinned to its top.** Held fixed, the summary took 300 px of the column, and more than half of a phone.
 - **`only in the request`** marks a message sent in that form only here. **`new`** is a position, as in the transcript.
+- **A thinking block says what it is.** One with narration's label reads `narration`. An empty one gives the reason its request had: the `display` it asked for ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md) has the rule) and the setting that would keep a summary of it.
 - **↗ prefers a tool's id to a uuid**: the line carrying a `tool_result` is drawn nowhere, so its uuid would scroll to nothing.
 - **A message is fetched whole only when opened** (`/messages/:index`, `staleTime: Infinity` — it never changes). The outline carries 240 characters of each block, because a single message can be megabytes.
 - **On a phone it is a sheet**, and a ↗ from it behaves like a jump from any other sheet: the anchor is written underneath, and Back shows it. Closing the sheet in the same gesture would undo the jump. `useBackDismiss` closes a layer with `history.back()`, and the entry it lands on predates the anchor.

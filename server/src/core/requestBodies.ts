@@ -14,6 +14,7 @@ import {
 } from '@claude-history/shared';
 import { isRec, num, type RawLine, safeParse, str } from './jsonl.ts';
 import { toMessageUsage } from './parser.ts';
+import { thinkingKind } from './summarizer.ts';
 
 /**
  * The exact request each reply answered, rebuilt from its transcript.
@@ -373,7 +374,14 @@ function summariseBlock(b: unknown, callNames: Map<string, string>): RequestBloc
     text = str(def.description) ?? '';
   } else if (type === 'image') text = '[image]';
   else text = JSON.stringify(b);
-  return { type, name, toolUseId, chars: JSON.stringify(b).length, preview: text.slice(0, REQUEST_PREVIEW_CHARS) };
+  return {
+    type,
+    name,
+    toolUseId,
+    chars: JSON.stringify(b).length,
+    preview: text.slice(0, REQUEST_PREVIEW_CHARS),
+    narration: type === 'thinking' && thinkingKind(rec) === 'narration',
+  };
 }
 
 /** The request with that id, or null when the file does not hold it. */

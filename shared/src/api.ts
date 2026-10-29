@@ -2458,6 +2458,12 @@ export interface RequestBlockSummary {
   chars: number;
   /** The start of its text (or input, or result), up to `REQUEST_PREVIEW_CHARS`. */
   preview: string;
+  /**
+   * A `thinking` block whose signature labels it narration: prose the CLI
+   * printed to the reader, not reasoning (AI_TRANSCRIPTS.md, "Narration is not
+   * thinking").
+   */
+  narration: boolean;
 }
 
 /** One message of a request. */

@@ -100,7 +100,14 @@ Seven exist in this corpus, and **only three ever carry `content`** — the rest
 
 **Thinking blocks are empty in recent CC versions**: `{"type":"thinking","thinking":"","signature":"..."}` — only the signature is persisted. Some older sessions carry plaintext thinking, so the UI must not assume the text exists either way. Censused across the corpus: **5,460 blocks, 396 with text (7%)**, and it is not a clean cutoff by version — 2.1.202 (158/158) and 2.1.219 (211/211) are whole, 2.1.229 has 24 of 867, 2.1.233 three of 1,654, and 2.1.200, 2.1.220–228, 2.1.232 and 2.1.234 have none at all.
 
-**So the ephemeral status line the CLI shows while it works is NOT on disk, and there is nowhere to get it.** Sentences like *"Refining port-open UX flow; investigating message state transitions"* are the SUMMARISED thinking the API streams — Claude Code asks for it with `thinking.display: "summarized"` when its `showThinkingSummaries` setting is on (verified in the 2.1.234 bundle) — and what reaches the transcript is the emptied block above. Searched for verbatim across the whole of `~/.claude`: present only in `history.jsonl` and in the session where the user typed the words into a prompt, absent from the session that displayed them. It is the live-streaming wall of the section below, in another guise: during a turn nothing under `~/.claude` is written but the transcript. **Do not try to recover it** — the only channel carrying it is the IDE socket, and posing as an IDE is forbidden. What Claude Code prints into the SCROLLBACK while it works is a different thing and it is right there on disk, in the same block type, which is the section below.
+**Why a thinking block is empty: the request did not ask for its text.** Every request since 2.1.303 records `params.thinking.display`, and that is what decides it (2.1.312 bundle and corpus):
+
+- **`updates`** is what an interactive CLI sends unless the user has turned `showThinkingSummaries` on in `settings.json` (default off). The API returns the reasoning as an encrypted `signature` alone, and only narration comes back as words ([below](#narration-is-not-thinking)). Under `updates` here: 4,029 thinking blocks empty, 569 with text, and every one of those 569 is narration.
+- **`summarized`** is what the setting asks for, and the summary IS written to the transcript. Measured with a throwaway `claude -p … --thinking-display summarized`: a 135-character summary of the reasoning in the `thinking` block, labelled `thinking`.
+- **`omitted`** is what `-p` with `text` or `json` output asks for, whatever the setting says, unless `--thinking-display` names a mode.
+- **Nothing recovers the text of a block written without it.** The signature is for the API's eyes; the text never reached this machine.
+
+The live status lines the terminal shows while it works are narration in this mode, and narration is on disk. An earlier reading (2.1.234) found summarised thinking on screen and an emptied block on disk. It is superseded by the measurement above: a summary that is asked for is kept.
 
 ### Narration is not thinking
 

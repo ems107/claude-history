@@ -131,7 +131,12 @@ export function RequestColumn({
             {/* Keyed on the request: ‹ › keeps the tab, and starts its contents afresh. */}
             <div key={d.id}>
               {tab === 'messages' && (
-                <MessagesTab sessionId={sessionId} d={d} onGoToMessage={onGoToMessage} onGoToCall={onGoToCall} />
+                <MessagesTab
+                sessionId={sessionId}
+                d={d}
+                onGoToMessage={onGoToMessage}
+                onGoToCall={onGoToCall}
+              />
               )}
               {tab === 'system' && <SystemTab d={d} />}
               {tab === 'tools' && <ToolsTab d={d} />}
@@ -453,7 +458,10 @@ function messageSummary(m: RequestMessageSummary): string {
     if (b.type === 'tool_addition') continue;
     if (b.type === 'text') {
       if (texts++ === 0) parts.push(b.preview.replace(/\s+/g, ' ').trim() || '(empty)');
-    } else if (b.type === 'thinking') parts.push('thinking');
+    } else if (b.type === 'thinking') {
+      const said = b.preview.replace(/\s+/g, ' ').trim();
+      parts.push(b.narration ? `narration: ${said}` : said ? `thinking: ${said}` : 'thinking');
+    }
     else if (b.type === 'tool_use') parts.push(b.name ?? 'a call');
     else if (b.type === 'tool_result') parts.push(`result of ${b.name ?? 'a call'}`);
     else parts.push(b.type);
@@ -522,6 +530,7 @@ function MessagesTab({
             requestId={d.id}
             index={i}
             m={m}
+            display={thinkingDisplay(d)}
             onGoToMessage={onGoToMessage}
             onGoToCall={onGoToCall}
           />
@@ -561,6 +570,7 @@ function MessageRow({
   requestId,
   index,
   m,
+  display,
   onGoToMessage,
   onGoToCall,
 }: {
@@ -568,6 +578,7 @@ function MessageRow({
   requestId: string;
   index: number;
   m: RequestMessageSummary;
+  display: string | null;
   onGoToMessage: (uuid: string) => void;
   onGoToCall: (toolUseId: string) => void;
 }) {
@@ -620,7 +631,9 @@ function MessageRow({
           {k(m.chars)}
         </span>
       </div>
-      {open && <MessageBody sessionId={sessionId} requestId={requestId} index={index} summary={m.blocks} />}
+      {open && (
+        <MessageBody sessionId={sessionId} requestId={requestId} index={index} summary={m.blocks} display={display} />
+      )}
     </div>
   );
 }
@@ -630,11 +643,13 @@ function MessageBody({
   requestId,
   index,
   summary,
+  display,
 }: {
   sessionId: string;
   requestId: string;
   index: number;
   summary: RequestBlockSummary[];
+  display: string | null;
 }) {
   // A message is written once and never changes: no reason to fetch it twice.
   const full = useQuery({
@@ -648,13 +663,15 @@ function MessageBody({
   return (
     <div className="flex flex-col gap-2 px-4 pt-1 pb-3 md:pl-15 max-md:px-3">
       {blocks.map((b, i) => {
-        const text = blockText(b);
+        const text = blockText(b, display);
         const s = summary[i];
         return (
           <BlockView
             key={i}
             text={text}
-            label={[s?.type ?? '?', s?.name, blocks.length > 1 ? `${i + 1} of ${blocks.length}` : null].filter(Boolean).join(' · ')}
+            label={[s?.type ?? '?', s?.narration ? 'narration' : s?.name, blocks.length > 1 ? `${i + 1} of ${blocks.length}` : null]
+              .filter(Boolean)
+              .join(' · ')}
             chars={s?.chars ?? text.length}
           />
         );
@@ -663,15 +680,32 @@ function MessageBody({
   );
 }
 
-function blockText(block: unknown): string {
+/** `params.thinking.display`: what the request asked the API to send back of its reasoning. */
+function thinkingDisplay(d: RequestDetailResponse): string | null {
+  const t = d.params.thinking as { display?: unknown } | undefined;
+  return typeof t?.display === 'string' ? t.display : null;
+}
+
+/**
+ * Why a thinking block has no text, which is the common case and not a loss:
+ * the request did not ask for it. Claude Code sends `display: "updates"` unless
+ * its `showThinkingSummaries` setting is on, and the API then returns the
+ * reasoning as an encrypted signature alone — only narration comes back as
+ * words. With the setting on (`"summarized"`) a summary of it reaches the
+ * transcript, and is drawn here.
+ */
+function emptyThinking(display: string | null): string {
+  if (display === 'summarized') return '(No text came back for this block.)';
+  return `(No text: this request asked for the reasoning without it — thinking display "${display ?? 'default'}" — so only an encrypted signature came back, and the transcript holds nothing more. With showThinkingSummaries on in Claude Code's settings, new sessions keep a summary of it.)`;
+}
+
+function blockText(block: unknown, display: string | null): string {
   const b = (block ?? {}) as Record<string, unknown>;
   switch (b.type) {
     case 'text':
       return String(b.text ?? '');
     case 'thinking':
-      return typeof b.thinking === 'string' && b.thinking
-        ? b.thinking
-        : '(The text of this thinking block is not kept — only its signature.)';
+      return typeof b.thinking === 'string' && b.thinking ? b.thinking : emptyThinking(display);
     case 'tool_use':
       return JSON.stringify(b.input ?? {}, null, 2);
     case 'tool_result': {
