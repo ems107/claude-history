@@ -164,7 +164,7 @@ Then, on `cd2180fb`, request `54fe5ae9` (#301):
 **Then the browser** (check 26's harness), on `cd2180fb`:
 
 - `?tool=toolu_01RPLHZ1pW8udN3L9ifz4ph3` (a `sed`): folded, its badge reads `± 1 file +2 −1`; open, `Changed while it ran` holds `server/src/core/enricher.ts` with `@@ -93,7 +93,8 @@`, one removal at 96 and additions at 96 and 97. The call before it in the run reads `± 1` and nothing else: its file was kept without a diff.
-- `toolu_01Q5GinRmaRdVwYSAahMKEZP` holds two files; `toolu_012bEjidx21gxqMgdV2Z6MnX` (an Edit) reads `+2 −2` and draws `Diff` with word marks.
+- `toolu_01Q5GinRmaRdVwYSAahMKEZP` holds two files; `toolu_012bEjidx21gxqMgdV2Z6MnX` (an Edit) reads `+2 −2` and draws `Diff` with word marks. A Write that created its file (`toolu_01YETTbE7K2oKTYjMF1C8Fw3`) reads `+92 new file` and draws its 92 lines as additions under `@@ -0,0 +1,92 @@`.
 - **The find bar**: a word that appears only inside a diff counts 0, and the count of a word in a command is what it was before this landed. Every element under the diff's root must be inside a `[data-chrome]`.
 - **The Changed panel**: `server/src/core/enricher.ts` shows `EDIT` and `BASH` entries in time order, a `BASH` entry with no diff says why, and `↑ the call` lands flashed on its call. The rail's count is higher than before this landed (86 → 115 here).
 - **At 360 px** a call with a badge wraps its header and nothing overlaps the cost pills; nothing scrolls sideways.

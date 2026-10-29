@@ -2,7 +2,7 @@ import type { ContentBlock } from '@claude-history/shared';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client.ts';
 import { formatBytes, formatDateTime, formatMs, formatTimeOfDay, msBetween } from '../../lib/format.ts';
-import { diffTally } from '../../lib/toolDiff.ts';
+import { diffTally, withCreatedFile } from '../../lib/toolDiff.ts';
 import { FileRefChip } from './FileRefLink.tsx';
 import { FoldHeader } from '../FoldHeader.tsx';
 import { CardLine, HoverCard } from './HoverCard.tsx';
@@ -109,7 +109,11 @@ export function ToolBlock({
   // and claims no span. For a launched Agent this is the dispatch, not the run:
   // the subagent's own lifetime lives in its panel.
   const tookMs = msBetween(block.timestamp, result?.timestamp ?? null);
-  const diff = result?.diff ?? null;
+  // A created file arrives as a line count; its lines are made from the input here.
+  const diff = useMemo(
+    () => (result?.diff ? withCreatedFile(result.diff, block.input) : null),
+    [result?.diff, block.input],
+  );
   const tally = useMemo(() => (diff ? diffTally(diff) : null), [diff]);
   const showBadge = !!tally && (tally.files > 0 || tally.counted);
 

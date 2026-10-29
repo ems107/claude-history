@@ -85,6 +85,28 @@ export function lineEndingChange(file: ToolDiffFile): 'CRLF' | 'LF' | null {
   return to;
 }
 
+/** Past this a created file is named rather than drawn — the server's own cap on a patch (parser.ts). */
+const MAX_CREATED_LINES = 2000;
+
+/**
+ * A Write that CREATED its file records no patch — the content is the call's
+ * input — so its diff is made here, from that input: every line an addition,
+ * as Claude Code itself writes a file a Bash command created. Made in the
+ * browser because the content is already in the payload; the server sending it
+ * a second time as hunks would double the heaviest thing a Write carries.
+ */
+export function withCreatedFile(diff: ToolDiff, input: unknown): ToolDiff {
+  if (diff.newFileLines === null || diff.files.length > 0) return diff;
+  const rec = typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : null;
+  const path = typeof rec?.file_path === 'string' ? rec.file_path : null;
+  const content = typeof rec?.content === 'string' ? rec.content : null;
+  if (!path || content === null || diff.newFileLines === 0) return diff;
+  const tooLarge = diff.newFileLines > MAX_CREATED_LINES;
+  const lines = tooLarge ? [] : content.split('\n').slice(0, diff.newFileLines).map((l) => `+${l}`);
+  const hunks = tooLarge ? [] : [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: lines.length, lines }];
+  return { ...diff, files: [{ path, created: true, deleted: false, hunks, tooLarge }] };
+}
+
 /**
  * Every recorded diff of a session, by the call that made it. The Changed
  * panel's entries name their call rather than carry a copy of its hunks, and
@@ -95,7 +117,7 @@ export function diffsByCall(turns: Turn[]): Map<string, ToolDiff> {
   for (const turn of turns) {
     for (const item of turn.items) {
       for (const b of item.blocks) {
-        if (b.kind === 'tool' && b.toolUseId && b.result?.diff) out.set(b.toolUseId, b.result.diff);
+        if (b.kind === 'tool' && b.toolUseId && b.result?.diff) out.set(b.toolUseId, withCreatedFile(b.result.diff, b.input));
       }
     }
   }
@@ -120,6 +142,8 @@ export interface DiffTally {
 
 /** What the call's header says about its diff. */
 export function diffTally(diff: ToolDiff): DiffTally {
+  // A created file is counted by its line count, drawn or not (`withCreatedFile`).
+  if (diff.newFileLines !== null) return { files: 1, additions: diff.newFileLines, deletions: 0, counted: true };
   let additions = 0;
   let deletions = 0;
   for (const f of diff.files) {
@@ -130,7 +154,6 @@ export function diffTally(diff: ToolDiff): DiffTally {
       }
     }
   }
-  if (diff.newFileLines !== null) additions += diff.newFileLines;
-  const counted = diff.newFileLines !== null || diff.files.some((f) => f.hunks.length > 0);
+  const counted = diff.files.some((f) => f.hunks.length > 0);
   return { files: diff.files.length + diff.moreFiles, additions, deletions, counted };
 }

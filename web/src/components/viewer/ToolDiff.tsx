@@ -125,7 +125,7 @@ export function ToolDiffView({ diff }: { diff: ToolDiff }) {
   const project = refs?.projectPath ?? '';
   const bash = diff.source === 'bash';
   const more = diff.moreFiles > 0 || diff.otherPaths.length > 0;
-  // A Write that created its file has no diff to draw: the content is the input above.
+  // Nothing to draw: a created file whose input held no content to make lines from.
   if (diff.files.length === 0 && !more && !diff.unavailable) return null;
   return (
     <div data-chrome className="mt-2">
