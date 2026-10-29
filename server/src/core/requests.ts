@@ -60,6 +60,9 @@ export function requestReader(): RequestReader {
           .join(' · ')
       : '';
     facts.set(id, {
+      id,
+      at: str(o.timestamp),
+      added: Array.isArray(o.tail) ? o.tail.length : 0,
       shapeHash: str(o.shapeHash),
       betasKey,
       effort: output ? str(output.effort) : null,

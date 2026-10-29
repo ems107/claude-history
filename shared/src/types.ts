@@ -1026,6 +1026,12 @@ export interface MessageItem {
  * hundreds of requests in a row.
  */
 export interface RequestFacts {
+  /** The request's own id: what `?request=` names, and what its reply's `requestRef` was. */
+  id: string;
+  /** When the request went out — a few seconds before the reply's first line. */
+  at: string | null;
+  /** Messages it sent for the first time (its `tail`). */
+  added: number;
   shapeHash: string | null;
   betasKey: string | null;
   /** `params.output_config.effort`. */
