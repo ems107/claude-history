@@ -242,10 +242,14 @@ function byOpenedDesc(a: SessionSummary, b: SessionSummary): number {
   return (b.live?.startedAt ?? 0) - (a.live?.startedAt ?? 0);
 }
 
-/** Inside `attention`, a blocked turn outranks a finished one. */
-function waitingFirst(a: SessionSummary, b: SessionSummary): number {
-  const rank = (s: SessionSummary) => (s.live?.status === LIVE_WAITING ? 0 : 1);
-  return rank(a) - rank(b) || byOpenedDesc(a, b);
+/**
+ * Each section puts one status ahead of the rest of it, and orders both halves
+ * by when the terminal was opened: in `attention` a blocked turn outranks a
+ * finished one, in `open` a session working outranks one at rest.
+ */
+function statusFirst(status: string): (a: SessionSummary, b: SessionSummary) => number {
+  const rank = (s: SessionSummary) => (s.live?.status === status ? 0 : 1);
+  return (a, b) => rank(a) - rank(b) || byOpenedDesc(a, b);
 }
 
 /**
@@ -256,10 +260,12 @@ function waitingFirst(a: SessionSummary, b: SessionSummary): number {
  * only the filters. They are MOVED there, never copied, so a day's header
  * counts what is left under it and no session is two rows — which would also
  * leave the keyboard's selection, kept by session id, not knowing which one to
- * light. Each section orders by when the terminal was opened, which nothing but
- * a new process changes, so a row only moves when it changes section; and
- * `open` deliberately mixes working and idle, so a turn starting or ending
- * moves nothing at all. With no live session, the rows are exactly what they
+ * light. Each section puts one status first — waiting in `attention`, working
+ * in `open` — and orders by when the terminal was opened, which nothing but a
+ * new process changes. A row therefore moves only when its state does, and
+ * those moves are few: a turn that ends unseen rings the bell and leaves `open`
+ * anyway, and one only starts because somebody typed into it or something it
+ * left running came back. With no live session, the rows are exactly what they
  * were before these sections existed.
  *
  * Below them, day grouping follows whichever date the list is sorted by, so the
@@ -283,8 +289,8 @@ export function buildRows(
     if (section) live[section].push(s);
     else rest.push(s);
   }
-  live.attention.sort(waitingFirst);
-  live.open.sort(byOpenedDesc);
+  live.attention.sort(statusFirst(LIVE_WAITING));
+  live.open.sort(statusFirst(LIVE_BUSY));
   for (const { id, label, color } of LIVE_SECTIONS) {
     const members = live[id];
     if (members.length === 0) continue;

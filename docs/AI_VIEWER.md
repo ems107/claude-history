@@ -1554,18 +1554,22 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
 | Section | Who is in it | Order |
 | --- | --- | --- |
 | `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then each by when its terminal was opened, newest first |
-| `Open sessions` (green dot) | every other `busy` or resting one | by when the terminal was opened, and nothing else |
+| `Open sessions` (green dot) | every other `busy` or resting one | working first, then each by when its terminal was opened, newest first |
 
 - **The clock is `live.startedAt`**, the CLI's own start — when the terminal was
   opened, which for a session resumed today is today and not the day it was
-  created. Nothing but a new process changes it, so inside a section the order
-  stands still. A CLI that wrote none sorts last.
-- **`Open sessions` mixes working and idle on purpose.** The first design had a
-  `Working` section of its own, and every turn moved the row out and back. By
-  the opening time alone a turn starting or ending moves nothing; the only moves
-  left are into `Needs attention` when the session wants you and back out when
-  you have seen to it, and each of those means something. The state badge says
-  which is working.
+  created. Nothing but a new process changes it, so a row moves only when its
+  state does. A CLI that wrote none sorts last.
+- **Working goes ahead of idle inside `Open sessions`, and it costs fewer moves
+  than it looks.** It was first left out, ordered by the opening time alone, on
+  the fear that every turn would move the row twice. It does not: a turn that
+  ends while nobody is looking rings the bell and leaves for `Needs attention`
+  whatever this order says, and one only STARTS because somebody typed into the
+  session — so they are looking at the session, not the list — or because
+  something it left running (a background command, an agent, a `Monitor`, a
+  scheduled wake-up) came back and woke it, which is exactly the move worth
+  seeing. What is left is a turn ending in front of you, and then you are
+  looking at the session.
 - **Every `waiting` session is in, bell or not.** Opening a session withdraws its
   bell row, but a dialog looked at and not answered leaves the turn exactly as
   blocked — and a menu the user pulls up on an idle session (`/model`) is in for
