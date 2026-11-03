@@ -32,7 +32,9 @@ export const DEFAULT_FILTERS: FilterState = {
   showEmpty: false,
   sort: 'activity',
   dir: 'desc',
-  group: 'none',
+  // By day unless asked otherwise: the list reads as a diary, and the live
+  // sections that open it (`buildRows`) are what "now" looks like above it.
+  group: 'day',
 };
 
 /**
@@ -65,7 +67,8 @@ export function parseFilters(sp: URLSearchParams): FilterState {
   const dir = sp.get('dir');
   const group = sp.get('group');
   return {
-    group: group === 'day' || group === 'project' ? group : 'none',
+    // Absent means the default, which is `day`; `none` has to be spelled out.
+    group: group === 'none' || group === 'project' ? group : 'day',
     projects: csv(sp.get('projects')),
     from: sp.get('from'),
     to: sp.get('to'),
@@ -93,7 +96,7 @@ export function filtersToParams(f: FilterState): URLSearchParams {
   if (f.showEmpty) sp.set('empty', '1');
   if (f.sort !== 'activity') sp.set('sort', f.sort);
   if (f.dir !== 'desc') sp.set('dir', f.dir);
-  if (f.group !== 'none') sp.set('group', f.group);
+  if (f.group !== DEFAULT_FILTERS.group) sp.set('group', f.group);
   return sp;
 }
 
