@@ -260,10 +260,23 @@ export function SessionListPage() {
   }, [projects.isSuccess, projects.data, filters, setFilters]);
 
   const parentRef = useRef<HTMLDivElement>(null);
+  /**
+   * A measured height belongs to a ROW, not to a position. The virtualizer
+   * caches sizes by key and the key defaults to the index — so when the list
+   * reorders, every position kept the height of whatever used to stand there,
+   * and nothing measured again: React keeps a moved row's element (its `key` is
+   * the row id), its size does not change, and the ResizeObserver stays silent.
+   * A session leaving `Open sessions` was enough to shift every row under it: a
+   * header inherited a session's 64 px and drew a gap beneath it, and a session
+   * inherited a header's 30 px and was drawn over its neighbour. Keyed by the
+   * row's own id, a row takes its height with it wherever it goes.
+   */
+  const getItemKey = useCallback((i: number) => rows[i]?.id ?? i, [rows]);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (i) => (rows[i]?.kind === 'header' ? HEADER_HEIGHT : mobile ? ROW_HEIGHT_MOBILE : ROW_HEIGHT),
+    getItemKey,
     overscan: 12,
   });
 

@@ -706,6 +706,7 @@ Then in the viewer, on that same session: the row leads with `HH:mm:ss` (the cal
 - **Seeing a belled session moves it.** Click its row, stop injecting its bell row (what the server does when it is seen), stay longer than the 5 s `staleTime` so the list's own mount refetches, and go back: it must be under `Open sessions`.
 - **The grouping**: `/` with no parameters must draw day headers and carry no `group`; choosing None must put `group=none` in the URL, draw exactly `Needs attention`, `Open sessions`, `Other sessions` as headers, and survive a reload.
 - **At 360 px** (`mobile: true`): both sections drawn, and neither `documentElement` nor `body` wider than the viewport.
+- **A row that moves takes its height with it.** The failure needs the list to STAY MOUNTED while a row changes position — navigating away and back measures everything afresh and proves nothing, and so does reversing the sort, which swaps most drawn rows for new ones. Serve one closed session as live `idle` (so it sits in `Open sessions`), then stop faking it and set off an in-place refetch by clicking that row's ☆ (the pin invalidates `['sessions']`; click it again afterwards and assert the pin is off). With every drawn `[data-index]` sorted, each must start exactly where the one above it ends: the bug read `gap 34` under `Today` and `overlap 34` on the row after it (64 − 30). Narrowing to one project or to `badges=live` in place (`history.replaceState` + a `popstate`) is the same test at 360 px, where it failed by 116, 39 and 63 px.
 
 ## Running Claude
 
