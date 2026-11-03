@@ -3,6 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../api/client.ts';
+import { useNotifications } from '../api/useNotifications.ts';
 import { FilterSidebar } from '../components/list/FilterSidebar.tsx';
 import { MobileListBar } from '../components/list/MobileListBar.tsx';
 import { SearchBox } from '../components/list/SearchBox.tsx';
@@ -201,9 +202,17 @@ export function SessionListPage() {
     () => applyFilters(sessions.data ?? [], filters, prices.data?.prices),
     [sessions.data, filters, prices.data],
   );
+  // The bell decides which resting sessions still need you (`liveSectionOf`).
+  // The header's bell keeps this query mounted and fresh through
+  // `notifications-changed`, so reading it here costs no request.
+  const notifications = useNotifications();
+  const belled = useMemo(
+    () => new Set((notifications.data?.stopped ?? []).map((s) => s.sessionId)),
+    [notifications.data],
+  );
   const rows = useMemo(
-    () => buildRows(matching, filters.group, filters.sort, colorByProject),
-    [matching, filters.group, filters.sort, colorByProject],
+    () => buildRows(matching, filters.group, filters.sort, belled, colorByProject),
+    [matching, filters.group, filters.sort, belled, colorByProject],
   );
   const summaryMap = useMemo(() => new Map((sessions.data ?? []).map((s) => [s.id, s])), [sessions.data]);
   const visibleIds = useMemo(() => new Set(matching.map((s) => s.id)), [matching]);

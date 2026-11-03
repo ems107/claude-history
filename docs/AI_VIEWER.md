@@ -37,6 +37,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A notification tone is played by ONE tab, out of a context a gesture unlocked** — `claimAnnouncement` in `lib/tabs.ts`, `primeAudio` in `lib/notificationSound.ts`. There is no system notification anywhere in this app, and the reason is a rule: `Notification` is secure-context only.
 - **Only the reader may arm or release the follow** — a `scroll` event does not say who fired it.
 - **A row's unread count is measured from a READING**, never from a first sight — and the mark lives in the SERVER (`core/readMarks.ts`), beside the bell, so a reload keeps both.
+- **Live sessions are MOVED to the top of the list, never copied**, and `liveSectionOf` alone decides where: the bell, not the unread count, is what keeps a resting one in `Needs attention` ([The list opens with the live sessions](#the-list-opens-with-the-live-sessions)).
 - **The composer is the last thing in the conversation's column**, and the scroller reaches the foot of the window.
 - **Nothing at the foot of the conversation may hide the END of it** — growing it scrolls the conversation clear, from the end and only from there; a reader in the middle is left exactly where they were and the box floats over them.
 - **No row above the conversation may come and go** — least of all one gated on the enrichment.
@@ -1542,6 +1543,64 @@ nobody has read, and the row drew that exactly like one opened a minute ago.
   absolute position and a 64 px virtualised row has neither a spare corner nor a
   positioned host. `omitNews` turns the pair off on the session page, where the
   follow pill already counts what lands and the bell row is withdrawn on sight.
+
+## The list opens with the live sessions
+
+`buildRows` (`lib/filters.ts`) draws every live session above everything else,
+in two sections, whatever the sort, the direction and the grouping — only the
+filters reach them. The question they answer is **whose turn it is**, not what
+the process is doing, and `liveSectionOf` is the one place it is decided:
+
+| Section | Who is in it | Order |
+| --- | --- | --- |
+| `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then each by when its terminal was opened, newest first |
+| `Open sessions` (green dot) | every other `busy` or resting one | working first, then each by when its terminal was opened, newest first |
+
+- **The clock is `live.startedAt`**, the CLI's own start — when the terminal was
+  opened, which for a session resumed today is today and not the day it was
+  created. Nothing but a new process changes it, so a row moves only when its
+  state does. A CLI that wrote none sorts last.
+- **Working goes ahead of idle inside `Open sessions`, and it costs fewer moves
+  than it looks.** It was first left out, ordered by the opening time alone, on
+  the fear that every turn would move the row twice. It does not: a turn that
+  ends while nobody is looking rings the bell and leaves for `Needs attention`
+  whatever this order says, and one only STARTS because somebody typed into the
+  session — so they are looking at the session, not the list — or because
+  something it left running (a background command, an agent, a `Monitor`, a
+  scheduled wake-up) came back and woke it, which is exactly the move worth
+  seeing. What is left is a turn ending in front of you, and then you are
+  looking at the session.
+- **Every `waiting` session is in, bell or not.** Opening a session withdraws its
+  bell row, but a dialog looked at and not answered leaves the turn exactly as
+  blocked — and a menu the user pulls up on an idle session (`/model`) is in for
+  the seconds it is open, which is the price of not second-guessing the status.
+- **The bell, not the unread count, decides a resting session.** The count climbs
+  all through a turn somebody is watching; a bell row is "stopped and not seen",
+  withdrawn on sight, on dismissal, on going busy and on exit (`core/notifications.ts`,
+  "One row per session"). So *Mark as read* in the bell's panel
+  is also how to clear a session out of `Needs attention` without opening it. It
+  is read from `['notifications']`, which the header keeps mounted: no request of
+  its own, and `notifications-changed` keeps it fresh.
+- **A restart empties the bell, so finished-and-unseen sessions drop to
+  `Open sessions`.** That is the bell's own honesty
+  ([Where state lives](AI_ARCHITECTURE.md#where-state-lives)), inherited
+  rather than worked around.
+- **Moved, never copied.** A day's or a project's header counts what is left
+  under it. A session drawn twice would be two rows with one id — one React key
+  for two elements, and a keyboard selection, kept by session id, that could not
+  say which of them to light.
+- **A status this app cannot read stays where its dates put it**: `unknown` (a
+  `--print` run writes none) or a fifth value from a later CLI. It has no state
+  badge, so it has no section to claim either.
+- **A list drawn flat under the sections gets an `Other sessions` header** —
+  grouping None, or Day under a sort that is not a date, which falls back to
+  flat. Without it the rest reads as the tail of `Open sessions`. Day and Project
+  bring headers of their own and need none.
+- **With nothing live, the rows are exactly what they were** before the sections
+  existed — checked against the previous `buildRows` in all fifteen group × sort
+  combinations (check 77).
+- **Day is the default grouping**, so an absent `group` means `day` and None is
+  spelled out in the URL as `group=none`.
 
 ## The working indicator
 
