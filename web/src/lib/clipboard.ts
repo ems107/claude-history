@@ -10,6 +10,7 @@
 // and we have never needed it.
 
 import { CHROME_ATTR } from './highlight.ts';
+import { nodeHtml, rangeHtml } from './portableHtml.ts';
 
 /**
  * Put HTML and plain text on the clipboard through the `copy` event.
@@ -70,8 +71,8 @@ function copyViaExecCommand(html: string | null, text: string): boolean {
  * The two flavours are taken two ways because they answer to different things.
  * `innerText` reads what is RENDERED, so hiding the chrome is what removes it —
  * and the display is put back in the same task, before anything can be painted
- * without it. The HTML has no such rule, so it comes off a clone the chrome has
- * simply been deleted from.
+ * without it. The HTML is written by `nodeHtml`, which carries the structure
+ * and none of the theme (`lib/portableHtml.ts`), and simply skips the chrome.
  */
 export function renderedCopy(node: HTMLElement): { html: string; text: string } {
   const chrome = Array.from(node.querySelectorAll<HTMLElement>(`[${CHROME_ATTR}]`));
@@ -80,9 +81,55 @@ export function renderedCopy(node: HTMLElement): { html: string; text: string } 
   const text = node.innerText;
   for (const [i, el] of chrome.entries()) el.style.display = before[i];
 
-  const clone = node.cloneNode(true) as HTMLElement;
-  for (const el of clone.querySelectorAll(`[${CHROME_ATTR}]`)) el.remove();
-  return { html: clone.innerHTML, text };
+  return { html: nodeHtml(node, (el) => el.hasAttribute(CHROME_ATTR)), text };
+}
+
+/**
+ * Ctrl+C on a selection anywhere in the app copies the same kind of HTML the
+ * formatted copy does — structure without the theme. Left to the browser,
+ * Chrome writes every computed colour and background into the markup, and a
+ * paste into a mail comes out as dark bars with text nobody can read
+ * (`lib/portableHtml.ts` has the whole story).
+ *
+ * The plain text stays the browser's own reading of the selection, so nothing
+ * changes for a paste into a terminal or an editor; only the HTML flavour is
+ * ours. Out of the way of everything that copies for itself: a handler that
+ * already took the event (the terminal, `copyViaExecCommand` above), and a
+ * focused field, whose selection is not the document's. Anything unexpected
+ * falls back to the browser's copy rather than to an empty clipboard.
+ */
+export function installSelectionCopy(): void {
+  document.addEventListener('copy', (e) => {
+    if (e.defaultPrevented || !e.clipboardData) return;
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement ||
+      (active instanceof HTMLElement && active.isContentEditable)
+    ) {
+      return;
+    }
+    const selection = window.getSelection();
+    // Firefox's multi-range selections (a few table cells, ctrl-dragged) stay
+    // the browser's: it writes no computed style to begin with.
+    if (!selection || selection.rangeCount !== 1 || selection.isCollapsed) return;
+
+    let html: string;
+    try {
+      html = rangeHtml(selection.getRangeAt(0));
+    } catch {
+      return;
+    }
+    // What Chrome itself does to the plain text it copies — the spaces, and on
+    // Windows the line ends, which its own copy writes as CRLF and `setData`
+    // passes through untouched.
+    let text = selection.toString().replace(/\u00a0/g, ' ');
+    if (navigator.userAgent.includes('Windows')) text = text.replace(/\r?\n/g, '\r\n');
+    if (!html && !text) return;
+    e.clipboardData.setData('text/plain', text);
+    if (html) e.clipboardData.setData('text/html', html);
+    e.preventDefault();
+  });
 }
 
 /**

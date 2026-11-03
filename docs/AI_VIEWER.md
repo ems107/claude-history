@@ -22,6 +22,7 @@ Stack: React 19 + Vite + Tailwind v4 (dark-only UI), TanStack Query for data, SS
 - **A fold that can be a jump's destination opens and then LETS GO** — never `open={targeted || open}`.
 - **What the find bar counts is what unfolding can put inside a marking box** (`[data-bubble-body]`, `[data-tool-id]`).
 - **What is drawn inside a marking box and is not the message's own words carries `data-chrome`** — the marking walk rejects it and the formatted copy cuts it out.
+- **Nothing this app puts on the clipboard carries a colour** — every HTML flavour, the `⧉ Copy` button's and Ctrl+C's alike, is written by `lib/portableHtml.ts`, never serialised by the browser ([What lands on the clipboard](#what-lands-on-the-clipboard)).
 - **A find is a gesture, not a location**: the bar never writes to the URL.
 - **A button that acts on the server's own desktop is disabled when the page is remote**, with the reason from `shared/src/localOnly.ts` as its tooltip — `useLocalOnly()`, never a hostname check ([AI_REMOTE_ACCESS.md](AI_REMOTE_ACCESS.md)).
 - **What settings exist lives in `lib/settingsCatalog.ts` and nowhere else** — the rail, the search, the changed tally and the anchors all read it, and a row's NAME is the catalogue's while its SHAPE is the area file's.
@@ -441,11 +442,82 @@ So `textNodesIn` rejects a `data-chrome` subtree outright — one function, and
 `boxRanges`, `markMatches` and `markConversation` all walk through it — and
 `renderedCopy` (`lib/clipboard.ts`) cuts the same subtrees out of both flavours
 of the formatted copy: hidden for the `innerText` one, which reads what is
-rendered, and deleted from a clone for the HTML. The attachment size line
+rendered, and skipped by the walk that writes the HTML. The attachment size line
 (`ZoomableImage`) was the same leak before there was a name for it and now
 carries the attribute too. The clamp in `reveal` still exists for the drift that
 is not ours to fix — a tool block's chrome, markdown's own syntax — and this is
 the rule that stops anyone adding a third.
+
+## What lands on the clipboard
+
+**Left to itself, Chrome copies a selection with its computed style written
+onto every element** — the theme's text colour, the bubble's background, the
+font and the size. Pasted into a mail, that was a dark bar behind every
+paragraph, and worse than dark-on-white: the prose's colour is Tailwind's
+`oklch()`, which Gmail does not understand and drops, while the backgrounds and
+the white of headings and code are plain `rgb()` and survive. So the body text
+came out dark grey on dark bars and only the headings could be read. The theme
+of the page a paste lands on is that page's business, and ours has none there.
+
+So **every HTML flavour is written by `lib/portableHtml.ts`, from the DOM, and
+the rule is that the structure travels and the look stays behind.** Headings,
+emphasis, lists, tables, code and links go as the elements they are, and the
+destination draws them in its own colours and fonts. The only inline styles
+ever written carry meaning and no colour: monospace on `pre`/`code`/`kbd`
+(Consolas first — Word takes the first name in a stack as a font, and
+`ui-monospace` is not one), `pre-wrap` on a `pre`, and the borders, padding and
+alignment of a table. Not even a border gets a colour: one with none follows the
+text colour of wherever it lands, light or dark. Everything else is dropped —
+classes and `data-*` (meaningless outside the app), UI controls and SVG icons
+(`button`, `svg` and the rest of `DROP`), and anything not rendered.
+
+Two doors, one writer:
+
+- **`⧉ Copy` on a message** — `renderedCopy` → `nodeHtml(body, skip chrome)`;
+  the plain text is still `innerText` with the chrome hidden.
+- **Ctrl+C on any selection** — `installSelectionCopy()`, a `copy` listener on
+  the document installed once in `main.tsx` → `rangeHtml(range)`. The plain
+  text is still the browser's own: `selection.toString()` with the two things
+  Chrome's copy does to it, `&nbsp;` to spaces and, on Windows, `\n` to `\r\n`
+  (its copy writes CRLF and `setData` passes text through untouched). Measured
+  byte-identical to the unpatched copy. It steps aside for everything that
+  copies for itself — an event already `defaultPrevented` (the terminal's
+  textarea, `copyViaExecCommand`), a focused input, textarea or contenteditable,
+  a multi-range selection (Firefox's, which writes no computed style anyway) —
+  and on any exception it returns without touching the event, so the worst case
+  is the browser's old copy, never an empty clipboard.
+
+What the walk has to get right, each of them a way the paste was wrong first:
+
+- **A selection walk starts at the common ancestor, so the context has to be put
+  back.** Three words inside a code span paste as code, two rows of a table as a
+  table (`thead`/`tbody`/`tr` climb to the `table`), lines inside a fenced block
+  as a `pre` — the climb wraps inline formatting and a `pre` up to the first
+  other block.
+- **Only what could be selected.** The code block's bar is `select-none`
+  precisely so a drag across it skips it, and the plain text skips it; the HTML
+  must too. `user-select: auto` defers to the parent and only Blink reports the
+  inherited value, so the walk carries `selectable` down itself rather than
+  reading it per node. Elements are not skipped wholesale for `none` — a
+  `select-text` child (the fold headers' titles) is still selectable inside —
+  only their text, and a box left empty by that is dropped.
+- **Line breaks made by CSS are written as `<br>`.** A prompt is a
+  `whitespace-pre-wrap` div, not a `pre`; serialised as text it arrived as one
+  paragraph. Inside a real `pre` the text is left verbatim.
+- **Links and images into this app lose their address.** A file reference opens
+  a panel HERE, and `/api/files/image` is a broken picture in anybody's mail: a
+  same-origin `<a>` (and any `[data-file-ref]`) is unwrapped to its text, and a
+  same-origin `<img>` is left out. A `data:` image travels, at the width it is
+  drawn — never its natural one.
+- **An element that wrote nothing is dropped** — a spacer, a header row whose
+  buttons were hidden, and the paragraph a triple-click ends at offset 0 of
+  (the range touches it, so the walk enters it and finds nothing). Each would be
+  an empty paragraph in Word. A cell that was empty to begin with is kept: the
+  table is still its shape.
+
+Cost: a Ctrl+A over a 4,900-element conversation is ~15 ms (one
+`getComputedStyle` per element). How to prove it, including the copy as it
+really goes through the browser: [check 76](AI_TESTING.md).
 
 ## The two cross-session pages order themselves
 

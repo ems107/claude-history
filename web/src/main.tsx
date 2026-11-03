@@ -4,7 +4,11 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { AppGate } from './App.tsx';
 import { CrashScreen } from './components/CrashScreen.tsx';
+import { installSelectionCopy } from './lib/clipboard.ts';
 import './styles.css';
+
+// Before anything renders, so no selection can ever be copied with the theme in it.
+installSelectionCopy();
 
 const queryClient = new QueryClient({
   defaultOptions: {
