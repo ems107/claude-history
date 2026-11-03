@@ -1,4 +1,5 @@
 import type { PriceTable, SessionSummary } from '@claude-history/shared';
+import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import { sessionCost } from './cost.ts';
 
 export type SortField = 'activity' | 'created' | 'messages' | 'size' | 'cost';
@@ -191,21 +192,112 @@ function dayLabel(dayMs: number): string {
   return `${weekday} ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+// ---- The live sections ----
+
+export type LiveSection = 'attention' | 'open';
+
 /**
- * Turn a sorted session list into rows with group headers interleaved. Day
- * grouping follows whichever date the list is sorted by, so the headers always
- * match the order on screen; any other sort falls back to no grouping (headers
- * would appear out of order and mean nothing).
+ * The two sections that open the list, in order. The dots are the badges' own
+ * colours: amber is this app's "there is something here for you" (WAITING, the
+ * bell), green is LIVE — a process has this session open.
+ */
+const LIVE_SECTIONS: ReadonlyArray<{ id: LiveSection; label: string; color: string }> = [
+  { id: 'attention', label: 'Needs attention', color: 'var(--color-amber-400)' },
+  { id: 'open', label: 'Open sessions', color: 'var(--color-green-400)' },
+];
+
+/**
+ * Which live section a session is listed in, or null for the ordinary list.
+ *
+ * The question is **whose turn it is**, not what the process is doing:
+ * - `attention` — the session is waiting on you. Every `waiting` one, bell or
+ *   no bell, because having looked at a dialog and not answered it leaves the
+ *   turn exactly as blocked; and every resting one (`idle`/`shell`) that is
+ *   still in the bell, i.e. finished and not seen yet.
+ * - `open` — open and owing you nothing: working, or resting and already seen.
+ *
+ * `belled` is the bell's own list of session ids, never the unread count: that
+ * one climbs all through a turn somebody is watching, the bell is precisely
+ * "stopped and not seen", and dismissing a row in its panel is then a way to
+ * clear a session out of `attention` without opening it.
+ *
+ * Any other status — `unknown` (a `--print` run writes none) or one a later CLI
+ * adds — has no state to show, so it stays where its dates put it.
+ */
+export function liveSectionOf(s: SessionSummary, belled: ReadonlySet<string>): LiveSection | null {
+  const status = s.live?.status;
+  if (status === undefined) return null;
+  if (status === LIVE_WAITING) return 'attention';
+  if (LIVE_STOPPED.includes(status)) return belled.has(s.id) ? 'attention' : 'open';
+  if (status === LIVE_BUSY) return 'open';
+  return null;
+}
+
+/**
+ * Newest-opened first, by the CLI's own start time — when the terminal was
+ * opened, which for a resumed session is today and not the day it was created.
+ * One without a start time (an old CLI) goes last.
+ */
+function byOpenedDesc(a: SessionSummary, b: SessionSummary): number {
+  return (b.live?.startedAt ?? 0) - (a.live?.startedAt ?? 0);
+}
+
+/** Inside `attention`, a blocked turn outranks a finished one. */
+function waitingFirst(a: SessionSummary, b: SessionSummary): number {
+  const rank = (s: SessionSummary) => (s.live?.status === LIVE_WAITING ? 0 : 1);
+  return rank(a) - rank(b) || byOpenedDesc(a, b);
+}
+
+/**
+ * Turn a sorted session list into rows with group headers interleaved.
+ *
+ * **Live sessions come first, in their own sections** (`liveSectionOf`), in
+ * every mode: they ignore the chosen sort, direction and grouping, and keep
+ * only the filters. They are MOVED there, never copied, so a day's header
+ * counts what is left under it and no session is two rows — which would also
+ * leave the keyboard's selection, kept by session id, not knowing which one to
+ * light. Each section orders by when the terminal was opened, which nothing but
+ * a new process changes, so a row only moves when it changes section; and
+ * `open` deliberately mixes working and idle, so a turn starting or ending
+ * moves nothing at all. With no live session, the rows are exactly what they
+ * were before these sections existed.
+ *
+ * Below them, day grouping follows whichever date the list is sorted by, so the
+ * headers always match the order on screen; any other sort falls back to no
+ * grouping (headers would appear out of order and mean nothing). A list drawn
+ * flat under live sections gets an `Other sessions` header of its own, or it
+ * would read as the last section's tail.
  */
 export function buildRows(
   sessions: SessionSummary[],
   group: GroupMode,
   sort: SortField,
+  belled: ReadonlySet<string>,
   projectColors?: Map<string, string>,
 ): ListRow[] {
   const rows: ListRow[] = [];
+  const live: Record<LiveSection, SessionSummary[]> = { attention: [], open: [] };
+  const rest: SessionSummary[] = [];
+  for (const s of sessions) {
+    const section = liveSectionOf(s, belled);
+    if (section) live[section].push(s);
+    else rest.push(s);
+  }
+  live.attention.sort(waitingFirst);
+  live.open.sort(byOpenedDesc);
+  for (const { id, label, color } of LIVE_SECTIONS) {
+    const members = live[id];
+    if (members.length === 0) continue;
+    rows.push({ kind: 'header', id: `h-live-${id}`, label, count: members.length, color });
+    for (const s of members) rows.push({ kind: 'session', id: s.id, session: s });
+  }
+
   if (group === 'none' || (group === 'day' && sort !== 'activity' && sort !== 'created')) {
-    return sessions.map((s) => ({ kind: 'session', id: s.id, session: s }));
+    if (rows.length > 0 && rest.length > 0) {
+      rows.push({ kind: 'header', id: 'h-others', label: 'Other sessions', count: rest.length });
+    }
+    for (const s of rest) rows.push({ kind: 'session', id: s.id, session: s });
+    return rows;
   }
 
   // Bucket by group key. Insertion order follows the already-sorted list, so
@@ -216,7 +308,7 @@ export function buildRows(
   const keyOf = (s: SessionSummary): string =>
     group === 'project' ? s.projectKey : String(startOfDay(sort === 'created' ? createdMs(s) : activityMs(s)));
 
-  for (const s of sessions) {
+  for (const s of rest) {
     const key = keyOf(s);
     const bucket = buckets.get(key);
     if (bucket) bucket.push(s);
