@@ -230,7 +230,7 @@ export class NotificationsService {
     }
     // Only a session that was RUNNING can have stopped. Everything else
     // reaching a resting status got there without doing any work: a session
-    // being born, a shell opening over an idle one, a menu somebody pulled up.
+    // being born, a background command starting on an idle one, a menu somebody pulled up.
     if (before !== LIVE_BUSY && before !== LIVE_WAITING) return false;
     const kind = stopKind(l.status);
     if (kind === null) return false;

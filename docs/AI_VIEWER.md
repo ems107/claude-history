@@ -1574,8 +1574,8 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
   back to work after a permission (the turn's own clock, `busySince`), and one
   leaving `Needs attention` because it was seen (the clock of when it finished).
 - **The order is wrong exactly where the badge is**, because it reads the same
-  clock. The CLI re-stamps one without a change of state — a shell opened over
-  an idle session, and a dialog left on screen when another kind replaces it or
+  clock. The CLI re-stamps one without a change of state — a background command
+  ending on an idle session, and a dialog left on screen when another kind replaces it or
   work queues behind it, which puts a dialog parked on purpose back on top
   ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you)) —
   and the working clock is ours, kept in the server's memory: one restarted
