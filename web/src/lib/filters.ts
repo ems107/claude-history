@@ -234,20 +234,15 @@ export function liveSectionOf(s: SessionSummary, belled: ReadonlySet<string>): L
   return null;
 }
 
-/**
- * Newest stamp first, by the clock the row's state badge draws (`stateSinceOf`),
- * so the elapsed figures on those badges grow down the list. One with no clock
- * goes last. `attention` is ordered by this alone: for a waiting session and a
- * finished one alike it is when the session arrived there, the bell's own order.
- */
+/** Newest stamp first, by the clock the row's state badge draws (`stateSinceOf`); none goes last. */
 function byStateSinceDesc(a: SessionSummary, b: SessionSummary): number {
   return (stateSinceOf(b.live) ?? 0) - (stateSinceOf(a.live) ?? 0);
 }
 
-/** `open` puts the sessions working ahead of those at rest, each half by its clock. */
+const busyFirst = (s: SessionSummary): number => (s.live?.status === LIVE_BUSY ? 0 : 1);
+
 function workingFirst(a: SessionSummary, b: SessionSummary): number {
-  const rank = (s: SessionSummary) => (s.live?.status === LIVE_BUSY ? 0 : 1);
-  return rank(a) - rank(b) || byStateSinceDesc(a, b);
+  return busyFirst(a) - busyFirst(b) || byStateSinceDesc(a, b);
 }
 
 /**
@@ -258,10 +253,10 @@ function workingFirst(a: SessionSummary, b: SessionSummary): number {
  * only the filters. They are MOVED there, never copied, so a day's header
  * counts what is left under it and no session is two rows — which would also
  * leave the keyboard's selection, kept by session id, not knowing which one to
- * light. `attention` is ordered by when each session arrived, waiting and
- * finished mixed; `open` puts the working ones first and orders each half the
- * same way — by the state badge's clock, newest first (why, and when a row
- * moves: AI_VIEWER.md, "The list opens with the live sessions"). With no live session, the rows are exactly what they were before
+ * light. `attention` is ordered by the state badge's clock alone, newest
+ * first; `open` puts the working sessions first and orders each half the same
+ * way. Why, and when a row moves: AI_VIEWER.md, "The list opens with the live
+ * sessions". With no live session, the rows are exactly what they were before
  * these sections existed.
  *
  * Below them, day grouping follows whichever date the list is sorted by, so the

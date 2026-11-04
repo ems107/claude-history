@@ -3,8 +3,7 @@ import { flipOf, LIVE_BUSY } from '@claude-history/shared';
 
 /**
  * The clock a session's STATE badge counts from (`Badges`), and the one the
- * live sections at the top of the list are ordered by (`buildRows`) — so the
- * order on screen is the badges' own numbers, smallest first.
+ * live sections at the top of the list are ordered by (`buildRows`).
  *
  * - **working** counts from the turn's own start, `busySince`, which holds
  *   across the waiting↔busy flips a dialog causes.
