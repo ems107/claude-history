@@ -1553,18 +1553,20 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
 
 | Section | Who is in it | Order |
 | --- | --- | --- |
-| `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then the finished ones; each half by its state badge's clock, smallest first |
+| `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | by when each arrived — the dialog going up, the turn ending — newest first, the two kinds mixed: the bell's own order |
 | `Open sessions` (green dot) | every other `busy` or resting one | working first, then the resting ones; each half by its state badge's clock, smallest first |
 
 - **The clock is the state badge's own** (`stateSinceOf`, `lib/liveClock.ts`),
-  so the figures on those badges grow down each half of a section. A session
-  with no clock sorts last.
+  so the figures on those badges grow down the list. In `Needs attention` that
+  is when the session arrived there, for a dialog and a finished turn alike. A
+  session with no clock sorts last.
 - **It was first the opening time, `live.startedAt`, and that answered the
   wrong question.** A terminal opened this morning and used all day sorted under
   one opened five minutes ago and left alone; what this list is read for is
   what just happened.
 - **Time alone reorders nothing** — every clock runs at the same rate. A row
-  moves when its section or its half changes, or when its clock is re-stamped,
+  moves when its section changes, or its half of `Open sessions`, or when its
+  clock is re-stamped,
   and it lands wherever its clock puts it. That is the top only when the clock
   was just stamped: a new turn, a dialog going up, a turn that just ended. Two
   ordinary moves keep an older clock and land further down — a session going
@@ -1576,10 +1578,18 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
   and the working clock is ours, kept in the server's memory: one restarted
   mid-turn, or one that never saw the turn go busy, starts it at the last flip
   it can read (`LiveInfo.busySince`).
-- **Newest first in `Needs attention` too, not a queue.** Oldest first would
-  serve whoever has waited longest, but a `waiting` session stays there after
-  it has been looked at (below), so a dialog seen and deliberately left would
-  sit on top of every one that rang after it.
+- **`Needs attention` is ordered by arrival alone — neither waiting first nor
+  oldest first.** Its two kinds differ in the one way that decides it: a
+  finished session leaves the moment it is seen, and a `waiting` one stays
+  until it is answered (below). So the only rows there that can be stale — a
+  dialog seen and deliberately left — are waiting ones, and putting the waiting
+  ones first, or the oldest first, would sit exactly those on top of what just
+  rang. By arrival the top is always the newest thing that wants you, in the
+  order the bell's own panel lists them (`core/notifications.ts`), and the badge
+  still says which kind each one is. The case for waiting first was urgency — a
+  permission is quick to answer and unblocks a turn halfway through — but it
+  rang the bell and stood at the top when it went up, and one left there since
+  was left on purpose.
 - **Working goes ahead of idle inside `Open sessions`, and it costs fewer moves
   than it looks.** It was first left out, ordered by the opening time alone, on
   the fear that every turn would move the row twice. It does not: a turn that

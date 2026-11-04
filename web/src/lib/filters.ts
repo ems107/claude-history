@@ -236,21 +236,18 @@ export function liveSectionOf(s: SessionSummary, belled: ReadonlySet<string>): L
 
 /**
  * Newest stamp first, by the clock the row's state badge draws (`stateSinceOf`),
- * so the elapsed figures on those badges grow down each half of a section. One
- * with no clock goes last.
+ * so the elapsed figures on those badges grow down the list. One with no clock
+ * goes last. `attention` is ordered by this alone: for a waiting session and a
+ * finished one alike it is when the session arrived there, the bell's own order.
  */
 function byStateSinceDesc(a: SessionSummary, b: SessionSummary): number {
   return (stateSinceOf(b.live) ?? 0) - (stateSinceOf(a.live) ?? 0);
 }
 
-/**
- * Each section puts one status ahead of the rest of it, and orders both halves
- * by their state badges' clocks: in `attention` a blocked turn outranks a
- * finished one, in `open` a session working outranks one at rest.
- */
-function statusFirst(status: string): (a: SessionSummary, b: SessionSummary) => number {
-  const rank = (s: SessionSummary) => (s.live?.status === status ? 0 : 1);
-  return (a, b) => rank(a) - rank(b) || byStateSinceDesc(a, b);
+/** `open` puts the sessions working ahead of those at rest, each half by its clock. */
+function workingFirst(a: SessionSummary, b: SessionSummary): number {
+  const rank = (s: SessionSummary) => (s.live?.status === LIVE_BUSY ? 0 : 1);
+  return rank(a) - rank(b) || byStateSinceDesc(a, b);
 }
 
 /**
@@ -261,10 +258,10 @@ function statusFirst(status: string): (a: SessionSummary, b: SessionSummary) => 
  * only the filters. They are MOVED there, never copied, so a day's header
  * counts what is left under it and no session is two rows — which would also
  * leave the keyboard's selection, kept by session id, not knowing which one to
- * light. Each section puts one status first — waiting in `attention`, working
- * in `open` — and orders each half by its state badge's clock, newest first
- * (why, and when a row moves: AI_VIEWER.md, "The list opens with the live
- * sessions"). With no live session, the rows are exactly what they were before
+ * light. `attention` is ordered by when each session arrived, waiting and
+ * finished mixed; `open` puts the working ones first and orders each half the
+ * same way — by the state badge's clock, newest first (why, and when a row
+ * moves: AI_VIEWER.md, "The list opens with the live sessions"). With no live session, the rows are exactly what they were before
  * these sections existed.
  *
  * Below them, day grouping follows whichever date the list is sorted by, so the
@@ -288,8 +285,8 @@ export function buildRows(
     if (section) live[section].push(s);
     else rest.push(s);
   }
-  live.attention.sort(statusFirst(LIVE_WAITING));
-  live.open.sort(statusFirst(LIVE_BUSY));
+  live.attention.sort(byStateSinceDesc);
+  live.open.sort(workingFirst);
   for (const { id, label, color } of LIVE_SECTIONS) {
     const members = live[id];
     if (members.length === 0) continue;
