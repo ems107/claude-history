@@ -2,7 +2,6 @@ import type { LiveInfo } from '@claude-history/shared';
 import { LIVE_BUSY, LIVE_WAITING } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
 import { elapsed, formatDateTime } from '../../lib/format.ts';
-import { flipOf } from '../../lib/liveClock.ts';
 import { NO_ACTIVITY, type TurnActivity, turnClocks } from '../../lib/turnActivity.ts';
 
 /**
@@ -57,21 +56,6 @@ export function isWaiting(live: LiveInfo | null | undefined): boolean {
  */
 export function waitingSentence(waitingFor: string | null): string {
   return `Waiting for you${waitingFor ? ` — ${waitingFor}` : ''}`;
-}
-
-/**
- * The clock a session's row is read against: when the status last changed,
- * which for a busy session is **when the user last put something into it** — a
- * prompt, an answer to a question, a permission granted. That is a turn's start
- * only for a turn nobody interrupted, which is why the row runs it through
- * `turnClocks` rather than drawing it as `total`.
- *
- * Beside `isWorking` because it is the other half of the same reading, and
- * because the indicator itself no longer knows what a `LiveInfo` is — a
- * subagent has none, and the row is the same row.
- */
-export function workingSince(live: LiveInfo | null | undefined): number | null {
-  return flipOf(live);
 }
 
 /**
@@ -134,7 +118,7 @@ function Figure({ label, at, hint }: { label?: string; at: number; hint: string 
  *
  * **Whether anything is working at all is the CALLER's to answer**, and so is
  * the clock: a session reads both off `~/.claude/sessions` (`isWorking` /
- * `workingSince` / `isWaiting`), a subagent has no such file and reads its own
+ * `flipOf` / `isWaiting`), a subagent has no such file and reads its own
  * transcript instead. Rendered, this row always means "the turn is still open" —
  * still going, or blocked on the reader (`waitingFor`) — and every call site
  * already had to know which before drawing the rail it hangs on.

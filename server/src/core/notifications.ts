@@ -6,7 +6,7 @@ import type {
   StoppedSession,
   StoppedSessionEntry,
 } from '@claude-history/shared';
-import { askingFor, LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
+import { askingFor, flipOf, LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import type { AppConfig } from '../config.ts';
 import type { SessionIndex } from './index.ts';
 import { createLogger } from './logger.ts';
@@ -240,7 +240,7 @@ export class NotificationsService {
       waitingFor: kind === 'needs-you' ? l.waitingFor : null,
       // The instant the CLI stamped the flip, not the instant we noticed: the
       // watcher's debounce and this read both come after the fact.
-      at: l.statusUpdatedAt ?? Date.now(),
+      at: flipOf(l) ?? Date.now(),
       source: 'cli',
       // A CLI keeps nothing of itself in this process, so its quote can only
       // come out of the transcript. `raise` goes and gets it.

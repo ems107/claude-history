@@ -11,4 +11,5 @@ export * from './fold.ts';
 export * from './match.ts';
 export * from './searchText.ts';
 export * from './unread.ts';
+export * from './live.ts';
 export * from './logo.ts';

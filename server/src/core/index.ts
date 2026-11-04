@@ -26,6 +26,7 @@ import {
   DEFAULT_PRICES,
   DEFAULT_SETTINGS,
   defaultSettings,
+  flipOf,
   GIT_FETCH_MODES,
   offeredChatMode,
   GIT_MERGE_MODES,
@@ -204,7 +205,7 @@ export interface TextEntry extends CacheKey {
  *
  * `updatedAt` is deliberately not in it on its own: it moves on every write,
  * which is precisely the noise being filtered, and nothing shows it. What is
- * shown is `statusUpdatedAt ?? updatedAt` — the clock under the idle and
+ * shown is `flipOf` — the clock under the idle and
  * waiting badges — so that is what goes in, and a CLI too old to write a
  * `statusUpdatedAt` still gets its clock moved.
  */
@@ -219,7 +220,7 @@ function liveFingerprint(live: readonly LiveSessionEntry[]): string {
         l.waitingFor,
         l.name,
         l.startedAt,
-        l.statusUpdatedAt ?? l.updatedAt,
+        flipOf(l),
         l.busySince,
         l.entrypoint,
       ]),
@@ -494,7 +495,7 @@ export class SessionIndex {
     // which is the best it can know.
     for (const l of this.live) {
       if (l.status === LIVE_BUSY) {
-        if (!this.turnStarts.has(l.sessionId)) this.turnStarts.set(l.sessionId, l.statusUpdatedAt ?? Date.now());
+        if (!this.turnStarts.has(l.sessionId)) this.turnStarts.set(l.sessionId, flipOf(l) ?? Date.now());
       } else if (l.status !== LIVE_WAITING) {
         this.turnStarts.delete(l.sessionId);
       }

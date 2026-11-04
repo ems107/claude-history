@@ -235,10 +235,9 @@ export function liveSectionOf(s: SessionSummary, belled: ReadonlySet<string>): L
 }
 
 /**
- * Newest in its state first: by the clock the row's state badge draws
- * (`stateSinceOf`) — how long it has been working, waiting or idle — so the
- * figures on those badges grow down each half of a section. One with no clock
- * (an old CLI) goes last.
+ * Smallest clock first, by the one the row's state badge draws (`stateSinceOf`),
+ * so the figures on those badges grow down each half of a section. One with no
+ * clock goes last.
  */
 function byStateSinceDesc(a: SessionSummary, b: SessionSummary): number {
   return (stateSinceOf(b.live) ?? 0) - (stateSinceOf(a.live) ?? 0);
@@ -246,8 +245,8 @@ function byStateSinceDesc(a: SessionSummary, b: SessionSummary): number {
 
 /**
  * Each section puts one status ahead of the rest of it, and orders both halves
- * by how long they have been in their state: in `attention` a blocked turn
- * outranks a finished one, in `open` a session working outranks one at rest.
+ * by their state badges' clocks: in `attention` a blocked turn outranks a
+ * finished one, in `open` a session working outranks one at rest.
  */
 function statusFirst(status: string): (a: SessionSummary, b: SessionSummary) => number {
   const rank = (s: SessionSummary) => (s.live?.status === status ? 0 : 1);

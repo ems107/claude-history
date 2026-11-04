@@ -1,5 +1,6 @@
 import {
   askingFor,
+  flipOf,
   LIVE_BUSY,
   LIVE_WAITING,
   MAX_STAT_PATHS,
@@ -68,7 +69,7 @@ import { TokenPanel } from '../components/viewer/TokenPanel.tsx';
 import { TurnList } from '../components/viewer/TurnList.tsx';
 import { ViewMenu } from '../components/viewer/ViewMenu.tsx';
 import { TOAST_MS } from '../components/NotificationToasts.tsx';
-import { isWaiting, isWorking, waitingSentence, WorkingIndicator, workingSince } from '../components/viewer/WorkingIndicator.tsx';
+import { isWaiting, isWorking, waitingSentence, WorkingIndicator } from '../components/viewer/WorkingIndicator.tsx';
 
 const FALLBACK_COLOR = 'hsl(0 0% 55%)';
 /** Stable identity while the conversation loads, so the fold state is not rebuilt. */
@@ -1303,18 +1304,18 @@ export function SessionViewPage() {
   const workingFooter = useMemo(
     () =>
       pending.length === 0 && isWorking(liveInfo) ? (
-        <WorkingIndicator since={workingSince(liveInfo)} activity={activity} />
+        <WorkingIndicator since={flipOf(liveInfo)} activity={activity} />
       ) : /**
        * A dialog is on screen — a permission, a question, a plan to approve —
        * and the turn is blocked on the reader. The same row in its waiting
        * mode, in the same place: the ring rests into the amber pulse, the
        * cause is written out, and the clock beside `total` is how long the
-       * dialog has been standing. `workingSince` is the busy→waiting flip,
+       * dialog has been standing. `flipOf` is the busy→waiting flip,
        * which is exactly when it went up.
        */
       pending.length === 0 && isWaiting(liveInfo) ? (
         <WorkingIndicator
-          since={workingSince(liveInfo)}
+          since={flipOf(liveInfo)}
           activity={activity}
           waitingFor={liveInfo?.waitingFor ?? null}
         />
@@ -1381,7 +1382,7 @@ export function SessionViewPage() {
               messages are all older than this turn's start and are filtered out
               by exactly the test that keeps the figures inside their own turn. */}
           {i === pending.length - 1 && isWorking(liveInfo) ? (
-            <WorkingIndicator since={workingSince(liveInfo)} activity={activity} />
+            <WorkingIndicator since={flipOf(liveInfo)} activity={activity} />
           ) : null}
         </PendingTurn>
       )),

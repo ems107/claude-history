@@ -1566,14 +1566,16 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
 - **Time alone reorders nothing** — every clock runs at the same rate. A row
   moves when its section or its half changes, or when its clock is re-stamped,
   and it lands wherever its clock puts it. That is the top only when the clock
-  was just stamped: a new turn, a new dialog, a turn that just ended. Two
+  was just stamped: a new turn, a dialog going up, a turn that just ended. Two
   ordinary moves keep an older clock and land further down — a session going
   back to work after a permission (the turn's own clock, `busySince`), and one
   leaving `Needs attention` because it was seen (the clock of when it finished).
-  What re-stamps a clock without a change of state — a shell opened over an
-  idle session — is the CLI's ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you)),
-  and so is the working clock falling back to the last flip after a server
-  restart (`LiveInfo.busySince`): the order is wrong exactly where the badge is.
+- **The order is wrong exactly where the badge is**, because it reads the same
+  clock. The CLI re-stamps one without a change of state — a shell opened over
+  an idle session ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you)) —
+  and the working clock is ours, kept in the server's memory: one restarted
+  mid-turn, or one that never saw the turn go busy, starts it at the last flip
+  it can read (`LiveInfo.busySince`).
 - **Newest first in `Needs attention` too, not a queue.** Oldest first would
   serve whoever has waited longest, but a `waiting` session stays there after
   it has been looked at (below), so a dialog seen and deliberately left would

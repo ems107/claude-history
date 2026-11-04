@@ -280,8 +280,12 @@ export interface LiveInfo {
   startedAt: number | null; // epoch ms
   updatedAt: number | null; // epoch ms
   /**
-   * When the status last changed — which, for a busy session, is when the turn
-   * began. Kept separate from `updatedAt` on purpose: the two are equal today
+   * When the CLI last stamped a status — NOT when the session entered the state
+   * it is in: any change of the computed status or of `waitingFor` re-stamps it,
+   * a shell opened over an idle session included ([AI_TRANSCRIPTS.md](../../docs/AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you)).
+   * For a busy session that is when the user last unblocked it, which is the
+   * turn's start only for a turn nobody interrupted (`busySince`). Read it
+   * through `flipOf`. Kept separate from `updatedAt` on purpose: the two are equal today
    * because Claude Code writes this file only when something changes (measured:
    * `updatedAt` frozen for 3 minutes into a busy turn, no heartbeat at all), and
    * a heartbeat appearing later would move `updatedAt` while this stays true.
