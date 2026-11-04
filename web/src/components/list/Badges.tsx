@@ -6,6 +6,7 @@ import { useActiveSessions } from '../../api/useActiveSessions.ts';
 import { useNotifications } from '../../api/useNotifications.ts';
 import { useReadMarks } from '../../api/useReadMarks.ts';
 import { formatClock, formatDateTime } from '../../lib/format.ts';
+import { stateSinceOf } from '../../lib/liveClock.ts';
 import { BellIcon, MessageIcon } from '../icons.tsx';
 
 export function Badge({ label, className, title }: { label: string; className: string; title?: string }) {
@@ -54,15 +55,10 @@ export function SessionBadges({
   const badges: ReactNode[] = [];
   const liveInfo = live === undefined ? session.live : live;
 
-  // "In this state since": what the idle and waiting clocks count from — the
-  // flip, which is exactly what those two states mean. NOT the last activity:
-  // a resumed session is idle for seconds over a transcript last written days
-  // ago, and a menu pulled up writes `waiting` without a byte of transcript.
-  const stateSince = liveInfo ? (liveInfo.statusUpdatedAt ?? liveInfo.updatedAt) : null;
-  // The working clock is the turn's own: `busySince` holds across the
-  // waiting↔busy flips a dialog causes, where the flip restarts on every
-  // answered permission.
-  const workingSince = liveInfo ? (liveInfo.busySince ?? stateSince) : null;
+  // "In this state since": the turn's start for a working session, the flip for
+  // a waiting or idle one. One function decides it, because the live sections
+  // at the top of the list are ordered by this same figure.
+  const stateSince = stateSinceOf(liveInfo);
 
   // The clocks have to move on their own: nothing refetches a list whose
   // sessions are merely getting older. Mounted only when there is one to move.
@@ -131,14 +127,14 @@ export function SessionBadges({
         <span
           key="state"
           title={`Answering right now${
-            workingSince !== null ? `\nThis turn began ${formatDateTime(workingSince)}` : ''
+            stateSince !== null ? `\nThis turn began ${formatDateTime(stateSince)}` : ''
           }`}
           className="inline-flex items-center gap-1 rounded bg-[var(--accent)]/15 px-1.5 py-px text-[10px] font-semibold tracking-wide text-[var(--accent)] uppercase"
         >
           <span className="size-2 animate-spin rounded-full border-[1.5px] border-[var(--accent)]/35 border-t-[var(--accent)]" />
           working
-          {workingSince !== null && (
-            <span className="tabular-nums normal-case">{formatClock(Date.now() - workingSince)}</span>
+          {stateSince !== null && (
+            <span className="tabular-nums normal-case">{formatClock(Date.now() - stateSince)}</span>
           )}
         </span>,
       );

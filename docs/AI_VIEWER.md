@@ -1553,13 +1553,25 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
 
 | Section | Who is in it | Order |
 | --- | --- | --- |
-| `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then each by when its terminal was opened, newest first |
-| `Open sessions` (green dot) | every other `busy` or resting one | working first, then each by when its terminal was opened, newest first |
+| `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then the finished ones; each half newest in its state first |
+| `Open sessions` (green dot) | every other `busy` or resting one | working first, then the resting ones; each half newest in its state first |
 
-- **The clock is `live.startedAt`**, the CLI's own start — when the terminal was
-  opened, which for a session resumed today is today and not the day it was
-  created. Nothing but a new process changes it, so a row moves only when its
-  state does. A CLI that wrote none sorts last.
+- **The clock is the state badge's own** (`stateSinceOf`, `lib/liveClock.ts`):
+  how long the session has been working, waiting or idle, so the figures on
+  those badges grow down each half of a section. Working counts from the turn's
+  start (`busySince`), which an answered permission does not restart; waiting
+  and idle from the flip into them. A CLI that wrote none sorts last.
+- **It was first the opening time, `live.startedAt`, and that answered the
+  wrong question.** A terminal opened this morning and used all day sorted under
+  one opened five minutes ago and left alone; what this list is read for is
+  what just happened. Neither clock reorders anything on its own — every one
+  runs at the same rate — so a row still moves only when its state does, and
+  the only difference is where it lands: at the top of the half it moved into,
+  which is where the eye already is.
+- **Newest first in `Needs attention` too, not a queue.** Oldest first would
+  serve whoever has waited longest, but a `waiting` session stays there after
+  it has been looked at (below), so a dialog seen and deliberately left would
+  sit on top of every one that rang after it.
 - **Working goes ahead of idle inside `Open sessions`, and it costs fewer moves
   than it looks.** It was first left out, ordered by the opening time alone, on
   the fear that every turn would move the row twice. It does not: a turn that

@@ -1,6 +1,7 @@
 import type { PriceTable, SessionSummary } from '@claude-history/shared';
 import { LIVE_BUSY, LIVE_STOPPED, LIVE_WAITING } from '@claude-history/shared';
 import { sessionCost } from './cost.ts';
+import { stateSinceOf } from './liveClock.ts';
 
 export type SortField = 'activity' | 'created' | 'messages' | 'size' | 'cost';
 export type BadgeFilter = 'pinned' | 'live' | 'pr' | 'subagents' | 'fork' | 'bg';
@@ -234,22 +235,23 @@ export function liveSectionOf(s: SessionSummary, belled: ReadonlySet<string>): L
 }
 
 /**
- * Newest-opened first, by the CLI's own start time — when the terminal was
- * opened, which for a resumed session is today and not the day it was created.
- * One without a start time (an old CLI) goes last.
+ * Newest in its state first: by the clock the row's state badge draws
+ * (`stateSinceOf`) — how long it has been working, waiting or idle — so the
+ * figures on those badges grow down each half of a section. One with no clock
+ * (an old CLI) goes last.
  */
-function byOpenedDesc(a: SessionSummary, b: SessionSummary): number {
-  return (b.live?.startedAt ?? 0) - (a.live?.startedAt ?? 0);
+function byStateSinceDesc(a: SessionSummary, b: SessionSummary): number {
+  return (stateSinceOf(b.live) ?? 0) - (stateSinceOf(a.live) ?? 0);
 }
 
 /**
  * Each section puts one status ahead of the rest of it, and orders both halves
- * by when the terminal was opened: in `attention` a blocked turn outranks a
- * finished one, in `open` a session working outranks one at rest.
+ * by how long they have been in their state: in `attention` a blocked turn
+ * outranks a finished one, in `open` a session working outranks one at rest.
  */
 function statusFirst(status: string): (a: SessionSummary, b: SessionSummary) => number {
   const rank = (s: SessionSummary) => (s.live?.status === status ? 0 : 1);
-  return (a, b) => rank(a) - rank(b) || byOpenedDesc(a, b);
+  return (a, b) => rank(a) - rank(b) || byStateSinceDesc(a, b);
 }
 
 /**
@@ -261,12 +263,13 @@ function statusFirst(status: string): (a: SessionSummary, b: SessionSummary) => 
  * counts what is left under it and no session is two rows — which would also
  * leave the keyboard's selection, kept by session id, not knowing which one to
  * light. Each section puts one status first — waiting in `attention`, working
- * in `open` — and orders by when the terminal was opened, which nothing but a
- * new process changes. A row therefore moves only when its state does, and
- * those moves are few: a turn that ends unseen rings the bell and leaves `open`
- * anyway, and one only starts because somebody typed into it or something it
- * left running came back. With no live session, the rows are exactly what they
- * were before these sections existed.
+ * in `open` — and orders each half by how long it has been in that state,
+ * newest first. Every clock runs at the same rate, so time alone reorders
+ * nothing: a row moves only when its state does, and lands at the top of the
+ * half it moved into. Those moves are few: a turn that ends unseen rings the
+ * bell and leaves `open` anyway, and one only starts because somebody typed
+ * into it or something it left running came back. With no live session, the
+ * rows are exactly what they were before these sections existed.
  *
  * Below them, day grouping follows whichever date the list is sorted by, so the
  * headers always match the order on screen; any other sort falls back to no
