@@ -1558,10 +1558,10 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
 
 - **The clock is the state badge's own** (`stateSinceOf`, `lib/liveClock.ts`),
   so the figures on those badges grow down `Needs attention` and down each
-  half of `Open sessions`. In `Needs attention` it is when the session arrived
-  there, for a dialog and a finished turn alike. A session with no clock sorts
-  last — a `waiting` one included, which only a CLI too old to stamp a status
-  can produce.
+  half of `Open sessions`. In `Needs attention` that is normally when the
+  session arrived there, for a dialog and a finished turn alike — the exceptions
+  are the re-stamps below. A session whose file carries neither stamp sorts
+  last, a `waiting` one included.
 - **It was first the opening time, `live.startedAt`, and that answered the
   wrong question.** A terminal opened this morning and used all day sorted under
   one opened five minutes ago and left alone; what this list is read for is
@@ -1583,8 +1583,9 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
   it can read (`LiveInfo.busySince`).
 - **`Needs attention` is ordered by arrival alone — neither waiting first nor
   oldest first.** Its two kinds differ in the one way that decides it: a
-  finished session leaves the moment it is seen, and a `waiting` one stays
-  until it is answered (below). So the only rows there that can be stale — a
+  finished session leaves the moment it is seen in this app, and a `waiting`
+  one stays until it is answered (below). What is seen only in the terminal
+  stays in both, as it stays in the bell. So the only rows there that can be stale — a
   dialog seen and deliberately left — are waiting ones, and putting the waiting
   ones first, or the oldest first, would sit exactly those on top of what just
   rang. By arrival the top is always the newest thing that wants you, and the
@@ -1594,9 +1595,10 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
   left there since was left on purpose.
 - **The bell's panel keeps the two kinds apart, and that is not a disagreement
   to fix.** It draws `Needs you` above `Finished` (`NotificationsButton`), the
-  order this section had before. There it costs nothing: a bell row is withdrawn
-  the moment its session is seen, so the panel never holds a dialog somebody
-  already looked at and left — the one row that made waiting-first wrong here.
+  order this section had before. There it costs less: a bell row is withdrawn
+  the moment its session is seen in this app, so the panel never holds a dialog
+  somebody looked at HERE and left — the one row that made waiting-first wrong
+  in this section.
 - **Working goes ahead of idle inside `Open sessions`, and it costs fewer moves
   than it looks.** It was first left out, ordered by the opening time alone, on
   the fear that every turn would move the row twice. It does not: a turn that
