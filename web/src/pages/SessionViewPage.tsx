@@ -1310,8 +1310,8 @@ export function SessionViewPage() {
        * and the turn is blocked on the reader. The same row in its waiting
        * mode, in the same place: the ring rests into the amber pulse, the
        * cause is written out, and the clock beside `total` is how long the
-       * dialog has been standing. `flipOf` is the busy→waiting flip,
-       * which is exactly when it went up.
+       * dialog has been standing: `flipOf`, normally the busy→waiting flip.
+       * What else re-stamps it is in AI_TRANSCRIPTS.md.
        */
       pending.length === 0 && isWaiting(liveInfo) ? (
         <WorkingIndicator

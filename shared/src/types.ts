@@ -281,14 +281,12 @@ export interface LiveInfo {
   updatedAt: number | null; // epoch ms
   /**
    * When the CLI last stamped a status — NOT when the session entered the state
-   * it is in: any change of the computed status or of `waitingFor` re-stamps it,
-   * a shell opened over an idle session included ([AI_TRANSCRIPTS.md](../../docs/AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you)).
+   * it is in: it is re-stamped on more than a change of state, a shell opened
+   * over an idle session included ([AI_TRANSCRIPTS.md](../../docs/AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you)).
    * For a busy session that is when the user last unblocked it, which is the
    * turn's start only for a turn nobody interrupted (`busySince`). Read it
-   * through `flipOf`. Kept separate from `updatedAt` on purpose: the two are equal today
-   * because Claude Code writes this file only when something changes (measured:
-   * `updatedAt` frozen for 3 minutes into a busy turn, no heartbeat at all), and
-   * a heartbeat appearing later would move `updatedAt` while this stays true.
+   * through `flipOf`. Not `updatedAt`, which every write moves, those that
+   * carry no status included (a rename, for one).
    */
   statusUpdatedAt: number | null; // epoch ms
   /**
@@ -298,7 +296,7 @@ export interface LiveInfo {
    * (`statusUpdatedAt` restarts on every answered permission), and the turn's
    * own clock must not. Ours, not the CLI's: the pid file has no turn concept,
    * so the index remembers the flip in memory like every other transition, and
-   * a server restarted mid-turn falls back to `statusUpdatedAt` until the next
+   * a server restarted mid-turn falls back to `flipOf` until the next
    * turn. Null while no turn is open. The viewer's `total` is still the finer
    * reading (`turnClocks` bounds the turn by the transcript itself); this is
    * the list's, exact wherever the server saw the turn start.

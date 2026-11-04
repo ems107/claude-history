@@ -2038,7 +2038,7 @@ export interface StoppedSession {
   /**
    * When it stopped, epoch ms — like every field of `LiveInfo`, and unlike the
    * ISO strings elsewhere in this file, because that is what it is copied from
-   * (`statusUpdatedAt`, the instant the CLI stamped the flip).
+   * (`flipOf`, the instant the CLI stamped the flip).
    */
   at: number;
   /**

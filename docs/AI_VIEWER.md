@@ -1553,8 +1553,8 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
 
 | Section | Who is in it | Order |
 | --- | --- | --- |
-| `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then the finished ones; each half newest in its state first |
-| `Open sessions` (green dot) | every other `busy` or resting one | working first, then the resting ones; each half newest in its state first |
+| `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then the finished ones; each half by its state badge's clock, smallest first |
+| `Open sessions` (green dot) | every other `busy` or resting one | working first, then the resting ones; each half by its state badge's clock, smallest first |
 
 - **The clock is the state badge's own** (`stateSinceOf`, `lib/liveClock.ts`),
   so the figures on those badges grow down each half of a section. A session
@@ -1710,7 +1710,7 @@ to the keyframes.
 
 **The composer's questions are the same state, and used to lie.** The SDK keeps the turn open while an `AskUserQuestion`, a permission or a plan of ours stands — `working` true, `turnStartedAt` set — so the synthesized `LiveInfo` read `busy` and the foot spun at a person. `SessionViewPage` now reads `chat.data.state === 'asking'` BEFORE the busy synthesis, with the question's own `askedAt` as the flip, and the overlay the two routes share (`markOurs` in `util/chatLive.ts`, fed by `workingSessions()` carrying the pending question) says `waiting` to the list as well. The vocabulary is `askingFor`, moved to `shared` beside `ChatQuestion` because both halves say it — the notifications' `needs-you` rows and this. The four statuses and what each means are in [AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you).
 
-**Whether anything is working, and since when, are the CALLER's answers.** The row takes a `since` and works the clocks out from it; it knows nothing about a session. A session reads both off `~/.claude/sessions` — `isWorking` and `workingSince`, kept beside each other because they are one reading — and a subagent has no file there at all, sharing its parent's process, so it reads its own transcript instead. The signature used to be a `LiveInfo`, which the new-session page had to forge with six null fields to hand over one timestamp.
+**Whether anything is working, and since when, are the CALLER's answers.** The row takes a `since` and works the clocks out from it; it knows nothing about a session. A session reads both off `~/.claude/sessions` — `isWorking`, and `flipOf` (`shared/src/live.ts`) for the clock — and a subagent has no file there at all, sharing its parent's process, so it reads its own transcript instead. The signature used to be a `LiveInfo`, which the new-session page had to forge with six null fields to hand over one timestamp.
 
 **It hangs on the last turn's RAIL, as a `footer`, not after the list.** An answer being written belongs where the answers are: rendered at root level it lined up with the prompt instead of with the replies, reading as a sibling of the question rather than as the response arriving (checked: left 262 px, identical to the assistant bubbles, against the prompt's 236). A turn that has produced nothing yet — the state of every session for the first seconds after a prompt — grows a rail of its own from the same `RAIL` constant. **With the box gone the rail is the only thing left that says which turn this belongs to**, which is why it was kept when the bubble was not.
 

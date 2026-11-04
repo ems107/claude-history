@@ -235,9 +235,9 @@ export function liveSectionOf(s: SessionSummary, belled: ReadonlySet<string>): L
 }
 
 /**
- * Smallest clock first, by the one the row's state badge draws (`stateSinceOf`),
- * so the figures on those badges grow down each half of a section. One with no
- * clock goes last.
+ * Newest stamp first, by the clock the row's state badge draws (`stateSinceOf`),
+ * so the elapsed figures on those badges grow down each half of a section. One
+ * with no clock goes last.
  */
 function byStateSinceDesc(a: SessionSummary, b: SessionSummary): number {
   return (stateSinceOf(b.live) ?? 0) - (stateSinceOf(a.live) ?? 0);
