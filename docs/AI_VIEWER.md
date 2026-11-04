@@ -1556,18 +1556,24 @@ the process is doing, and `liveSectionOf` is the one place it is decided:
 | `Needs attention` (amber dot) | every `waiting` session, bell or no bell; every resting one (`idle`/`shell`) still in the bell — finished and not seen | waiting first, then the finished ones; each half newest in its state first |
 | `Open sessions` (green dot) | every other `busy` or resting one | working first, then the resting ones; each half newest in its state first |
 
-- **The clock is the state badge's own** (`stateSinceOf`, `lib/liveClock.ts`):
-  how long the session has been working, waiting or idle, so the figures on
-  those badges grow down each half of a section. Working counts from the turn's
-  start (`busySince`), which an answered permission does not restart; waiting
-  and idle from the flip into them. A CLI that wrote none sorts last.
+- **The clock is the state badge's own** (`stateSinceOf`, `lib/liveClock.ts`),
+  so the figures on those badges grow down each half of a section. A session
+  with no clock sorts last.
 - **It was first the opening time, `live.startedAt`, and that answered the
   wrong question.** A terminal opened this morning and used all day sorted under
   one opened five minutes ago and left alone; what this list is read for is
-  what just happened. Neither clock reorders anything on its own — every one
-  runs at the same rate — so a row still moves only when its state does, and
-  the only difference is where it lands: at the top of the half it moved into,
-  which is where the eye already is.
+  what just happened.
+- **Time alone reorders nothing** — every clock runs at the same rate. A row
+  moves when its section or its half changes, or when its clock is re-stamped,
+  and it lands wherever its clock puts it. That is the top only when the clock
+  was just stamped: a new turn, a new dialog, a turn that just ended. Two
+  ordinary moves keep an older clock and land further down — a session going
+  back to work after a permission (the turn's own clock, `busySince`), and one
+  leaving `Needs attention` because it was seen (the clock of when it finished).
+  What re-stamps a clock without a change of state — a shell opened over an
+  idle session — is the CLI's ([AI_TRANSCRIPTS.md](AI_TRANSCRIPTS.md#status-has-four-values-and-one-of-them-says-the-session-is-waiting-for-you)),
+  and so is the working clock falling back to the last flip after a server
+  restart (`LiveInfo.busySince`): the order is wrong exactly where the badge is.
 - **Newest first in `Needs attention` too, not a queue.** Oldest first would
   serve whoever has waited longest, but a `waiting` session stays there after
   it has been looked at (below), so a dialog seen and deliberately left would

@@ -263,13 +263,10 @@ function statusFirst(status: string): (a: SessionSummary, b: SessionSummary) => 
  * counts what is left under it and no session is two rows — which would also
  * leave the keyboard's selection, kept by session id, not knowing which one to
  * light. Each section puts one status first — waiting in `attention`, working
- * in `open` — and orders each half by how long it has been in that state,
- * newest first. Every clock runs at the same rate, so time alone reorders
- * nothing: a row moves only when its state does, and lands at the top of the
- * half it moved into. Those moves are few: a turn that ends unseen rings the
- * bell and leaves `open` anyway, and one only starts because somebody typed
- * into it or something it left running came back. With no live session, the
- * rows are exactly what they were before these sections existed.
+ * in `open` — and orders each half by its state badge's clock, newest first
+ * (why, and when a row moves: AI_VIEWER.md, "The list opens with the live
+ * sessions"). With no live session, the rows are exactly what they were before
+ * these sections existed.
  *
  * Below them, day grouping follows whichever date the list is sorted by, so the
  * headers always match the order on screen; any other sort falls back to no

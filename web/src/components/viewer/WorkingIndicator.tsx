@@ -2,6 +2,7 @@ import type { LiveInfo } from '@claude-history/shared';
 import { LIVE_BUSY, LIVE_WAITING } from '@claude-history/shared';
 import { useEffect, useState } from 'react';
 import { elapsed, formatDateTime } from '../../lib/format.ts';
+import { flipOf } from '../../lib/liveClock.ts';
 import { NO_ACTIVITY, type TurnActivity, turnClocks } from '../../lib/turnActivity.ts';
 
 /**
@@ -70,7 +71,7 @@ export function waitingSentence(waitingFor: string | null): string {
  * subagent has none, and the row is the same row.
  */
 export function workingSince(live: LiveInfo | null | undefined): number | null {
-  return live?.statusUpdatedAt ?? live?.updatedAt ?? null;
+  return flipOf(live);
 }
 
 /**

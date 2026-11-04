@@ -370,6 +370,8 @@ Ybv = ["busy", "shell", "idle", "waiting"]        // the whole set; Xbv() valida
 
 `idle` and `shell` are one state to every reader here, which is what `LIVE_STOPPED` is for. The CLI computes the pair as `status === 'idle' && shellOpen ? 'shell' : status`, so a shell is never anything but an idle session with a shell over it.
 
+**`statusUpdatedAt` is "last re-stamped", not "entered this state".** Read out of 2.1.318: every write that carries a `status` stamps it (`...e.status !== void 0 && {statusUpdatedAt: r}`), and the CLI writes one whenever the COMPUTED status or `waitingFor` changes. So a shell opened or closed over an idle session restarts it with nothing about the conversation different, and so does one dialog replacing another. Everything that draws or sorts by the idle and waiting clocks inherits that (`lib/liveClock.ts`).
+
 **`waiting` comes with `waitingFor`, and that field is the only thing on disk that says WHY a session stopped.** Any dialog at all produces it — a permission prompt, an `AskUserQuestion`, a plan to approve, a `/model` picker:
 
 ```js
