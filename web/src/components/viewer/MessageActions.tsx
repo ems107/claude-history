@@ -18,7 +18,8 @@ const COPY_OPTS: ExportOptions = {
   includeImages: false,
 };
 
-const FLASH_MS = 1500;
+/** How long a copy button says it copied — the plan panel's borrows it. */
+export const FLASH_MS = 1500;
 
 /**
  * The star and the two copy buttons on a message, revealed on hover like the

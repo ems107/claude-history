@@ -1,7 +1,8 @@
 import type { PlanCommentRecord, PlanFileResponse } from '@claude-history/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.ts';
+import { actionClass } from '../controlClass.ts';
 import { copyPlain } from '../../lib/clipboard.ts';
 import { newId } from '../../lib/ids.ts';
 import { formatTokens } from '../../lib/cost.ts';
@@ -9,6 +10,7 @@ import { commentsFeedback, planKeyOf, planTitle, type SessionPlan } from '../../
 import { parseFileRef } from '../../lib/fileRefs.ts';
 import { useFileRefs } from './FileRefContext.ts';
 import { FileLink } from './FileRefLink.tsx';
+import { FLASH_MS } from './MessageActions.tsx';
 import { PlanCommentRef, PlanReview, type PlanComment } from './PlanReview.tsx';
 
 const STATUS: Record<SessionPlan['status'], { label: string; tone: string }> = {
@@ -212,6 +214,10 @@ export function PlanPanel({
 
   const [note, setNote] = useState('');
   const [copied, setCopied] = useState(false);
+  /** The plan's own text on the clipboard — a different thing from the remarks. */
+  const [planCopied, setPlanCopied] = useState(false);
+  /** One flash at a time: a second copy, or another plan, starts its own. */
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // One string, one channel: the transcript keeps the note and the remarks glued
   // together exactly as Claude was given them.
   const outgoing = [note.trim(), commentsFeedback(comments)].filter(Boolean).join('\n\n');
@@ -221,8 +227,30 @@ export function PlanPanel({
   useEffect(() => {
     setNote('');
     setCopied(false);
+    setPlanCopied(false);
     setError(null);
+    return () => clearTimeout(flashTimer.current);
   }, [current]);
+
+  /**
+   * The plan itself, as the Markdown it was written in. Most rows have no file
+   * to open — `plans/<slug>.md` holds only a session's latest plan — so without
+   * this the text of every earlier one was readable here and nowhere else.
+   *
+   * It leaves the error line alone on success: that line is shared with the
+   * remark writes, and a copy must not wipe the news that one of them failed.
+   */
+  const copyPlan = async (text: string) => {
+    try {
+      await copyPlain(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    clearTimeout(flashTimer.current);
+    setPlanCopied(true);
+    flashTimer.current = setTimeout(() => setPlanCopied(false), FLASH_MS);
+  };
 
   const copy = async () => {
     if (!outgoing) return;
@@ -296,14 +324,13 @@ export function PlanPanel({
           <>
             <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
               {row.toolUseId && (
-                <button
-                  type="button"
-                  onClick={() => onGoToCall(row.toolUseId!)}
-                  className="rounded border border-[var(--border)] px-2 py-0.5 text-[var(--text-dim)] md:hover:bg-[var(--bg-hover)] md:hover:text-[var(--text)]"
-                >
+                <button type="button" onClick={() => onGoToCall(row.toolUseId!)} className={actionClass}>
                   ↓ in the conversation
                 </button>
               )}
+              <button type="button" onClick={() => void copyPlan(row.text)} className={actionClass}>
+                {planCopied ? '✔ copied' : '⧉ Copy as Markdown'}
+              </button>
               {sentAt && <span className="text-[var(--text-dim)]">sent {when(sentAt)}</span>}
             </div>
             {error && (
